@@ -195,6 +195,10 @@ func InitDB() (err error) {
 		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
 
+		if err := ensureTopUpAuditColumns(); err != nil {
+			return err
+		}
+
 		if !common.IsMasterNode {
 			return nil
 		}
@@ -376,6 +380,20 @@ func migrateLOGDB() error {
 type sqliteColumnDef struct {
 	Name string
 	DDL  string
+}
+
+func ensureTopUpAuditColumns() error {
+	if !DB.Migrator().HasTable("top_ups") {
+		return nil
+	}
+	if DB.Migrator().HasColumn(&TopUp{}, "gateway_trade_no") {
+		return nil
+	}
+	if err := DB.Migrator().AddColumn(&TopUp{}, "GatewayTradeNo"); err != nil {
+		return fmt.Errorf("failed to add top_ups.gateway_trade_no: %w", err)
+	}
+	common.SysLog("Successfully added top_ups.gateway_trade_no")
+	return nil
 }
 
 func ensureSubscriptionPlanTableSQLite() error {

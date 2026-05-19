@@ -5,7 +5,9 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func insertTopUpTestUser(t *testing.T, username string, quota int, email string) *User {
@@ -70,6 +72,49 @@ func reloadTopUp(t *testing.T, topUpID int) *TopUp {
 	var topUp TopUp
 	require.NoError(t, DB.First(&topUp, topUpID).Error)
 	return &topUp
+}
+
+func TestEnsureTopUpAuditColumnsAddsGatewayTradeNoToExistingTable(t *testing.T) {
+	originalDB := DB
+	originalUsingSQLite := common.UsingSQLite
+	t.Cleanup(func() {
+		DB = originalDB
+		common.UsingSQLite = originalUsingSQLite
+	})
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	DB = db
+	common.UsingSQLite = true
+
+	require.NoError(t, DB.Exec(`CREATE TABLE top_ups (
+		id integer PRIMARY KEY AUTOINCREMENT,
+		user_id integer,
+		amount integer,
+		money real,
+		trade_no varchar(255),
+		payment_method varchar(50),
+		payment_provider varchar(50) DEFAULT '',
+		create_time integer,
+		complete_time integer,
+		status varchar(50)
+	)`).Error)
+
+	require.False(t, DB.Migrator().HasColumn(&TopUp{}, "gateway_trade_no"))
+	require.NoError(t, ensureTopUpAuditColumns())
+	require.True(t, DB.Migrator().HasColumn(&TopUp{}, "gateway_trade_no"))
+
+	topUp := &TopUp{
+		UserId:          1,
+		Amount:          1,
+		Money:           6.9,
+		TradeNo:         "trade_schema_upgrade",
+		PaymentMethod:   "alipay",
+		PaymentProvider: PaymentProviderEpay,
+		CreateTime:      1,
+		Status:          common.TopUpStatusPending,
+	}
+	require.NoError(t, topUp.Insert())
 }
 
 func TestRechargeRejectsMismatchedPaymentMethod(t *testing.T) {
