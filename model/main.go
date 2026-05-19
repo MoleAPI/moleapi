@@ -195,10 +195,6 @@ func InitDB() (err error) {
 		sqlDB.SetMaxOpenConns(common.GetEnvOrDefault("SQL_MAX_OPEN_CONNS", 1000))
 		sqlDB.SetConnMaxLifetime(time.Second * time.Duration(common.GetEnvOrDefault("SQL_MAX_LIFETIME", 60)))
 
-		if err := ensureTopUpAuditColumns(); err != nil {
-			return err
-		}
-
 		if !common.IsMasterNode {
 			return nil
 		}
@@ -252,6 +248,9 @@ func InitLogDB() (err error) {
 }
 
 func migrateDB() error {
+	if err := ensureTopUpAuditColumns(); err != nil {
+		return err
+	}
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
 	// Migrate model_limits column from varchar to text for existing tables
