@@ -33,7 +33,7 @@ import {
   IllustrationNoResult,
   IllustrationNoResultDark,
 } from '@douyinfe/semi-illustrations';
-import { Coins } from 'lucide-react';
+import { Coins, Download, FileText } from 'lucide-react';
 import { IconSearch } from '@douyinfe/semi-icons';
 import { API, timestamp2string } from '../../../helpers';
 import { isAdmin } from '../../../helpers/utils';
@@ -165,7 +165,8 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     if (isSubscriptionTopup(record)) {
       return t('订阅套餐');
     }
-    return record?.amount_display !== undefined && record?.amount_display !== null
+    return record?.amount_display !== undefined &&
+      record?.amount_display !== null
       ? String(record.amount_display)
       : String(record?.amount ?? '-');
   };
@@ -187,6 +188,77 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
 
   const closeDetail = () => {
     setDetailRecord(null);
+  };
+
+  const buildInvoiceUrl = (record, download = false) => {
+    const query = download ? '?download=1' : '';
+    return `/api/user/topup/${record.id}/invoice${query}`;
+  };
+
+  const getInvoiceFilename = (record) => {
+    const safeTradeNo = String(record?.trade_no || 'topup').replace(
+      /[^a-zA-Z0-9._-]/g,
+      '_',
+    );
+    return `invoice-${safeTradeNo}.html`;
+  };
+
+  const fetchInvoiceHtml = async (record, download = false) => {
+    const res = await API.get(buildInvoiceUrl(record, download), {
+      responseType: 'blob',
+      disableDuplicate: true,
+      skipErrorHandler: true,
+    });
+    const contentType = res.headers?.['content-type'] || '';
+    if (contentType.includes('application/json')) {
+      const text = await res.data.text();
+      let message = t('生成 Invoice 失败');
+      try {
+        const payload = JSON.parse(text);
+        message = payload.message || message;
+      } catch (e) {}
+      throw new Error(message);
+    }
+    return res.data;
+  };
+
+  const handleViewInvoice = async (record) => {
+    const popup = window.open('', '_blank');
+    try {
+      const blob = await fetchInvoiceHtml(record, false);
+      const url = URL.createObjectURL(
+        new Blob([blob], { type: 'text/html;charset=utf-8' }),
+      );
+      if (popup) {
+        popup.location.href = url;
+      } else {
+        window.open(url, '_blank', 'noopener,noreferrer');
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 5 * 60 * 1000);
+    } catch (error) {
+      if (popup) {
+        popup.close();
+      }
+      Toast.error({ content: error.message || t('生成 Invoice 失败') });
+    }
+  };
+
+  const handleDownloadInvoice = async (record) => {
+    try {
+      const blob = await fetchInvoiceHtml(record, true);
+      const url = URL.createObjectURL(
+        new Blob([blob], { type: 'text/html;charset=utf-8' }),
+      );
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = getInvoiceFilename(record);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 60 * 1000);
+    } catch (error) {
+      Toast.error({ content: error.message || t('下载 Invoice 失败') });
+    }
   };
 
   const isSubscriptionTopup = (record) => {
@@ -221,30 +293,31 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         key: 'payment_method',
         render: renderPaymentMethod,
       },
-          {
-            title: t('充值额度'),
-            dataIndex: 'amount',
-            key: 'amount',
-            render: (amount, record) => {
-              if (isSubscriptionTopup(record)) {
-                return (
-                  <Tag color='purple' shape='circle' size='small'>
-                    {t('订阅套餐')}
-                  </Tag>
-                );
-              }
-              const displayAmount =
-                record?.amount_display !== undefined && record?.amount_display !== null
-                  ? record.amount_display
-                  : amount;
-              return (
-                <span className='flex items-center gap-1'>
-                  <Coins size={16} />
-                  <Text>{displayAmount}</Text>
-                </span>
-              );
-            },
-          },
+      {
+        title: t('充值额度'),
+        dataIndex: 'amount',
+        key: 'amount',
+        render: (amount, record) => {
+          if (isSubscriptionTopup(record)) {
+            return (
+              <Tag color='purple' shape='circle' size='small'>
+                {t('订阅套餐')}
+              </Tag>
+            );
+          }
+          const displayAmount =
+            record?.amount_display !== undefined &&
+            record?.amount_display !== null
+              ? record.amount_display
+              : amount;
+          return (
+            <span className='flex items-center gap-1'>
+              <Coins size={16} />
+              <Text>{displayAmount}</Text>
+            </span>
+          );
+        },
+      },
       {
         title: t('支付金额'),
         dataIndex: 'money',
@@ -291,6 +364,19 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
               onClick={() => confirmAdminComplete(record.trade_no)}
             >
               {t('补单')}
+            </Button>,
+          );
+        }
+        if (record.status === 'success') {
+          actions.push(
+            <Button
+              key='invoice'
+              size='small'
+              theme='borderless'
+              icon={<FileText size={14} />}
+              onClick={() => handleViewInvoice(record)}
+            >
+              Invoice
             </Button>,
           );
         }
@@ -346,7 +432,9 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       },
       {
         key: t('创建时间'),
-        value: detailRecord.create_time ? timestamp2string(detailRecord.create_time) : '-',
+        value: detailRecord.create_time
+          ? timestamp2string(detailRecord.create_time)
+          : '-',
       },
       {
         key: t('完成时间'),
@@ -356,6 +444,31 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       },
     ];
   }, [detailRecord, t, userIsAdmin]);
+
+  const detailFooter = detailRecord ? (
+    <div className='flex items-center justify-end gap-2'>
+      {detailRecord.status === 'success' && (
+        <>
+          <Button
+            theme='borderless'
+            icon={<FileText size={14} />}
+            onClick={() => handleViewInvoice(detailRecord)}
+          >
+            Invoice
+          </Button>
+          <Button
+            type='primary'
+            theme='solid'
+            icon={<Download size={14} />}
+            onClick={() => handleDownloadInvoice(detailRecord)}
+          >
+            {t('下载 Invoice')}
+          </Button>
+        </>
+      )}
+      <Button onClick={closeDetail}>{t('关闭')}</Button>
+    </div>
+  ) : null;
 
   return (
     <>
@@ -392,7 +505,9 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
           size='small'
           empty={
             <Empty
-              image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
+              image={
+                <IllustrationNoResult style={{ width: 150, height: 150 }} />
+              }
               darkModeImage={
                 <IllustrationNoResultDark style={{ width: 150, height: 150 }} />
               }
@@ -406,7 +521,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         title={t('充值详情')}
         visible={!!detailRecord}
         onCancel={closeDetail}
-        footer={null}
+        footer={detailFooter}
         size={isMobile ? 'full-width' : 'medium'}
       >
         {detailRecord && (
