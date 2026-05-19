@@ -3128,7 +3128,7 @@
     "日": "",
     "旧格式（JSON 对象）": "",
     "旧格式必须是 JSON 对象": "",
-    "易支付": "",
+    "易支付": "Epay",
     "显示名称字段（可选）": "",
     "暂存错误": "",
     "暂无可复制 JSON": "",
@@ -3835,6 +3835,11 @@
     "缓存创建-1h": "Cache create (1h)",
     "见上方动态计费详情": "See dynamic pricing details above",
     "含时间条件": "Time rules",
-    "含请求条件": "Request rules"
+    "含请求条件": "Request rules",
+    "充值详情": "Top Up Details",
+    "上游订单号": "Gateway Order No.",
+    "完成时间": "Completion Time",
+    "蓝兔支付": "LanTu Pay",
+    "Waffo Pancake": "Waffo Pancake"
   }
 }

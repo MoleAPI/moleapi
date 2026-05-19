@@ -90,6 +90,34 @@ func TestRechargeRejectsMismatchedPaymentMethod(t *testing.T) {
 	require.EqualValues(t, 0, reloadedTopUp.CompleteTime)
 }
 
+func TestRechargeStoresGatewayTradeNoAndAuditLog(t *testing.T) {
+	truncateTables(t)
+
+	user := insertTopUpTestUser(t, strings.ReplaceAll(t.Name(), "/", "_"), 100, "")
+	topUp := insertTopUpRecord(t, user.Id, "trade_gateway_audit", PaymentMethodStripe)
+
+	err := RechargeStripeWithGatewayTradeNo(topUp.TradeNo, "cus_gateway_audit", "cs_gateway_123", "203.0.113.10")
+	require.NoError(t, err)
+
+	reloadedTopUp := reloadTopUp(t, topUp.Id)
+	require.Equal(t, common.TopUpStatusSuccess, reloadedTopUp.Status)
+	require.Equal(t, "cs_gateway_123", reloadedTopUp.GatewayTradeNo)
+	require.NotZero(t, reloadedTopUp.CompleteTime)
+
+	var log Log
+	require.NoError(t, LOG_DB.Where("user_id = ? AND type = ?", user.Id, LogTypeTopup).First(&log).Error)
+	require.Equal(t, "203.0.113.10", log.Ip)
+
+	other, err := common.StrToMap(log.Other)
+	require.NoError(t, err)
+	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	require.True(t, ok)
+	require.Equal(t, "203.0.113.10", adminInfo["caller_ip"])
+	require.Equal(t, PaymentMethodStripe, adminInfo["payment_method"])
+	require.Equal(t, PaymentProviderStripe, adminInfo["callback_payment_method"])
+	require.Equal(t, common.Version, adminInfo["version"])
+}
+
 func TestRechargeCreemRejectsMismatchedPaymentMethod(t *testing.T) {
 	truncateTables(t)
 

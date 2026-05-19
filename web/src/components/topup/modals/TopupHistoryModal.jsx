@@ -27,6 +27,7 @@ import {
   Button,
   Input,
   Tag,
+  Descriptions,
 } from '@douyinfe/semi-ui';
 import {
   IllustrationNoResult,
@@ -52,6 +53,9 @@ const PAYMENT_METHOD_MAP = {
   stripe: 'Stripe',
   creem: 'Creem',
   waffo: 'Waffo',
+  waffo_pancake: 'Waffo Pancake',
+  lantu: '蓝兔支付',
+  epay: '易支付',
   alipay: '支付宝',
   wxpay: '微信',
 };
@@ -63,6 +67,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [keyword, setKeyword] = useState('');
+  const [detailRecord, setDetailRecord] = useState(null);
   const isMobile = useIsMobile();
 
   const loadTopups = async (currentPage, currentPageSize) => {
@@ -151,6 +156,39 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     return <Text>{displayName ? t(displayName) : pm || '-'}</Text>;
   };
 
+  const formatMoney = (money) => {
+    const numeric = Number(money || 0);
+    return `¥${numeric.toFixed(2)}`;
+  };
+
+  const getTopupAmountText = (record) => {
+    if (isSubscriptionTopup(record)) {
+      return t('订阅套餐');
+    }
+    return record?.amount_display !== undefined && record?.amount_display !== null
+      ? String(record.amount_display)
+      : String(record?.amount ?? '-');
+  };
+
+  const getStatusText = (status) => {
+    const config = STATUS_CONFIG[status] || { key: status || '-' };
+    return t(config.key);
+  };
+
+  const getProviderText = (provider) => {
+    if (!provider) return '-';
+    const displayName = PAYMENT_METHOD_MAP[provider];
+    return displayName ? t(displayName) : provider;
+  };
+
+  const openDetail = (record) => {
+    setDetailRecord(record);
+  };
+
+  const closeDetail = () => {
+    setDetailRecord(null);
+  };
+
   const isSubscriptionTopup = (record) => {
     const tradeNo = (record?.trade_no || '').toLowerCase();
     return Number(record?.amount || 0) === 0 && tradeNo.startsWith('sub');
@@ -211,7 +249,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         title: t('支付金额'),
         dataIndex: 'money',
         key: 'money',
-        render: (money) => <Text type='danger'>¥{money.toFixed(2)}</Text>,
+        render: (money) => <Text type='danger'>{formatMoney(money)}</Text>,
       },
       {
         title: t('状态'),
@@ -221,31 +259,6 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       },
     ];
 
-    // 管理员才显示操作列
-    if (userIsAdmin) {
-      baseColumns.push({
-        title: t('操作'),
-        key: 'action',
-        render: (_, record) => {
-          const actions = [];
-          if (record.status === 'pending') {
-            actions.push(
-              <Button
-                key="complete"
-                size='small'
-                type='primary'
-                theme='outline'
-                onClick={() => confirmAdminComplete(record.trade_no)}
-              >
-                {t('补单')}
-              </Button>
-            );
-          }
-          return actions.length > 0 ? <>{actions}</> : null;
-        },
-      });
-    }
-
     baseColumns.push({
       title: t('创建时间'),
       dataIndex: 'create_time',
@@ -253,53 +266,159 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       render: (time) => timestamp2string(time),
     });
 
+    baseColumns.push({
+      title: t('操作'),
+      key: 'action',
+      render: (_, record) => {
+        const actions = [
+          <Button
+            key='detail'
+            size='small'
+            type='primary'
+            theme='borderless'
+            onClick={() => openDetail(record)}
+          >
+            {t('查看详情')}
+          </Button>,
+        ];
+        if (userIsAdmin && record.status === 'pending') {
+          actions.push(
+            <Button
+              key='complete'
+              size='small'
+              type='primary'
+              theme='outline'
+              onClick={() => confirmAdminComplete(record.trade_no)}
+            >
+              {t('补单')}
+            </Button>,
+          );
+        }
+        return <div className='flex items-center gap-2'>{actions}</div>;
+      },
+    });
+
     return baseColumns;
   }, [t, userIsAdmin]);
 
+  const detailData = useMemo(() => {
+    if (!detailRecord) return [];
+    return [
+      ...(userIsAdmin
+        ? [
+            {
+              key: t('用户ID'),
+              value: detailRecord.user_id ?? '-',
+            },
+          ]
+        : []),
+      {
+        key: t('订单号'),
+        value: <Text copyable>{detailRecord.trade_no || '-'}</Text>,
+      },
+      {
+        key: t('上游订单号'),
+        value: detailRecord.gateway_trade_no ? (
+          <Text copyable>{detailRecord.gateway_trade_no}</Text>
+        ) : (
+          '-'
+        ),
+      },
+      {
+        key: t('支付方式'),
+        value: getProviderText(detailRecord.payment_method),
+      },
+      {
+        key: t('支付渠道'),
+        value: getProviderText(detailRecord.payment_provider),
+      },
+      {
+        key: t('充值额度'),
+        value: getTopupAmountText(detailRecord),
+      },
+      {
+        key: t('支付金额'),
+        value: formatMoney(detailRecord.money),
+      },
+      {
+        key: t('状态'),
+        value: getStatusText(detailRecord.status),
+      },
+      {
+        key: t('创建时间'),
+        value: detailRecord.create_time ? timestamp2string(detailRecord.create_time) : '-',
+      },
+      {
+        key: t('完成时间'),
+        value: detailRecord.complete_time
+          ? timestamp2string(detailRecord.complete_time)
+          : '-',
+      },
+    ];
+  }, [detailRecord, t, userIsAdmin]);
+
   return (
-    <Modal
-      title={t('充值账单')}
-      visible={visible}
-      onCancel={onCancel}
-      footer={null}
-      size={isMobile ? 'full-width' : 'large'}
-    >
-      <div className='mb-3'>
-        <Input
-          prefix={<IconSearch />}
-          placeholder={t('订单号')}
-          value={keyword}
-          onChange={handleKeywordChange}
-          showClear
-        />
-      </div>
-      <Table
-        columns={columns}
-        dataSource={topups}
-        loading={loading}
-        rowKey='id'
-        pagination={{
-          currentPage: page,
-          pageSize: pageSize,
-          total: total,
-          showSizeChanger: true,
-          pageSizeOpts: [10, 20, 50, 100],
-          onPageChange: handlePageChange,
-          onPageSizeChange: handlePageSizeChange,
-        }}
-        size='small'
-        empty={
-          <Empty
-            image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
-            darkModeImage={
-              <IllustrationNoResultDark style={{ width: 150, height: 150 }} />
-            }
-            description={t('暂无充值记录')}
-            style={{ padding: 30 }}
+    <>
+      <Modal
+        title={t('充值账单')}
+        visible={visible}
+        onCancel={onCancel}
+        footer={null}
+        size={isMobile ? 'full-width' : 'large'}
+      >
+        <div className='mb-3'>
+          <Input
+            prefix={<IconSearch />}
+            placeholder={t('订单号')}
+            value={keyword}
+            onChange={handleKeywordChange}
+            showClear
           />
-        }
-      />
-    </Modal>
+        </div>
+        <Table
+          columns={columns}
+          dataSource={topups}
+          loading={loading}
+          rowKey='id'
+          pagination={{
+            currentPage: page,
+            pageSize: pageSize,
+            total: total,
+            showSizeChanger: true,
+            pageSizeOpts: [10, 20, 50, 100],
+            onPageChange: handlePageChange,
+            onPageSizeChange: handlePageSizeChange,
+          }}
+          size='small'
+          empty={
+            <Empty
+              image={<IllustrationNoResult style={{ width: 150, height: 150 }} />}
+              darkModeImage={
+                <IllustrationNoResultDark style={{ width: 150, height: 150 }} />
+              }
+              description={t('暂无充值记录')}
+              style={{ padding: 30 }}
+            />
+          }
+        />
+      </Modal>
+      <Modal
+        title={t('充值详情')}
+        visible={!!detailRecord}
+        onCancel={closeDetail}
+        footer={null}
+        size={isMobile ? 'full-width' : 'medium'}
+      >
+        {detailRecord && (
+          <Descriptions
+            data={detailData}
+            row
+            size='small'
+            className='topup-history-detail'
+          />
+        )}
+      </Modal>
+    </>
   );
 };
 

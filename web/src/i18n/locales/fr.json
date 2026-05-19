@@ -3084,7 +3084,7 @@
     "日": "",
     "旧格式（JSON 对象）": "",
     "旧格式必须是 JSON 对象": "",
-    "易支付": "",
+    "易支付": "Epay",
     "显示名称字段（可选）": "",
     "暂存错误": "",
     "暂无可复制 JSON": "",
@@ -3353,6 +3353,11 @@
     "5m缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 5m缓存创建倍率 {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}": "Création du cache 5m : {{tokens}} / 1M * ratio du modèle {{modelRatio}} * ratio de création du cache 5m {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}",
     "1h缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 1h缓存创建倍率 {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}": "Création du cache 1h : {{tokens}} / 1M * ratio du modèle {{modelRatio}} * ratio de création du cache 1h {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}",
     "输出：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 输出倍率 {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}": "Sortie : {{tokens}} / 1M * ratio du modèle {{modelRatio}} * ratio de sortie {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}",
-    "空": "Vide"
+    "空": "Vide",
+    "充值详情": "Détails de recharge",
+    "上游订单号": "N° de commande passerelle",
+    "完成时间": "Heure de finalisation",
+    "蓝兔支付": "Paiement LanTu",
+    "Waffo Pancake": "Waffo Pancake"
   }
 }

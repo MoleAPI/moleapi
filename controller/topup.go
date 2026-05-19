@@ -392,6 +392,8 @@ func EpayNotify(c *gin.Context) {
 				logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 实际支付方式与订单不同 trade_no=%s order_payment_method=%s actual_type=%s client_ip=%s", verifyInfo.ServiceTradeNo, topUp.PaymentMethod, verifyInfo.Type, c.ClientIP()))
 				topUp.PaymentMethod = verifyInfo.Type
 			}
+			topUp.GatewayTradeNo = verifyInfo.TradeNo
+			topUp.CompleteTime = common.GetTimestamp()
 			topUp.Status = common.TopUpStatusSuccess
 			err := topUp.Update()
 			if err != nil {
@@ -414,8 +416,8 @@ func EpayNotify(c *gin.Context) {
 			} else if inviterRewardGranted {
 				logger.LogInfo(c.Request.Context(), fmt.Sprintf("Epay webhook 发放邀请首充奖励成功 trade_no=%s inviter_id=%d reward=%d client_ip=%s", verifyInfo.ServiceTradeNo, inviterId, inviterRewardQuota, c.ClientIP()))
 			}
-			logger.LogInfo(c.Request.Context(), fmt.Sprintf("Epay webhook 充值成功 trade_no=%s user_id=%d quota=%d money=%.2f client_ip=%s", verifyInfo.ServiceTradeNo, topUp.UserId, quotaToAdd, topUp.Money, c.ClientIP()))
-			model.RecordLog(topUp.UserId, model.LogTypeTopup, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money))
+			logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 充值成功 trade_no=%s gateway_trade_no=%s user_id=%d quota=%d money=%.2f client_ip=%s", verifyInfo.ServiceTradeNo, verifyInfo.TradeNo, topUp.UserId, quotaToAdd, topUp.Money, c.ClientIP()))
+			model.RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money), c.ClientIP(), topUp.PaymentMethod, model.PaymentProviderEpay)
 			return
 		}
 		logger.LogInfo(c.Request.Context(), fmt.Sprintf("Epay webhook 订单已处理，忽略重复回调 trade_no=%s status=%s client_ip=%s", verifyInfo.ServiceTradeNo, topUp.Status, c.ClientIP()))
@@ -516,7 +518,7 @@ func AdminCompleteTopUp(c *gin.Context) {
 	LockOrder(req.TradeNo)
 	defer UnlockOrder(req.TradeNo)
 
-	if err := model.ManualCompleteTopUp(req.TradeNo); err != nil {
+	if err := model.ManualCompleteTopUp(req.TradeNo, c.ClientIP()); err != nil {
 		common.ApiError(c, err)
 		return
 	}

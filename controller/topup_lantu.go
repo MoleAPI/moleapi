@@ -282,7 +282,7 @@ func LanTuPayNotify(c *gin.Context) {
 		return
 	}
 
-	paid, err := lanTuCheckPaid(cfg, mchId, outTradeNo)
+	paid, gatewayTradeNo, err := lanTuCheckPaid(cfg, mchId, outTradeNo)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("LanTu webhook 查询上游订单失败 trade_no=%s mch_id=%s client_ip=%s error=%q", outTradeNo, mchId, c.ClientIP(), err.Error()))
 		c.String(http.StatusOK, "FAIL")
@@ -294,6 +294,9 @@ func LanTuPayNotify(c *gin.Context) {
 		return
 	}
 
+	if gatewayTradeNo != "" {
+		topUp.GatewayTradeNo = gatewayTradeNo
+	}
 	topUp.Status = common.TopUpStatusSuccess
 	topUp.CompleteTime = common.GetTimestamp()
 	if err := topUp.Update(); err != nil {
@@ -319,8 +322,8 @@ func LanTuPayNotify(c *gin.Context) {
 		logger.LogInfo(c.Request.Context(), fmt.Sprintf("LanTu webhook 发放邀请首充奖励成功 trade_no=%s inviter_id=%d reward=%d client_ip=%s", outTradeNo, inviterId, inviterRewardQuota, c.ClientIP()))
 	}
 
-	model.RecordLog(topUp.UserId, model.LogTypeTopup, fmt.Sprintf("使用蓝兔支付充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money))
-	logger.LogInfo(c.Request.Context(), fmt.Sprintf("LanTu webhook 充值成功 trade_no=%s user_id=%d quota=%d money=%.2f client_ip=%s", outTradeNo, topUp.UserId, quotaToAdd, topUp.Money, c.ClientIP()))
+	model.RecordTopupLog(topUp.UserId, fmt.Sprintf("使用蓝兔支付充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money), c.ClientIP(), topUp.PaymentMethod, model.PaymentProviderLanTu)
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("LanTu webhook 充值成功 trade_no=%s gateway_trade_no=%s user_id=%d quota=%d money=%.2f client_ip=%s", outTradeNo, gatewayTradeNo, topUp.UserId, quotaToAdd, topUp.Money, c.ClientIP()))
 	c.String(http.StatusOK, "SUCCESS")
 }
 
@@ -467,7 +470,7 @@ func lanTuDoPay(ctx *gin.Context, params map[string]string, endpoint string) (pa
 	return link, kind, reqID, nil
 }
 
-func lanTuCheckPaid(cfg *LanTuConfig, mchId, outTradeNo string) (bool, error) {
+func lanTuCheckPaid(cfg *LanTuConfig, mchId, outTradeNo string) (bool, string, error) {
 	params := map[string]string{
 		"mch_id":       mchId,
 		"out_trade_no": outTradeNo,
@@ -486,23 +489,23 @@ func lanTuCheckPaid(cfg *LanTuConfig, mchId, outTradeNo string) (bool, error) {
 	endpointUrl := common.BuildURL(cfg.ApiBase, lanTuGetOrderPath)
 	req, err := http.NewRequest("POST", endpointUrl, payload)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	req.Header.Add("content-type", "application/x-www-form-urlencoded")
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return false, err
+		return false, "", err
 	}
 	defer res.Body.Close()
 
 	body, _ := io.ReadAll(res.Body)
 	var result map[string]interface{}
 	if err := common.Unmarshal(body, &result); err != nil {
-		return false, err
+		return false, "", err
 	}
 
 	if result["code"] == nil {
-		return false, errors.New("订单查询返回数据异常")
+		return false, "", errors.New("订单查询返回数据异常")
 	}
 	code := strings.TrimSpace(fmt.Sprintf("%v", result["code"]))
 	if code == "1" {
@@ -510,18 +513,30 @@ func lanTuCheckPaid(cfg *LanTuConfig, mchId, outTradeNo string) (bool, error) {
 		if msg == "" || msg == "<nil>" {
 			msg = "订单查询失败"
 		}
-		return false, errors.New(msg)
+		return false, "", errors.New(msg)
 	}
 
 	data, ok := result["data"].(map[string]interface{})
 	if !ok || data == nil {
-		return false, errors.New("订单查询响应格式错误")
+		return false, "", errors.New("订单查询响应格式错误")
 	}
 
 	payStatusFloat, ok := data["pay_status"].(float64)
 	if !ok {
-		return false, errors.New("支付状态字段格式错误")
+		return false, "", errors.New("支付状态字段格式错误")
 	}
 	payStatus := int(payStatusFloat)
-	return payStatus != lanTuUnpaidCode, nil
+	return payStatus != lanTuUnpaidCode, getFirstNonEmptyString(data, "trade_no", "transaction_id", "pay_order_id", "order_id"), nil
+}
+
+func getFirstNonEmptyString(data map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := data[key]; ok && value != nil {
+			str := strings.TrimSpace(fmt.Sprintf("%v", value))
+			if str != "" && str != "<nil>" {
+				return str
+			}
+		}
+	}
+	return ""
 }

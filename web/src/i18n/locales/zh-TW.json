@@ -2767,6 +2767,7 @@
     "新建套餐": "新建訂閱",
     "套餐": "訂閱",
     "支付渠道": "支付管道",
+    "易支付": "易支付",
     "购买上限": "購買上限",
     "有效期": "有效期",
     "禁用后用户端不再展示，但历史订单不受影响。是否继续？": "禁用後使用者端不再展示，但歷史訂單不受影響。是否繼續？",
@@ -3002,6 +3003,11 @@
     "5m缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 5m缓存创建倍率 {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}": "5m快取建立：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 5m快取建立倍率 {{cacheCreationRatio5m}} * {{ratioType}} {{ratio}} = {{amount}}",
     "1h缓存创建：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 1h缓存创建倍率 {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}": "1h快取建立：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 1h快取建立倍率 {{cacheCreationRatio1h}} * {{ratioType}} {{ratio}} = {{amount}}",
     "输出：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 输出倍率 {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}": "輸出：{{tokens}} / 1M * 模型倍率 {{modelRatio}} * 輸出倍率 {{completionRatio}} * {{ratioType}} {{ratio}} = {{amount}}",
-    "空": "空"
+    "空": "空",
+    "充值详情": "儲值詳情",
+    "上游订单号": "上游訂單號",
+    "完成时间": "完成時間",
+    "蓝兔支付": "藍兔支付",
+    "Waffo Pancake": "Waffo Pancake"
   }
 }
