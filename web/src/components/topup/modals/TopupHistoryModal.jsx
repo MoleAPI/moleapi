@@ -143,7 +143,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
   const renderStatusBadge = (status) => {
     const config = STATUS_CONFIG[status] || { type: 'primary', key: status };
     return (
-      <span className='flex items-center gap-2'>
+      <span className='flex items-center gap-2 whitespace-nowrap'>
         <Badge dot type={config.type} />
         <span>{t(config.key)}</span>
       </span>
@@ -153,7 +153,14 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
   // 渲染支付方式
   const renderPaymentMethod = (pm) => {
     const displayName = PAYMENT_METHOD_MAP[pm];
-    return <Text>{displayName ? t(displayName) : pm || '-'}</Text>;
+    return (
+      <Text
+        ellipsis={{ showTooltip: true }}
+        style={{ display: 'inline-block', maxWidth: 104, whiteSpace: 'nowrap' }}
+      >
+        {displayName ? t(displayName) : pm || '-'}
+      </Text>
+    );
   };
 
   const formatMoney = (money) => {
@@ -277,6 +284,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
               title: t('用户ID'),
               dataIndex: 'user_id',
               key: 'user_id',
+              width: 84,
               render: (userId) => <Text>{userId ?? '-'}</Text>,
             },
           ]
@@ -285,18 +293,29 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         title: t('订单号'),
         dataIndex: 'trade_no',
         key: 'trade_no',
-        render: (text) => <Text copyable>{text}</Text>,
+        width: 360,
+        render: (text) => (
+          <Text
+            copyable
+            ellipsis={{ showTooltip: true }}
+            style={{ maxWidth: 330 }}
+          >
+            {text}
+          </Text>
+        ),
       },
       {
         title: t('支付方式'),
         dataIndex: 'payment_method',
         key: 'payment_method',
+        width: 112,
         render: renderPaymentMethod,
       },
       {
         title: t('充值额度'),
         dataIndex: 'amount',
         key: 'amount',
+        width: 120,
         render: (amount, record) => {
           if (isSubscriptionTopup(record)) {
             return (
@@ -311,7 +330,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
               ? record.amount_display
               : amount;
           return (
-            <span className='flex items-center gap-1'>
+            <span className='flex items-center gap-1 whitespace-nowrap'>
               <Coins size={16} />
               <Text>{displayAmount}</Text>
             </span>
@@ -322,12 +341,14 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         title: t('支付金额'),
         dataIndex: 'money',
         key: 'money',
+        width: 112,
         render: (money) => <Text type='danger'>{formatMoney(money)}</Text>,
       },
       {
         title: t('状态'),
         dataIndex: 'status',
         key: 'status',
+        width: 96,
         render: renderStatusBadge,
       },
     ];
@@ -336,12 +357,17 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
       title: t('创建时间'),
       dataIndex: 'create_time',
       key: 'create_time',
-      render: (time) => timestamp2string(time),
+      width: 168,
+      render: (time) => (
+        <Text className='whitespace-nowrap'>{timestamp2string(time)}</Text>
+      ),
     });
 
     baseColumns.push({
       title: t('操作'),
       key: 'action',
+      width: 220,
+      fixed: 'right',
       render: (_, record) => {
         const actions = [
           <Button
@@ -380,7 +406,11 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
             </Button>,
           );
         }
-        return <div className='flex items-center gap-2'>{actions}</div>;
+        return (
+          <div className='flex items-center gap-2 whitespace-nowrap'>
+            {actions}
+          </div>
+        );
       },
     });
 
@@ -478,6 +508,8 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         onCancel={onCancel}
         footer={null}
         size={isMobile ? 'full-width' : 'large'}
+        style={isMobile ? undefined : { width: 'min(92vw, 1280px)' }}
+        bodyStyle={isMobile ? undefined : { overflow: 'hidden' }}
       >
         <div className='mb-3'>
           <Input
@@ -493,6 +525,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
           dataSource={topups}
           loading={loading}
           rowKey='id'
+          scroll={{ x: userIsAdmin ? 1272 : 1188 }}
           pagination={{
             currentPage: page,
             pageSize: pageSize,
