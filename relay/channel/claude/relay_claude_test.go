@@ -380,3 +380,41 @@ func TestRequestOpenAI2ClaudeMessage_ConvertsTextFileContentToText(t *testing.T)
 	require.NotNil(t, content[0].Text)
 	require.Equal(t, "alpha\nbeta", *content[0].Text)
 }
+
+func TestRequestOpenAI2ClaudeMessage_PreservesReasoningContentWithToolCalls(t *testing.T) {
+	reasoning := "I need the file contents before answering."
+	assistant := dto.Message{
+		Role:             "assistant",
+		ReasoningContent: &reasoning,
+	}
+	assistant.SetToolCalls([]dto.ToolCallRequest{
+		{
+			ID:   "call_read",
+			Type: "function",
+			Function: dto.FunctionRequest{
+				Name:      "read_file",
+				Arguments: `{"path":"README.md"}`,
+			},
+		},
+	})
+	request := dto.GeneralOpenAIRequest{
+		Model:    "claude-3-5-sonnet",
+		Messages: []dto.Message{assistant},
+	}
+
+	claudeRequest, err := RequestOpenAI2ClaudeMessage(nil, request)
+	require.NoError(t, err)
+	require.Len(t, claudeRequest.Messages, 2)
+	require.Equal(t, "user", claudeRequest.Messages[0].Role)
+	require.Equal(t, "assistant", claudeRequest.Messages[1].Role)
+
+	content, ok := claudeRequest.Messages[1].Content.([]dto.ClaudeMediaMessage)
+	require.True(t, ok)
+	require.Len(t, content, 2)
+	require.Equal(t, "thinking", content[0].Type)
+	require.NotNil(t, content[0].Thinking)
+	require.Equal(t, reasoning, *content[0].Thinking)
+	require.Equal(t, "tool_use", content[1].Type)
+	require.Equal(t, "call_read", content[1].Id)
+	require.Equal(t, "read_file", content[1].Name)
+}
