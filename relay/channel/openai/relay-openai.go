@@ -204,6 +204,7 @@ func OaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 	imageReq, _ := info.Request.(*dto.ImageRequest)
 	usage := &dto.Usage{}
 	completedImageCount := 0
+	completedImageOutputTokens := 0
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		var event dto.ImageStreamEvent
 		if err := common.UnmarshalJsonStr(data, &event); err != nil {
@@ -218,9 +219,14 @@ func OaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 		if event.Type == "image_generation.completed" {
 			if strings.TrimSpace(event.B64Json) != "" {
 				completedImageCount++
+				if tokens, ok := service.GPTImage2OutputTokensForImageData(imageReq, dto.ImageData{B64Json: event.B64Json}, event.Quality); ok {
+					completedImageOutputTokens += tokens
+				}
 			}
 			outputFallback := 0
-			if completedImageCount > 0 {
+			if completedImageOutputTokens > 0 {
+				outputFallback = completedImageOutputTokens
+			} else if completedImageCount > 0 {
 				outputFallback, _ = service.GPTImage2OutputTokensForRequest(imageReq, completedImageCount)
 			}
 			usage = service.ImageUsageToUsageWithOutputFallback(event.Usage, info.GetEstimatePromptTokens(), outputFallback)
