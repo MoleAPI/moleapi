@@ -20,6 +20,11 @@ For commercial licensing, please contact support@quantumnous.com
 import React from 'react';
 import { Modal, Typography, Input, InputNumber } from '@douyinfe/semi-ui';
 import { CreditCard } from 'lucide-react';
+import { getCurrencyConfig } from '../../../helpers';
+import {
+  displayAmountToQuota,
+  quotaToDisplayAmount,
+} from '../../../helpers/quota';
 
 const TransferModal = ({
   t,
@@ -32,6 +37,14 @@ const TransferModal = ({
   transferAmount,
   setTransferAmount,
 }) => {
+  const minimumQuota = getQuotaPerUnit();
+  const availableQuota = userState?.user?.aff_quota || 0;
+  const { symbol, type } = getCurrencyConfig();
+  const minimumAmount = quotaToDisplayAmount(minimumQuota);
+  const availableAmount = quotaToDisplayAmount(availableQuota);
+  const displayTransferAmount = quotaToDisplayAmount(transferAmount);
+  const inputPrecision = type === 'TOKENS' ? 0 : 6;
+
   return (
     <Modal
       title={
@@ -59,13 +72,19 @@ const TransferModal = ({
         </div>
         <div>
           <Typography.Text strong className='block mb-2'>
-            {t('划转额度')} · {t('最低') + renderQuota(getQuotaPerUnit())}
+            {t('划转额度')} · {t('最低') + renderQuota(minimumQuota)}
           </Typography.Text>
           <InputNumber
-            min={getQuotaPerUnit()}
-            max={userState?.user?.aff_quota || 0}
-            value={transferAmount}
-            onChange={(value) => setTransferAmount(value)}
+            min={minimumAmount}
+            max={availableAmount}
+            value={Number(displayTransferAmount.toFixed(inputPrecision))}
+            onChange={(value) => {
+              const amount = value === '' || value == null ? 0 : value;
+              setTransferAmount(displayAmountToQuota(amount));
+            }}
+            prefix={type === 'TOKENS' ? undefined : symbol}
+            precision={inputPrecision}
+            step={type === 'TOKENS' ? 1 : 0.01}
             className='w-full !rounded-lg'
           />
         </div>

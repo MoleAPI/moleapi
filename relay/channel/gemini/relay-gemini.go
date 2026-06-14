@@ -1026,16 +1026,22 @@ func buildUsageFromGeminiMetadata(metadata dto.GeminiUsageMetadata, fallbackProm
 	usage.PromptTokensDetails.CachedTokens = metadata.CachedContentTokenCount
 
 	for _, detail := range metadata.PromptTokensDetails {
-		if detail.Modality == "AUDIO" {
+		switch detail.Modality {
+		case "AUDIO":
 			usage.PromptTokensDetails.AudioTokens += detail.TokenCount
-		} else if detail.Modality == "TEXT" {
+		case "IMAGE":
+			usage.PromptTokensDetails.ImageTokens += detail.TokenCount
+		case "TEXT":
 			usage.PromptTokensDetails.TextTokens += detail.TokenCount
 		}
 	}
 	for _, detail := range metadata.ToolUsePromptTokensDetails {
-		if detail.Modality == "AUDIO" {
+		switch detail.Modality {
+		case "AUDIO":
 			usage.PromptTokensDetails.AudioTokens += detail.TokenCount
-		} else if detail.Modality == "TEXT" {
+		case "IMAGE":
+			usage.PromptTokensDetails.ImageTokens += detail.TokenCount
+		case "TEXT":
 			usage.PromptTokensDetails.TextTokens += detail.TokenCount
 		}
 	}
@@ -1054,11 +1060,51 @@ func buildUsageFromGeminiMetadata(metadata dto.GeminiUsageMetadata, fallbackProm
 		usage.CompletionTokens = usage.TotalTokens - usage.PromptTokens
 	}
 
-	if usage.PromptTokens > 0 && usage.PromptTokensDetails.TextTokens == 0 && usage.PromptTokensDetails.AudioTokens == 0 {
+	if usage.PromptTokens > 0 && usage.PromptTokensDetails.TextTokens == 0 && usage.PromptTokensDetails.ImageTokens == 0 && usage.PromptTokensDetails.AudioTokens == 0 {
 		usage.PromptTokensDetails.TextTokens = usage.PromptTokens
 	}
 
 	return usage
+}
+
+func geminiResponseImageOutputCount(response *dto.GeminiChatResponse) int {
+	if response == nil {
+		return 0
+	}
+	imageCount := 0
+	for _, candidate := range response.Candidates {
+		for _, part := range candidate.Content.Parts {
+			if part.InlineData != nil && strings.HasPrefix(strings.ToLower(part.InlineData.MimeType), "image/") {
+				imageCount++
+			}
+		}
+	}
+	return imageCount
+}
+
+func applyGeminiImageOutputUsageFallback(usage *dto.Usage, imageCount int) {
+	if usage == nil || imageCount <= 0 || usage.CompletionTokenDetails.ImageTokens > 0 {
+		return
+	}
+
+	imageOutputTokens := usage.CompletionTokens - usage.CompletionTokenDetails.ReasoningTokens
+	if imageOutputTokens < 0 {
+		imageOutputTokens = 0
+	}
+	if imageOutputTokens == 0 {
+		imageOutputTokens = imageCount * 1400
+		usage.CompletionTokens += imageOutputTokens
+	} else if usage.CompletionTokenDetails.AudioTokens > 0 && imageOutputTokens > usage.CompletionTokenDetails.AudioTokens {
+		imageOutputTokens -= usage.CompletionTokenDetails.AudioTokens
+	}
+	if imageOutputTokens <= 0 {
+		return
+	}
+
+	usage.CompletionTokenDetails.ImageTokens = imageOutputTokens
+	if usage.TotalTokens == 0 || usage.TotalTokens < usage.PromptTokens+usage.CompletionTokens {
+		usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	}
 }
 
 func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse) *dto.OpenAITextResponse {
@@ -1287,11 +1333,9 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		}
 
 		// 统计图片数量
+		imageCount += geminiResponseImageOutputCount(&geminiResponse)
 		for _, candidate := range geminiResponse.Candidates {
 			for _, part := range candidate.Content.Parts {
-				if part.InlineData != nil && part.InlineData.MimeType != "" {
-					imageCount++
-				}
 				if part.Text != "" {
 					responseText.WriteString(part.Text)
 				}
@@ -1313,6 +1357,7 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		if usage.CompletionTokens == 0 {
 			usage.CompletionTokens = imageCount * 1400
 		}
+		applyGeminiImageOutputUsageFallback(usage, imageCount)
 	}
 
 	if usage.CompletionTokens <= 0 {
@@ -1468,6 +1513,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	fullTextResponse := responseGeminiChat2OpenAI(c, &geminiResponse)
 	fullTextResponse.Model = info.UpstreamModelName
 	usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
+	applyGeminiImageOutputUsageFallback(&usage, geminiResponseImageOutputCount(&geminiResponse))
 
 	fullTextResponse.Usage = usage
 
