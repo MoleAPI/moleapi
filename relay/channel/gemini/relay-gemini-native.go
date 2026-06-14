@@ -43,7 +43,11 @@ func GeminiTextGenerationHandler(c *gin.Context, info *relaycommon.RelayInfo, re
 
 	// 计算使用量（基于 UsageMetadata）
 	usage := buildUsageFromGeminiMetadata(geminiResponse.UsageMetadata, info.GetEstimatePromptTokens())
-	applyGeminiImageOutputUsageFallback(&usage, geminiResponseImageOutputCount(&geminiResponse))
+	imageOutputTokens, imageCount := geminiResponseImageOutputTokens(&geminiResponse, info.OriginModelName)
+	if imageOutputTokens == 0 && info.ChannelMeta != nil {
+		imageOutputTokens, imageCount = geminiResponseImageOutputTokens(&geminiResponse, info.ChannelMeta.UpstreamModelName)
+	}
+	applyGeminiImageOutputUsageFallback(&usage, imageOutputTokens, imageCount)
 
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 

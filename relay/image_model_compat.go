@@ -305,6 +305,7 @@ func imageStreamToChatCompletions(c *gin.Context, info *relaycommon.RelayInfo, r
 	sentStop := false
 	sentFinalImage := false
 	completedImageCount := 0
+	completedImageOutputTokens := 0
 
 	sendStart := func() bool {
 		if sentStart {
@@ -379,7 +380,14 @@ func imageStreamToChatCompletions(c *gin.Context, info *relaycommon.RelayInfo, r
 			return
 		}
 		completedImageCount++
-		usage = service.ImageUsageToUsageWithOutputFallback(event.Usage, info.GetEstimatePromptTokens(), imageOutputTokenFallback(imageReq, completedImageCount))
+		if tokens, ok := service.GPTImage2OutputTokensForImageData(imageReq, dto.ImageData{B64Json: event.B64Json}, event.Quality); ok {
+			completedImageOutputTokens += tokens
+		}
+		outputFallback := completedImageOutputTokens
+		if outputFallback == 0 {
+			outputFallback = imageOutputTokenFallback(imageReq, completedImageCount)
+		}
+		usage = service.ImageUsageToUsageWithOutputFallback(event.Usage, info.GetEstimatePromptTokens(), outputFallback)
 		content := service.ImageMarkdownContent(dto.ImageData{B64Json: event.B64Json}, event.OutputFormat)
 		if !sendContent(content) {
 			sr.Stop(streamErr)
@@ -425,6 +433,7 @@ func imageStreamToResponses(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 	sentStart := false
 	sentCompleted := false
 	completedImageCount := 0
+	completedImageOutputTokens := 0
 
 	sendEvent := func(eventType string, payload map[string]any) bool {
 		payload["type"] = eventType
@@ -514,7 +523,14 @@ func imageStreamToResponses(c *gin.Context, info *relaycommon.RelayInfo, resp *h
 				return
 			}
 			completedImageCount++
-			usage = service.ImageUsageToUsageWithOutputFallback(event.Usage, info.GetEstimatePromptTokens(), imageOutputTokenFallback(imageReq, completedImageCount))
+			if tokens, ok := service.GPTImage2OutputTokensForImageData(imageReq, dto.ImageData{B64Json: event.B64Json}, event.Quality); ok {
+				completedImageOutputTokens += tokens
+			}
+			outputFallback := completedImageOutputTokens
+			if outputFallback == 0 {
+				outputFallback = imageOutputTokenFallback(imageReq, completedImageCount)
+			}
+			usage = service.ImageUsageToUsageWithOutputFallback(event.Usage, info.GetEstimatePromptTokens(), outputFallback)
 			outputItem := service.ImageOutputItemFromStream(event, itemID, "completed")
 			if !sendEvent(dto.ResponsesOutputTypeItemDone, map[string]any{
 				"output_index": 0,

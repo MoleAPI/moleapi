@@ -2,6 +2,9 @@ package gemini
 
 import (
 	"bytes"
+	"encoding/base64"
+	"image"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +18,14 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func testGeminiPNGBase64(t *testing.T, width int, height int) string {
+	t.Helper()
+	img := image.NewGray(image.Rect(0, 0, width, height))
+	var buf bytes.Buffer
+	require.NoError(t, png.Encode(&buf, img))
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
 
 func TestGeminiChatHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.T) {
 	t.Parallel()
@@ -124,7 +135,7 @@ func TestGeminiStreamHandlerCompletionTokensExcludeToolUsePromptTokens(t *testin
 	require.Equal(t, 1120, usage.CompletionTokenDetails.ReasoningTokens)
 }
 
-func TestGeminiStreamHandlerMarksImageCandidateTokensAsImageOutput(t *testing.T) {
+func TestGeminiStreamHandlerMarksImagePixelsAsImageOutput(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	c, _ := gin.CreateTestContext(httptest.NewRecorder())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
@@ -148,16 +159,17 @@ func TestGeminiStreamHandlerMarksImageCandidateTokensAsImageOutput(t *testing.T)
 				Content: dto.GeminiChatContent{
 					Role: "model",
 					Parts: []dto.GeminiPart{
-						{InlineData: &dto.GeminiInlineData{MimeType: "image/png", Data: "abc"}},
+						{Text: "Here is the image."},
+						{InlineData: &dto.GeminiInlineData{MimeType: "image/png", Data: testGeminiPNGBase64(t, 1024, 1024)}},
 					},
 				},
 			},
 		},
 		UsageMetadata: dto.GeminiUsageMetadata{
 			PromptTokenCount:     315,
-			CandidatesTokenCount: 1120,
+			CandidatesTokenCount: 1220,
 			ThoughtsTokenCount:   280,
-			TotalTokenCount:      1715,
+			TotalTokenCount:      1815,
 		},
 	}
 
@@ -175,10 +187,10 @@ func TestGeminiStreamHandlerMarksImageCandidateTokensAsImageOutput(t *testing.T)
 	require.Nil(t, newAPIError)
 	require.NotNil(t, usage)
 	require.Equal(t, 315, usage.PromptTokens)
-	require.Equal(t, 1400, usage.CompletionTokens)
+	require.Equal(t, 1500, usage.CompletionTokens)
 	require.Equal(t, 280, usage.CompletionTokenDetails.ReasoningTokens)
 	require.Equal(t, 1120, usage.CompletionTokenDetails.ImageTokens)
-	require.Equal(t, 1715, usage.TotalTokens)
+	require.Equal(t, 1815, usage.TotalTokens)
 }
 
 func TestGeminiStreamHandlerKeepsThinkingTokensSeparateWhenImageOutputFallbackNeeded(t *testing.T) {
@@ -205,7 +217,7 @@ func TestGeminiStreamHandlerKeepsThinkingTokensSeparateWhenImageOutputFallbackNe
 				Content: dto.GeminiChatContent{
 					Role: "model",
 					Parts: []dto.GeminiPart{
-						{InlineData: &dto.GeminiInlineData{MimeType: "image/png", Data: "abc"}},
+						{InlineData: &dto.GeminiInlineData{MimeType: "image/png", Data: testGeminiPNGBase64(t, 1024, 1024)}},
 					},
 				},
 			},
@@ -231,10 +243,10 @@ func TestGeminiStreamHandlerKeepsThinkingTokensSeparateWhenImageOutputFallbackNe
 	require.Nil(t, newAPIError)
 	require.NotNil(t, usage)
 	require.Equal(t, 315, usage.PromptTokens)
-	require.Equal(t, 2520, usage.CompletionTokens)
+	require.Equal(t, 2240, usage.CompletionTokens)
 	require.Equal(t, 1120, usage.CompletionTokenDetails.ReasoningTokens)
-	require.Equal(t, 1400, usage.CompletionTokenDetails.ImageTokens)
-	require.Equal(t, 2835, usage.TotalTokens)
+	require.Equal(t, 1120, usage.CompletionTokenDetails.ImageTokens)
+	require.Equal(t, 2555, usage.TotalTokens)
 }
 
 func TestGeminiTextGenerationHandlerPromptTokensIncludeToolUsePromptTokens(t *testing.T) {
