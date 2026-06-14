@@ -251,11 +251,64 @@ func ApplyImageUsageOutputTokenFallback(resp *dto.ImageResponse, req *dto.ImageR
 	if resp == nil || req == nil {
 		return
 	}
-	outputTokens, ok := GPTImage2OutputTokensForRequest(req, ImageDataCount(resp))
+	outputTokens, ok := ImageResponseOutputTokensForRequest(resp, req)
 	if !ok {
 		return
 	}
 	resp.Usage = ImageUsageToUsageWithOutputFallback(resp.Usage, fallbackPromptTokens, outputTokens)
+}
+
+func ImageResponseOutputTokensForRequest(resp *dto.ImageResponse, req *dto.ImageRequest) (int, bool) {
+	if resp == nil || req == nil {
+		return 0, false
+	}
+	images := ImageDataItems(resp)
+	if len(images) == 0 {
+		return 0, false
+	}
+	if !IsGPTImage2Model(req.Model) {
+		return 0, false
+	}
+
+	quality := req.Quality
+	if strings.TrimSpace(resp.Quality) != "" {
+		quality = resp.Quality
+	}
+
+	total := 0
+	decodedCount := 0
+	for _, image := range images {
+		tokens, ok := GPTImage2OutputTokensForImageData(req, image, quality)
+		if !ok {
+			continue
+		}
+		total += tokens
+		decodedCount++
+	}
+
+	missingCount := len(images) - decodedCount
+	if missingCount > 0 {
+		fallbackTokens, ok := GPTImage2OutputTokensForRequest(req, missingCount)
+		if ok {
+			total += fallbackTokens
+		}
+	}
+
+	if total > 0 {
+		return total, true
+	}
+	return GPTImage2OutputTokensForRequest(req, len(images))
+}
+
+func GPTImage2OutputTokensForImageData(req *dto.ImageRequest, image dto.ImageData, quality string) (int, bool) {
+	if req == nil || !IsGPTImage2Model(req.Model) {
+		return 0, false
+	}
+	dimensions, ok := imageDataDimensions(image)
+	if !ok {
+		return 0, false
+	}
+	return gptImage2OutputTokens(dimensions.Width, dimensions.Height, normalizeGPTImage2Quality(quality))
 }
 
 func GPTImage2OutputTokensForRequest(req *dto.ImageRequest, imageCount int) (int, bool) {
@@ -273,6 +326,56 @@ func GPTImage2OutputTokensForRequest(req *dto.ImageRequest, imageCount int) (int
 	return tokens * imageCount, true
 }
 
+func GeminiImageOutputTokensForBase64(model string, base64Data string) (int, bool) {
+	config, _, _, err := DecodeBase64ImageData(base64Data)
+	if err != nil {
+		return 0, false
+	}
+	return GeminiImageOutputTokensForDimensions(model, config.Width, config.Height)
+}
+
+func GeminiImageOutputTokensForImageData(model string, image dto.ImageData) (int, bool) {
+	dimensions, ok := imageDataDimensions(image)
+	if !ok {
+		return 0, false
+	}
+	return GeminiImageOutputTokensForDimensions(model, dimensions.Width, dimensions.Height)
+}
+
+func GeminiDefaultImageOutputTokens(model string) (int, bool) {
+	if isGemini31FlashImageModel(model) || isGemini3ProImageModel(model) {
+		return 1120, true
+	}
+	return 0, false
+}
+
+func GeminiImageOutputTokensForDimensions(model string, width int, height int) (int, bool) {
+	if width <= 0 || height <= 0 {
+		return 0, false
+	}
+	pixels := width * height
+	switch {
+	case isGemini31FlashImageModel(model):
+		switch {
+		case pixels <= 512*512*2:
+			return 747, true
+		case pixels <= 1024*1024*2:
+			return 1120, true
+		case pixels <= 2048*2048:
+			return 1680, true
+		default:
+			return 2520, true
+		}
+	case isGemini3ProImageModel(model):
+		if pixels <= 2048*2048 {
+			return 1120, true
+		}
+		return 2000, true
+	default:
+		return 0, false
+	}
+}
+
 func shouldApplyImageOutputTokenFallback(usage *dto.Usage) bool {
 	if usage == nil {
 		return true
@@ -285,6 +388,31 @@ func shouldApplyImageOutputTokenFallback(usage *dto.Usage) bool {
 		maxTokens = usage.CompletionTokenDetails.ImageTokens
 	}
 	return maxTokens <= 1
+}
+
+func imageDataDimensions(image dto.ImageData) (gptImage2Dimensions, bool) {
+	data := strings.TrimSpace(image.B64Json)
+	if data == "" && strings.HasPrefix(strings.ToLower(strings.TrimSpace(image.Url)), "data:image/") {
+		data = image.Url
+	}
+	if data == "" {
+		return gptImage2Dimensions{}, false
+	}
+	config, _, _, err := DecodeBase64ImageData(data)
+	if err != nil {
+		return gptImage2Dimensions{}, false
+	}
+	return gptImage2Dimensions{Width: config.Width, Height: config.Height}, true
+}
+
+func isGemini31FlashImageModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(model, "gemini-3.1-flash-image") || strings.Contains(model, "nano-banana-2")
+}
+
+func isGemini3ProImageModel(model string) bool {
+	model = strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(model, "gemini-3-pro-image") || strings.Contains(model, "nano-banana-pro")
 }
 
 func resolveGPTImage2Dimensions(req *dto.ImageRequest) (gptImage2Dimensions, bool) {

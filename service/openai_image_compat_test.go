@@ -1,12 +1,26 @@
 package service
 
 import (
+	"bytes"
+	"encoding/base64"
+	"image"
+	"image/png"
 	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 )
+
+func testPNGBase64(t *testing.T, width int, height int) string {
+	t.Helper()
+	img := image.NewGray(image.Rect(0, 0, width, height))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("failed to encode test png: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(buf.Bytes())
+}
 
 func TestChatCompletionsRequestToImageRequest(t *testing.T) {
 	stream := true
@@ -264,6 +278,82 @@ func TestGPTImage2OutputTokensForRequestUsesOfficialCalculatorValues(t *testing.
 				t.Fatalf("expected %d/%v, got %d/%v", tt.want, tt.wantOK, got, ok)
 			}
 		})
+	}
+}
+
+func TestGeminiImageOutputTokensForDimensionsUsesResolutionTiers(t *testing.T) {
+	tests := []struct {
+		name   string
+		model  string
+		width  int
+		height int
+		want   int
+	}{
+		{
+			name:   "flash image 512",
+			model:  "gemini-3.1-flash-image-preview",
+			width:  512,
+			height: 512,
+			want:   747,
+		},
+		{
+			name:   "flash image 1k landscape",
+			model:  "gemini-3.1-flash-image-preview",
+			width:  1536,
+			height: 864,
+			want:   1120,
+		},
+		{
+			name:   "flash image 2k square",
+			model:  "gemini-3.1-flash-image-preview",
+			width:  2048,
+			height: 2048,
+			want:   1680,
+		},
+		{
+			name:   "flash image 4k landscape",
+			model:  "gemini-3.1-flash-image-preview",
+			width:  3840,
+			height: 2160,
+			want:   2520,
+		},
+		{
+			name:   "pro image 2k",
+			model:  "gemini-3-pro-image-preview",
+			width:  2048,
+			height: 2048,
+			want:   1120,
+		},
+		{
+			name:   "pro image 4k",
+			model:  "gemini-3-pro-image-preview",
+			width:  3840,
+			height: 2160,
+			want:   2000,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := GeminiImageOutputTokensForDimensions(tt.model, tt.width, tt.height)
+			if !ok || got != tt.want {
+				t.Fatalf("expected %d/true, got %d/%v", tt.want, got, ok)
+			}
+		})
+	}
+}
+
+func TestImageResponseOutputTokensForRequestPrefersActualImagePixels(t *testing.T) {
+	req := &dto.ImageRequest{Model: "gpt-image-2", Size: "1024x1024", Quality: "medium"}
+	resp := &dto.ImageResponse{
+		Data: []dto.ImageData{
+			{B64Json: testPNGBase64(t, 1024, 1536)},
+		},
+	}
+
+	got, ok := ImageResponseOutputTokensForRequest(resp, req)
+	if !ok || got != 1372 {
+		t.Fatalf("expected actual 1024x1536 medium output tokens 1372, got %d/%v", got, ok)
 	}
 }
 

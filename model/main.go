@@ -248,6 +248,9 @@ func InitLogDB() (err error) {
 }
 
 func migrateDB() error {
+	if err := ensureTopUpAuditColumns(); err != nil {
+		return err
+	}
 	// Migrate price_amount column from float/double to decimal for existing tables
 	migrateSubscriptionPlanPriceAmount()
 	// Migrate model_limits column from varchar to text for existing tables
@@ -376,6 +379,20 @@ func migrateLOGDB() error {
 type sqliteColumnDef struct {
 	Name string
 	DDL  string
+}
+
+func ensureTopUpAuditColumns() error {
+	if !DB.Migrator().HasTable("top_ups") {
+		return nil
+	}
+	if DB.Migrator().HasColumn(&TopUp{}, "gateway_trade_no") {
+		return nil
+	}
+	if err := DB.Migrator().AddColumn(&TopUp{}, "GatewayTradeNo"); err != nil {
+		return fmt.Errorf("failed to add top_ups.gateway_trade_no: %w", err)
+	}
+	common.SysLog("Successfully added top_ups.gateway_trade_no")
+	return nil
 }
 
 func ensureSubscriptionPlanTableSQLite() error {
