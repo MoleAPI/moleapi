@@ -57,6 +57,7 @@ import {
   IconEdit,
 } from '@douyinfe/semi-icons';
 import UserBindingManagementModal from './UserBindingManagementModal';
+import UserBillingRecordsCard from './UserBillingRecordsCard';
 
 const { Text, Title } = Typography;
 
@@ -144,6 +145,11 @@ const EditUserModal = (props) => {
     setBindingModalVisible(false);
   };
 
+  const refreshUserAfterBillingChange = async () => {
+    await loadUser();
+    props.refresh();
+  };
+
   /* ----------------------- submit ----------------------- */
   const submit = async (values) => {
     setLoading(true);
@@ -170,7 +176,11 @@ const EditUserModal = (props) => {
   const adjustQuota = async () => {
     const quotaVal = parseInt(adjustQuotaLocal) || 0;
     if (quotaVal <= 0 && adjustMode !== 'override') return;
-    if (adjustMode === 'override' && (adjustQuotaLocal === '' || adjustQuotaLocal == null)) return;
+    if (
+      adjustMode === 'override' &&
+      (adjustQuotaLocal === '' || adjustQuotaLocal == null)
+    )
+      return;
     setAdjustLoading(true);
     try {
       const res = await API.post('/api/user/manage', {
@@ -401,7 +411,10 @@ const EditUserModal = (props) => {
                             ? `▾ ${t('收起原生额度输入')}`
                             : `▸ ${t('使用原生额度输入')}`}
                         </div>
-                        <div style={{ display: showQuotaInput ? 'block' : 'none' }} className='mt-2'>
+                        <div
+                          style={{ display: showQuotaInput ? 'block' : 'none' }}
+                          className='mt-2'
+                        >
                           <Form.InputNumber
                             field='quota'
                             label={t('额度')}
@@ -412,6 +425,31 @@ const EditUserModal = (props) => {
                         </div>
                       </Col>
                     </Row>
+                  </Card>
+                )}
+
+                {/* 账务记录 */}
+                {userId && (
+                  <Card className='!rounded-2xl shadow-sm border-0'>
+                    <div className='flex items-center mb-2'>
+                      <Avatar
+                        size='small'
+                        color='orange'
+                        className='mr-2 shadow-md'
+                      >
+                        <IconEdit size={16} />
+                      </Avatar>
+                      <div>
+                        <Text className='text-lg font-medium'>
+                          {t('账务记录')}
+                        </Text>
+                      </div>
+                    </div>
+                    <UserBillingRecordsCard
+                      userId={userId}
+                      t={t}
+                      onTopupChanged={refreshUserAfterBillingChange}
+                    />
                   </Card>
                 )}
 
@@ -539,7 +577,10 @@ const EditUserModal = (props) => {
             ? `▾ ${t('收起原生额度输入')}`
             : `▸ ${t('使用原生额度输入')}`}
         </div>
-        <div style={{ display: showAdjustQuotaRaw ? 'block' : 'none' }} className='mt-2'>
+        <div
+          style={{ display: showAdjustQuotaRaw ? 'block' : 'none' }}
+          className='mt-2'
+        >
           <div className='mb-1'>
             <Text size='small'>{t('额度')}</Text>
           </div>

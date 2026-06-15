@@ -28,6 +28,7 @@ import {
   Input,
   Tag,
   Descriptions,
+  DatePicker,
 } from '@douyinfe/semi-ui';
 import {
   IllustrationNoResult,
@@ -39,6 +40,21 @@ import { API, timestamp2string } from '../../../helpers';
 import { isAdmin } from '../../../helpers/utils';
 import { useIsMobile } from '../../../hooks/common/useIsMobile';
 const { Text } = Typography;
+const THIRTY_DAYS_SECONDS = 30 * 24 * 60 * 60;
+
+const getDefaultUserDateRange = () => {
+  const now = Math.floor(Date.now() / 1000);
+  return [
+    timestamp2string(now - THIRTY_DAYS_SECONDS),
+    timestamp2string(now + 3600),
+  ];
+};
+
+const toTimestamp = (value) => {
+  if (!value) return 0;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? 0 : Math.floor(timestamp / 1000);
+};
 
 // 状态映射配置
 const STATUS_CONFIG = {
@@ -67,17 +83,39 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [keyword, setKeyword] = useState('');
+  const [userKeyword, setUserKeyword] = useState('');
+  const [dateRange, setDateRange] = useState(() =>
+    isAdmin() ? [] : getDefaultUserDateRange(),
+  );
   const [detailRecord, setDetailRecord] = useState(null);
   const isMobile = useIsMobile();
+  const userIsAdmin = useMemo(() => isAdmin(), []);
 
   const loadTopups = async (currentPage, currentPageSize) => {
     setLoading(true);
     try {
-      const base = isAdmin() ? '/api/user/topup' : '/api/user/topup/self';
-      const qs =
-        `p=${currentPage}&page_size=${currentPageSize}` +
-        (keyword ? `&keyword=${encodeURIComponent(keyword)}` : '');
-      const endpoint = `${base}?${qs}`;
+      const base = userIsAdmin ? '/api/user/topup' : '/api/user/topup/self';
+      const params = new URLSearchParams({
+        p: String(currentPage),
+        page_size: String(currentPageSize),
+      });
+      if (keyword) {
+        params.set('keyword', keyword);
+      }
+      if (userIsAdmin && userKeyword) {
+        params.set('user_keyword', userKeyword);
+      }
+      if (Array.isArray(dateRange) && dateRange.length === 2) {
+        const startTimestamp = toTimestamp(dateRange[0]);
+        const endTimestamp = toTimestamp(dateRange[1]);
+        if (startTimestamp > 0) {
+          params.set('start_timestamp', String(startTimestamp));
+        }
+        if (endTimestamp > 0) {
+          params.set('end_timestamp', String(endTimestamp));
+        }
+      }
+      const endpoint = `${base}?${params.toString()}`;
       const res = await API.get(endpoint);
       const { success, message, data } = res.data;
       if (success) {
@@ -97,7 +135,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     if (visible) {
       loadTopups(page, pageSize);
     }
-  }, [visible, page, pageSize, keyword]);
+  }, [visible, page, pageSize, keyword, userKeyword, dateRange]);
 
   const handlePageChange = (currentPage) => {
     setPage(currentPage);
@@ -110,6 +148,23 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
 
   const handleKeywordChange = (value) => {
     setKeyword(value);
+    setPage(1);
+  };
+
+  const handleUserKeywordChange = (value) => {
+    setUserKeyword(value);
+    setPage(1);
+  };
+
+  const handleDateRangeChange = (value) => {
+    setDateRange(value || (userIsAdmin ? [] : getDefaultUserDateRange()));
+    setPage(1);
+  };
+
+  const resetFilters = () => {
+    setKeyword('');
+    setUserKeyword('');
+    setDateRange(userIsAdmin ? [] : getDefaultUserDateRange());
     setPage(1);
   };
 
@@ -272,9 +327,6 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
     const tradeNo = (record?.trade_no || '').toLowerCase();
     return Number(record?.amount || 0) === 0 && tradeNo.startsWith('sub');
   };
-
-  // 检查是否为管理员
-  const userIsAdmin = useMemo(() => isAdmin(), []);
 
   const columns = useMemo(() => {
     const baseColumns = [
@@ -511,7 +563,7 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
         style={isMobile ? undefined : { width: 'min(92vw, 1280px)' }}
         bodyStyle={isMobile ? undefined : { overflow: 'hidden' }}
       >
-        <div className='mb-3'>
+        <div className='mb-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-2'>
           <Input
             prefix={<IconSearch />}
             placeholder={t('订单号')}
@@ -519,6 +571,32 @@ const TopupHistoryModal = ({ visible, onCancel, t }) => {
             onChange={handleKeywordChange}
             showClear
           />
+          {userIsAdmin && (
+            <Input
+              prefix={<IconSearch />}
+              placeholder={t('用户ID / 用户名 / 邮箱')}
+              value={userKeyword}
+              onChange={handleUserKeywordChange}
+              showClear
+            />
+          )}
+          <div
+            className={
+              userIsAdmin ? 'xl:col-span-2' : 'md:col-span-1 xl:col-span-2'
+            }
+          >
+            <DatePicker
+              className='w-full'
+              type='dateTimeRange'
+              value={dateRange}
+              placeholder={[t('开始时间'), t('结束时间')]}
+              onChange={handleDateRangeChange}
+              showClear
+            />
+          </div>
+          <Button theme='borderless' onClick={resetFilters}>
+            {t('重置')}
+          </Button>
         </div>
         <Table
           columns={columns}

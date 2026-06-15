@@ -452,21 +452,43 @@ func RequestAmount(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "success", "data": strconv.FormatFloat(payMoney, 'f', 2, 64)})
 }
 
+func getTopUpQueryParams(c *gin.Context, defaultStartTimestamp int64, includeUserKeyword bool) (model.TopUpQueryParams, error) {
+	startTimestamp, err := strconv.ParseInt(c.DefaultQuery("start_timestamp", "0"), 10, 64)
+	if err != nil || startTimestamp < 0 {
+		return model.TopUpQueryParams{}, fmt.Errorf("开始时间参数错误")
+	}
+	endTimestamp, err := strconv.ParseInt(c.DefaultQuery("end_timestamp", "0"), 10, 64)
+	if err != nil || endTimestamp < 0 {
+		return model.TopUpQueryParams{}, fmt.Errorf("结束时间参数错误")
+	}
+	if startTimestamp == 0 && endTimestamp == 0 && defaultStartTimestamp > 0 {
+		startTimestamp = defaultStartTimestamp
+	}
+	if startTimestamp > 0 && endTimestamp > 0 && startTimestamp > endTimestamp {
+		return model.TopUpQueryParams{}, fmt.Errorf("开始时间不能晚于结束时间")
+	}
+
+	params := model.TopUpQueryParams{
+		Keyword:        c.Query("keyword"),
+		StartTimestamp: startTimestamp,
+		EndTimestamp:   endTimestamp,
+	}
+	if includeUserKeyword {
+		params.UserKeyword = c.Query("user_keyword")
+	}
+	return params, nil
+}
+
 func GetUserTopUps(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
-	keyword := c.Query("keyword")
-
-	var (
-		topups []*model.TopUp
-		total  int64
-		err    error
-	)
-	if keyword != "" {
-		topups, total, err = model.SearchUserTopUps(userId, keyword, pageInfo)
-	} else {
-		topups, total, err = model.GetUserTopUps(userId, pageInfo)
+	params, err := getTopUpQueryParams(c, model.TopUpDefaultStartTimestamp(), false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
+
+	topups, total, err := model.GetUserTopUps(userId, pageInfo, params)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -480,18 +502,13 @@ func GetUserTopUps(c *gin.Context) {
 // GetAllTopUps 管理员获取全平台充值记录
 func GetAllTopUps(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	keyword := c.Query("keyword")
-
-	var (
-		topups []*model.TopUp
-		total  int64
-		err    error
-	)
-	if keyword != "" {
-		topups, total, err = model.SearchAllTopUps(keyword, pageInfo)
-	} else {
-		topups, total, err = model.GetAllTopUps(pageInfo)
+	params, err := getTopUpQueryParams(c, 0, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
 	}
+
+	topups, total, err := model.GetAllTopUps(pageInfo, params)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -499,6 +516,54 @@ func GetAllTopUps(c *gin.Context) {
 
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(topups)
+	common.ApiSuccess(c, pageInfo)
+}
+
+func GetUserTopUpsByAdmin(c *gin.Context) {
+	userId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || userId <= 0 {
+		common.ApiErrorMsg(c, "用户 ID 参数错误")
+		return
+	}
+	pageInfo := common.GetPageQuery(c)
+	params, err := getTopUpQueryParams(c, 0, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	topups, total, err := model.GetUserTopUps(userId, pageInfo, params)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(topups)
+	common.ApiSuccess(c, pageInfo)
+}
+
+func GetUserQuotaChangeLogsByAdmin(c *gin.Context) {
+	userId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || userId <= 0 {
+		common.ApiErrorMsg(c, "用户 ID 参数错误")
+		return
+	}
+	pageInfo := common.GetPageQuery(c)
+	params, err := getTopUpQueryParams(c, 0, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	logs, total, err := model.GetUserQuotaChangeLogs(userId, params.StartTimestamp, params.EndTimestamp, pageInfo)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(logs)
 	common.ApiSuccess(c, pageInfo)
 }
 

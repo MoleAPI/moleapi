@@ -3,6 +3,7 @@ package model
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
@@ -228,4 +229,87 @@ func TestRechargeAwardsInviterFirstTopupRewardOnlyOnce(t *testing.T) {
 	require.Equal(t, 2000, reloadedInviter.AffQuota)
 	require.Equal(t, 2000, reloadedInviter.AffHistoryQuota)
 	require.True(t, reloadedInvitee.InviterTopupRewarded)
+}
+
+func TestGetAllTopUpsFiltersByUserKeywordAndTime(t *testing.T) {
+	truncateTables(t)
+
+	now := time.Now().Unix()
+	target := insertTopUpTestUser(t, "target_"+strings.ReplaceAll(t.Name(), "/", "_"), 0, "target@example.com")
+	target.DisplayName = "Target Display"
+	require.NoError(t, DB.Save(target).Error)
+	other := insertTopUpTestUser(t, "other_"+strings.ReplaceAll(t.Name(), "/", "_"), 0, "other@example.com")
+
+	insertTopUpRecord(t, target.Id, "trade_target_old", "alipay")
+	require.NoError(t, DB.Model(&TopUp{}).Where("trade_no = ?", "trade_target_old").Update("create_time", now-40*24*60*60).Error)
+	insertTopUpRecord(t, target.Id, "trade_target_recent", "alipay")
+	require.NoError(t, DB.Model(&TopUp{}).Where("trade_no = ?", "trade_target_recent").Update("create_time", now-2*24*60*60).Error)
+	insertTopUpRecord(t, other.Id, "trade_other_recent", "alipay")
+	require.NoError(t, DB.Model(&TopUp{}).Where("trade_no = ?", "trade_other_recent").Update("create_time", now-2*24*60*60).Error)
+
+	pageInfo := &common.PageInfo{Page: 1, PageSize: 10}
+	topups, total, err := GetAllTopUps(pageInfo, TopUpQueryParams{
+		UserKeyword:    "target@example.com",
+		StartTimestamp: now - 30*24*60*60,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, total)
+	require.Len(t, topups, 1)
+	require.Equal(t, "trade_target_recent", topups[0].TradeNo)
+
+	topups, total, err = GetAllTopUps(pageInfo, TopUpQueryParams{
+		UserKeyword: "999999999999999999999999999999999999",
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 0, total)
+	require.Empty(t, topups)
+}
+
+func TestGetUserTopUpsAppliesDateAndOrderFiltersOnlyForUser(t *testing.T) {
+	truncateTables(t)
+
+	now := time.Now().Unix()
+	target := insertTopUpTestUser(t, "self_"+strings.ReplaceAll(t.Name(), "/", "_"), 0, "self@example.com")
+	other := insertTopUpTestUser(t, "self_other_"+strings.ReplaceAll(t.Name(), "/", "_"), 0, "self_other@example.com")
+
+	insertTopUpRecord(t, target.Id, "self_recent_match", "alipay")
+	require.NoError(t, DB.Model(&TopUp{}).Where("trade_no = ?", "self_recent_match").Update("create_time", now-2*24*60*60).Error)
+	insertTopUpRecord(t, target.Id, "self_old_match", "alipay")
+	require.NoError(t, DB.Model(&TopUp{}).Where("trade_no = ?", "self_old_match").Update("create_time", now-40*24*60*60).Error)
+	insertTopUpRecord(t, other.Id, "self_recent_match_other", "alipay")
+	require.NoError(t, DB.Model(&TopUp{}).Where("trade_no = ?", "self_recent_match_other").Update("create_time", now-2*24*60*60).Error)
+
+	pageInfo := &common.PageInfo{Page: 1, PageSize: 10}
+	topups, total, err := GetUserTopUps(target.Id, pageInfo, TopUpQueryParams{
+		Keyword:        "self_recent_match",
+		StartTimestamp: now - 30*24*60*60,
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, total)
+	require.Len(t, topups, 1)
+	require.Equal(t, "self_recent_match", topups[0].TradeNo)
+}
+
+func TestGetUserQuotaChangeLogsExcludesConsumeAndNonQuotaSystem(t *testing.T) {
+	truncateTables(t)
+
+	user := insertTopUpTestUser(t, "quota_logs_"+strings.ReplaceAll(t.Name(), "/", "_"), 0, "quota_logs@example.com")
+	now := time.Now().Unix()
+	records := []*Log{
+		{UserId: user.Id, Username: user.Username, CreatedAt: now - 4, Type: LogTypeManage, Content: "管理员增加用户额度 10"},
+		{UserId: user.Id, Username: user.Username, CreatedAt: now - 3, Type: LogTypeSystem, Content: "成功启用两步验证"},
+		{UserId: user.Id, Username: user.Username, CreatedAt: now - 2, Type: LogTypeConsume, Content: "消费额度", Quota: 10},
+		{UserId: user.Id, Username: user.Username, CreatedAt: now - 1, Type: LogTypeSystem, Content: "用户签到，获得额度 10"},
+	}
+	for _, record := range records {
+		require.NoError(t, LOG_DB.Create(record).Error)
+	}
+
+	pageInfo := &common.PageInfo{Page: 1, PageSize: 10}
+	logs, total, err := GetUserQuotaChangeLogs(user.Id, 0, 0, pageInfo)
+	require.NoError(t, err)
+	require.EqualValues(t, 2, total)
+	require.Len(t, logs, 2)
+	require.Equal(t, "用户签到，获得额度 10", logs[0].Content)
+	require.Equal(t, "管理员增加用户额度 10", logs[1].Content)
 }

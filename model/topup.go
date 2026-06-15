@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -281,164 +282,119 @@ func topUpQueryCutoff() int64 {
 	return common.GetTimestamp() - topUpQueryWindowSeconds
 }
 
-func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
-	// Start transaction
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
+func TopUpDefaultStartTimestamp() int64 {
+	return topUpQueryCutoff()
+}
+
+type TopUpQueryParams struct {
+	Keyword        string
+	UserKeyword    string
+	StartTimestamp int64
+	EndTimestamp   int64
+}
+
+// searchTopUpUserHardLimit caps the user id set used by admin top-up searches.
+const searchTopUpUserHardLimit = 1000
+
+func parseTopUpUserIdKeyword(keyword string) (int, bool) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return 0, false
 	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
+	id64, err := strconv.ParseInt(keyword, 10, 32)
+	if err != nil || id64 <= 0 {
+		return 0, false
+	}
+	return int(id64), true
+}
+
+func findTopUpUserIds(keyword string) ([]int, error) {
+	keyword = strings.TrimSpace(keyword)
+	if keyword == "" {
+		return nil, nil
+	}
+	pattern, err := sanitizeLikePattern(keyword)
+	if err != nil {
+		return nil, err
+	}
+
+	if userId, ok := parseTopUpUserIdKeyword(keyword); ok {
+		return []int{userId}, nil
+	}
+	if !strings.Contains(pattern, "%") {
+		pattern = "%" + pattern + "%"
+	}
+
+	var userIds []int
+	query := DB.Unscoped().Model(&User{}).Select("id").Where(
+		"username LIKE ? ESCAPE '!' OR email LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!'",
+		pattern, pattern, pattern,
+	)
+	err = query.Order("id desc").Limit(searchTopUpUserHardLimit).Pluck("id", &userIds).Error
+	return userIds, err
+}
+
+func applyTopUpQueryFilters(query *gorm.DB, params TopUpQueryParams, allowUserSearch bool) (*gorm.DB, error) {
+	if params.Keyword != "" {
+		pattern, err := sanitizeLikePattern(params.Keyword)
+		if err != nil {
+			return nil, err
 		}
-	}()
-
-	cutoff := topUpQueryCutoff()
-
-	// Get total count within transaction
-	err = tx.Model(&TopUp{}).Where("user_id = ? AND create_time >= ?", userId, cutoff).Count(&total).Error
-	if err != nil {
-		tx.Rollback()
-		return nil, 0, err
+		query = query.Where("(trade_no LIKE ? ESCAPE '!' OR gateway_trade_no LIKE ? ESCAPE '!')", pattern, pattern)
 	}
-
-	// Get paginated topups within same transaction
-	err = tx.Where("user_id = ? AND create_time >= ?", userId, cutoff).Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error
-	if err != nil {
-		tx.Rollback()
-		return nil, 0, err
+	if allowUserSearch && params.UserKeyword != "" {
+		userIds, err := findTopUpUserIds(params.UserKeyword)
+		if err != nil {
+			return nil, err
+		}
+		if len(userIds) == 0 {
+			query = query.Where("1 = 0")
+		} else {
+			query = query.Where("user_id IN ?", userIds)
+		}
 	}
+	if params.StartTimestamp > 0 {
+		query = query.Where("create_time >= ?", params.StartTimestamp)
+	}
+	if params.EndTimestamp > 0 {
+		query = query.Where("create_time <= ?", params.EndTimestamp)
+	}
+	return query, nil
+}
 
-	// Commit transaction
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
+func queryTopUps(query *gorm.DB, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	if err = query.Model(&TopUp{}).Count(&total).Error; err != nil {
+		common.SysError("failed to count topups: " + err.Error())
+		return nil, 0, errors.New("查询充值记录失败")
+	}
+	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
+		common.SysError("failed to query topups: " + err.Error())
+		return nil, 0, errors.New("查询充值记录失败")
 	}
 
 	for _, t := range topups {
 		t.FillAmountDisplay()
 	}
 	return topups, total, nil
+}
+
+func GetUserTopUps(userId int, pageInfo *common.PageInfo, params TopUpQueryParams) (topups []*TopUp, total int64, err error) {
+	query := DB.Where("user_id = ?", userId)
+	query, err = applyTopUpQueryFilters(query, params, false)
+	if err != nil {
+		return nil, 0, err
+	}
+	return queryTopUps(query, pageInfo)
 }
 
 // GetAllTopUps 获取全平台的充值记录（管理员使用）
-func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	if err = tx.Model(&TopUp{}).Count(&total).Error; err != nil {
-		tx.Rollback()
+func GetAllTopUps(pageInfo *common.PageInfo, params TopUpQueryParams) (topups []*TopUp, total int64, err error) {
+	query := DB
+	query, err = applyTopUpQueryFilters(query, params, true)
+	if err != nil {
 		return nil, 0, err
 	}
-
-	if err = tx.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
-		tx.Rollback()
-		return nil, 0, err
-	}
-
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
-	}
-
-	for _, t := range topups {
-		t.FillAmountDisplay()
-	}
-	return topups, total, nil
-}
-
-// searchTopUpCountHardLimit caps COUNT work for top-up searches.
-const searchTopUpCountHardLimit = 10000
-
-// SearchUserTopUps 按订单号搜索某用户的充值记录
-func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	query := tx.Model(&TopUp{}).Where("user_id = ? AND create_time >= ?", userId, topUpQueryCutoff())
-	if keyword != "" {
-		pattern, perr := sanitizeLikePattern(keyword)
-		if perr != nil {
-			tx.Rollback()
-			return nil, 0, perr
-		}
-		query = query.Where("(trade_no LIKE ? ESCAPE '!' OR gateway_trade_no LIKE ? ESCAPE '!')", pattern, pattern)
-	}
-
-	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {
-		tx.Rollback()
-		common.SysError("failed to count search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
-	}
-
-	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
-		tx.Rollback()
-		common.SysError("failed to search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
-	}
-
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
-	}
-	for _, t := range topups {
-		t.FillAmountDisplay()
-	}
-	return topups, total, nil
-}
-
-// SearchAllTopUps 按订单号搜索全平台充值记录（管理员使用）
-func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
-
-	query := tx.Model(&TopUp{})
-	if keyword != "" {
-		pattern, perr := sanitizeLikePattern(keyword)
-		if perr != nil {
-			tx.Rollback()
-			return nil, 0, perr
-		}
-		query = query.Where("(trade_no LIKE ? ESCAPE '!' OR gateway_trade_no LIKE ? ESCAPE '!')", pattern, pattern)
-	}
-
-	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {
-		tx.Rollback()
-		common.SysError("failed to count search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
-	}
-
-	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
-		tx.Rollback()
-		common.SysError("failed to search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
-	}
-
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
-	}
-	for _, t := range topups {
-		t.FillAmountDisplay()
-	}
-	return topups, total, nil
+	return queryTopUps(query, pageInfo)
 }
 
 // ManualCompleteTopUp 管理员手动完成订单并给用户充值
