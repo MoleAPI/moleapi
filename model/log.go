@@ -381,6 +381,42 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 
 const logSearchCountLimit = 10000
 
+func GetUserQuotaChangeLogs(userId int, startTimestamp int64, endTimestamp int64, pageInfo *common.PageInfo) (logs []*Log, total int64, err error) {
+	quotaLogTypes := []int{LogTypeTopup, LogTypeManage, LogTypeSystem, LogTypeRefund}
+	quotaKeywords := []string{"%额度%", "%充值%", "%赠送%", "%划转%", "%退款%", "%签到%"}
+
+	tx := LOG_DB.Model(&Log{}).
+		Where("logs.user_id = ?", userId).
+		Where("logs.type IN ?", quotaLogTypes).
+		Where(
+			"(logs.content LIKE ? OR logs.content LIKE ? OR logs.content LIKE ? OR logs.content LIKE ? OR logs.content LIKE ? OR logs.content LIKE ?)",
+			quotaKeywords[0],
+			quotaKeywords[1],
+			quotaKeywords[2],
+			quotaKeywords[3],
+			quotaKeywords[4],
+			quotaKeywords[5],
+		)
+
+	if startTimestamp != 0 {
+		tx = tx.Where("logs.created_at >= ?", startTimestamp)
+	}
+	if endTimestamp != 0 {
+		tx = tx.Where("logs.created_at <= ?", endTimestamp)
+	}
+
+	if err = tx.Count(&total).Error; err != nil {
+		common.SysError("failed to count user quota change logs: " + err.Error())
+		return nil, 0, errors.New("查询额度变动记录失败")
+	}
+	if err = tx.Order("logs.id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&logs).Error; err != nil {
+		common.SysError("failed to query user quota change logs: " + err.Error())
+		return nil, 0, errors.New("查询额度变动记录失败")
+	}
+
+	return logs, total, nil
+}
+
 func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string) (logs []*Log, total int64, err error) {
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
