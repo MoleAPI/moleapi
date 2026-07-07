@@ -23,16 +23,27 @@ func TestLockForUpdateEmitsRowLock(t *testing.T) {
 		return lockForUpdate(dummyDB).Where("id = ?", 1).Find(&rows).Statement.SQL.String()
 	}
 
+	originalSQLite := common.UsingSQLite
+	originalMySQL := common.UsingMySQL
+	originalPostgreSQL := common.UsingPostgreSQL
 	t.Cleanup(func() {
-		common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+		common.UsingSQLite = originalSQLite
+		common.UsingMySQL = originalMySQL
+		common.UsingPostgreSQL = originalPostgreSQL
 	})
 
-	common.SetDatabaseTypes(common.DatabaseTypeMySQL, common.DatabaseTypeSQLite)
+	common.UsingSQLite = false
+	common.UsingMySQL = true
+	common.UsingPostgreSQL = false
 	assert.Contains(t, buildSQL(), "FOR UPDATE")
 
-	common.SetDatabaseTypes(common.DatabaseTypePostgreSQL, common.DatabaseTypeSQLite)
+	common.UsingSQLite = false
+	common.UsingMySQL = false
+	common.UsingPostgreSQL = true
 	assert.Contains(t, buildSQL(), "FOR UPDATE")
 
-	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	common.UsingSQLite = true
+	common.UsingMySQL = false
+	common.UsingPostgreSQL = false
 	assert.NotContains(t, buildSQL(), "FOR UPDATE")
 }

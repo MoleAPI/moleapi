@@ -18,7 +18,7 @@ import (
 // is skipped there; SQLite's single-writer model makes one of two conflicting
 // transactions fail instead of both committing.
 func lockForUpdate(tx *gorm.DB) *gorm.DB {
-	if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+	if common.UsingSQLite {
 		return tx
 	}
 	return tx.Clauses(clause.Locking{Strength: "UPDATE"})
