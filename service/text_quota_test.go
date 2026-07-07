@@ -29,6 +29,12 @@ func TestDecimalToQuotaSaturation(t *testing.T) {
 	require.Equal(t, 42, decimalToQuota(decimal.NewFromFloat(41.7)))
 }
 
+func TestComposeTieredTextQuotaSaturatesFinalSum(t *testing.T) {
+	summary := textQuotaSummary{ToolCallSurchargeQuota: decimal.NewFromInt(10)}
+
+	require.Equal(t, math.MaxInt32, composeTieredTextQuota(&relaycommon.RelayInfo{}, summary, math.MaxInt32-5, nil))
+}
+
 func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
