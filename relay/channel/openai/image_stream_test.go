@@ -10,11 +10,54 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
+
+func TestNormalizeOpenAIUsageImageOutputDetails(t *testing.T) {
+	tests := []struct {
+		name       string
+		details    dto.OutputTokenDetails
+		wantImage  int
+		wantText   int
+		wantReason int
+	}{
+		{
+			name:      "infers image tokens without a breakdown",
+			wantImage: 8,
+		},
+		{
+			name:      "keeps an explicit image breakdown",
+			details:   dto.OutputTokenDetails{ImageTokens: 6},
+			wantImage: 6,
+		},
+		{
+			name:       "does not replace a more specific text and reasoning breakdown",
+			details:    dto.OutputTokenDetails{TextTokens: 5, ReasoningTokens: 3},
+			wantText:   5,
+			wantReason: 3,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			usage := dto.Usage{
+				OutputTokens:           8,
+				CompletionTokenDetails: tt.details,
+			}
+
+			normalizeOpenAIUsage(&usage)
+
+			require.Equal(t, 8, usage.CompletionTokens)
+			require.Equal(t, tt.wantImage, usage.CompletionTokenDetails.ImageTokens)
+			require.Equal(t, tt.wantText, usage.CompletionTokenDetails.TextTokens)
+			require.Equal(t, tt.wantReason, usage.CompletionTokenDetails.ReasoningTokens)
+		})
+	}
+}
 
 func newImageTestContext(t *testing.T, body, contentType string, isStream bool) (*gin.Context, *httptest.ResponseRecorder, *http.Response, *relaycommon.RelayInfo) {
 	t.Helper()

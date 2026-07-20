@@ -70,6 +70,53 @@ func TestCalculateTextQuotaSummaryUnifiedForClaudeSemantic(t *testing.T) {
 	require.Equal(t, 1488, chatSummary.Quota)
 }
 
+func TestPostTextConsumeQuotaLogsExplicitImageTokenDirections(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	const userID = 9001
+	const channelID = 9001
+	seedUser(t, userID, 1000)
+	seedChannel(t, channelID)
+
+	now := time.Now()
+	relayInfo := &relaycommon.RelayInfo{
+		UserId:            userID,
+		OriginModelName:   "gpt-image-1",
+		StartTime:         now,
+		FirstResponseTime: now,
+		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: channelID},
+		PriceData: types.PriceData{
+			CompletionRatio: 1,
+			ImageRatio:      2,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+	}
+	usage := &dto.Usage{
+		PromptTokens:     3,
+		CompletionTokens: 4,
+		TotalTokens:      7,
+		PromptTokensDetails: dto.InputTokenDetails{
+			ImageTokens: 2,
+		},
+		CompletionTokenDetails: dto.OutputTokenDetails{
+			ImageTokens: 4,
+		},
+	}
+
+	PostTextConsumeQuota(ctx, relayInfo, usage, nil)
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	var other map[string]interface{}
+	require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
+	require.Equal(t, float64(2), other["image_input_tokens"])
+	require.Equal(t, float64(4), other["image_output_tokens"])
+	require.Equal(t, float64(2), other["image_output"], "legacy readers still receive the historical input-token alias")
+	require.Equal(t, true, other["image"])
+}
+
 func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
