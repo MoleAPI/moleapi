@@ -77,6 +77,100 @@ func TestManualCompleteTopUpSettlesStripeOnce(t *testing.T) {
 	getTopUpLogForSettlementTest(t, 501)
 }
 
+func TestRechargeStripeSettlesPaymentDetailsAndCustomerOnce(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+
+	insertUserForPaymentGuardTest(t, 521, 10)
+	insertTopUpForSettlementTest(t, "stripe-payment-details", 521, 9, 1.25, PaymentProviderStripe)
+
+	require.NoError(t, RechargeStripeWithPaymentDetails("stripe-payment-details", "cus_123", "cs_123", "USD", "203.0.113.60"))
+	require.NoError(t, RechargeStripeWithPaymentDetails("stripe-payment-details", "cus_other", "cs_other", "EUR", "203.0.113.61"))
+
+	topUp := GetTopUpByTradeNo("stripe-payment-details")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	assert.Equal(t, 125, topUp.CreditedQuota)
+	assert.Equal(t, "cs_123", topUp.GatewayTradeNo)
+	assert.Equal(t, "USD", topUp.PaymentCurrency)
+	assert.Positive(t, topUp.CompleteTime)
+
+	var user User
+	require.NoError(t, DB.Select("quota", "stripe_customer").Where("id = ?", 521).First(&user).Error)
+	assert.Equal(t, 135, user.Quota)
+	assert.Equal(t, "cus_123", user.StripeCustomer)
+
+	log := getTopUpLogForSettlementTest(t, 521)
+	assertTopUpAuditForSettlementTest(t, log, "203.0.113.60", PaymentMethodStripe, PaymentProviderStripe)
+}
+
+func TestRechargeStripePreservesCustomerWhenCallbackOmitsIt(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+
+	insertUserForPaymentGuardTest(t, 524, 10)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 524).Update("stripe_customer", "cus_existing").Error)
+	insertTopUpForSettlementTest(t, "stripe-empty-customer", 524, 1, 1, PaymentProviderStripe)
+
+	require.NoError(t, RechargeStripeWithPaymentDetails("stripe-empty-customer", "", "cs_124", "USD", "203.0.113.65"))
+
+	var user User
+	require.NoError(t, DB.Select("quota", "stripe_customer").Where("id = ?", 524).First(&user).Error)
+	assert.Equal(t, 110, user.Quota)
+	assert.Equal(t, "cus_existing", user.StripeCustomer)
+}
+
+func TestRechargeStripeRollsBackCustomerOnQuotaOverflow(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+
+	insertUserForPaymentGuardTest(t, 522, common.MaxQuota-50)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 522).Update("stripe_customer", "cus_existing").Error)
+	insertTopUpForSettlementTest(t, "stripe-overflow", 522, 1, 1, PaymentProviderStripe)
+
+	err := RechargeStripeWithPaymentDetails("stripe-overflow", "cus_new", "cs_overflow", "USD", "203.0.113.62")
+	require.EqualError(t, err, "充值失败，请稍后重试")
+
+	topUp := GetTopUpByTradeNo("stripe-overflow")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusPending, topUp.Status)
+	assert.Zero(t, topUp.CreditedQuota)
+	assert.Empty(t, topUp.GatewayTradeNo)
+	assert.Empty(t, topUp.PaymentCurrency)
+	assert.Zero(t, topUp.CompleteTime)
+
+	var user User
+	require.NoError(t, DB.Select("quota", "stripe_customer").Where("id = ?", 522).First(&user).Error)
+	assert.Equal(t, common.MaxQuota-50, user.Quota)
+	assert.Equal(t, "cus_existing", user.StripeCustomer)
+}
+
+func TestRechargeCreemSettlesPaymentDetailsAndEmailOnce(t *testing.T) {
+	truncateTables(t)
+
+	insertUserForPaymentGuardTest(t, 523, 10)
+	insertTopUpForSettlementTest(t, "creem-payment-details", 523, 120, 9.99, PaymentProviderCreem)
+
+	require.NoError(t, RechargeCreemWithPaymentDetails("creem-payment-details", "buyer@example.com", "Buyer", "ord_123", "USD", "203.0.113.63"))
+	require.NoError(t, RechargeCreemWithPaymentDetails("creem-payment-details", "other@example.com", "Other", "ord_other", "EUR", "203.0.113.64"))
+
+	topUp := GetTopUpByTradeNo("creem-payment-details")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	assert.Equal(t, 120, topUp.CreditedQuota)
+	assert.Equal(t, "ord_123", topUp.GatewayTradeNo)
+	assert.Equal(t, "USD", topUp.PaymentCurrency)
+	assert.Positive(t, topUp.CompleteTime)
+
+	var user User
+	require.NoError(t, DB.Select("quota", "email").Where("id = ?", 523).First(&user).Error)
+	assert.Equal(t, 130, user.Quota)
+	assert.Equal(t, "buyer@example.com", user.Email)
+
+	log := getTopUpLogForSettlementTest(t, 523)
+	assertTopUpAuditForSettlementTest(t, log, "203.0.113.63", PaymentMethodCreem, PaymentProviderCreem)
+}
+
 func TestWaffoSettlementsPersistQuotaAndAuditOnce(t *testing.T) {
 	useQuotaPerUnitForTopUpTest(t, 100)
 

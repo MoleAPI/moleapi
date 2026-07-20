@@ -676,9 +676,12 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 	return tx.Save(&topup).Error
 }
 
-func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) error {
+func UpdatePendingSubscriptionOrderStatus(tradeNo string, expectedPaymentProvider string, targetStatus string) error {
 	if tradeNo == "" {
 		return errors.New("tradeNo is empty")
+	}
+	if targetStatus != common.TopUpStatusFailed && targetStatus != common.TopUpStatusExpired {
+		return errors.New("invalid subscription order target status")
 	}
 	refCol := "`trade_no`"
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
@@ -695,10 +698,14 @@ func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) err
 		if order.Status != common.TopUpStatusPending {
 			return nil
 		}
-		order.Status = common.TopUpStatusExpired
+		order.Status = targetStatus
 		order.CompleteTime = common.GetTimestamp()
 		return tx.Save(&order).Error
 	})
+}
+
+func ExpireSubscriptionOrder(tradeNo string, expectedPaymentProvider string) error {
+	return UpdatePendingSubscriptionOrderStatus(tradeNo, expectedPaymentProvider, common.TopUpStatusExpired)
 }
 
 // Admin bind (no payment). Creates a UserSubscription from a plan.
