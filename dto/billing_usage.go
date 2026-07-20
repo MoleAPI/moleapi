@@ -111,15 +111,32 @@ func NewEstimatedGeminiChatBillingUsage(usage *Usage) *BillingUsage {
 	if usage == nil {
 		return nil
 	}
+	reasoningTokens := usage.CompletionTokenDetails.ReasoningTokens
+	candidateTokens := usage.CompletionTokens - reasoningTokens
+	if candidateTokens < 0 {
+		reasoningTokens = 0
+		candidateTokens = usage.CompletionTokens
+	}
 	totalTokens := usage.TotalTokens
 	if totalTokens == 0 {
 		totalTokens = usage.PromptTokens + usage.CompletionTokens
 	}
-	return newGeminiChatBillingUsage(&GeminiUsageMetadata{
+	metadata := &GeminiUsageMetadata{
 		PromptTokenCount:     usage.PromptTokens,
-		CandidatesTokenCount: usage.CompletionTokens,
+		CandidatesTokenCount: candidateTokens,
+		ThoughtsTokenCount:   reasoningTokens,
 		TotalTokenCount:      totalTokens,
-	}, true)
+	}
+	if usage.CompletionTokenDetails.TextTokens != 0 {
+		metadata.CandidatesTokensDetails = append(metadata.CandidatesTokensDetails, GeminiPromptTokensDetails{Modality: "TEXT", TokenCount: usage.CompletionTokenDetails.TextTokens})
+	}
+	if usage.CompletionTokenDetails.ImageTokens != 0 {
+		metadata.CandidatesTokensDetails = append(metadata.CandidatesTokensDetails, GeminiPromptTokensDetails{Modality: "IMAGE", TokenCount: usage.CompletionTokenDetails.ImageTokens})
+	}
+	if usage.CompletionTokenDetails.AudioTokens != 0 {
+		metadata.CandidatesTokensDetails = append(metadata.CandidatesTokensDetails, GeminiPromptTokensDetails{Modality: "AUDIO", TokenCount: usage.CompletionTokenDetails.AudioTokens})
+	}
+	return newGeminiChatBillingUsage(metadata, true)
 }
 
 func newGeminiChatBillingUsage(metadata *GeminiUsageMetadata, estimated bool) *BillingUsage {

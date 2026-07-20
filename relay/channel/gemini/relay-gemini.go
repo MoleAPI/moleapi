@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -37,38 +38,181 @@ func attachEstimatedGeminiBillingUsage(usage *dto.Usage) *dto.Usage {
 	return usage
 }
 
-// patchGeminiZeroCompletionUsage estimates completion tokens locally when upstream
-// usageMetadata was billable but reported zero completion tokens even though output
-// content was actually received. Typical case: the client aborts a stream before the
-// final chunk that carries candidatesTokenCount, leaving prompt-only metadata; without
-// this patch the output side would settle at zero quota.
-func patchGeminiZeroCompletionUsage(c *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage, responseText string, imageCount int) {
-	if usage == nil || usage.CompletionTokens > 0 {
+// patchGeminiMissingCandidateUsage estimates returned text when the last observed
+// usageMetadata has no candidate tokens. Gemini can still report thinking tokens
+// in that partial metadata, so total completion tokens alone are not sufficient.
+// Image output is handled separately from the returned pixels so it can use the
+// correct resolution tier.
+func patchGeminiMissingCandidateUsage(c *gin.Context, info *relaycommon.RelayInfo, usage *dto.Usage, responseText string) {
+	if usage == nil {
 		return
 	}
-	if responseText == "" && imageCount == 0 {
+	reasoningTokens := usage.CompletionTokenDetails.ReasoningTokens
+	if reasoningTokens < 0 {
+		reasoningTokens = 0
+	}
+	if usage.CompletionTokens > reasoningTokens {
+		return
+	}
+	if responseText == "" {
 		return
 	}
 	estimated := service.ResponseText2Usage(c, responseText, info.UpstreamModelName, usage.PromptTokens)
-	usage.CompletionTokens = estimated.CompletionTokens
-	if imageCount != 0 && usage.CompletionTokens == 0 {
-		usage.CompletionTokens = imageCount * 1400
-	}
-	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
+	usage.CompletionTokenDetails.TextTokens = estimated.CompletionTokens
+	usage.CompletionTokens = addGeminiTokenCount(reasoningTokens, usage.CompletionTokenDetails.AudioTokens)
+	usage.CompletionTokens = addGeminiTokenCount(usage.CompletionTokens, usage.CompletionTokenDetails.ImageTokens)
+	usage.CompletionTokens = addGeminiTokenCount(usage.CompletionTokens, estimated.CompletionTokens)
+	usage.TotalTokens = addGeminiTokenCount(usage.PromptTokens, usage.CompletionTokens)
 	// Overwrite the metadata-derived billing usage: effectiveBillingUsage prefers
 	// BillingUsage during settlement, so keeping the prompt-only metadata there
 	// would still bill zero completion tokens.
 	usage.BillingUsage = dto.NewEstimatedGeminiChatBillingUsage(usage)
 }
 
-func geminiResponseUsageText(response *dto.GeminiChatResponse) string {
+func addGeminiTokenCount(total int, tokens int) int {
+	if total < 0 {
+		total = 0
+	}
+	if tokens <= 0 {
+		return total
+	}
+	if total > math.MaxInt32-tokens {
+		common.SysError("Gemini image output token estimate exceeded int32 and was clamped")
+		return math.MaxInt32
+	}
+	return total + tokens
+}
+
+func normalizeGeminiImageSize(imageSize string) string {
+	size := strings.ToUpper(strings.TrimSpace(imageSize))
+	size = strings.TrimPrefix(size, "IMAGE_SIZE_")
+	switch size {
+	case "0_5K", "0.5K", "05K", "512", "512PX":
+		return "0.5K"
+	case "1K":
+		return "1K"
+	case "2K":
+		return "2K"
+	case "4K":
+		return "4K"
+	default:
+		return size
+	}
+}
+
+func geminiImageSizeFromDimensions(width int, height int) string {
+	if width <= 0 || height <= 0 {
+		return ""
+	}
+	w, h := int64(width), int64(height)
+	// Documented Gemini output dimensions leave wide pixel-count gaps between
+	// resolution tiers. Comparing against those gaps keeps extreme aspect ratios
+	// (for example 1:8) in the correct tier without multiplying untrusted dimensions.
+	switch {
+	case w <= 600_000/h:
+		return "0.5K"
+	case w <= 2_500_000/h:
+		return "1K"
+	case w <= 10_000_000/h:
+		return "2K"
+	default:
+		return "4K"
+	}
+}
+
+func geminiImageOutputTokensForSize(model string, imageSize string) (int, bool) {
+	model = strings.ToLower(strings.TrimSpace(model))
+	size := normalizeGeminiImageSize(imageSize)
+	if size == "" {
+		size = "1K"
+	}
+
+	switch {
+	case strings.Contains(model, "gemini-3.1-flash-lite-image"):
+		return 1120, true
+	case strings.Contains(model, "gemini-3.1-flash-image") || strings.Contains(model, "nano-banana-2"):
+		switch size {
+		case "0.5K":
+			return 747, true
+		case "1K":
+			return 1120, true
+		case "2K":
+			return 1680, true
+		case "4K":
+			return 2520, true
+		}
+	case strings.Contains(model, "gemini-3-pro-image") || strings.Contains(model, "nano-banana-pro"):
+		switch size {
+		case "1K", "2K":
+			return 1120, true
+		case "4K":
+			return 2000, true
+		}
+	case strings.Contains(model, "gemini-2.5-flash-image") || strings.Contains(model, "nano-banana"):
+		return 1290, true
+	}
+	return 0, false
+}
+
+func geminiImageOutputTokensForInfo(info *relaycommon.RelayInfo, imageSize string) (int, bool) {
+	if info == nil {
+		return 0, false
+	}
+	if tokens, ok := geminiImageOutputTokensForSize(info.OriginModelName, imageSize); ok {
+		return tokens, true
+	}
+	if info.ChannelMeta != nil {
+		return geminiImageOutputTokensForSize(info.ChannelMeta.UpstreamModelName, imageSize)
+	}
+	return 0, false
+}
+
+func geminiImageSizeFromConfig(config map[string]any) string {
+	if value, ok := config["imageSize"].(string); ok {
+		return normalizeGeminiImageSize(value)
+	}
+	if value, ok := config["image_size"].(string); ok {
+		return normalizeGeminiImageSize(value)
+	}
+	return ""
+}
+
+func geminiRequestedImageSize(info *relaycommon.RelayInfo) string {
+	if info == nil || info.Request == nil {
+		return ""
+	}
+
+	switch request := info.Request.(type) {
+	case *dto.GeminiChatRequest:
+		var config map[string]any
+		if len(request.GenerationConfig.ImageConfig) != 0 && common.Unmarshal(request.GenerationConfig.ImageConfig, &config) == nil {
+			return geminiImageSizeFromConfig(config)
+		}
+	case *dto.GeneralOpenAIRequest:
+		var extra map[string]any
+		if len(request.ExtraBody) == 0 || common.Unmarshal(request.ExtraBody, &extra) != nil {
+			return ""
+		}
+		google, ok := extra["google"].(map[string]any)
+		if !ok {
+			return ""
+		}
+		config, ok := google["image_config"].(map[string]any)
+		if ok {
+			return geminiImageSizeFromConfig(config)
+		}
+	}
+	return ""
+}
+
+func geminiResponseUsageText(response *dto.GeminiChatResponse, includeThoughts bool) string {
 	if response == nil {
 		return ""
 	}
 	var text strings.Builder
 	for _, candidate := range response.Candidates {
 		for _, part := range candidate.Content.Parts {
-			if part.Text != "" {
+			if part.Text != "" && (includeThoughts || !part.Thought) {
 				text.WriteString(part.Text)
 			}
 		}
@@ -77,30 +221,79 @@ func geminiResponseUsageText(response *dto.GeminiChatResponse) string {
 }
 
 func buildUsageFromGeminiResponse(c *gin.Context, info *relaycommon.RelayInfo, response *dto.GeminiChatResponse) dto.Usage {
+	imageOutputTokens, imageCount := geminiResponseImageOutputTokens(response, info)
 	metadata := response.GetUsageMetadata()
 	if dto.HasGeminiUsageMetadataTokens(metadata) {
 		usage := buildUsageFromGeminiMetadata(metadata, info.GetEstimatePromptTokens())
-		patchGeminiZeroCompletionUsage(c, info, &usage, geminiResponseUsageText(response), geminiResponseInlineImageCount(response))
+		patchGeminiMissingCandidateUsage(c, info, &usage, geminiResponseUsageText(response, false))
+		applyGeminiImageOutputUsageFallback(c, &usage, imageOutputTokens, imageCount)
 		return usage
 	}
-	usage := service.ResponseText2Usage(c, geminiResponseUsageText(response), info.UpstreamModelName, info.GetEstimatePromptTokens())
+	usage := service.ResponseText2Usage(c, geminiResponseUsageText(response, true), info.UpstreamModelName, info.GetEstimatePromptTokens())
+	usage.CompletionTokenDetails.TextTokens = usage.CompletionTokens
+	applyGeminiImageOutputUsageFallback(c, usage, imageOutputTokens, imageCount)
 	attachEstimatedGeminiBillingUsage(usage)
 	return *usage
 }
 
-func geminiResponseInlineImageCount(response *dto.GeminiChatResponse) int {
+func geminiResponseImageOutputTokens(response *dto.GeminiChatResponse, info *relaycommon.RelayInfo) (int, int) {
 	if response == nil {
-		return 0
+		return 0, 0
 	}
-	count := 0
+	imageOutputTokens := 0
+	imageCount := 0
+	fallbackSize := geminiRequestedImageSize(info)
 	for _, candidate := range response.Candidates {
 		for _, part := range candidate.Content.Parts {
-			if part.InlineData != nil && part.InlineData.MimeType != "" {
-				count++
+			if part.Thought || part.InlineData == nil || !strings.HasPrefix(strings.ToLower(part.InlineData.MimeType), "image/") {
+				continue
+			}
+			imageCount++
+			imageSize := fallbackSize
+			if config, _, _, err := service.DecodeBase64ImageData(part.InlineData.Data); err == nil {
+				imageSize = geminiImageSizeFromDimensions(config.Width, config.Height)
+			}
+			tokens, ok := geminiImageOutputTokensForInfo(info, imageSize)
+			if !ok && imageSize != fallbackSize {
+				tokens, ok = geminiImageOutputTokensForInfo(info, fallbackSize)
+			}
+			if ok {
+				imageOutputTokens = addGeminiTokenCount(imageOutputTokens, tokens)
 			}
 		}
 	}
-	return count
+	return imageOutputTokens, imageCount
+}
+
+func applyGeminiImageOutputUsageFallback(c *gin.Context, usage *dto.Usage, imageOutputTokens int, imageCount int) {
+	if usage == nil || imageCount <= 0 || usage.CompletionTokenDetails.ImageTokens > 0 {
+		return
+	}
+	if imageOutputTokens <= 0 {
+		if imageCount > math.MaxInt32/1400 {
+			common.SysError("Gemini image output token estimate exceeded int32 and was clamped")
+			imageOutputTokens = math.MaxInt32
+		} else {
+			imageOutputTokens = imageCount * 1400
+		}
+	}
+
+	usage.CompletionTokenDetails.ImageTokens = imageOutputTokens
+	minimumCompletionTokens := imageOutputTokens
+	minimumCompletionTokens = addGeminiTokenCount(minimumCompletionTokens, usage.CompletionTokenDetails.TextTokens)
+	minimumCompletionTokens = addGeminiTokenCount(minimumCompletionTokens, usage.CompletionTokenDetails.AudioTokens)
+	minimumCompletionTokens = addGeminiTokenCount(minimumCompletionTokens, usage.CompletionTokenDetails.ReasoningTokens)
+	if usage.CompletionTokens < minimumCompletionTokens {
+		usage.CompletionTokens = minimumCompletionTokens
+	}
+	minimumTotalTokens := addGeminiTokenCount(usage.PromptTokens, usage.CompletionTokens)
+	if usage.TotalTokens < minimumTotalTokens {
+		usage.TotalTokens = minimumTotalTokens
+	}
+	common.SetContextKey(c, constant.ContextKeyLocalCountTokens, true)
+	// Settlement prefers BillingUsage over the top-level Usage. Rebuild the
+	// estimated Gemini metadata so the derived IMAGE detail reaches img_o.
+	usage.BillingUsage = dto.NewEstimatedGeminiChatBillingUsage(usage)
 }
 
 func responseGeminiChat2OpenAI(c *gin.Context, response *dto.GeminiChatResponse) *dto.OpenAITextResponse {
@@ -135,8 +328,10 @@ func handleFinalStream(c *gin.Context, info *relaycommon.RelayInfo, resp *dto.Ch
 func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response, callback func(data string, geminiResponse *dto.GeminiChatResponse) bool) (*dto.Usage, *types.NewAPIError) {
 	var usage = &dto.Usage{}
 	var imageCount int
+	var imageOutputTokens int
 	var hasBillableUsageMetadata bool
 	responseText := strings.Builder{}
+	candidateText := strings.Builder{}
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		var geminiResponse dto.GeminiChatResponse
@@ -149,14 +344,17 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 			common.SetContextKey(c, constant.ContextKeyAdminRejectReason, fmt.Sprintf("gemini_block_reason=%s", *geminiResponse.PromptFeedback.BlockReason))
 		}
 
-		// 统计图片数量
+		currentImageOutputTokens, currentImageCount := geminiResponseImageOutputTokens(&geminiResponse, info)
+		imageCount += currentImageCount
+		imageOutputTokens = addGeminiTokenCount(imageOutputTokens, currentImageOutputTokens)
+
 		for _, candidate := range geminiResponse.Candidates {
 			for _, part := range candidate.Content.Parts {
-				if part.InlineData != nil && part.InlineData.MimeType != "" {
-					imageCount++
-				}
 				if part.Text != "" {
 					responseText.WriteString(part.Text)
+					if !part.Thought {
+						candidateText.WriteString(part.Text)
+					}
 				}
 			}
 		}
@@ -179,14 +377,12 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		} else {
 			usage = &dto.Usage{}
 		}
-		if imageCount != 0 && usage.CompletionTokens == 0 {
-			usage.CompletionTokens = imageCount * 1400
-			usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
-			common.SetContextKey(c, constant.ContextKeyLocalCountTokens, true)
-		}
+		usage.CompletionTokenDetails.TextTokens = usage.CompletionTokens
+		applyGeminiImageOutputUsageFallback(c, usage, imageOutputTokens, imageCount)
 		attachEstimatedGeminiBillingUsage(usage)
 	} else {
-		patchGeminiZeroCompletionUsage(c, info, usage, responseText.String(), imageCount)
+		patchGeminiMissingCandidateUsage(c, info, usage, candidateText.String())
+		applyGeminiImageOutputUsageFallback(c, usage, imageOutputTokens, imageCount)
 	}
 
 	return usage, nil

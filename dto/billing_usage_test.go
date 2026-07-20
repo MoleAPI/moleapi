@@ -53,14 +53,24 @@ func TestNewEstimatedGeminiChatBillingUsage(t *testing.T) {
 	billingUsage := NewEstimatedGeminiChatBillingUsage(&Usage{
 		PromptTokens:     11,
 		CompletionTokens: 7,
+		CompletionTokenDetails: OutputTokenDetails{
+			TextTokens:      2,
+			ImageTokens:     4,
+			ReasoningTokens: 1,
+		},
 	})
 
 	require.NotNil(t, billingUsage)
 	require.NotNil(t, billingUsage.GeminiUsageMetadata)
 	assert.True(t, billingUsage.Estimated)
 	assert.Equal(t, 11, billingUsage.GeminiUsageMetadata.PromptTokenCount)
-	assert.Equal(t, 7, billingUsage.GeminiUsageMetadata.CandidatesTokenCount)
+	assert.Equal(t, 6, billingUsage.GeminiUsageMetadata.CandidatesTokenCount)
+	assert.Equal(t, 1, billingUsage.GeminiUsageMetadata.ThoughtsTokenCount)
 	assert.Equal(t, 18, billingUsage.GeminiUsageMetadata.TotalTokenCount)
+	assert.Equal(t, []GeminiPromptTokensDetails{
+		{Modality: "TEXT", TokenCount: 2},
+		{Modality: "IMAGE", TokenCount: 4},
+	}, billingUsage.GeminiUsageMetadata.CandidatesTokensDetails)
 }
 
 func TestBillingUsageJSONUsesProtocolNamedFields(t *testing.T) {
