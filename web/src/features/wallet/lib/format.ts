@@ -16,7 +16,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { formatCurrencyFromUSD } from '@/lib/currency'
+import { formatNumber, formatQuota } from '@/lib/format'
+
 import { DEFAULT_DISCOUNT_RATE } from '../constants'
+import type { TopupRecord } from '../types'
+
+type IntlWithSupportedValues = typeof Intl & {
+  supportedValuesOf?: (key: 'currency') => string[]
+}
+
+const ISO_CURRENCY_CODES = new Set(
+  (Intl as IntlWithSupportedValues).supportedValuesOf?.('currency') ?? []
+)
 
 // ============================================================================
 // Wallet-specific Formatting Functions
@@ -59,6 +71,63 @@ export function formatCurrency(amount: number | string): string {
     minimumFractionDigits: 0,
     maximumFractionDigits: Math.abs(numeric) >= 1 ? 2 : 4,
   }).format(numeric)
+}
+
+/** Format the amount charged by its recorded ISO currency. */
+export function formatHistoricalPaymentAmount(
+  amount: number | null | undefined,
+  currency?: string | null,
+  locales?: Intl.LocalesArgument
+): string {
+  if (amount == null || !Number.isFinite(amount)) return '-'
+
+  const normalizedCurrency = currency?.trim().toUpperCase()
+  if (!normalizedCurrency || !ISO_CURRENCY_CODES.has(normalizedCurrency)) {
+    return formatNumber(amount, locales)
+  }
+
+  try {
+    return new Intl.NumberFormat(locales, {
+      style: 'currency',
+      currency: normalizedCurrency,
+    }).format(amount)
+  } catch {
+    return formatNumber(amount, locales)
+  }
+}
+
+/** Keep new settlement facts and legacy Creem quota records comparable. */
+export function formatHistoricalTopUpCredit(
+  record: Pick<
+    TopupRecord,
+    'amount' | 'credited_quota' | 'payment_method' | 'payment_provider'
+  >
+): { value: string; hasCreditedFact: boolean } {
+  const hasCreditedFact =
+    typeof record.credited_quota === 'number' &&
+    Number.isFinite(record.credited_quota) &&
+    record.credited_quota > 0
+  if (hasCreditedFact) {
+    return {
+      value: formatQuota(record.credited_quota as number),
+      hasCreditedFact: true,
+    }
+  }
+
+  const provider = record.payment_provider?.trim().toLowerCase()
+  const method = record.payment_method.trim().toLowerCase()
+  if (provider === 'creem' || method === 'creem') {
+    return { value: formatQuota(record.amount), hasCreditedFact: false }
+  }
+
+  return {
+    value: formatCurrencyFromUSD(record.amount, {
+      digitsLarge: 2,
+      digitsSmall: 2,
+      abbreviate: false,
+    }),
+    hasCreditedFact: false,
+  }
 }
 
 /**

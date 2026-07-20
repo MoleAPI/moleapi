@@ -20,6 +20,7 @@ import { Search, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { CopyButton } from '@/components/copy-button'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
 import {
@@ -45,8 +46,7 @@ import {
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
-import { formatCurrencyFromUSD } from '@/lib/currency'
-import { formatNumber } from '@/lib/format'
+import { toIntlLocale } from '@/i18n/languages'
 
 import { useBillingHistory } from '../../hooks/use-billing-history'
 import {
@@ -54,17 +54,26 @@ import {
   getPaymentMethodName,
   formatTimestamp,
 } from '../../lib/billing'
+import {
+  formatHistoricalPaymentAmount,
+  formatHistoricalTopUpCredit,
+} from '../../lib/format'
 
 interface BillingHistoryDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
 }
 
+const BILLING_HISTORY_SKELETON_IDS = Array.from(
+  { length: 5 },
+  (_, index) => `billing-history-skeleton-${index + 1}`
+)
+
 export function BillingHistoryDialog({
   open,
   onOpenChange,
 }: BillingHistoryDialogProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const {
     records,
     total,
@@ -84,6 +93,7 @@ export function BillingHistoryDialog({
   const { copyToClipboard, copiedText } = useCopyToClipboard({ notify: false })
 
   const totalPages = Math.ceil(total / pageSize)
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
 
   const handleConfirmComplete = async () => {
     if (confirmTradeNo) {
@@ -128,7 +138,7 @@ export function BillingHistoryDialog({
               ]}
               value={pageSize.toString()}
               onValueChange={(value) =>
-                value !== null && handlePageSizeChange(parseInt(value))
+                value !== null && handlePageSizeChange(Number.parseInt(value))
               }
             >
               <SelectTrigger className='h-9 w-[92px] sm:w-32'>
@@ -147,10 +157,10 @@ export function BillingHistoryDialog({
 
           {/* Records List */}
           <div className='max-h-[min(54vh,520px)] overflow-y-auto pr-1'>
-            {loading ? (
+            {loading && (
               <div className='space-y-3'>
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className='rounded-lg border p-3 sm:p-4'>
+                {BILLING_HISTORY_SKELETON_IDS.map((id) => (
+                  <div key={id} className='rounded-lg border p-3 sm:p-4'>
                     <div className='flex items-start justify-between'>
                       <div className='flex-1 space-y-2'>
                         <Skeleton className='h-4 w-48' />
@@ -166,7 +176,8 @@ export function BillingHistoryDialog({
                   </div>
                 ))}
               </div>
-            ) : records.length === 0 ? (
+            )}
+            {!loading && records.length === 0 && (
               <div className='text-muted-foreground flex min-h-40 flex-col items-center justify-center py-10 text-center'>
                 <p className='text-sm font-medium'>
                   {t('No billing records found')}
@@ -177,10 +188,13 @@ export function BillingHistoryDialog({
                     : t('Your transaction history will appear here')}
                 </p>
               </div>
-            ) : (
+            )}
+            {!loading && records.length > 0 && (
               <div className='space-y-3'>
                 {records.map((record) => {
                   const statusConfig = getStatusConfig(record.status)
+                  const creditDisplay = formatHistoricalTopUpCredit(record)
+                  const gatewayTradeNo = record.gateway_trade_no?.trim()
                   return (
                     <div
                       key={record.id}
@@ -238,14 +252,14 @@ export function BillingHistoryDialog({
                         </div>
                         <div className='space-y-1'>
                           <Label className='text-muted-foreground text-xs'>
-                            {t('Amount')}
+                            {t(
+                              creditDisplay.hasCreditedFact
+                                ? 'Credited amount'
+                                : 'Amount'
+                            )}
                           </Label>
                           <div className='text-sm font-semibold'>
-                            {formatCurrencyFromUSD(record.amount, {
-                              digitsLarge: 2,
-                              digitsSmall: 2,
-                              abbreviate: false,
-                            })}
+                            {creditDisplay.value}
                           </div>
                         </div>
                         <div className='space-y-1'>
@@ -253,9 +267,35 @@ export function BillingHistoryDialog({
                             {t('Payment')}
                           </Label>
                           <div className='text-sm font-semibold text-red-600'>
-                            {formatNumber(record.money)}
+                            {formatHistoricalPaymentAmount(
+                              record.money,
+                              record.payment_currency,
+                              locale
+                            )}
                           </div>
                         </div>
+                        {gatewayTradeNo && (
+                          <div className='min-w-0 space-y-1'>
+                            <Label className='text-muted-foreground text-xs'>
+                              {t('Gateway transaction ID')}
+                            </Label>
+                            <div className='flex min-w-0 items-center gap-1'>
+                              <code
+                                className='truncate font-mono text-xs'
+                                title={gatewayTradeNo}
+                              >
+                                {gatewayTradeNo}
+                              </code>
+                              <CopyButton
+                                value={gatewayTradeNo}
+                                size='icon'
+                                className='size-6'
+                                iconClassName='size-3'
+                                tooltip={t('Copy to clipboard')}
+                              />
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Admin Actions */}

@@ -259,10 +259,18 @@ export interface TopupRecord {
   user_id: number
   /** Topup amount (quota) */
   amount: number
-  /** Payment amount (actual money paid) */
+  /** Payment amount recorded for the order */
   money: number
+  /** Quota actually credited after settlement */
+  credited_quota?: number | null
+  /** Currency used for the historical payment */
+  payment_currency?: string | null
   /** Trade/order number */
   trade_no: string
+  /** Transaction ID assigned by the payment gateway */
+  gateway_trade_no?: string | null
+  /** Gateway family that owns the order */
+  payment_provider?: string | null
   /** Payment method type */
   payment_method: string
   /** Creation timestamp */
