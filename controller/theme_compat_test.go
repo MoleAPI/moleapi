@@ -29,8 +29,19 @@ func TestUpdateOptionRejectsRetiredFrontendTheme(t *testing.T) {
 
 func TestGetStatusAdvertisesDefaultDashboard(t *testing.T) {
 	previousMap := common.OptionMap
+	previousVersion := common.Version
+	previousUpstreamVersion := common.UpstreamVersion
+	previousCommit := common.Commit
 	common.OptionMap = map[string]string{}
-	t.Cleanup(func() { common.OptionMap = previousMap })
+	common.Version = "v0.10.0-dev1"
+	common.UpstreamVersion = "v1.0.0-rc.21"
+	common.Commit = "abc1234"
+	t.Cleanup(func() {
+		common.OptionMap = previousMap
+		common.Version = previousVersion
+		common.UpstreamVersion = previousUpstreamVersion
+		common.Commit = previousCommit
+	})
 	response := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(response)
 	context.Request = httptest.NewRequest(http.MethodGet, "/api/status", nil)
@@ -44,4 +55,9 @@ func TestGetStatusAdvertisesDefaultDashboard(t *testing.T) {
 	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &payload))
 	assert.True(t, payload.Success)
 	assert.Equal(t, "default", payload.Data["theme"])
+	assert.Equal(t, "v1.0.0-rc.21", payload.Data["version"])
+	assert.Equal(t, "v1.0.0-rc.21", payload.Data["upstream_version"])
+	assert.Equal(t, "v0.10.0-dev1", payload.Data["project_version"])
+	assert.Equal(t, "abc1234", payload.Data["commit"])
+	assert.Equal(t, "abc1234", payload.Data["project_commit"])
 }

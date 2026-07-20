@@ -1,0 +1,32 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "github": {
+    "silent": true
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://api.moleapi.com/api/$1"
+    },
+    {
+      "source": "/v1/(.*)",
+      "destination": "https://api.moleapi.com/v1/$1"
+    },
+    {
+      "source": "/v1beta/(.*)",
+      "destination": "https://api.moleapi.com/v1beta/$1"
+    },
+    {
+      "source": "/mj/(.*)",
+      "destination": "https://api.moleapi.com/mj/$1"
+    },
+    {
+      "source": "/pg/(.*)",
+      "destination": "https://api.moleapi.com/pg/$1"
+    },
+    {
+      "source": "/((?!api/|v1/|v1beta/|mj/|pg/|assets/|favicon.ico|manifest.json).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

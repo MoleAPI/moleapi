@@ -1,0 +1,76 @@
+production:
+  push:
+    - services:
+        - docker
+      docker:
+        image: docker:24.0.9
+      stages:
+        - name: docker-build-versioned
+          script:
+            - export IMAGE="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            - export VERSION_TAG="$(tr -d '\r\n' < VERSION)"
+            - if [ -z "${VERSION_TAG}" ]; then export VERSION_TAG="${CNB_COMMIT_SHORT:-nosha}"; fi
+            - docker build -f ./Dockerfile --build-arg COMMIT_SHA="${CNB_COMMIT_SHORT:-nosha}" -t "${IMAGE}:${VERSION_TAG}" .
+        - name: docker-push-versioned
+          script:
+            - export IMAGE="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            - export VERSION_TAG="$(tr -d '\r\n' < VERSION)"
+            - if [ -z "${VERSION_TAG}" ]; then export VERSION_TAG="${CNB_COMMIT_SHORT:-nosha}"; fi
+            - docker push "${IMAGE}:${VERSION_TAG}"
+  api_trigger_production_docker_build:
+    - services:
+        - docker
+      docker:
+        image: docker:24.0.9
+      stages:
+        - name: docker-build-versioned
+          script:
+            - export IMAGE="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            - export VERSION_TAG="$(tr -d '\r\n' < VERSION)"
+            - if [ -z "${VERSION_TAG}" ]; then export VERSION_TAG="${CNB_COMMIT_SHORT:-nosha}"; fi
+            - docker build -f ./Dockerfile --build-arg COMMIT_SHA="${CNB_COMMIT_SHORT:-nosha}" -t "${IMAGE}:${VERSION_TAG}" .
+        - name: docker-push-versioned
+          script:
+            - export IMAGE="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            - export VERSION_TAG="$(tr -d '\r\n' < VERSION)"
+            - if [ -z "${VERSION_TAG}" ]; then export VERSION_TAG="${CNB_COMMIT_SHORT:-nosha}"; fi
+            - docker push "${IMAGE}:${VERSION_TAG}"
+dev:
+  push:
+    - services:
+        - docker
+      docker:
+        image: docker:24.0.9
+      stages:
+        - name: docker-build-dev
+          script:
+            - export IMAGE="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            - export DEV_TAG="dev"
+            - export DEV_SHA_TAG="dev-${CNB_COMMIT_SHORT:-nosha}"
+            - docker build -f ./Dockerfile --build-arg COMMIT_SHA="${CNB_COMMIT_SHORT:-nosha}" -t "${IMAGE}:${DEV_TAG}" -t "${IMAGE}:${DEV_SHA_TAG}" .
+        - name: docker-push-dev
+          script:
+            - export IMAGE="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            - export DEV_TAG="dev"
+            - export DEV_SHA_TAG="dev-${CNB_COMMIT_SHORT:-nosha}"
+            - docker push "${IMAGE}:${DEV_TAG}"
+            - docker push "${IMAGE}:${DEV_SHA_TAG}"
+  api_trigger_dev_docker_build:
+    - services:
+        - docker
+      docker:
+        image: docker:24.0.9
+      stages:
+        - name: docker-build-dev
+          script:
+            - export IMAGE="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            - export DEV_TAG="dev"
+            - export DEV_SHA_TAG="dev-${CNB_COMMIT_SHORT:-nosha}"
+            - docker build -f ./Dockerfile --build-arg COMMIT_SHA="${CNB_COMMIT_SHORT:-nosha}" -t "${IMAGE}:${DEV_TAG}" -t "${IMAGE}:${DEV_SHA_TAG}" .
+        - name: docker-push-dev
+          script:
+            - export IMAGE="${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}"
+            - export DEV_TAG="dev"
+            - export DEV_SHA_TAG="dev-${CNB_COMMIT_SHORT:-nosha}"
+            - docker push "${IMAGE}:${DEV_TAG}"
+            - docker push "${IMAGE}:${DEV_SHA_TAG}"

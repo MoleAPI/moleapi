@@ -32,9 +32,24 @@ func printHelp() {
 func InitEnv() {
 	flag.Parse()
 
+	Version = strings.TrimSpace(Version)
+	UpstreamVersion = strings.TrimSpace(UpstreamVersion)
+	Commit = strings.TrimSpace(Commit)
+
 	envVersion := os.Getenv("VERSION")
 	if envVersion != "" {
-		Version = envVersion
+		Version = strings.TrimSpace(envVersion)
+	}
+	envCommit := strings.TrimSpace(os.Getenv("COMMIT_SHA"))
+	if envCommit == "" {
+		envCommit = strings.TrimSpace(os.Getenv("GIT_COMMIT"))
+	}
+	if envCommit != "" {
+		Commit = envCommit
+	}
+	envUpstreamVersion := strings.TrimSpace(os.Getenv("UPSTREAM_VERSION"))
+	if envUpstreamVersion != "" {
+		UpstreamVersion = envUpstreamVersion
 	}
 
 	if *PrintVersion {
