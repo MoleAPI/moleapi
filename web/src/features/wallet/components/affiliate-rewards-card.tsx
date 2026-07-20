@@ -33,6 +33,7 @@ interface AffiliateRewardsCardProps {
   user: UserWalletData | null
   affiliateLink: string
   onTransfer: () => void
+  firstTopupReward?: number
   complianceConfirmed?: boolean
   loading?: boolean
 }
@@ -41,6 +42,7 @@ export function AffiliateRewardsCard({
   user,
   affiliateLink,
   onTransfer,
+  firstTopupReward = 0,
   complianceConfirmed = true,
   loading,
 }: AffiliateRewardsCardProps) {
@@ -74,9 +76,14 @@ export function AffiliateRewardsCard({
               {t('Referral Program')}
             </h3>
             <p className='text-muted-foreground line-clamp-1 text-xs'>
-              {t(
-                'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
-              )}
+              {firstTopupReward > 0
+                ? t(
+                    'Earn referral rewards when users join, plus {{reward}} after their first top-up.',
+                    { reward: formatQuota(firstTopupReward) }
+                  )
+                : t(
+                    'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
+                  )}
             </p>
           </div>
         </div>

@@ -93,6 +93,10 @@ func InitOptionMap() {
 	common.OptionMap["CreemProducts"] = setting.CreemProducts
 	common.OptionMap["CreemTestMode"] = strconv.FormatBool(setting.CreemTestMode)
 	common.OptionMap["CreemWebhookSecret"] = setting.CreemWebhookSecret
+	common.OptionMap["LantuEnabled"] = strconv.FormatBool(setting.LantuEnabled)
+	common.OptionMap["LantuMchId"] = setting.LantuMchID
+	common.OptionMap["LantuSecretKey"] = setting.LantuSecretKey
+	common.OptionMap["LantuMinTopUp"] = strconv.Itoa(setting.LantuMinTopUp)
 	common.OptionMap["WaffoEnabled"] = strconv.FormatBool(setting.WaffoEnabled)
 	common.OptionMap["WaffoApiKey"] = setting.WaffoApiKey
 	common.OptionMap["WaffoPrivateKey"] = setting.WaffoPrivateKey
@@ -116,6 +120,7 @@ func InitOptionMap() {
 	common.OptionMap["WaffoPancakeMinTopUp"] = strconv.Itoa(setting.WaffoPancakeMinTopUp)
 	common.OptionMap["WaffoPancakeStoreID"] = setting.WaffoPancakeStoreID
 	common.OptionMap["WaffoPancakeProductID"] = setting.WaffoPancakeProductID
+	common.OptionMap["WaffoPancakeEnvironment"] = setting.WaffoPancakeEnvironment
 	common.OptionMap["TopupGroupRatio"] = common.TopupGroupRatio2JSONString()
 	common.OptionMap["Chats"] = setting.Chats2JsonString()
 	common.OptionMap["AutoGroups"] = setting.AutoGroups2JsonString()
@@ -133,6 +138,7 @@ func InitOptionMap() {
 	common.OptionMap["QuotaForNewUser"] = strconv.Itoa(common.QuotaForNewUser)
 	common.OptionMap["QuotaForInviter"] = strconv.Itoa(common.QuotaForInviter)
 	common.OptionMap["QuotaForInvitee"] = strconv.Itoa(common.QuotaForInvitee)
+	common.OptionMap["QuotaForInviterOnFirstTopup"] = strconv.Itoa(common.QuotaForInviterOnFirstTopup)
 	common.OptionMap["QuotaRemindThreshold"] = strconv.Itoa(common.QuotaRemindThreshold)
 	common.OptionMap["PreConsumedQuota"] = strconv.Itoa(common.PreConsumedQuota)
 	common.OptionMap["ModelRequestRateLimitCount"] = strconv.Itoa(setting.ModelRequestRateLimitCount)
@@ -430,6 +436,14 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.CreemTestMode = value == "true"
 	case "CreemWebhookSecret":
 		setting.CreemWebhookSecret = value
+	case "LantuEnabled":
+		setting.LantuEnabled = value == "true"
+	case "LantuMchId":
+		setting.LantuMchID = value
+	case "LantuSecretKey":
+		setting.LantuSecretKey = value
+	case "LantuMinTopUp":
+		setting.LantuMinTopUp, _ = strconv.Atoi(value)
 	case "WaffoEnabled":
 		setting.WaffoEnabled = value == "true"
 	case "WaffoApiKey":
@@ -470,6 +484,8 @@ func updateOptionMap(key string, value string) (err error) {
 		setting.WaffoPancakeStoreID = value
 	case "WaffoPancakeProductID":
 		setting.WaffoPancakeProductID = value
+	case "WaffoPancakeEnvironment":
+		setting.WaffoPancakeEnvironment = strings.ToLower(strings.TrimSpace(value))
 	case "WaffoPancakeUnitPrice":
 		setting.WaffoPancakeUnitPrice, _ = strconv.ParseFloat(value, 64)
 	case "WaffoPancakeMinTopUp":
@@ -512,6 +528,8 @@ func updateOptionMap(key string, value string) (err error) {
 		common.QuotaForInviter, _ = strconv.Atoi(value)
 	case "QuotaForInvitee":
 		common.QuotaForInvitee, _ = strconv.Atoi(value)
+	case "QuotaForInviterOnFirstTopup":
+		common.QuotaForInviterOnFirstTopup, _ = strconv.Atoi(value)
 	case "QuotaRemindThreshold":
 		common.QuotaRemindThreshold, _ = strconv.Atoi(value)
 	case "PreConsumedQuota":

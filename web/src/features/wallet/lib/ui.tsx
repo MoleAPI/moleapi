@@ -154,6 +154,13 @@ export function getPaymentIcon(
           />
         </span>
       )
+    case PAYMENT_TYPES.LANTU:
+      return (
+        <SiWechat
+          className={className}
+          style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.LANTU] }}
+        />
+      )
     default:
       return <CreditCard className={className} />
   }

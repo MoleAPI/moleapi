@@ -43,6 +43,9 @@ import {
   getPaymentIcon,
   getMinTopupAmount,
   calculatePresetPricing,
+  getStandardPaymentMethods,
+  getTopupBonusRate,
+  getTopupDiscountRate,
 } from '../lib'
 import type {
   PaymentMethod,
@@ -131,10 +134,13 @@ export function RechargeFormCard({
     topupInfo?.enable_online_topup ||
     topupInfo?.enable_stripe_topup ||
     enableWaffoTopup ||
-    enableWaffoPancakeTopup
+    enableWaffoPancakeTopup ||
+    topupInfo?.enable_lantu_topup
   const hasAnyTopup = hasConfigurableTopup || enableCreemTopup
-  const hasStandardPaymentMethods =
-    Array.isArray(topupInfo?.pay_methods) && topupInfo.pay_methods.length > 0
+  const standardPaymentMethods = getStandardPaymentMethods(
+    topupInfo?.pay_methods
+  )
+  const hasStandardPaymentMethods = standardPaymentMethods.length > 0
   const hasWaffoPaymentMethods =
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
   const minTopup = getMinTopupAmount(topupInfo)
@@ -226,9 +232,14 @@ export function RechargeFormCard({
                   <div className='grid grid-cols-2 gap-1.5 sm:gap-3 md:grid-cols-4'>
                     {presetAmounts.map((preset) => {
                       const discount =
-                        preset.discount ||
-                        topupInfo?.discount?.[preset.value] ||
-                        1.0
+                        preset.discount ??
+                        getTopupDiscountRate(
+                          topupInfo?.discount ?? {},
+                          preset.value
+                        )
+                      const bonus =
+                        preset.bonus ??
+                        getTopupBonusRate(topupInfo?.bonus ?? {}, preset.value)
                       const {
                         displayValue,
                         actualPrice,
@@ -256,11 +267,18 @@ export function RechargeFormCard({
                             <div className='text-base font-semibold sm:text-lg'>
                               {formatNumber(displayValue)}
                             </div>
-                            {hasDiscount && (
-                              <div className='text-xs font-medium text-green-600'>
-                                {getDiscountLabel(discount)}
-                              </div>
-                            )}
+                            <div className='flex gap-1.5 text-xs font-medium text-green-600'>
+                              {hasDiscount ? (
+                                <span>{getDiscountLabel(discount)}</span>
+                              ) : null}
+                              {bonus > 0 ? (
+                                <span>
+                                  {t('{{percentage}}% extra', {
+                                    percentage: Math.round(bonus * 100),
+                                  })}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                           <div className='text-muted-foreground mt-1.5 w-full text-xs sm:mt-2'>
                             Pay {formatCurrency(actualPrice)}
@@ -316,7 +334,7 @@ export function RechargeFormCard({
                 </Label>
                 {hasStandardPaymentMethods ? (
                   <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
-                    {topupInfo?.pay_methods?.map((method) => {
+                    {standardPaymentMethods.map((method) => {
                       const minTopup = method.min_topup || 0
                       const disabled = minTopup > topupAmount
                       const disabledReason = disabled

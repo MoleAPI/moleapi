@@ -24,6 +24,14 @@ import {
 } from '../constants'
 import type { PaymentMethod, PresetAmount, TopupInfo } from '../types'
 
+const DEDICATED_PAYMENT_TYPES = new Set<string>([
+  PAYMENT_TYPES.STRIPE,
+  PAYMENT_TYPES.CREEM,
+  PAYMENT_TYPES.WAFFO,
+  PAYMENT_TYPES.WAFFO_PANCAKE,
+  PAYMENT_TYPES.LANTU,
+])
+
 // ============================================================================
 // Payment Processing Functions
 // ============================================================================
@@ -44,7 +52,11 @@ function isSafariBrowser(): boolean {
 export function submitPaymentForm(
   url: string,
   params: Record<string, unknown>
-): void {
+): boolean {
+  if (!isSafeHttpPaymentUrl(url)) {
+    return false
+  }
+
   const form = document.createElement('form')
   form.action = url
   form.method = 'POST'
@@ -66,6 +78,7 @@ export function submitPaymentForm(
   document.body.appendChild(form)
   form.submit()
   document.body.removeChild(form)
+  return true
 }
 
 /**
@@ -93,10 +106,44 @@ export function isWaffoPancakePayment(paymentType: string): boolean {
   return paymentType === PAYMENT_TYPES.WAFFO_PANCAKE
 }
 
+export function isLanTuPayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.LANTU
+}
+
+export function isSafeHttpPaymentUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim())
+    return (
+      (url.protocol === 'http:' || url.protocol === 'https:') &&
+      !url.username &&
+      !url.password
+    )
+  } catch {
+    return false
+  }
+}
+
+export function getStandardPaymentMethods(
+  paymentMethods: PaymentMethod[] = []
+): PaymentMethod[] {
+  return paymentMethods.filter(
+    (method) => method?.type && method.type !== PAYMENT_TYPES.WAFFO
+  )
+}
+
+export function getEpayPaymentMethods(
+  paymentMethods: PaymentMethod[] = []
+): PaymentMethod[] {
+  return paymentMethods.filter(
+    (method) => method?.type && !DEDICATED_PAYMENT_TYPES.has(method.type)
+  )
+}
+
 export interface PaymentProcessors {
   regular: (topupAmount: number, paymentType: string) => Promise<boolean>
   waffo: (topupAmount: number, payMethodIndex: number) => Promise<boolean>
   waffoPancake: (topupAmount: number) => Promise<boolean>
+  lantu: (topupAmount: number) => Promise<boolean>
 }
 
 export async function dispatchSelectedPayment(
@@ -114,6 +161,10 @@ export async function dispatchSelectedPayment(
 
   if (isWaffoPancakePayment(paymentMethod.type)) {
     return processors.waffoPancake(topupAmount)
+  }
+
+  if (isLanTuPayment(paymentMethod.type)) {
+    return processors.lantu(topupAmount)
   }
 
   return processors.regular(topupAmount, paymentMethod.type)
@@ -171,6 +222,10 @@ export function getMinTopupAmount(topupInfo: TopupInfo | null): number {
     return topupInfo.waffo_pancake_min_topup || DEFAULT_MIN_TOPUP
   }
 
+  if (topupInfo.enable_lantu_topup) {
+    return topupInfo.lantu_min_topup || DEFAULT_MIN_TOPUP
+  }
+
   return DEFAULT_MIN_TOPUP
 }
 
@@ -183,12 +238,55 @@ export function generatePresetAmounts(minAmount: number): PresetAmount[] {
   }))
 }
 
+function getTieredRate(
+  rates: Record<number, number>,
+  amount: number,
+  fallback: number
+): number {
+  let matchedTier = -1
+  let matchedRate = fallback
+
+  for (const [rawTier, rawRate] of Object.entries(rates)) {
+    const tier = Number(rawTier)
+    const rate = Number(rawRate)
+    if (
+      Number.isFinite(tier) &&
+      Number.isFinite(rate) &&
+      tier >= 0 &&
+      tier <= amount &&
+      tier > matchedTier
+    ) {
+      matchedTier = tier
+      matchedRate = rate
+    }
+  }
+
+  return matchedRate
+}
+
+export function getTopupDiscountRate(
+  discounts: Record<number, number>,
+  amount: number
+): number {
+  const rate = getTieredRate(discounts, amount, 1)
+  return rate > 0.5 && rate <= 1 ? rate : 1
+}
+
+export function getTopupBonusRate(
+  bonuses: Record<number, number>,
+  amount: number
+): number {
+  const rate = getTieredRate(bonuses, amount, 0)
+  return rate >= 0 && rate <= 1 ? rate : 0
+}
+
 /**
- * Merge custom preset amounts with discounts
+ * Merge custom preset amounts with the effective discount and bonus tiers.
  */
 export function mergePresetAmounts(
   amountOptions: number[],
-  discounts: Record<number, number>
+  discounts: Record<number, number>,
+  bonuses: Record<number, number> = {}
 ): PresetAmount[] {
   if (!amountOptions || amountOptions.length === 0) {
     return []
@@ -196,6 +294,7 @@ export function mergePresetAmounts(
 
   return amountOptions.map((amount) => ({
     value: amount,
-    discount: discounts[amount] || 1.0,
+    discount: getTopupDiscountRate(discounts, amount),
+    bonus: getTopupBonusRate(bonuses, amount),
   }))
 }

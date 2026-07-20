@@ -38,14 +38,14 @@ func TestTopUpAutoMigrationExpandsExistingTableIdempotently(t *testing.T) {
 		Status:          common.TopUpStatusSuccess,
 	}).Error)
 
-	for _, field := range []string{"GatewayTradeNo", "CreditedQuota", "PaymentCurrency"} {
+	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "PaymentCurrency"} {
 		assert.False(t, db.Migrator().HasColumn(&TopUp{}, field))
 	}
 
 	require.NoError(t, db.AutoMigrate(&TopUp{}))
 	require.NoError(t, db.AutoMigrate(&TopUp{}))
 
-	for _, field := range []string{"GatewayTradeNo", "CreditedQuota", "PaymentCurrency"} {
+	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "PaymentCurrency"} {
 		assert.True(t, db.Migrator().HasColumn(&TopUp{}, field))
 	}
 	assert.True(t, db.Migrator().HasIndex(&TopUp{}, "GatewayTradeNo"))
@@ -53,28 +53,37 @@ func TestTopUpAutoMigrationExpandsExistingTableIdempotently(t *testing.T) {
 	var legacy TopUp
 	require.NoError(t, db.Where("trade_no = ?", "legacy-topup").First(&legacy).Error)
 	assert.Empty(t, legacy.GatewayTradeNo)
+	assert.Empty(t, legacy.PaymentProductId)
+	assert.Empty(t, legacy.PaymentMode)
+	assert.Zero(t, legacy.PromisedQuota)
 	assert.Zero(t, legacy.CreditedQuota)
 	assert.Empty(t, legacy.PaymentCurrency)
 
 	newRecord := &TopUp{
-		UserId:          8,
-		Amount:          20,
-		Money:           19.5,
-		TradeNo:         "snapshot-topup",
-		GatewayTradeNo:  "gateway-123",
-		CreditedQuota:   10_000_000,
-		PaymentCurrency: "USD",
-		PaymentMethod:   PaymentMethodStripe,
-		PaymentProvider: PaymentProviderStripe,
-		CreateTime:      200,
-		CompleteTime:    300,
-		Status:          common.TopUpStatusSuccess,
+		UserId:           8,
+		Amount:           20,
+		Money:            19.5,
+		TradeNo:          "snapshot-topup",
+		GatewayTradeNo:   "gateway-123",
+		PaymentProductId: "price-123",
+		PaymentMode:      "payment",
+		PromisedQuota:    10_000_000,
+		CreditedQuota:    10_000_000,
+		PaymentCurrency:  "USD",
+		PaymentMethod:    PaymentMethodStripe,
+		PaymentProvider:  PaymentProviderStripe,
+		CreateTime:       200,
+		CompleteTime:     300,
+		Status:           common.TopUpStatusSuccess,
 	}
 	require.NoError(t, db.Create(newRecord).Error)
 
 	var stored TopUp
 	require.NoError(t, db.Where("trade_no = ?", newRecord.TradeNo).First(&stored).Error)
 	assert.Equal(t, newRecord.GatewayTradeNo, stored.GatewayTradeNo)
+	assert.Equal(t, newRecord.PaymentProductId, stored.PaymentProductId)
+	assert.Equal(t, newRecord.PaymentMode, stored.PaymentMode)
+	assert.Equal(t, newRecord.PromisedQuota, stored.PromisedQuota)
 	assert.Equal(t, newRecord.CreditedQuota, stored.CreditedQuota)
 	assert.Equal(t, newRecord.PaymentCurrency, stored.PaymentCurrency)
 }

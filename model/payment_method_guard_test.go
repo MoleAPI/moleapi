@@ -139,6 +139,41 @@ func TestUpdatePendingTopUpStatus_RejectsMismatchedPaymentProvider(t *testing.T)
 	}
 }
 
+func TestBindPendingTopUpPaymentFactsRejectsFactReplacement(t *testing.T) {
+	truncateTables(t)
+	insertUserForPaymentGuardTest(t, 151, 0)
+	insertTopUpForPaymentGuardTest(t, "stripe-fact-binding", 151, PaymentProviderStripe)
+
+	require.NoError(t, BindPendingTopUpPaymentFacts("stripe-fact-binding", PaymentProviderStripe, "cs_123", "USD", "", "payment"))
+	err := BindPendingTopUpPaymentFacts("stripe-fact-binding", PaymentProviderStripe, "cs_other", "EUR", "", "payment+promo")
+	require.ErrorIs(t, err, ErrPaymentMethodMismatch)
+
+	topUp := GetTopUpByTradeNo("stripe-fact-binding")
+	require.NotNil(t, topUp)
+	assert.Equal(t, "cs_123", topUp.GatewayTradeNo)
+	assert.Equal(t, "USD", topUp.PaymentCurrency)
+	assert.Equal(t, "payment", topUp.PaymentMode)
+}
+
+func TestBindPendingSubscriptionOrderPaymentFactsRejectsFactReplacement(t *testing.T) {
+	truncateTables(t)
+	insertUserForPaymentGuardTest(t, 152, 0)
+	plan := insertSubscriptionPlanForPaymentGuardTest(t, 402)
+	insertSubscriptionOrderForPaymentGuardTest(t, "stripe-sub-fact-binding", 152, plan.Id, PaymentProviderStripe)
+
+	require.NoError(t, BindPendingSubscriptionOrderPaymentFacts("stripe-sub-fact-binding", PaymentProviderStripe, "cs_123", "USD", "price_123", "payment", 9.99))
+	err := BindPendingSubscriptionOrderPaymentFacts("stripe-sub-fact-binding", PaymentProviderStripe, "cs_other", "EUR", "price_other", "payment+promo", 1)
+	require.ErrorIs(t, err, ErrPaymentMethodMismatch)
+
+	order := GetSubscriptionOrderByTradeNo("stripe-sub-fact-binding")
+	require.NotNil(t, order)
+	assert.Equal(t, "cs_123", order.GatewayTradeNo)
+	assert.Equal(t, "USD", order.PaymentCurrency)
+	assert.Equal(t, "price_123", order.PaymentProductId)
+	assert.Equal(t, "payment", order.PaymentMode)
+	assert.InDelta(t, 9.99, order.Money, 0.000001)
+}
+
 func TestCompleteSubscriptionOrder_RejectsMismatchedPaymentProvider(t *testing.T) {
 	truncateTables(t)
 
@@ -156,6 +191,60 @@ func TestCompleteSubscriptionOrder_RejectsMismatchedPaymentProvider(t *testing.T
 
 	topUp := GetTopUpByTradeNo("sub-guard-order")
 	assert.Nil(t, topUp)
+}
+
+func TestCompleteSubscriptionOrderPreservesPaymentAndPlanSnapshot(t *testing.T) {
+	truncateTables(t)
+
+	insertUserForPaymentGuardTest(t, 203, 0)
+	plan := insertSubscriptionPlanForPaymentGuardTest(t, 302)
+	plan.Title = "Original Plan"
+	plan.TotalAmount = 1234
+	plan.DurationUnit = SubscriptionDurationDay
+	plan.DurationValue = 7
+	require.NoError(t, DB.Save(plan).Error)
+	insertSubscriptionOrderForPaymentGuardTest(t, "sub-payment-facts", 203, plan.Id, PaymentProviderStripe)
+
+	require.NoError(t, DB.Model(&SubscriptionPlan{}).Where("id = ?", plan.Id).Updates(map[string]interface{}{
+		"title":          "Changed Plan",
+		"total_amount":   9999,
+		"duration_value": 30,
+	}).Error)
+	require.NoError(t, CompleteSubscriptionOrderWithPaymentDetails(
+		"sub-payment-facts",
+		`{"event":"checkout.completed"}`,
+		PaymentProviderStripe,
+		PaymentMethodStripe,
+		"cs_subscription_123",
+		"USD",
+	))
+	require.NoError(t, CompleteSubscriptionOrderWithPaymentDetails(
+		"sub-payment-facts",
+		`{"event":"duplicate"}`,
+		PaymentProviderStripe,
+		PaymentMethodStripe,
+		"cs_different",
+		"EUR",
+	))
+
+	order := GetSubscriptionOrderByTradeNo("sub-payment-facts")
+	require.NotNil(t, order)
+	assert.Equal(t, common.TopUpStatusSuccess, order.Status)
+	assert.Equal(t, "cs_subscription_123", order.GatewayTradeNo)
+	assert.Equal(t, "USD", order.PaymentCurrency)
+	assert.Contains(t, order.ProviderPayload, "checkout.completed")
+
+	var subscription UserSubscription
+	require.NoError(t, DB.Where("user_id = ? AND plan_id = ?", 203, plan.Id).First(&subscription).Error)
+	assert.Equal(t, int64(1234), subscription.AmountTotal)
+	assert.Equal(t, int64(7*24*60*60), subscription.EndTime-subscription.StartTime)
+
+	topUp := GetTopUpByTradeNo("sub-payment-facts")
+	require.NotNil(t, topUp)
+	assert.Equal(t, PaymentProviderStripe, topUp.PaymentProvider)
+	assert.Equal(t, PaymentMethodStripe, topUp.PaymentMethod)
+	assert.Equal(t, "cs_subscription_123", topUp.GatewayTradeNo)
+	assert.Equal(t, "USD", topUp.PaymentCurrency)
 }
 
 func TestExpireSubscriptionOrder_RejectsMismatchedPaymentProvider(t *testing.T) {

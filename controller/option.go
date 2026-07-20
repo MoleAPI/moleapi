@@ -2,6 +2,7 @@ package controller
 
 import (
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -143,6 +144,16 @@ func UpdateOption(c *gin.Context) {
 	switch option.Key {
 	case "QuotaForInviter", "QuotaForInvitee":
 		if isPositiveOptionValue(option.Value.(string)) && !operation_setting.IsPaymentComplianceConfirmed() {
+			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+			return
+		}
+	case "QuotaForInviterOnFirstTopup":
+		quota, quotaErr := strconv.ParseInt(strings.TrimSpace(option.Value.(string)), 10, 64)
+		if quotaErr != nil || quota < 0 || quota > int64(common.MaxQuota) {
+			common.ApiErrorMsg(c, "首充邀请奖励额度无效")
+			return
+		}
+		if quota > 0 && !operation_setting.IsPaymentComplianceConfirmed() {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
 			return
 		}
@@ -296,6 +307,20 @@ func UpdateOption(c *gin.Context) {
 				"success": false,
 				"message": err.Error(),
 			})
+			return
+		}
+	case "payment_setting.amount_bonus":
+		var bonus map[int]float64
+		if err = common.UnmarshalJsonStr(option.Value.(string), &bonus); err == nil {
+			for tier, rate := range bonus {
+				if tier < 0 || rate < 0 || rate > 1 || math.IsNaN(rate) || math.IsInf(rate, 0) {
+					err = fmt.Errorf("invalid bonus tier")
+					break
+				}
+			}
+		}
+		if err != nil {
+			common.ApiErrorMsg(c, "充值赠额配置无效：档位不能为负数，赠额比例必须在 0 到 1 之间")
 			return
 		}
 	case "console_setting.api_info":

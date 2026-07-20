@@ -27,12 +27,13 @@ import { getSelf } from '@/lib/api'
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
+import { LanTuPaymentDialog } from './components/dialogs/lantu-payment-dialog'
 import { PaymentConfirmDialog } from './components/dialogs/payment-confirm-dialog'
 import { TransferDialog } from './components/dialogs/transfer-dialog'
 import { RechargeFormCard } from './components/recharge-form-card'
 import { SubscriptionPlansCard } from './components/subscription-plans-card'
 import { WalletStatsCard } from './components/wallet-stats-card'
-import { DEFAULT_DISCOUNT_RATE, PAYMENT_TYPES } from './constants'
+import { PAYMENT_TYPES } from './constants'
 import {
   useTopupInfo,
   usePayment,
@@ -41,11 +42,14 @@ import {
   useCreemPayment,
   useWaffoPayment,
   useWaffoPancakePayment,
+  useLanTuPayment,
 } from './hooks'
 import {
   getDefaultPaymentType,
   getMinTopupAmount,
   dispatchSelectedPayment,
+  getTopupBonusRate,
+  getTopupDiscountRate,
 } from './lib'
 import type {
   UserWalletData,
@@ -84,6 +88,22 @@ export function Wallet(props: WalletProps) {
   const { currency } = useSystemConfig()
   const { topupInfo, presetAmounts, loading: topupLoading } = useTopupInfo()
 
+  // Fetch and refresh user data
+  const fetchUser = useCallback(async () => {
+    try {
+      setUserLoading(true)
+      const response = await getSelf()
+      if (response.success && response.data) {
+        setUser(response.data as UserWalletData)
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to fetch user data:', error)
+    } finally {
+      setUserLoading(false)
+    }
+  }, [])
+
   // Calculate effective exchange rate - when display type is USD, use rate of 1
   const effectiveUsdExchangeRate = useMemo(() => {
     return currency?.quotaDisplayType === 'USD'
@@ -108,22 +128,15 @@ export function Wallet(props: WalletProps) {
   const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment()
   const { processing: pancakeProcessing, processWaffoPancakePayment } =
     useWaffoPancakePayment()
-
-  // Fetch and refresh user data
-  const fetchUser = useCallback(async () => {
-    try {
-      setUserLoading(true)
-      const response = await getSelf()
-      if (response.success && response.data) {
-        setUser(response.data as UserWalletData)
-      }
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error('Failed to fetch user data:', error)
-    } finally {
-      setUserLoading(false)
-    }
-  }, [])
+  const {
+    processing: lantuProcessing,
+    checking: lantuChecking,
+    dialogOpen: lantuDialogOpen,
+    setDialogOpen: setLanTuDialogOpen,
+    session: lantuSession,
+    processLanTuPayment,
+    checkLanTuPayment,
+  } = useLanTuPayment(fetchUser)
 
   useEffect(() => {
     fetchUser()
@@ -200,12 +213,15 @@ export function Wallet(props: WalletProps) {
         regular: processPayment,
         waffo: processWaffoPayment,
         waffoPancake: processWaffoPancakePayment,
+        lantu: processLanTuPayment,
       }
     )
 
     if (success) {
       setConfirmDialogOpen(false)
-      await fetchUser()
+      if (selectedPaymentMethod.type !== PAYMENT_TYPES.LANTU) {
+        await fetchUser()
+      }
     }
   }
 
@@ -270,7 +286,11 @@ export function Wallet(props: WalletProps) {
 
   // Get discount rate for current topup amount
   const getDiscountRate = useCallback(() => {
-    return topupInfo?.discount?.[topupAmount] || DEFAULT_DISCOUNT_RATE
+    return getTopupDiscountRate(topupInfo?.discount ?? {}, topupAmount)
+  }, [topupInfo, topupAmount])
+
+  const getBonusRate = useCallback(() => {
+    return getTopupBonusRate(topupInfo?.bonus ?? {}, topupAmount)
   }, [topupInfo, topupAmount])
 
   const handleSubscriptionAvailabilityChange = useCallback(
@@ -341,6 +361,9 @@ export function Wallet(props: WalletProps) {
               user={user}
               affiliateLink={affiliateLink}
               onTransfer={() => setTransferDialogOpen(true)}
+              firstTopupReward={
+                topupInfo?.quota_for_inviter_on_first_topup ?? 0
+              }
               complianceConfirmed={
                 topupInfo?.payment_compliance_confirmed !== false
               }
@@ -358,8 +381,11 @@ export function Wallet(props: WalletProps) {
         paymentAmount={paymentAmount}
         paymentMethod={selectedPaymentMethod}
         calculating={calculating}
-        processing={processing || waffoProcessing || pancakeProcessing}
+        processing={
+          processing || waffoProcessing || pancakeProcessing || lantuProcessing
+        }
         discountRate={getDiscountRate()}
+        bonusRate={getBonusRate()}
         usdExchangeRate={effectiveUsdExchangeRate}
       />
 
@@ -382,6 +408,14 @@ export function Wallet(props: WalletProps) {
         onConfirm={handleCreemConfirm}
         product={selectedCreemProduct}
         processing={creemProcessing}
+      />
+
+      <LanTuPaymentDialog
+        open={lantuDialogOpen}
+        onOpenChange={setLanTuDialogOpen}
+        session={lantuSession}
+        checking={lantuChecking}
+        onCheck={() => void checkLanTuPayment(true)}
       />
     </>
   )

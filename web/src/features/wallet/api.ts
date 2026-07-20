@@ -39,6 +39,9 @@ import type {
   WaffoPaymentResponse,
   WaffoPancakePaymentRequest,
   WaffoPancakePaymentResponse,
+  LanTuPaymentRequest,
+  LanTuPaymentResponse,
+  LanTuPaymentStatusResponse,
 } from './types'
 
 // ============================================================================
@@ -176,6 +179,25 @@ export async function requestWaffoPancakePayment(
   request: WaffoPancakePaymentRequest
 ): Promise<WaffoPancakePaymentResponse> {
   const res = await api.post('/api/user/waffo-pancake/pay', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+export async function requestLanTuPayment(
+  request: LanTuPaymentRequest
+): Promise<LanTuPaymentResponse> {
+  const res = await api.post('/api/user/lantu/pay', request, {
+    skipBusinessError: true,
+  } as Record<string, unknown>)
+  return res.data
+}
+
+export async function getLanTuPaymentStatus(
+  tradeNo: string
+): Promise<LanTuPaymentStatusResponse> {
+  const params = new URLSearchParams({ trade_no: tradeNo })
+  const res = await api.get(`/api/user/lantu/status?${params.toString()}`, {
     skipBusinessError: true,
   } as Record<string, unknown>)
   return res.data

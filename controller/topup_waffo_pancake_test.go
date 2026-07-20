@@ -1,11 +1,19 @@
 package controller
 
 import (
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,6 +31,33 @@ func TestFormatWaffoPancakeAmount_UsesDisplayPriceString(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			require.Equal(t, tc.expected, formatWaffoPancakeAmount(tc.amount))
+		})
+	}
+}
+
+func TestRespondWaffoPancakeResolutionErrorRetriesOnlyInternalFailures(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	event := &service.WaffoPancakeWebhookEvent{ID: "evt_1", Data: service.WaffoPancakeWebhookData{OrderID: "ord_1"}}
+
+	tests := []struct {
+		name       string
+		err        error
+		statusCode int
+		body       string
+	}{
+		{name: "permanent rejection", err: fmt.Errorf("%w: mismatch", service.ErrWaffoPancakePaymentRejected), statusCode: http.StatusOK, body: "OK"},
+		{name: "temporary database failure", err: errors.New("database unavailable"), statusCode: http.StatusInternalServerError, body: "retry"},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(recorder)
+			context.Request = httptest.NewRequest(http.MethodPost, "/api/waffo-pancake/webhook/prod", nil)
+			respondWaffoPancakeResolutionError(context, "充值订单", event, testCase.err)
+
+			assert.Equal(t, testCase.statusCode, recorder.Code)
+			assert.Equal(t, testCase.body, recorder.Body.String())
 		})
 	}
 }
@@ -46,7 +81,7 @@ func TestGetWaffoPancakePayMoney(t *testing.T) {
 	setting.WaffoPancakeUnitPrice = 2.5
 	operation_setting.GetPaymentSetting().AmountDiscount = map[int]float64{
 		10:                           0.8,
-		int(common.QuotaPerUnit * 3): 0.5,
+		int(common.QuotaPerUnit * 2): 0.8,
 		20:                           0,
 	}
 	require.NoError(t, common.UpdateTopupGroupRatioByJSONString(`{"default":1,"vip":1.2}`))
@@ -70,7 +105,7 @@ func TestGetWaffoPancakePayMoney(t *testing.T) {
 			amount:           int64(common.QuotaPerUnit * 3),
 			group:            "vip",
 			quotaDisplayType: operation_setting.QuotaDisplayTypeTokens,
-			expected:         4.5,
+			expected:         7.2,
 		},
 		{
 			name:             "non-positive discount falls back to no discount",
@@ -88,4 +123,35 @@ func TestGetWaffoPancakePayMoney(t *testing.T) {
 			require.InDelta(t, tc.expected, actual, 0.000001)
 		})
 	}
+}
+
+func TestListWaffoPancakeCatalogNeverReadsCredentialsFromURL(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalMerchantID := setting.WaffoPancakeMerchantID
+	originalPrivateKey := setting.WaffoPancakePrivateKey
+	t.Cleanup(func() {
+		setting.WaffoPancakeMerchantID = originalMerchantID
+		setting.WaffoPancakePrivateKey = originalPrivateKey
+	})
+	setting.WaffoPancakeMerchantID = ""
+	setting.WaffoPancakePrivateKey = ""
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/option/waffo-pancake/catalog?merchant_id=merchant&private_key=secret", nil)
+	ListWaffoPancakeCatalog(context)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "凭证未配置")
+}
+
+func TestListWaffoPancakeCatalogLimitsCredentialBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodPost, "/api/option/waffo-pancake/catalog", strings.NewReader(strings.Repeat("x", (16<<10)+1)))
+
+	ListWaffoPancakeCatalog(context)
+
+	assert.Equal(t, http.StatusRequestEntityTooLarge, recorder.Code)
 }

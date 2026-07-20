@@ -62,6 +62,7 @@ const BILLING_SECTIONS = [
           PreConsumedQuota: settings.PreConsumedQuota,
           QuotaForInviter: settings.QuotaForInviter,
           QuotaForInvitee: settings.QuotaForInvitee,
+          QuotaForInviterOnFirstTopup: settings.QuotaForInviterOnFirstTopup,
           TopUpLink: settings.TopUpLink,
           general_setting: {
             docs_link: settings['general_setting.docs_link'],
@@ -142,6 +143,7 @@ const BILLING_SECTIONS = [
           PayMethods: settings.PayMethods,
           AmountOptions: settings['payment_setting.amount_options'],
           AmountDiscount: settings['payment_setting.amount_discount'],
+          AmountBonus: settings['payment_setting.amount_bonus'],
           StripeApiSecret: settings.StripeApiSecret,
           StripeWebhookSecret: settings.StripeWebhookSecret,
           StripePriceId: settings.StripePriceId,
@@ -152,6 +154,10 @@ const BILLING_SECTIONS = [
           CreemWebhookSecret: settings.CreemWebhookSecret,
           CreemTestMode: settings.CreemTestMode,
           CreemProducts: settings.CreemProducts,
+          LantuEnabled: settings.LantuEnabled ?? false,
+          LantuMchId: settings.LantuMchId ?? '',
+          LantuSecretKey: settings.LantuSecretKey ?? '',
+          LantuMinTopUp: settings.LantuMinTopUp ?? 1,
         }}
         waffoDefaultValues={{
           WaffoEnabled: settings.WaffoEnabled ?? false,
@@ -174,6 +180,7 @@ const BILLING_SECTIONS = [
           WaffoPancakeMerchantID: settings.WaffoPancakeMerchantID ?? '',
           WaffoPancakePrivateKey: settings.WaffoPancakePrivateKey ?? '',
           WaffoPancakeReturnURL: settings.WaffoPancakeReturnURL ?? '',
+          WaffoPancakeEnvironment: settings.WaffoPancakeEnvironment ?? 'prod',
         }}
         waffoPancakeProvisionedStoreID={settings.WaffoPancakeStoreID ?? ''}
         waffoPancakeProvisionedProductID={settings.WaffoPancakeProductID ?? ''}

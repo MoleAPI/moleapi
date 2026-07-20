@@ -20,6 +20,7 @@ package controller
 
 import (
 	"bytes"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,6 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/stripe/stripe-go/v81"
 	"github.com/stripe/stripe-go/v81/webhook"
+	"gorm.io/gorm"
 )
 
 func configureStripeWebhookForSettlementTest(t *testing.T) {
@@ -103,6 +105,8 @@ func TestStripeWebhookRetriesUntilAtomicSettlementSucceeds(t *testing.T) {
 		"customer":            "cus_retry",
 		"status":              "complete",
 		"payment_status":      "paid",
+		"mode":                "payment",
+		"amount_subtotal":     100,
 		"amount_total":        100,
 		"currency":            "usd",
 	}
@@ -192,4 +196,57 @@ func TestStripeAsyncFailureMarksSubscriptionOrderFailed(t *testing.T) {
 	var topUpCount int64
 	require.NoError(t, db.Model(&model.TopUp{}).Where("trade_no = ?", order.TradeNo).Count(&topUpCount).Error)
 	assert.Zero(t, topUpCount)
+}
+
+func TestStripeAsyncFailureCannotOverwriteSettledSubscriptionOrder(t *testing.T) {
+	db := setupTopUpWebhookSettlementTest(t)
+	configureStripeWebhookForSettlementTest(t)
+	order := &model.SubscriptionOrder{
+		UserId:          614,
+		PlanId:          1,
+		Money:           9.99,
+		TradeNo:         "sub_ref_stripe-async-settled",
+		PaymentMethod:   model.PaymentMethodStripe,
+		PaymentProvider: model.PaymentProviderStripe,
+		CreateTime:      1,
+		CompleteTime:    2,
+		Status:          common.TopUpStatusSuccess,
+	}
+	require.NoError(t, db.Create(order).Error)
+
+	response := runSignedStripeWebhook(t, stripe.EventTypeCheckoutSessionAsyncPaymentFailed, map[string]any{
+		"client_reference_id": order.TradeNo,
+	})
+	assert.Equal(t, http.StatusOK, response.Code)
+
+	require.NoError(t, db.First(order, order.Id).Error)
+	assert.Equal(t, common.TopUpStatusSuccess, order.Status)
+	assert.Equal(t, int64(2), order.CompleteTime)
+}
+
+func TestStripeExpiredWebhookRetriesDatabaseFailures(t *testing.T) {
+	tests := []struct {
+		name       string
+		modelFails func(any) bool
+	}{
+		{name: "subscription lookup", modelFails: func(value any) bool { _, ok := value.(*model.SubscriptionOrder); return ok }},
+		{name: "topup lookup", modelFails: func(value any) bool { _, ok := value.(*model.TopUp); return ok }},
+	}
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := setupTopUpWebhookSettlementTest(t)
+			configureStripeWebhookForSettlementTest(t)
+			require.NoError(t, db.Callback().Query().Before("gorm:query").Register("stripe_expired_lookup_failure", func(tx *gorm.DB) {
+				if testCase.modelFails(tx.Statement.Model) {
+					tx.AddError(errors.New("database unavailable"))
+				}
+			}))
+
+			response := runSignedStripeWebhook(t, stripe.EventTypeCheckoutSessionExpired, map[string]any{
+				"client_reference_id": "MO1TST00000000000000000000000000",
+				"status":              "expired",
+			})
+			assert.Equal(t, http.StatusServiceUnavailable, response.Code)
+		})
+	}
 }

@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
@@ -217,21 +218,107 @@ type SubscriptionOrder struct {
 	PlanId int     `json:"plan_id" gorm:"index"`
 	Money  float64 `json:"money"`
 
-	TradeNo         string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	PaymentMethod   string `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	Status          string `json:"status"`
-	CreateTime      int64  `json:"create_time"`
-	CompleteTime    int64  `json:"complete_time"`
+	TradeNo          string `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	GatewayTradeNo   string `json:"gateway_trade_no" gorm:"type:varchar(255);index;default:''"`
+	PaymentProductId string `json:"payment_product_id" gorm:"type:varchar(255);default:''"`
+	PaymentMode      string `json:"payment_mode" gorm:"type:varchar(16);default:''"`
+	PaymentCurrency  string `json:"payment_currency" gorm:"type:varchar(8);default:''"`
+	PaymentMethod    string `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider  string `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	Status           string `json:"status"`
+	CreateTime       int64  `json:"create_time"`
+	CompleteTime     int64  `json:"complete_time"`
 
 	ProviderPayload string `json:"provider_payload" gorm:"type:text"`
+	PlanSnapshot    string `json:"-" gorm:"type:text"`
 }
 
 func (o *SubscriptionOrder) Insert() error {
 	if o.CreateTime == 0 {
 		o.CreateTime = common.GetTimestamp()
 	}
+	if o.PlanSnapshot == "" {
+		plan, err := GetSubscriptionPlanById(o.PlanId)
+		if err != nil {
+			return err
+		}
+		if err := o.SetPlanSnapshot(plan); err != nil {
+			return err
+		}
+	}
 	return DB.Create(o).Error
+}
+
+func BindPendingSubscriptionOrderPaymentFacts(tradeNo string, expectedPaymentProvider string, gatewayTradeNo string, paymentCurrency string, paymentProductId string, paymentMode string, money float64) error {
+	if tradeNo == "" || expectedPaymentProvider == "" || gatewayTradeNo == "" || money <= 0 || math.IsNaN(money) || math.IsInf(money, 0) {
+		return errors.New("invalid payment facts")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		order := &SubscriptionOrder{}
+		if err := lockForUpdate(tx).Where("trade_no = ?", tradeNo).First(order).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSubscriptionOrderNotFound
+			}
+			return err
+		}
+		if order.PaymentProvider != expectedPaymentProvider {
+			return ErrPaymentMethodMismatch
+		}
+		if order.Status != common.TopUpStatusPending {
+			return ErrSubscriptionOrderStatusInvalid
+		}
+		if order.GatewayTradeNo != "" && order.GatewayTradeNo != gatewayTradeNo {
+			return ErrPaymentMethodMismatch
+		}
+		if paymentCurrency != "" && order.PaymentCurrency != "" && order.PaymentCurrency != paymentCurrency {
+			return ErrPaymentMethodMismatch
+		}
+		if paymentProductId != "" && order.PaymentProductId != "" && order.PaymentProductId != paymentProductId {
+			return ErrPaymentMethodMismatch
+		}
+		if paymentMode != "" && order.PaymentMode != "" && order.PaymentMode != paymentMode {
+			return ErrPaymentMethodMismatch
+		}
+		order.GatewayTradeNo = gatewayTradeNo
+		order.Money = money
+		if paymentCurrency != "" {
+			order.PaymentCurrency = paymentCurrency
+		}
+		if paymentProductId != "" {
+			order.PaymentProductId = paymentProductId
+		}
+		if paymentMode != "" {
+			order.PaymentMode = paymentMode
+		}
+		return tx.Save(order).Error
+	})
+}
+
+func (o *SubscriptionOrder) SetPlanSnapshot(plan *SubscriptionPlan) error {
+	if o == nil || plan == nil || plan.Id == 0 || plan.Id != o.PlanId {
+		return errors.New("invalid subscription plan snapshot")
+	}
+	snapshot, err := common.Marshal(plan)
+	if err != nil {
+		return err
+	}
+	o.PlanSnapshot = string(snapshot)
+	return nil
+}
+
+func (o *SubscriptionOrder) planForCompletion() (*SubscriptionPlan, error) {
+	if strings.TrimSpace(o.PlanSnapshot) == "" {
+		return GetSubscriptionPlanById(o.PlanId)
+	}
+	var plan SubscriptionPlan
+	if err := common.UnmarshalJsonStr(o.PlanSnapshot, &plan); err != nil {
+		return nil, fmt.Errorf("invalid subscription plan snapshot: %w", err)
+	}
+	if plan.Id == 0 || plan.Id != o.PlanId {
+		return nil, errors.New("subscription plan snapshot mismatch")
+	}
+	plan.NormalizeDefaults()
+	return &plan, nil
 }
 
 func (o *SubscriptionOrder) Update() error {
@@ -239,14 +326,19 @@ func (o *SubscriptionOrder) Update() error {
 }
 
 func GetSubscriptionOrderByTradeNo(tradeNo string) *SubscriptionOrder {
+	order, _ := FindSubscriptionOrderByTradeNo(tradeNo)
+	return order
+}
+
+func FindSubscriptionOrderByTradeNo(tradeNo string) (*SubscriptionOrder, error) {
 	if tradeNo == "" {
-		return nil
+		return nil, gorm.ErrRecordNotFound
 	}
 	var order SubscriptionOrder
 	if err := DB.Where("trade_no = ?", tradeNo).First(&order).Error; err != nil {
-		return nil
+		return nil, err
 	}
-	return &order
+	return &order, nil
 }
 
 // User subscription instance
@@ -491,6 +583,10 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 	if userId <= 0 {
 		return nil, errors.New("invalid user id")
 	}
+	var lockedUser User
+	if err := lockForUpdate(tx).Select("id").Where("id = ?", userId).First(&lockedUser).Error; err != nil {
+		return nil, err
+	}
 	if plan.MaxPurchasePerUser > 0 {
 		var count int64
 		if err := tx.Model(&UserSubscription{}).
@@ -502,7 +598,7 @@ func CreateUserSubscriptionFromPlanTx(tx *gorm.DB, userId int, plan *Subscriptio
 			return nil, errors.New("已达到该套餐购买上限")
 		}
 	}
-	nowUnix := GetDBTimestamp()
+	nowUnix := getDBTimestamp(tx)
 	now := time.Unix(nowUnix, 0)
 	endUnix, err := calcPlanEndTime(now, plan)
 	if err != nil {
@@ -567,6 +663,10 @@ func refreshSubscriptionUserGroupCache(userId int, operation string) {
 // expectedPaymentProvider guards against cross-gateway callback attacks (empty skips the check).
 // actualPaymentMethod updates the order's PaymentMethod to reflect the real payment type used (empty skips update).
 func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedPaymentProvider string, actualPaymentMethod string) error {
+	return CompleteSubscriptionOrderWithPaymentDetails(tradeNo, providerPayload, expectedPaymentProvider, actualPaymentMethod, "", "")
+}
+
+func CompleteSubscriptionOrderWithPaymentDetails(tradeNo string, providerPayload string, expectedPaymentProvider string, actualPaymentMethod string, gatewayTradeNo string, paymentCurrency string) error {
 	if tradeNo == "" {
 		return errors.New("tradeNo is empty")
 	}
@@ -593,7 +693,7 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if order.Status != common.TopUpStatusPending {
 			return ErrSubscriptionOrderStatusInvalid
 		}
-		plan, err := GetSubscriptionPlanById(order.PlanId)
+		plan, err := order.planForCompletion()
 		if err != nil {
 			return err
 		}
@@ -607,17 +707,23 @@ func CompleteSubscriptionOrder(tradeNo string, providerPayload string, expectedP
 		if subscription.PrevUserGroup != "" {
 			upgradeGroup = strings.TrimSpace(subscription.UpgradeGroup)
 		}
-		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
-			return err
-		}
-		order.Status = common.TopUpStatusSuccess
-		order.CompleteTime = common.GetTimestamp()
 		if providerPayload != "" {
 			order.ProviderPayload = providerPayload
 		}
 		if actualPaymentMethod != "" && order.PaymentMethod != actualPaymentMethod {
 			order.PaymentMethod = actualPaymentMethod
 		}
+		if gatewayTradeNo != "" {
+			order.GatewayTradeNo = gatewayTradeNo
+		}
+		if paymentCurrency != "" {
+			order.PaymentCurrency = paymentCurrency
+		}
+		if err := upsertSubscriptionTopUpTx(tx, &order); err != nil {
+			return err
+		}
+		order.Status = common.TopUpStatusSuccess
+		order.CompleteTime = common.GetTimestamp()
 		if err := tx.Save(&order).Error; err != nil {
 			return err
 		}
@@ -649,23 +755,53 @@ func upsertSubscriptionTopUpTx(tx *gorm.DB, order *SubscriptionOrder) error {
 	if err := tx.Where("trade_no = ?", order.TradeNo).First(&topup).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			topup = TopUp{
-				UserId:        order.UserId,
-				Amount:        0,
-				Money:         order.Money,
-				TradeNo:       order.TradeNo,
-				PaymentMethod: order.PaymentMethod,
-				CreateTime:    order.CreateTime,
-				CompleteTime:  now,
-				Status:        common.TopUpStatusSuccess,
+				UserId:           order.UserId,
+				Amount:           0,
+				Money:            order.Money,
+				TradeNo:          order.TradeNo,
+				GatewayTradeNo:   order.GatewayTradeNo,
+				PaymentProductId: order.PaymentProductId,
+				PaymentMode:      order.PaymentMode,
+				PaymentCurrency:  order.PaymentCurrency,
+				PaymentMethod:    order.PaymentMethod,
+				PaymentProvider:  order.PaymentProvider,
+				CreateTime:       order.CreateTime,
+				CompleteTime:     now,
+				Status:           common.TopUpStatusSuccess,
 			}
 			return tx.Create(&topup).Error
 		}
 		return err
 	}
 	topup.Money = order.Money
+	if topup.GatewayTradeNo == "" {
+		topup.GatewayTradeNo = order.GatewayTradeNo
+	} else if order.GatewayTradeNo != "" && topup.GatewayTradeNo != order.GatewayTradeNo {
+		return ErrPaymentMethodMismatch
+	}
+	if topup.PaymentCurrency == "" {
+		topup.PaymentCurrency = order.PaymentCurrency
+	} else if order.PaymentCurrency != "" && topup.PaymentCurrency != order.PaymentCurrency {
+		return ErrPaymentMethodMismatch
+	}
+	if topup.PaymentProductId == "" {
+		topup.PaymentProductId = order.PaymentProductId
+	} else if order.PaymentProductId != "" && topup.PaymentProductId != order.PaymentProductId {
+		return ErrPaymentMethodMismatch
+	}
+	if topup.PaymentMode == "" {
+		topup.PaymentMode = order.PaymentMode
+	} else if order.PaymentMode != "" && topup.PaymentMode != order.PaymentMode {
+		return ErrPaymentMethodMismatch
+	}
 	if topup.PaymentMethod == "" {
 		topup.PaymentMethod = order.PaymentMethod
 	} else if topup.PaymentMethod != order.PaymentMethod {
+		return ErrPaymentMethodMismatch
+	}
+	if topup.PaymentProvider == "" {
+		topup.PaymentProvider = order.PaymentProvider
+	} else if topup.PaymentProvider != order.PaymentProvider {
 		return ErrPaymentMethodMismatch
 	}
 	if topup.CreateTime == 0 {
@@ -690,7 +826,10 @@ func UpdatePendingSubscriptionOrderStatus(tradeNo string, expectedPaymentProvide
 	return DB.Transaction(func(tx *gorm.DB) error {
 		var order SubscriptionOrder
 		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(&order).Error; err != nil {
-			return ErrSubscriptionOrderNotFound
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrSubscriptionOrderNotFound
+			}
+			return err
 		}
 		if expectedPaymentProvider != "" && order.PaymentProvider != expectedPaymentProvider {
 			return ErrPaymentMethodMismatch
@@ -744,9 +883,12 @@ func calcSubscriptionBalanceQuota(priceAmount float64) (int, error) {
 	}
 	quota := decimal.NewFromFloat(priceAmount).
 		Mul(decimal.NewFromFloat(common.QuotaPerUnit)).
-		Ceil().
-		IntPart()
-	return int(quota), nil
+		Ceil()
+	result, clamp := common.QuotaFromDecimalChecked(quota)
+	if clamp != nil {
+		return 0, errors.New("套餐价格超出可用额度范围")
+	}
+	return result, nil
 }
 
 // PurchaseSubscriptionWithBalance creates a subscription by deducting the user's wallet quota.
@@ -799,7 +941,11 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		}
 
 		now := common.GetTimestamp()
-		tradeNo := fmt.Sprintf("SUBBALUSR%dNO%s%d", userId, common.GetRandomString(6), time.Now().UnixNano())
+		// Historical balance orders keep their protected new-api-ref- identifiers; new orders use the unified format.
+		tradeNo, err := NewSubscriptionTradeNo(PaymentProviderBalance)
+		if err != nil {
+			return err
+		}
 		order := &SubscriptionOrder{
 			UserId:          userId,
 			PlanId:          plan.Id,
@@ -807,10 +953,14 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 			TradeNo:         tradeNo,
 			PaymentMethod:   PaymentMethodBalance,
 			PaymentProvider: PaymentProviderBalance,
+			PaymentCurrency: strings.ToUpper(strings.TrimSpace(plan.Currency)),
 			Status:          common.TopUpStatusSuccess,
 			CreateTime:      now,
 			CompleteTime:    now,
 			ProviderPayload: fmt.Sprintf("charged_quota=%d", requiredQuota),
+		}
+		if err := order.SetPlanSnapshot(plan); err != nil {
+			return err
 		}
 		if err := tx.Create(order).Error; err != nil {
 			return err

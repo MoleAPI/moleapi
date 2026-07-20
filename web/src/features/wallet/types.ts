@@ -59,6 +59,19 @@ export type WaffoPancakePaymentResponse = ApiResponse<
     }
   | string
 >
+export type LanTuPaymentLinkKind = 'qr_image' | 'qr_text' | 'url'
+export interface LanTuCheckout {
+  pay_link: string
+  pay_link_kind: LanTuPaymentLinkKind
+  pay_money: string
+  trade_no: string
+  client: 'native' | 'h5'
+}
+export type LanTuPaymentResponse = ApiResponse<LanTuCheckout>
+export type LanTuPaymentStatusResponse = ApiResponse<{
+  trade_no: string
+  status: TopupStatus
+}>
 
 /**
  * Creem product configuration
@@ -134,6 +147,14 @@ export interface TopupInfo {
   amount_options: number[]
   /** Discount rates by amount */
   discount: Record<number, number>
+  /** Bonus quota rates by minimum amount */
+  bonus: Record<number, number>
+  /** Quota awarded to an inviter when a referred user signs up */
+  quota_for_inviter: number
+  /** Quota awarded to a newly referred user */
+  quota_for_invitee: number
+  /** Extra quota awarded to an inviter after the invitee's first top-up */
+  quota_for_inviter_on_first_topup: number
   /** Optional topup link for purchasing codes */
   topup_link?: string
   /** Whether Creem topup is enabled */
@@ -150,6 +171,10 @@ export interface TopupInfo {
   enable_waffo_pancake_topup?: boolean
   /** Minimum topup amount for Waffo Pancake */
   waffo_pancake_min_topup?: number
+  /** Whether LanTu WeChat Pay is enabled */
+  enable_lantu_topup?: boolean
+  /** Minimum topup amount for LanTu */
+  lantu_min_topup?: number
   /** Whether redemption code usage is enabled */
   enable_redemption?: boolean
   /** Whether compliance confirmation has been completed */
@@ -166,6 +191,8 @@ export interface PresetAmount {
   value: number
   /** Optional discount rate (0-1) */
   discount?: number
+  /** Optional extra quota rate (0-1) */
+  bonus?: number
 }
 
 /**
@@ -202,6 +229,11 @@ export interface WaffoPaymentRequest {
 export interface WaffoPancakePaymentRequest {
   /** Topup amount */
   amount: number
+}
+
+export interface LanTuPaymentRequest {
+  amount: number
+  client: 'native' | 'h5'
 }
 
 /**
@@ -247,7 +279,7 @@ export interface UserWalletData {
 /**
  * Topup record status
  */
-export type TopupStatus = 'success' | 'pending' | 'expired'
+export type TopupStatus = 'success' | 'pending' | 'failed' | 'expired'
 
 /**
  * Topup billing record

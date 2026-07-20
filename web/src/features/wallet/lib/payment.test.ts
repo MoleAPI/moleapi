@@ -22,6 +22,10 @@ import { describe, test } from 'node:test'
 import { PAYMENT_TYPES } from '../constants'
 import {
   dispatchSelectedPayment,
+  getEpayPaymentMethods,
+  getStandardPaymentMethods,
+  isLanTuPayment,
+  isSafeHttpPaymentUrl,
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
@@ -34,6 +38,47 @@ describe('payment type classification', () => {
     assert.equal(isWaffoPancakePayment(PAYMENT_TYPES.WAFFO_PANCAKE), true)
     assert.equal(isWaffoPancakePayment(PAYMENT_TYPES.WAFFO), false)
     assert.equal(isStripePayment(PAYMENT_TYPES.STRIPE), true)
+    assert.equal(isLanTuPayment(PAYMENT_TYPES.LANTU), true)
+  })
+
+  test('renders Waffo only in its dedicated method list', () => {
+    assert.deepEqual(
+      getStandardPaymentMethods([
+        { name: 'Alipay', type: PAYMENT_TYPES.ALIPAY },
+        { name: 'Waffo', type: PAYMENT_TYPES.WAFFO },
+        { name: 'LanTu', type: PAYMENT_TYPES.LANTU },
+      ]),
+      [
+        { name: 'Alipay', type: PAYMENT_TYPES.ALIPAY },
+        { name: 'LanTu', type: PAYMENT_TYPES.LANTU },
+      ]
+    )
+  })
+
+  test('accepts only absolute HTTP payment URLs without credentials', () => {
+    assert.equal(isSafeHttpPaymentUrl('https://pay.example.com/order'), true)
+    assert.equal(isSafeHttpPaymentUrl('http://pay.example.com/order'), true)
+    assert.equal(isSafeHttpPaymentUrl('javascript:alert(1)'), false)
+    assert.equal(isSafeHttpPaymentUrl('/relative'), false)
+    assert.equal(isSafeHttpPaymentUrl('https://user:pass@example.com'), false)
+  })
+
+  test('keeps dedicated gateways out of Epay subscription methods', () => {
+    assert.deepEqual(
+      getEpayPaymentMethods([
+        { name: 'Alipay', type: 'alipay' },
+        { name: 'Stripe', type: PAYMENT_TYPES.STRIPE },
+        { name: 'Creem', type: PAYMENT_TYPES.CREEM },
+        { name: 'Waffo', type: PAYMENT_TYPES.WAFFO },
+        { name: 'Pancake', type: PAYMENT_TYPES.WAFFO_PANCAKE },
+        { name: 'LanTu', type: 'lantu' },
+        { name: 'WeChat', type: 'wxpay' },
+      ]),
+      [
+        { name: 'Alipay', type: 'alipay' },
+        { name: 'WeChat', type: 'wxpay' },
+      ]
+    )
   })
 })
 
@@ -57,6 +102,7 @@ describe('payment dispatch', () => {
           calls.push('pancake')
           return false
         },
+        lantu: async () => false,
       }
     )
 
@@ -77,10 +123,32 @@ describe('payment dispatch', () => {
           return true
         },
         waffoPancake: async () => false,
+        lantu: async () => false,
       }
     )
 
     assert.equal(success, false)
     assert.equal(called, false)
+  })
+
+  test('dispatches LanTu to its own checkout flow', async () => {
+    const calls: string[] = []
+    const success = await dispatchSelectedPayment(
+      { name: 'LanTu', type: PAYMENT_TYPES.LANTU },
+      50,
+      null,
+      {
+        regular: async () => false,
+        waffo: async () => false,
+        waffoPancake: async () => false,
+        lantu: async (amount) => {
+          calls.push(`lantu:${amount}`)
+          return true
+        },
+      }
+    )
+
+    assert.equal(success, true)
+    assert.deepEqual(calls, ['lantu:50'])
   })
 })

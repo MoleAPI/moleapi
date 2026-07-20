@@ -3,33 +3,39 @@ package model
 import (
 	"errors"
 	"fmt"
+	"math"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
 
 type TopUp struct {
-	Id              int     `json:"id"`
-	UserId          int     `json:"user_id" gorm:"index"`
-	Amount          int64   `json:"amount"`
-	Money           float64 `json:"money"`
-	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	GatewayTradeNo  string  `json:"gateway_trade_no" gorm:"type:varchar(255);index;default:''"`
-	CreditedQuota   int     `json:"credited_quota" gorm:"type:int;default:0"`
-	PaymentCurrency string  `json:"payment_currency" gorm:"type:varchar(8);default:''"`
-	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	CreateTime      int64   `json:"create_time"`
-	CompleteTime    int64   `json:"complete_time"`
-	Status          string  `json:"status"`
+	Id               int     `json:"id"`
+	UserId           int     `json:"user_id" gorm:"index"`
+	Amount           int64   `json:"amount"`
+	Money            float64 `json:"money"`
+	TradeNo          string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	GatewayTradeNo   string  `json:"gateway_trade_no" gorm:"type:varchar(255);index;default:''"`
+	PaymentProductId string  `json:"payment_product_id" gorm:"type:varchar(255);default:''"`
+	PaymentMode      string  `json:"payment_mode" gorm:"type:varchar(16);default:''"`
+	PromisedQuota    int     `json:"promised_quota" gorm:"type:int;default:0"`
+	CreditedQuota    int     `json:"credited_quota" gorm:"type:int;default:0"`
+	PaymentCurrency  string  `json:"payment_currency" gorm:"type:varchar(8);default:''"`
+	PaymentMethod    string  `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider  string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	CreateTime       int64   `json:"create_time"`
+	CompleteTime     int64   `json:"complete_time"`
+	Status           string  `json:"status"`
 }
 
 const (
 	PaymentMethodStripe       = "stripe"
 	PaymentMethodCreem        = "creem"
+	PaymentMethodLanTu        = "lantu"
 	PaymentMethodWaffo        = "waffo"
 	PaymentMethodWaffoPancake = "waffo_pancake"
 	PaymentMethodBalance      = "balance"
@@ -39,6 +45,7 @@ const (
 	PaymentProviderEpay         = "epay"
 	PaymentProviderStripe       = "stripe"
 	PaymentProviderCreem        = "creem"
+	PaymentProviderLanTu        = "lantu"
 	PaymentProviderWaffo        = "waffo"
 	PaymentProviderWaffoPancake = "waffo_pancake"
 	PaymentProviderBalance      = "balance"
@@ -52,9 +59,22 @@ var (
 )
 
 func (topUp *TopUp) Insert() error {
-	var err error
-	err = DB.Create(topUp).Error
-	return err
+	if topUp.Status == common.TopUpStatusPending {
+		if topUp.PromisedQuota < 0 || topUp.PromisedQuota > common.MaxQuota {
+			return ErrTopUpQuotaInvalid
+		}
+		if topUp.PromisedQuota == 0 {
+			baseQuota, err := topUpBaseQuota(topUp)
+			if err != nil {
+				return err
+			}
+			topUp.PromisedQuota, err = calculateTopUpPromisedQuota(topUp, baseQuota, true)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return DB.Create(topUp).Error
 }
 
 func (topUp *TopUp) Update() error {
@@ -74,13 +94,16 @@ func GetTopUpById(id int) *TopUp {
 }
 
 func GetTopUpByTradeNo(tradeNo string) *TopUp {
-	var topUp *TopUp
-	var err error
-	err = DB.Where("trade_no = ?", tradeNo).First(&topUp).Error
-	if err != nil {
-		return nil
-	}
+	topUp, _ := FindTopUpByTradeNo(tradeNo)
 	return topUp
+}
+
+func FindTopUpByTradeNo(tradeNo string) (*TopUp, error) {
+	var topUp TopUp
+	if err := DB.Where("trade_no = ?", tradeNo).First(&topUp).Error; err != nil {
+		return nil, err
+	}
+	return &topUp, nil
 }
 
 func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, targetStatus string) error {
@@ -96,16 +119,66 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 	return DB.Transaction(func(tx *gorm.DB) error {
 		topUp := &TopUp{}
 		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
-			return ErrTopUpNotFound
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTopUpNotFound
+			}
+			return err
 		}
 		if expectedPaymentProvider != "" && topUp.PaymentProvider != expectedPaymentProvider {
-			return ErrPaymentMethodMismatch
+			if expectedPaymentProvider != PaymentProviderLanTu || topUp.PaymentProvider != "" || topUp.PaymentMethod != PaymentMethodLanTu {
+				return ErrPaymentMethodMismatch
+			}
+			topUp.PaymentProvider = PaymentProviderLanTu
 		}
 		if topUp.Status != common.TopUpStatusPending {
 			return ErrTopUpStatusInvalid
 		}
 
 		topUp.Status = targetStatus
+		return tx.Save(topUp).Error
+	})
+}
+
+func BindPendingTopUpPaymentFacts(tradeNo string, expectedPaymentProvider string, gatewayTradeNo string, paymentCurrency string, paymentProductId string, paymentMode string) error {
+	if tradeNo == "" || expectedPaymentProvider == "" || gatewayTradeNo == "" {
+		return errors.New("invalid payment facts")
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		topUp := &TopUp{}
+		if err := lockForUpdate(tx).Where("trade_no = ?", tradeNo).First(topUp).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrTopUpNotFound
+			}
+			return err
+		}
+		if topUp.PaymentProvider != expectedPaymentProvider {
+			return ErrPaymentMethodMismatch
+		}
+		if topUp.Status != common.TopUpStatusPending {
+			return ErrTopUpStatusInvalid
+		}
+		if topUp.GatewayTradeNo != "" && topUp.GatewayTradeNo != gatewayTradeNo {
+			return ErrPaymentMethodMismatch
+		}
+		if paymentCurrency != "" && topUp.PaymentCurrency != "" && topUp.PaymentCurrency != paymentCurrency {
+			return ErrPaymentMethodMismatch
+		}
+		if paymentProductId != "" && topUp.PaymentProductId != "" && topUp.PaymentProductId != paymentProductId {
+			return ErrPaymentMethodMismatch
+		}
+		if paymentMode != "" && topUp.PaymentMode != "" && topUp.PaymentMode != paymentMode {
+			return ErrPaymentMethodMismatch
+		}
+		topUp.GatewayTradeNo = gatewayTradeNo
+		if paymentCurrency != "" {
+			topUp.PaymentCurrency = paymentCurrency
+		}
+		if paymentProductId != "" {
+			topUp.PaymentProductId = paymentProductId
+		}
+		if paymentMode != "" {
+			topUp.PaymentMode = paymentMode
+		}
 		return tx.Save(topUp).Error
 	})
 }
@@ -117,6 +190,9 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 	}
 
 	topUp = &TopUp{}
+	var inviterId int
+	var inviterRewardQuota int
+	var inviterRewardGranted bool
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -125,7 +201,10 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 			return err
 		}
 		if expectedPaymentProvider != "" && topUp.PaymentProvider != expectedPaymentProvider {
-			return ErrPaymentMethodMismatch
+			if expectedPaymentProvider != PaymentProviderLanTu || topUp.PaymentProvider != "" || topUp.PaymentMethod != PaymentMethodLanTu {
+				return ErrPaymentMethodMismatch
+			}
+			topUp.PaymentProvider = PaymentProviderLanTu
 		}
 		if topUp.Status == common.TopUpStatusSuccess {
 			return nil
@@ -134,14 +213,17 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 			return ErrTopUpStatusInvalid
 		}
 
-		var clamp *common.QuotaClamp
-		creditedQuota, clamp = common.QuotaFromDecimalChecked(quotaValue(topUp))
-		if clamp != nil || creditedQuota <= 0 {
-			return ErrTopUpQuotaInvalid
+		if topUp.PromisedQuota > 0 && topUp.PromisedQuota <= common.MaxQuota {
+			creditedQuota = topUp.PromisedQuota
+		} else {
+			creditedQuota, err = calculateTopUpPromisedQuota(topUp, quotaValue(topUp), false)
+			if err != nil {
+				return err
+			}
 		}
 
 		user := &User{}
-		if err := lockForUpdate(tx).Select("id", "quota", "email", "stripe_customer").Where("id = ?", topUp.UserId).First(user).Error; err != nil {
+		if err := lockForUpdate(tx).Select("id", "quota", "email", "stripe_customer", "inviter_id", "inviter_topup_rewarded").Where("id = ?", topUp.UserId).First(user).Error; err != nil {
 			return err
 		}
 		quotaAfterTopUp := int64(user.Quota) + int64(creditedQuota)
@@ -156,6 +238,13 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 			}
 		}
 		userUpdates["quota"] = quotaAfterTopUp
+		inviterId, inviterRewardQuota, inviterRewardGranted, err = rewardInviterOnFirstTopupTx(tx, user)
+		if err != nil {
+			return err
+		}
+		if user.InviterTopupRewarded {
+			userUpdates["inviter_topup_rewarded"] = true
+		}
 
 		topUp.CreditedQuota = creditedQuota
 		topUp.CompleteTime = common.GetTimestamp()
@@ -174,12 +263,92 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 		if err := invalidateUserCache(topUp.UserId); err != nil {
 			common.SysError("failed to invalidate user cache after topup: " + err.Error())
 		}
+		if inviterRewardGranted {
+			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请好友首笔充值赠送 %s", logger.LogQuota(inviterRewardQuota)))
+			if err := invalidateUserCache(inviterId); err != nil {
+				common.SysError("failed to invalidate inviter cache after topup: " + err.Error())
+			}
+		}
 	}
 	return topUp, creditedQuota, settled, err
 }
 
+func topUpBonusBasis(topUp *TopUp) (int64, error) {
+	if topUp.PaymentProvider != PaymentProviderCreem && topUp.PaymentMethod != PaymentMethodCreem {
+		if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+			if topUp.Amount <= 0 || common.QuotaPerUnit <= 0 || math.IsNaN(common.QuotaPerUnit) || math.IsInf(common.QuotaPerUnit, 0) {
+				return 0, ErrTopUpQuotaInvalid
+			}
+			basis := decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+			if basis.GreaterThan(decimal.NewFromInt(math.MaxInt64)) {
+				return math.MaxInt64, nil
+			}
+			return basis.IntPart(), nil
+		}
+		return topUp.Amount, nil
+	}
+	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		return topUp.Amount, nil
+	}
+	if topUp.Amount <= 0 || common.QuotaPerUnit <= 0 || math.IsNaN(common.QuotaPerUnit) || math.IsInf(common.QuotaPerUnit, 0) {
+		return 0, ErrTopUpQuotaInvalid
+	}
+	basis := decimal.NewFromInt(topUp.Amount).Div(decimal.NewFromFloat(common.QuotaPerUnit))
+	if basis.GreaterThan(decimal.NewFromInt(math.MaxInt64)) {
+		return math.MaxInt64, nil
+	}
+	return basis.IntPart(), nil
+}
+
+func topUpBaseQuota(topUp *TopUp) (decimal.Decimal, error) {
+	if topUp == nil || topUp.Amount <= 0 {
+		return decimal.Zero, ErrTopUpQuotaInvalid
+	}
+	if topUp.PaymentProvider == PaymentProviderCreem || topUp.PaymentMethod == PaymentMethodCreem {
+		return decimal.NewFromInt(topUp.Amount), nil
+	}
+	if common.QuotaPerUnit <= 0 || math.IsNaN(common.QuotaPerUnit) || math.IsInf(common.QuotaPerUnit, 0) {
+		return decimal.Zero, ErrTopUpQuotaInvalid
+	}
+	if topUp.PaymentProvider == PaymentProviderStripe || topUp.PaymentMethod == PaymentMethodStripe {
+		if topUp.PaymentCurrency == "" {
+			if topUp.Money <= 0 || math.IsNaN(topUp.Money) || math.IsInf(topUp.Money, 0) {
+				return decimal.Zero, ErrTopUpQuotaInvalid
+			}
+			return decimal.NewFromFloat(topUp.Money).Mul(decimal.NewFromFloat(common.QuotaPerUnit)), nil
+		}
+	}
+	return decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit)), nil
+}
+
+func calculateTopUpPromisedQuota(topUp *TopUp, baseQuota decimal.Decimal, checkedBonus bool) (int, error) {
+	basis, err := topUpBonusBasis(topUp)
+	if err != nil {
+		return 0, err
+	}
+	bonusRate := operation_setting.GetTopupBonusRate(basis)
+	if checkedBonus {
+		bonusRate, err = operation_setting.GetTopupBonusRateChecked(basis)
+		if err != nil {
+			return 0, ErrTopUpQuotaInvalid
+		}
+	}
+	quota, clamp := common.QuotaFromDecimalChecked(baseQuota.Mul(decimal.NewFromInt(1).Add(decimal.NewFromFloat(bonusRate))))
+	if clamp != nil || quota <= 0 {
+		return 0, ErrTopUpQuotaInvalid
+	}
+	return quota, nil
+}
+
 func topUpQuotaFromAmount(topUp *TopUp) decimal.Decimal {
 	return decimal.NewFromInt(topUp.Amount).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+}
+
+func stripeTopUpQuota(topUp *TopUp) decimal.Decimal {
+	if topUp.PaymentCurrency == "" {
+		return decimal.NewFromFloat(topUp.Money).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+	}
+	return topUpQuotaFromAmount(topUp)
 }
 
 func Recharge(referenceId string, customerId string, callerIp string) (err error) {
@@ -191,9 +360,7 @@ func RechargeStripeWithPaymentDetails(referenceId string, customerId string, gat
 		return errors.New("未提供支付单号")
 	}
 
-	topUp, quotaToAdd, settled, err := settleTopUp(referenceId, PaymentProviderStripe, func(topUp *TopUp) decimal.Decimal {
-		return decimal.NewFromFloat(topUp.Money).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
-	}, func(topUp *TopUp, _ *User) map[string]interface{} {
+	topUp, quotaToAdd, settled, err := settleTopUp(referenceId, PaymentProviderStripe, stripeTopUpQuota, func(topUp *TopUp, _ *User) map[string]interface{} {
 		if gatewayTradeNo != "" {
 			topUp.GatewayTradeNo = gatewayTradeNo
 		}
@@ -382,8 +549,11 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	}
 
 	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, "", func(topUp *TopUp) decimal.Decimal {
-		if topUp.PaymentProvider == PaymentProviderStripe {
-			return decimal.NewFromFloat(topUp.Money).Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+		if topUp.PaymentProvider == PaymentProviderStripe || topUp.PaymentMethod == PaymentMethodStripe {
+			return stripeTopUpQuota(topUp)
+		}
+		if topUp.PaymentProvider == PaymentProviderCreem || topUp.PaymentMethod == PaymentMethodCreem {
+			return decimal.NewFromInt(topUp.Amount)
 		}
 		return topUpQuotaFromAmount(topUp)
 	}, nil)
@@ -467,11 +637,48 @@ func RechargeEpay(tradeNo string, paymentMethod string, gatewayTradeNo string, c
 }
 
 func RechargeWaffo(tradeNo string, callerIp string) (err error) {
+	return RechargeWaffoWithPaymentDetails(tradeNo, "", "", callerIp)
+}
+
+func RechargeLanTuWithPaymentDetails(tradeNo string, gatewayTradeNo string, paymentCurrency string, callerIp string) error {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
 	}
 
-	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, PaymentProviderWaffo, topUpQuotaFromAmount, nil)
+	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, PaymentProviderLanTu, topUpQuotaFromAmount, func(topUp *TopUp, _ *User) map[string]interface{} {
+		if gatewayTradeNo != "" {
+			topUp.GatewayTradeNo = gatewayTradeNo
+		}
+		if paymentCurrency != "" {
+			topUp.PaymentCurrency = paymentCurrency
+		}
+		return nil
+	})
+	if err != nil {
+		common.SysError("lantu topup failed: " + err.Error())
+		return errors.New("充值失败，请稍后重试")
+	}
+
+	if settled {
+		RecordTopupLog(topUp.UserId, fmt.Sprintf("蓝兔支付充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodLanTu)
+	}
+	return nil
+}
+
+func RechargeWaffoWithPaymentDetails(tradeNo string, gatewayTradeNo string, paymentCurrency string, callerIp string) (err error) {
+	if tradeNo == "" {
+		return errors.New("未提供支付单号")
+	}
+
+	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, PaymentProviderWaffo, topUpQuotaFromAmount, func(topUp *TopUp, _ *User) map[string]interface{} {
+		if gatewayTradeNo != "" {
+			topUp.GatewayTradeNo = gatewayTradeNo
+		}
+		if paymentCurrency != "" {
+			topUp.PaymentCurrency = paymentCurrency
+		}
+		return nil
+	})
 	if err != nil {
 		common.SysError("waffo topup failed: " + err.Error())
 		return errors.New("充值失败，请稍后重试")
@@ -485,18 +692,30 @@ func RechargeWaffo(tradeNo string, callerIp string) (err error) {
 }
 
 func RechargeWaffoPancake(tradeNo string) (err error) {
+	return RechargeWaffoPancakeWithPaymentDetails(tradeNo, "", "", "")
+}
+
+func RechargeWaffoPancakeWithPaymentDetails(tradeNo string, gatewayTradeNo string, paymentCurrency string, callerIp string) (err error) {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
 	}
 
-	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, PaymentProviderWaffoPancake, topUpQuotaFromAmount, nil)
+	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, PaymentProviderWaffoPancake, topUpQuotaFromAmount, func(topUp *TopUp, _ *User) map[string]interface{} {
+		if gatewayTradeNo != "" {
+			topUp.GatewayTradeNo = gatewayTradeNo
+		}
+		if paymentCurrency != "" {
+			topUp.PaymentCurrency = paymentCurrency
+		}
+		return nil
+	})
 	if err != nil {
 		common.SysError("waffo pancake topup failed: " + err.Error())
 		return errors.New("充值失败，请稍后重试")
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("Waffo Pancake充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), "", topUp.PaymentMethod, PaymentMethodWaffoPancake)
+		RecordTopupLog(topUp.UserId, fmt.Sprintf("Waffo Pancake充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffoPancake)
 	}
 
 	return nil

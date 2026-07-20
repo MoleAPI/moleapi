@@ -46,6 +46,7 @@ interface PaymentConfirmDialogProps {
   calculating: boolean
   processing: boolean
   discountRate?: number
+  bonusRate?: number
   usdExchangeRate?: number
 }
 
@@ -59,6 +60,7 @@ export function PaymentConfirmDialog({
   calculating,
   processing,
   discountRate = DEFAULT_DISCOUNT_RATE,
+  bonusRate = 0,
   usdExchangeRate = 1,
 }: PaymentConfirmDialogProps) {
   const { t } = useTranslation()
@@ -122,6 +124,21 @@ export function PaymentConfirmDialog({
               </div>
             </div>
           )}
+
+          {bonusRate > 0 ? (
+            <div className='bg-muted/50 rounded-lg p-3'>
+              <div className='flex items-center justify-between text-sm'>
+                <span className='text-muted-foreground'>
+                  {t('Bonus quota')}
+                </span>
+                <span className='font-semibold text-green-600'>
+                  {t('{{percentage}}% extra', {
+                    percentage: Math.round(bonusRate * 100),
+                  })}
+                </span>
+              </div>
+            </div>
+          ) : null}
 
           <div className='border-t pt-4'>
             <div className='flex items-center justify-between'>

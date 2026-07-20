@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import type { StatusBadgeProps } from '@/components/status-badge'
 import { formatTimestampToDate } from '@/lib/format'
 
-import type { TopupStatus } from '../types'
+import type { TopupRecord, TopupStatus } from '../types'
 
 // ============================================================================
 // Billing Utility Functions
@@ -42,6 +42,10 @@ export const STATUS_CONFIG: Record<TopupStatus, StatusConfig> = {
     variant: 'warning',
     label: 'Pending',
   },
+  failed: {
+    variant: 'danger',
+    label: 'Failed',
+  },
   expired: {
     variant: 'danger',
     label: 'Expired',
@@ -63,6 +67,8 @@ export const PAYMENT_METHOD_NAMES: Record<string, string> = {
   alipay: 'Alipay',
   wxpay: 'WeChat Pay',
   waffo: 'Waffo',
+  waffo_pancake: 'Waffo Pancake',
+  lantu: 'WeChat Pay (LanTu)',
 }
 
 /**
@@ -81,4 +87,22 @@ export function getPaymentMethodName(
  */
 export function formatTimestamp(timestamp: number): string {
   return formatTimestampToDate(timestamp)
+}
+
+/**
+ * Only the owner can download an invoice for a completed top-up record.
+ */
+export function getTopUpInvoiceDownloadUrl(
+  record: Pick<TopupRecord, 'id' | 'status' | 'user_id'>,
+  currentUserId?: number
+): string | null {
+  if (
+    record.user_id !== currentUserId ||
+    record.status !== 'success' ||
+    !Number.isSafeInteger(record.id) ||
+    record.id <= 0
+  ) {
+    return null
+  }
+  return `/api/user/topup/${record.id}/invoice`
 }

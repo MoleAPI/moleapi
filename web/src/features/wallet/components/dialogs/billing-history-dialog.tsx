@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { InvoiceIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import { Search, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -47,12 +49,14 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { toIntlLocale } from '@/i18n/languages'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { useBillingHistory } from '../../hooks/use-billing-history'
 import {
   getStatusConfig,
   getPaymentMethodName,
   formatTimestamp,
+  getTopUpInvoiceDownloadUrl,
 } from '../../lib/billing'
 import {
   formatHistoricalPaymentAmount,
@@ -88,6 +92,7 @@ export function BillingHistoryDialog({
     handleSearch,
     handleCompleteOrder,
   } = useBillingHistory()
+  const currentUserId = useAuthStore((state) => state.auth.user?.id)
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
   const { copyToClipboard, copiedText } = useCopyToClipboard({ notify: false })
@@ -195,6 +200,10 @@ export function BillingHistoryDialog({
                   const statusConfig = getStatusConfig(record.status)
                   const creditDisplay = formatHistoricalTopUpCredit(record)
                   const gatewayTradeNo = record.gateway_trade_no?.trim()
+                  const invoiceDownloadUrl = getTopUpInvoiceDownloadUrl(
+                    record,
+                    currentUserId
+                  )
                   return (
                     <div
                       key={record.id}
@@ -298,17 +307,33 @@ export function BillingHistoryDialog({
                         )}
                       </div>
 
-                      {/* Admin Actions */}
-                      {isAdmin && record.status === 'pending' && (
-                        <div className='mt-4 flex justify-end'>
-                          <Button
-                            size='sm'
-                            variant='outline'
-                            onClick={() => setConfirmTradeNo(record.trade_no)}
-                            disabled={completing}
-                          >
-                            {t('Complete Order')}
-                          </Button>
+                      {(invoiceDownloadUrl ||
+                        (isAdmin && record.status === 'pending')) && (
+                        <div className='mt-4 flex flex-wrap justify-end gap-2'>
+                          {invoiceDownloadUrl && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              render={<a href={invoiceDownloadUrl} download />}
+                            >
+                              <HugeiconsIcon
+                                icon={InvoiceIcon}
+                                strokeWidth={2}
+                                data-icon='inline-start'
+                              />
+                              {t('Download invoice')}
+                            </Button>
+                          )}
+                          {isAdmin && record.status === 'pending' && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              onClick={() => setConfirmTradeNo(record.trade_no)}
+                              disabled={completing}
+                            >
+                              {t('Complete Order')}
+                            </Button>
+                          )}
                         </div>
                       )}
                     </div>

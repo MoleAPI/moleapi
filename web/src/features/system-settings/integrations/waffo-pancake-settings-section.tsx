@@ -46,6 +46,7 @@ export type WaffoPancakeSettingsValues = {
   WaffoPancakeMerchantID: string
   WaffoPancakePrivateKey: string
   WaffoPancakeReturnURL: string
+  WaffoPancakeEnvironment: 'test' | 'prod'
 }
 
 export interface WaffoPancakeBinding {
@@ -432,6 +433,32 @@ export function WaffoPancakeSettingsSection({
         </div>
 
         <div className='grid gap-1.5'>
+          <Label>{t('Mode')}</Label>
+          <Select
+            value={values.WaffoPancakeEnvironment}
+            onValueChange={(value) =>
+              onValueChange(
+                'WaffoPancakeEnvironment',
+                value as WaffoPancakeSettingsValues['WaffoPancakeEnvironment']
+              )
+            }
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value='test'>{t('Test Mode')}</SelectItem>
+              <SelectItem value='prod'>{t('Production Mode')}</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className='text-muted-foreground text-xs'>
+            {t(
+              'The selected environment is stored with each order. Webhooks from the other environment are rejected.'
+            )}
+          </p>
+        </div>
+
+        <div className='grid gap-1.5'>
           <Label>{t('API Private Key')}</Label>
           <Textarea
             rows={4}
@@ -443,11 +470,6 @@ export function WaffoPancakeSettingsSection({
             }
             className='font-mono text-xs'
           />
-          <p className='text-muted-foreground text-xs'>
-            {t(
-              'The environment (test vs production) is decided by the key you paste here — use the Test key while integrating, then swap to the Production key when going live.'
-            )}
-          </p>
         </div>
 
         {/*

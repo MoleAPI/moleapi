@@ -33,6 +33,7 @@ import {
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
+  isSafeHttpPaymentUrl,
   submitPaymentForm,
 } from '../lib'
 import type { AmountRequest, AmountResponse } from '../types'
@@ -131,7 +132,12 @@ export function usePayment() {
 
         // Handle Stripe payment
         if (isStripe && response.data?.pay_link) {
-          window.open(response.data.pay_link as string, '_blank')
+          const payLink = response.data.pay_link as string
+          if (!isSafeHttpPaymentUrl(payLink)) {
+            toast.error(i18next.t('Invalid payment redirect URL'))
+            return false
+          }
+          window.open(payLink, '_blank', 'noopener,noreferrer')
           toast.success(i18next.t('Redirecting to payment page...'))
           return true
         }
@@ -140,7 +146,10 @@ export function usePayment() {
         if (!isStripe && response.data) {
           const url = (response as unknown as { url?: string }).url
           if (url) {
-            submitPaymentForm(url, response.data)
+            if (!submitPaymentForm(url, response.data)) {
+              toast.error(i18next.t('Invalid payment redirect URL'))
+              return false
+            }
             toast.success(i18next.t('Redirecting to payment page...'))
             return true
           }

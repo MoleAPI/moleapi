@@ -25,7 +25,7 @@ func isStripeWebhookConfigured() bool {
 }
 
 func isStripeWebhookEnabled() bool {
-	return isStripeTopUpEnabled()
+	return isStripeWebhookConfigured()
 }
 
 func isCreemTopUpEnabled() bool {
@@ -34,6 +34,7 @@ func isCreemTopUpEnabled() bool {
 	}
 	products := strings.TrimSpace(setting.CreemProducts)
 	return strings.TrimSpace(setting.CreemApiKey) != "" &&
+		isCreemWebhookConfigured() &&
 		products != "" &&
 		products != "[]"
 }
@@ -43,7 +44,19 @@ func isCreemWebhookConfigured() bool {
 }
 
 func isCreemWebhookEnabled() bool {
-	return isCreemTopUpEnabled() && isCreemWebhookConfigured()
+	return isCreemWebhookConfigured()
+}
+
+func isLanTuTopUpEnabled() bool {
+	return isPaymentComplianceConfirmed() && setting.LantuEnabled && setting.LantuMinTopUp > 0 && isLanTuWebhookConfigured()
+}
+
+func isLanTuWebhookConfigured() bool {
+	return strings.TrimSpace(setting.LantuMchID) != "" && strings.TrimSpace(setting.LantuSecretKey) != ""
+}
+
+func isLanTuWebhookEnabled() bool {
+	return isLanTuWebhookConfigured()
 }
 
 func isWaffoTopUpEnabled() bool {
@@ -58,6 +71,9 @@ func isWaffoTopUpEnabled() bool {
 }
 
 func isWaffoWebhookConfigured() bool {
+	if strings.TrimSpace(setting.WaffoMerchantId) == "" {
+		return false
+	}
 	if setting.WaffoSandbox {
 		return strings.TrimSpace(setting.WaffoSandboxApiKey) != "" &&
 			strings.TrimSpace(setting.WaffoSandboxPrivateKey) != "" &&
@@ -70,7 +86,7 @@ func isWaffoWebhookConfigured() bool {
 }
 
 func isWaffoWebhookEnabled() bool {
-	return isWaffoTopUpEnabled()
+	return isWaffoWebhookConfigured()
 }
 
 func isWaffoPancakeTopUpEnabled() bool {
@@ -81,30 +97,32 @@ func isWaffoPancakeTopUpEnabled() bool {
 	// the SDK; mode (test/prod) is read from each event.
 	return strings.TrimSpace(setting.WaffoPancakeMerchantID) != "" &&
 		strings.TrimSpace(setting.WaffoPancakePrivateKey) != "" &&
-		strings.TrimSpace(setting.WaffoPancakeProductID) != ""
+		strings.TrimSpace(setting.WaffoPancakeProductID) != "" &&
+		(strings.EqualFold(setting.WaffoPancakeEnvironment, "test") || strings.EqualFold(setting.WaffoPancakeEnvironment, "prod")) &&
+		isWaffoPancakeWebhookConfigured()
 }
 
 func isWaffoPancakeWebhookConfigured() bool {
-	return isWaffoPancakeTopUpEnabled()
+	return strings.TrimSpace(setting.WaffoPancakeStoreID) != ""
 }
 
 func isWaffoPancakeWebhookEnabled() bool {
-	return isWaffoPancakeTopUpEnabled()
+	return isWaffoPancakeWebhookConfigured()
 }
 
 func isEpayTopUpEnabled() bool {
 	if !isPaymentComplianceConfirmed() {
 		return false
 	}
-	return isEpayWebhookConfigured() && len(operation_setting.PayMethods) > 0
+	return strings.TrimSpace(operation_setting.PayAddress) != "" &&
+		isEpayWebhookConfigured() && len(operation_setting.PayMethods) > 0
 }
 
 func isEpayWebhookConfigured() bool {
-	return strings.TrimSpace(operation_setting.PayAddress) != "" &&
-		strings.TrimSpace(operation_setting.EpayId) != "" &&
+	return strings.TrimSpace(operation_setting.EpayId) != "" &&
 		strings.TrimSpace(operation_setting.EpayKey) != ""
 }
 
 func isEpayWebhookEnabled() bool {
-	return isEpayTopUpEnabled()
+	return isEpayWebhookConfigured()
 }

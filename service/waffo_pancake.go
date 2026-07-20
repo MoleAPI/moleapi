@@ -2,13 +2,18 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/shopspring/decimal"
 	pancake "github.com/waffo-com/waffo-pancake-sdk-go"
+	"gorm.io/gorm"
 )
+
+var ErrWaffoPancakePaymentRejected = errors.New("waffo pancake payment rejected")
 
 // WaffoPancakePriceSnapshot is the per-session price override sent with checkout.
 type WaffoPancakePriceSnapshot struct {
@@ -161,9 +166,26 @@ func WaffoPancakeBuyerIdentityFromUserID(userID int) string {
 
 // VerifyConfiguredWaffoPancakeWebhook verifies the signature header. The SDK
 // picks the matching test / prod public key from the payload's `mode` field.
-func VerifyConfiguredWaffoPancakeWebhook(payload string, signatureHeader string) (*WaffoPancakeWebhookEvent, error) {
-	evt, err := pancake.VerifyWebhookTyped[pancake.WebhookEventData](payload, signatureHeader, nil)
+func ConfiguredWaffoPancakeEnvironment() (string, error) {
+	environment := strings.ToLower(strings.TrimSpace(setting.WaffoPancakeEnvironment))
+	if environment != string(pancake.EnvironmentTest) && environment != string(pancake.EnvironmentProd) {
+		return "", fmt.Errorf("waffo pancake environment must be test or prod")
+	}
+	return environment, nil
+}
+
+func VerifyConfiguredWaffoPancakeWebhook(payload string, signatureHeader string, environment string) (*WaffoPancakeWebhookEvent, error) {
+	environment = strings.ToLower(strings.TrimSpace(environment))
+	if environment != string(pancake.EnvironmentTest) && environment != string(pancake.EnvironmentProd) {
+		return nil, fmt.Errorf("invalid waffo pancake webhook environment")
+	}
+	evt, err := pancake.VerifyWebhookTyped[pancake.WebhookEventData](payload, signatureHeader, &pancake.VerifyWebhookOptions{
+		Environment: pancake.Environment(environment),
+	})
 	if err != nil {
+		return nil, err
+	}
+	if err := validateWaffoPancakeStore(evt.StoreID); err != nil {
 		return nil, err
 	}
 	identity := ""
@@ -194,6 +216,41 @@ func VerifyConfiguredWaffoPancakeWebhook(payload string, signatureHeader string)
 	}, nil
 }
 
+func validateWaffoPancakeStore(storeID string) error {
+	expectedStoreID := strings.TrimSpace(setting.WaffoPancakeStoreID)
+	if expectedStoreID == "" {
+		return fmt.Errorf("waffo pancake store is not configured")
+	}
+	if strings.TrimSpace(storeID) != expectedStoreID {
+		return fmt.Errorf("waffo pancake store mismatch")
+	}
+	return nil
+}
+
+func validateWaffoPancakePayment(event *WaffoPancakeWebhookEvent, expectedMoney float64, expectedMode string) error {
+	if event == nil {
+		return fmt.Errorf("missing waffo pancake event")
+	}
+	if err := validateWaffoPancakeStore(event.StoreID); err != nil {
+		return err
+	}
+	if !strings.EqualFold(strings.TrimSpace(event.Mode), strings.TrimSpace(expectedMode)) {
+		return fmt.Errorf("waffo pancake environment mismatch")
+	}
+	if !strings.EqualFold(strings.TrimSpace(event.Data.Currency), "USD") {
+		return fmt.Errorf("waffo pancake currency mismatch")
+	}
+	actualAmount, err := decimal.NewFromString(strings.TrimSpace(event.Data.Amount))
+	if err != nil {
+		return fmt.Errorf("invalid waffo pancake amount: %w", err)
+	}
+	expectedAmount := decimal.NewFromFloat(expectedMoney).Round(2)
+	if !actualAmount.Equal(expectedAmount) {
+		return fmt.Errorf("waffo pancake amount mismatch")
+	}
+	return nil
+}
+
 // ResolveWaffoPancakeTradeNo maps a verified webhook event to a local TopUp
 // trade_no via OrderMerchantExternalID, and rejects buyer-identity mismatches.
 func ResolveWaffoPancakeTradeNo(event *WaffoPancakeWebhookEvent) (string, error) {
@@ -204,15 +261,32 @@ func ResolveWaffoPancakeTradeNo(event *WaffoPancakeWebhookEvent) (string, error)
 	if tradeNo == "" {
 		return "", fmt.Errorf("missing webhook orderMerchantExternalId")
 	}
-	topUp := model.GetTopUpByTradeNo(tradeNo)
-	if topUp == nil || topUp.PaymentProvider != model.PaymentProviderWaffoPancake {
-		return "", fmt.Errorf("waffo pancake order not found for tradeNo=%s", tradeNo)
+	topUp, err := model.FindTopUpByTradeNo(tradeNo)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", fmt.Errorf("%w: order not found for tradeNo=%s", ErrWaffoPancakePaymentRejected, tradeNo)
+	}
+	if err != nil {
+		return "", fmt.Errorf("query waffo pancake order tradeNo=%s: %w", tradeNo, err)
+	}
+	if topUp.PaymentProvider != model.PaymentProviderWaffoPancake {
+		return "", fmt.Errorf("%w: payment provider mismatch for tradeNo=%s", ErrWaffoPancakePaymentRejected, tradeNo)
+	}
+	expectedMode := topUp.PaymentMode
+	if expectedMode == "" {
+		expectedMode, err = ConfiguredWaffoPancakeEnvironment()
+		if err != nil {
+			return "", err
+		}
+	}
+	if err := validateWaffoPancakePayment(event, topUp.Money, expectedMode); err != nil {
+		return "", fmt.Errorf("%w: invalid payment for tradeNo=%s: %v", ErrWaffoPancakePaymentRejected, tradeNo, err)
 	}
 	expectedIdentity := WaffoPancakeBuyerIdentityFromUserID(topUp.UserId)
 	actualIdentity := strings.TrimSpace(event.Data.MerchantProvidedBuyerIdentity)
 	if actualIdentity != expectedIdentity {
 		return "", fmt.Errorf(
-			"waffo pancake buyer identity mismatch for tradeNo=%s: expected=%q actual=%q",
+			"%w: buyer identity mismatch for tradeNo=%s: expected=%q actual=%q",
+			ErrWaffoPancakePaymentRejected,
 			tradeNo,
 			expectedIdentity,
 			actualIdentity,
@@ -231,15 +305,32 @@ func ResolveWaffoPancakeSubscriptionTradeNo(event *WaffoPancakeWebhookEvent) (st
 	if tradeNo == "" {
 		return "", fmt.Errorf("missing webhook orderMerchantExternalId")
 	}
-	order := model.GetSubscriptionOrderByTradeNo(tradeNo)
-	if order == nil || order.PaymentProvider != model.PaymentProviderWaffoPancake {
-		return "", fmt.Errorf("waffo pancake subscription order not found for tradeNo=%s", tradeNo)
+	order, err := model.FindSubscriptionOrderByTradeNo(tradeNo)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", fmt.Errorf("%w: subscription order not found for tradeNo=%s", ErrWaffoPancakePaymentRejected, tradeNo)
+	}
+	if err != nil {
+		return "", fmt.Errorf("query waffo pancake subscription order tradeNo=%s: %w", tradeNo, err)
+	}
+	if order.PaymentProvider != model.PaymentProviderWaffoPancake {
+		return "", fmt.Errorf("%w: subscription payment provider mismatch for tradeNo=%s", ErrWaffoPancakePaymentRejected, tradeNo)
+	}
+	expectedMode := order.PaymentMode
+	if expectedMode == "" {
+		expectedMode, err = ConfiguredWaffoPancakeEnvironment()
+		if err != nil {
+			return "", err
+		}
+	}
+	if err := validateWaffoPancakePayment(event, order.Money, expectedMode); err != nil {
+		return "", fmt.Errorf("%w: invalid subscription payment for tradeNo=%s: %v", ErrWaffoPancakePaymentRejected, tradeNo, err)
 	}
 	expectedIdentity := WaffoPancakeBuyerIdentityFromUserID(order.UserId)
 	actualIdentity := strings.TrimSpace(event.Data.MerchantProvidedBuyerIdentity)
 	if actualIdentity != expectedIdentity {
 		return "", fmt.Errorf(
-			"waffo pancake buyer identity mismatch for subscription tradeNo=%s: expected=%q actual=%q",
+			"%w: subscription buyer identity mismatch for tradeNo=%s: expected=%q actual=%q",
+			ErrWaffoPancakePaymentRejected,
 			tradeNo,
 			expectedIdentity,
 			actualIdentity,
@@ -388,18 +479,23 @@ func CreateWaffoPancakePrimaryPair(ctx context.Context, merchantID, privateKey, 
 // at the end of the configuration flow via model.UpdateOptionsBulk (single
 // DB transaction). A blank privateKey is treated as "keep current"
 // (Stripe-style API-secret UX) and is omitted from the bulk payload.
-func SaveWaffoPancakeConfig(ctx context.Context, merchantID, privateKey, returnURL, storeID, productID string) error {
+func SaveWaffoPancakeConfig(ctx context.Context, merchantID, privateKey, returnURL, storeID, productID, environment string) error {
 	merchantID = strings.TrimSpace(merchantID)
 	storeID = strings.TrimSpace(storeID)
 	productID = strings.TrimSpace(productID)
+	environment = strings.ToLower(strings.TrimSpace(environment))
 	if merchantID == "" || storeID == "" || productID == "" {
 		return fmt.Errorf("merchant id, store id, and product id are required to save")
 	}
+	if environment != string(pancake.EnvironmentTest) && environment != string(pancake.EnvironmentProd) {
+		return fmt.Errorf("environment must be test or prod")
+	}
 	values := map[string]string{
-		"WaffoPancakeMerchantID": merchantID,
-		"WaffoPancakeReturnURL":  strings.TrimSpace(returnURL),
-		"WaffoPancakeStoreID":    storeID,
-		"WaffoPancakeProductID":  productID,
+		"WaffoPancakeMerchantID":  merchantID,
+		"WaffoPancakeReturnURL":   strings.TrimSpace(returnURL),
+		"WaffoPancakeStoreID":     storeID,
+		"WaffoPancakeProductID":   productID,
+		"WaffoPancakeEnvironment": environment,
 	}
 	if pk := strings.TrimSpace(privateKey); pk != "" {
 		values["WaffoPancakePrivateKey"] = pk

@@ -22,6 +22,7 @@ import { api } from '@/lib/api'
 // controller/topup_waffo_pancake.go: empty body creds make the backend
 // fall back to persisted OptionMap values, so returning admins don't
 // have to re-paste the private key (stripped from GET /api/option/).
+// Credentials always travel in a POST body so private keys never enter URLs.
 
 export interface CatalogProduct {
   id: string
@@ -58,15 +59,19 @@ interface BackendBody<T> {
 
 export type CatalogResponse = BackendBody<{ stores: CatalogStore[] }>
 export type PairResponse = BackendBody<PairResult>
-export type SaveResponse = BackendBody<{ product_id: string; store_id: string }>
+export type SaveResponse = BackendBody<{
+  environment: 'test' | 'prod'
+  product_id: string
+  store_id: string
+}>
 
 export async function listWaffoPancakeCatalog(
   merchantID: string,
   privateKey: string
 ): Promise<CatalogResponse> {
-  const res = await api.get<CatalogResponse>(
+  const res = await api.post<CatalogResponse>(
     '/api/option/waffo-pancake/catalog',
-    { params: { merchant_id: merchantID, private_key: privateKey } }
+    { merchant_id: merchantID, private_key: privateKey }
   )
   return res.data
 }
@@ -90,6 +95,7 @@ export async function saveWaffoPancakeConfig(params: {
   returnURL: string
   storeID: string
   productID: string
+  environment: 'test' | 'prod'
 }): Promise<SaveResponse> {
   const res = await api.post<SaveResponse>('/api/option/waffo-pancake/save', {
     merchant_id: params.merchantID,
@@ -97,6 +103,7 @@ export async function saveWaffoPancakeConfig(params: {
     return_url: params.returnURL,
     store_id: params.storeID,
     product_id: params.productID,
+    environment: params.environment,
   })
   return res.data
 }

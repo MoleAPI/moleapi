@@ -30,7 +30,8 @@ func insertTopUpForSettlementTest(t *testing.T, tradeNo string, userID int, amou
 		Status:          common.TopUpStatusPending,
 		CreateTime:      time.Now().Unix(),
 	}
-	require.NoError(t, record.Insert())
+	// Insert directly to exercise legacy pending orders without a promised quota snapshot.
+	require.NoError(t, DB.Create(record).Error)
 }
 
 func getTopUpLogForSettlementTest(t *testing.T, userID int) Log {
@@ -77,6 +78,21 @@ func TestManualCompleteTopUpSettlesStripeOnce(t *testing.T) {
 	getTopUpLogForSettlementTest(t, 501)
 }
 
+func TestManualCompleteTopUpUsesCreemQuotaSnapshot(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+
+	insertUserForPaymentGuardTest(t, 526, 10)
+	insertTopUpForSettlementTest(t, "manual-creem", 526, 120, 9.99, PaymentProviderCreem)
+
+	require.NoError(t, ManualCompleteTopUp("manual-creem", "203.0.113.12"))
+
+	topUp := GetTopUpByTradeNo("manual-creem")
+	require.NotNil(t, topUp)
+	assert.Equal(t, 120, topUp.CreditedQuota)
+	assert.Equal(t, 130, getUserQuotaForPaymentGuardTest(t, 526))
+}
+
 func TestRechargeStripeSettlesPaymentDetailsAndCustomerOnce(t *testing.T) {
 	truncateTables(t)
 	useQuotaPerUnitForTopUpTest(t, 100)
@@ -102,6 +118,22 @@ func TestRechargeStripeSettlesPaymentDetailsAndCustomerOnce(t *testing.T) {
 
 	log := getTopUpLogForSettlementTest(t, 521)
 	assertTopUpAuditForSettlementTest(t, log, "203.0.113.60", PaymentMethodStripe, PaymentProviderStripe)
+}
+
+func TestRechargeStripeUsesStoredCreditAmountForNewOrders(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+
+	insertUserForPaymentGuardTest(t, 525, 10)
+	insertTopUpForSettlementTest(t, "stripe-new-order", 525, 9, 1.25, PaymentProviderStripe)
+	require.NoError(t, DB.Model(&TopUp{}).Where("trade_no = ?", "stripe-new-order").Update("payment_currency", "USD").Error)
+
+	require.NoError(t, RechargeStripeWithPaymentDetails("stripe-new-order", "", "cs_new", "USD", "203.0.113.66"))
+
+	topUp := GetTopUpByTradeNo("stripe-new-order")
+	require.NotNil(t, topUp)
+	assert.Equal(t, 900, topUp.CreditedQuota)
+	assert.Equal(t, 910, getUserQuotaForPaymentGuardTest(t, 525))
 }
 
 func TestRechargeStripePreservesCustomerWhenCallbackOmitsIt(t *testing.T) {
@@ -180,6 +212,8 @@ func TestWaffoSettlementsPersistQuotaAndAuditOnce(t *testing.T) {
 		tradeNo  string
 		provider string
 		callerIP string
+		gateway  string
+		currency string
 	}{
 		{
 			name:     "waffo",
@@ -187,13 +221,17 @@ func TestWaffoSettlementsPersistQuotaAndAuditOnce(t *testing.T) {
 			tradeNo:  "waffo-settlement",
 			provider: PaymentProviderWaffo,
 			callerIP: "203.0.113.20",
+			gateway:  "waffo-gateway-1",
+			currency: "USD",
 		},
 		{
 			name:     "waffo pancake",
 			userID:   503,
 			tradeNo:  "waffo-pancake-settlement",
 			provider: PaymentProviderWaffoPancake,
-			callerIP: "",
+			callerIP: "203.0.113.21",
+			gateway:  "pancake-gateway-1",
+			currency: "USD",
 		},
 	}
 
@@ -205,9 +243,13 @@ func TestWaffoSettlementsPersistQuotaAndAuditOnce(t *testing.T) {
 
 			var settle func() error
 			if testCase.provider == PaymentProviderWaffo {
-				settle = func() error { return RechargeWaffo(testCase.tradeNo, testCase.callerIP) }
+				settle = func() error {
+					return RechargeWaffoWithPaymentDetails(testCase.tradeNo, testCase.gateway, testCase.currency, testCase.callerIP)
+				}
 			} else {
-				settle = func() error { return RechargeWaffoPancake(testCase.tradeNo) }
+				settle = func() error {
+					return RechargeWaffoPancakeWithPaymentDetails(testCase.tradeNo, testCase.gateway, testCase.currency, testCase.callerIP)
+				}
 			}
 
 			require.NoError(t, settle())
@@ -218,6 +260,8 @@ func TestWaffoSettlementsPersistQuotaAndAuditOnce(t *testing.T) {
 			assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
 			assert.Equal(t, 200, topUp.CreditedQuota)
 			assert.Positive(t, topUp.CompleteTime)
+			assert.Equal(t, testCase.gateway, topUp.GatewayTradeNo)
+			assert.Equal(t, testCase.currency, topUp.PaymentCurrency)
 			assert.Equal(t, 207, getUserQuotaForPaymentGuardTest(t, testCase.userID))
 
 			log := getTopUpLogForSettlementTest(t, testCase.userID)

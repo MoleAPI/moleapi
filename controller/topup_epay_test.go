@@ -65,9 +65,13 @@ func setupTopUpWebhookSettlementTest(t *testing.T) *gorm.DB {
 }
 
 func runSignedEpayNotify(t *testing.T, tradeNo string, tradeStatus string, money string) *httptest.ResponseRecorder {
+	return runSignedEpayNotifyWithPID(t, tradeNo, tradeStatus, money, operation_setting.EpayId)
+}
+
+func runSignedEpayNotifyWithPID(t *testing.T, tradeNo string, tradeStatus string, money string, pid string) *httptest.ResponseRecorder {
 	t.Helper()
 	params := epay.GenerateParams(map[string]string{
-		"pid":          operation_setting.EpayId,
+		"pid":          pid,
 		"type":         "alipay",
 		"trade_no":     "epay-gateway-123",
 		"out_trade_no": tradeNo,
@@ -86,6 +90,49 @@ func runSignedEpayNotify(t *testing.T, tradeNo string, tradeStatus string, money
 	context.Request.RemoteAddr = "203.0.113.70:1234"
 	EpayNotify(context)
 	return recorder
+}
+
+func TestEpayNotifyRejectsSignedCallbackForAnotherMerchant(t *testing.T) {
+	db := setupTopUpWebhookSettlementTest(t)
+	user := &model.User{Id: 604, Username: "epay_merchant_user", Password: "password123", Status: common.UserStatusEnabled}
+	require.NoError(t, db.Create(user).Error)
+	topUp := &model.TopUp{
+		UserId:          user.Id,
+		Amount:          1,
+		Money:           1,
+		TradeNo:         "epay-merchant-mismatch",
+		PaymentMethod:   "alipay",
+		PaymentProvider: model.PaymentProviderEpay,
+		Status:          common.TopUpStatusPending,
+	}
+	require.NoError(t, db.Create(topUp).Error)
+
+	response := runSignedEpayNotifyWithPID(t, topUp.TradeNo, epay.StatusTradeSuccess, "1.00", "another-merchant")
+	assert.Equal(t, "fail", response.Body.String())
+	require.NoError(t, db.First(topUp, topUp.Id).Error)
+	assert.Equal(t, common.TopUpStatusPending, topUp.Status)
+}
+
+func TestEpayNotifySettlesPendingOrderAfterCheckoutAddressIsRemoved(t *testing.T) {
+	db := setupTopUpWebhookSettlementTest(t)
+	user := &model.User{Id: 605, Username: "epay_delayed_user", Password: "password123", Status: common.UserStatusEnabled}
+	require.NoError(t, db.Create(user).Error)
+	topUp := &model.TopUp{
+		UserId:          user.Id,
+		Amount:          1,
+		Money:           1,
+		TradeNo:         "epay-delayed-callback",
+		PaymentMethod:   "alipay",
+		PaymentProvider: model.PaymentProviderEpay,
+		Status:          common.TopUpStatusPending,
+	}
+	require.NoError(t, db.Create(topUp).Error)
+	operation_setting.PayAddress = ""
+
+	response := runSignedEpayNotify(t, topUp.TradeNo, epay.StatusTradeSuccess, "1.00")
+	assert.Equal(t, "success", response.Body.String())
+	require.NoError(t, db.First(topUp, topUp.Id).Error)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
 }
 
 func TestEpayNotifyAcknowledgesSuccessfulTradeOnlyAfterAtomicSettlement(t *testing.T) {
