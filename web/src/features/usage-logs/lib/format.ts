@@ -107,6 +107,25 @@ export function parseLogOther(other: string): LogOtherData | null {
 }
 
 /**
+ * Resolve image token counts across current and legacy usage-log payloads.
+ * Older logs stored image-input tokens in `image_output`.
+ */
+export function getImageTokenBreakdown(other: LogOtherData): {
+  input: number
+  output: number
+} {
+  const explicitInput = other.image_input_tokens
+  const legacyInput = other.image_output
+  const input = Number(explicitInput ?? legacyInput ?? 0)
+  const output = Number(other.image_output_tokens ?? 0)
+
+  return {
+    input: Number.isFinite(input) && input > 0 ? input : 0,
+    output: Number.isFinite(output) && output > 0 ? output : 0,
+  }
+}
+
+/**
  * Get time color based on duration (in seconds)
  */
 export function getTimeColor(

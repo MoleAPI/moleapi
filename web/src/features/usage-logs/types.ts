@@ -190,7 +190,10 @@ export interface LogOtherData {
   reasoning_effort?: string
   image?: boolean
   image_ratio?: number
+  /** Legacy field: image-input token count in older logs. */
   image_output?: number
+  image_input_tokens?: number
+  image_output_tokens?: number
   web_search?: boolean
   web_search_call_count?: number
   web_search_price?: number

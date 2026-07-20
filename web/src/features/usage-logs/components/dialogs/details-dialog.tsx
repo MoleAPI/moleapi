@@ -70,6 +70,7 @@ import {
   parseAuditLine,
   decodeBillingExprB64,
   getTieredBillingSummary,
+  getImageTokenBreakdown,
   hasAnyCacheTokens,
   isViolationFeeLog,
   getFirstResponseTimeColor,
@@ -413,17 +414,25 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
   const cacheWrite = other.cache_creation_tokens || 0
   const cacheWrite5m = other.cache_creation_tokens_5m || 0
   const cacheWrite1h = other.cache_creation_tokens_1h || 0
-  const hasTokens = promptTokens > 0 || completionTokens > 0
+  const imageTokens = getImageTokenBreakdown(other)
+  const hasTextTokens = promptTokens > 0 || completionTokens > 0
+  const hasTokens =
+    hasTextTokens || imageTokens.input > 0 || imageTokens.output > 0
 
   if (!hasTokens) return null
 
   const rows: Array<{ label: string; value: string }> = []
 
-  rows.push({ label: t('Input Tokens'), value: promptTokens.toLocaleString() })
-  rows.push({
-    label: t('Output Tokens'),
-    value: completionTokens.toLocaleString(),
-  })
+  if (hasTextTokens) {
+    rows.push({
+      label: t('Input Tokens'),
+      value: promptTokens.toLocaleString(),
+    })
+    rows.push({
+      label: t('Output Tokens'),
+      value: completionTokens.toLocaleString(),
+    })
+  }
 
   if (cacheRead > 0) {
     rows.push({
@@ -453,10 +462,17 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
     })
   }
 
-  if (other.image && other.image_output) {
+  if (imageTokens.input > 0) {
     rows.push({
-      label: t('Image Tokens'),
-      value: other.image_output.toLocaleString(),
+      label: t('Image Input Tokens'),
+      value: imageTokens.input.toLocaleString(),
+    })
+  }
+
+  if (imageTokens.output > 0) {
+    rows.push({
+      label: t('Image Output Tokens'),
+      value: imageTokens.output.toLocaleString(),
     })
   }
 
