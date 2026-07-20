@@ -17,6 +17,9 @@ type TopUp struct {
 	Amount          int64   `json:"amount"`
 	Money           float64 `json:"money"`
 	TradeNo         string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	GatewayTradeNo  string  `json:"gateway_trade_no" gorm:"type:varchar(255);index;default:''"`
+	CreditedQuota   int     `json:"credited_quota" gorm:"type:int;default:0"`
+	PaymentCurrency string  `json:"payment_currency" gorm:"type:varchar(8);default:''"`
 	PaymentMethod   string  `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
 	CreateTime      int64   `json:"create_time"`
