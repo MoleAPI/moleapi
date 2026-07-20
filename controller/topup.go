@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -583,15 +584,36 @@ func GetUserTopUps(c *gin.Context) {
 // GetAllTopUps 管理员获取全平台充值记录
 func GetAllTopUps(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	keyword := c.Query("keyword")
+	params := model.TopUpSearchParams{
+		Keyword:     strings.TrimSpace(c.Query("keyword")),
+		UserKeyword: strings.TrimSpace(c.Query("user_keyword")),
+	}
+	var err error
+	if value := c.Query("start_timestamp"); value != "" {
+		params.StartTimestamp, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || params.StartTimestamp < 0 {
+			common.ApiErrorMsg(c, "开始时间无效")
+			return
+		}
+	}
+	if value := c.Query("end_timestamp"); value != "" {
+		params.EndTimestamp, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || params.EndTimestamp < 0 {
+			common.ApiErrorMsg(c, "结束时间无效")
+			return
+		}
+	}
+	if params.StartTimestamp > 0 && params.EndTimestamp > 0 && params.StartTimestamp > params.EndTimestamp {
+		common.ApiErrorMsg(c, "开始时间不能晚于结束时间")
+		return
+	}
 
 	var (
 		topups []*model.TopUp
 		total  int64
-		err    error
 	)
-	if keyword != "" {
-		topups, total, err = model.SearchAllTopUps(keyword, pageInfo)
+	if params.Keyword != "" || params.UserKeyword != "" || params.StartTimestamp > 0 || params.EndTimestamp > 0 {
+		topups, total, err = model.SearchAllTopUpsWithParams(params, pageInfo)
 	} else {
 		topups, total, err = model.GetAllTopUps(pageInfo)
 	}

@@ -23,6 +23,7 @@ import { cn } from '@/lib/utils'
 
 import { defaultTopNavLinks } from '../config/top-nav.config'
 import type { TopNavLink } from '../types'
+import { TopNavLinkContent } from './top-nav-link-content'
 
 interface PublicNavigationProps {
   /**
@@ -65,7 +66,11 @@ export function PublicNavigation({
                 link.disabled && 'pointer-events-none opacity-50'
               )}
             >
-              {link.title}
+              <TopNavLinkContent
+                link={link}
+                label={link.title}
+                iconClassName={link.iconClassName}
+              />
             </a>
           )
         }
@@ -79,7 +84,11 @@ export function PublicNavigation({
               link.disabled && 'pointer-events-none opacity-50'
             )}
           >
-            {link.title}
+            <TopNavLinkContent
+              link={link}
+              label={link.title}
+              iconClassName={link.iconClassName}
+            />
           </Link>
         )
       })}

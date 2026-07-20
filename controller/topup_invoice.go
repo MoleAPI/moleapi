@@ -110,7 +110,9 @@ func GetTopUpInvoice(c *gin.Context) {
 	}
 
 	topUp := model.GetTopUpById(id)
-	if topUp == nil || topUp.UserId != c.GetInt("id") {
+	requesterID := c.GetInt("id")
+	isAdminView := topUp != nil && topUp.UserId != requesterID && c.GetInt("role") >= common.RoleAdminUser
+	if topUp == nil || (topUp.UserId != requesterID && !isAdminView) {
 		common.ApiErrorMsg(c, "充值订单不存在")
 		return
 	}
@@ -125,10 +127,20 @@ func GetTopUpInvoice(c *gin.Context) {
 		common.ApiErrorMsg(c, "生成充值凭证失败")
 		return
 	}
+	if isAdminView {
+		recordManageAuditFor(c, topUp.UserId, "topup.invoice_view", map[string]interface{}{
+			"topup_id": topUp.Id,
+			"trade_no": topUp.TradeNo,
+		})
+	}
 
 	filename := fmt.Sprintf("invoice-%s.html", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
 	c.Header("Cache-Control", "private, no-store")
-	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	disposition := "inline"
+	if c.Query("download") == "1" {
+		disposition = "attachment"
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, filename))
 	c.Header("Content-Security-Policy", "sandbox")
 	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("X-Content-Type-Options", "nosniff")

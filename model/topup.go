@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -30,6 +32,13 @@ type TopUp struct {
 	CreateTime       int64   `json:"create_time"`
 	CompleteTime     int64   `json:"complete_time"`
 	Status           string  `json:"status"`
+}
+
+type TopUpSearchParams struct {
+	Keyword        string
+	UserKeyword    string
+	StartTimestamp int64
+	EndTimestamp   int64
 }
 
 const (
@@ -504,6 +513,11 @@ func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (to
 
 // SearchAllTopUps 按订单号搜索全平台充值记录（管理员使用，不限制时间窗口）
 func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	return SearchAllTopUpsWithParams(TopUpSearchParams{Keyword: keyword}, pageInfo)
+}
+
+// SearchAllTopUpsWithParams 按订单、用户和时间搜索全平台充值记录（管理员使用，不限制时间窗口）
+func SearchAllTopUpsWithParams(params TopUpSearchParams, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
@@ -515,13 +529,31 @@ func SearchAllTopUps(keyword string, pageInfo *common.PageInfo) (topups []*TopUp
 	}()
 
 	query := tx.Model(&TopUp{})
-	if keyword != "" {
-		pattern, perr := sanitizeLikePattern(keyword)
+	if params.Keyword != "" {
+		pattern, perr := sanitizeLikePattern(params.Keyword)
 		if perr != nil {
 			tx.Rollback()
 			return nil, 0, perr
 		}
-		query = query.Where("trade_no LIKE ? ESCAPE '!'", pattern)
+		query = query.Where("(trade_no LIKE ? ESCAPE '!' OR gateway_trade_no LIKE ? ESCAPE '!')", pattern, pattern)
+	}
+	if params.UserKeyword != "" {
+		if userID, parseErr := strconv.Atoi(params.UserKeyword); parseErr == nil {
+			query = query.Where("user_id = ?", userID)
+		} else {
+			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(params.UserKeyword) + "%"
+			userIDs := tx.Unscoped().Model(&User{}).
+				Select("id").
+				Where("(username LIKE ? ESCAPE '!' OR email LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!')", pattern, pattern, pattern).
+				Limit(1000)
+			query = query.Where("user_id IN (?)", userIDs)
+		}
+	}
+	if params.StartTimestamp > 0 {
+		query = query.Where("create_time >= ?", params.StartTimestamp)
+	}
+	if params.EndTimestamp > 0 {
+		query = query.Where("create_time <= ?", params.EndTimestamp)
 	}
 
 	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {

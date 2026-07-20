@@ -35,7 +35,9 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { defaultTopNavLinks } from '../config/top-nav.config'
 import type { TopNavLink } from '../types'
+import { BrandName } from './brand-name'
 import { HeaderLogo } from './header-logo'
+import { TopNavLinkContent } from './top-nav-link-content'
 
 const AUTH_PROMPT_SECONDS = 5
 
@@ -209,9 +211,14 @@ export function PublicHeader(props: PublicHeaderProps) {
                   />
                 )}
               </div>
-              <span className='text-sm font-semibold tracking-tight'>
-                {loading ? <Skeleton className='h-4 w-16' /> : displaySiteName}
-              </span>
+              {loading ? (
+                <Skeleton className='h-4 w-16' />
+              ) : (
+                <BrandName
+                  name={displaySiteName}
+                  className='text-sm tracking-tight'
+                />
+              )}
             </Link>
 
             {/* Desktop nav */}
@@ -233,7 +240,11 @@ export function PublicHeader(props: PublicHeaderProps) {
                         link.disabled && 'pointer-events-none opacity-50'
                       )}
                     >
-                      {t(link.title)}
+                      <TopNavLinkContent
+                        link={link}
+                        label={t(link.title)}
+                        iconClassName={link.iconClassName}
+                      />
                     </a>
                   )
                 }
@@ -251,7 +262,11 @@ export function PublicHeader(props: PublicHeaderProps) {
                       link.disabled && 'pointer-events-none opacity-50'
                     )}
                   >
-                    {t(link.title)}
+                    <TopNavLinkContent
+                      link={link}
+                      label={t(link.title)}
+                      iconClassName={link.iconClassName}
+                    />
                   </Link>
                 )
               })}
@@ -374,7 +389,11 @@ export function PublicHeader(props: PublicHeaderProps) {
                     className={linkClassName}
                     style={transitionStyle}
                   >
-                    {t(link.title)}
+                    <TopNavLinkContent
+                      link={link}
+                      label={t(link.title)}
+                      iconClassName={link.iconClassName}
+                    />
                   </a>
                 )
               }
@@ -387,7 +406,11 @@ export function PublicHeader(props: PublicHeaderProps) {
                   className={linkClassName}
                   style={transitionStyle}
                 >
-                  {t(link.title)}
+                  <TopNavLinkContent
+                    link={link}
+                    label={t(link.title)}
+                    iconClassName={link.iconClassName}
+                  />
                 </Link>
               )
             })}

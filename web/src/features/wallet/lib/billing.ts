@@ -90,19 +90,29 @@ export function formatTimestamp(timestamp: number): string {
 }
 
 /**
- * Only the owner can download an invoice for a completed top-up record.
+ * Owners and admins can view a completed top-up invoice.
  */
-export function getTopUpInvoiceDownloadUrl(
+export function getTopUpInvoiceUrl(
   record: Pick<TopupRecord, 'id' | 'status' | 'user_id'>,
-  currentUserId?: number
+  currentUserId?: number,
+  isAdmin = false,
+  download = false
 ): string | null {
   if (
-    record.user_id !== currentUserId ||
+    (!isAdmin && record.user_id !== currentUserId) ||
     record.status !== 'success' ||
     !Number.isSafeInteger(record.id) ||
     record.id <= 0
   ) {
     return null
   }
-  return `/api/user/topup/${record.id}/invoice`
+  return `/api/user/topup/${record.id}/invoice${download ? '?download=1' : ''}`
+}
+
+export function getTopUpInvoiceDownloadUrl(
+  record: Pick<TopupRecord, 'id' | 'status' | 'user_id'>,
+  currentUserId?: number,
+  isAdmin = false
+): string | null {
+  return getTopUpInvoiceUrl(record, currentUserId, isAdmin, true)
 }

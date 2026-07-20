@@ -19,23 +19,43 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { getTopUpInvoiceDownloadUrl } from '../billing'
+import { getTopUpInvoiceDownloadUrl, getTopUpInvoiceUrl } from '../billing'
 
 describe('top-up invoice download', () => {
   test('links the owner to a completed top-up invoice', () => {
     assert.equal(
+      getTopUpInvoiceUrl({ id: 42, user_id: 7, status: 'success' }, 7),
+      '/api/user/topup/42/invoice'
+    )
+    assert.equal(
+      getTopUpInvoiceUrl(
+        { id: 42, user_id: 7, status: 'success' },
+        7,
+        false,
+        true
+      ),
+      '/api/user/topup/42/invoice?download=1'
+    )
+    assert.equal(
       getTopUpInvoiceDownloadUrl({ id: 42, user_id: 7, status: 'success' }, 7),
+      '/api/user/topup/42/invoice?download=1'
+    )
+  })
+
+  test('allows an admin to view another users completed invoice', () => {
+    assert.equal(
+      getTopUpInvoiceUrl({ id: 42, user_id: 7, status: 'success' }, 99, true),
       '/api/user/topup/42/invoice'
     )
   })
 
   test('does not expose invoice links for incomplete or another users records', () => {
     assert.equal(
-      getTopUpInvoiceDownloadUrl({ id: 42, user_id: 7, status: 'pending' }, 7),
+      getTopUpInvoiceUrl({ id: 42, user_id: 7, status: 'pending' }, 7),
       null
     )
     assert.equal(
-      getTopUpInvoiceDownloadUrl({ id: 42, user_id: 8, status: 'success' }, 7),
+      getTopUpInvoiceUrl({ id: 42, user_id: 8, status: 'success' }, 7),
       null
     )
   })

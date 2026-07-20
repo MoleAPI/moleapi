@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { IconSvgElement } from '@hugeicons/react'
 import { type LinkProps } from '@tanstack/react-router'
 import { type TFunction } from 'i18next'
 
@@ -93,6 +94,8 @@ export type SidebarData = {
 export type TopNavLink = {
   title: string
   href: string
+  icon?: IconSvgElement
+  iconClassName?: string
   isActive?: boolean
   disabled?: boolean
   requiresAuth?: boolean

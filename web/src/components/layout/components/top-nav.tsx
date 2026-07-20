@@ -30,6 +30,7 @@ import {
 import { cn } from '@/lib/utils'
 
 import { type TopNavLink } from '../types'
+import { TopNavLinkContent } from './top-nav-link-content'
 
 type TopNavProps = React.HTMLAttributes<HTMLElement> & {
   links: TopNavLink[]
@@ -63,8 +64,9 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
             <Menu />
           </DropdownMenuTrigger>
           <DropdownMenuContent side='bottom' align='start'>
-            {normalizedLinks.map(
-              ({ title, href, isActive, disabled, external }) => (
+            {normalizedLinks.map((link) => {
+              const { title, href, isActive, disabled, external } = link
+              return (
                 <DropdownMenuItem
                   key={`${title}-${href}`}
                   render={
@@ -75,7 +77,11 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
                         rel='noopener noreferrer'
                         className={!isActive ? 'text-muted-foreground' : ''}
                       >
-                        {title}
+                        <TopNavLinkContent
+                          link={link}
+                          label={title}
+                          iconClassName={link.iconClassName}
+                        />
                       </a>
                     ) : (
                       <Link
@@ -83,13 +89,17 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
                         className={!isActive ? 'text-muted-foreground' : ''}
                         disabled={disabled}
                       >
-                        {title}
+                        <TopNavLinkContent
+                          link={link}
+                          label={title}
+                          iconClassName={link.iconClassName}
+                        />
                       </Link>
                     )
                   }
                 ></DropdownMenuItem>
               )
-            )}
+            })}
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
@@ -102,8 +112,9 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
         )}
         {...props}
       >
-        {normalizedLinks.map(({ title, href, isActive, disabled, external }) =>
-          external ? (
+        {normalizedLinks.map((link) => {
+          const { title, href, isActive, disabled, external } = link
+          return external ? (
             <a
               key={`${title}-${href}`}
               href={href}
@@ -111,7 +122,11 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
               rel='noopener noreferrer'
               className={`hover:text-primary text-sm font-medium transition-colors ${isActive ? '' : 'text-muted-foreground'}`}
             >
-              {title}
+              <TopNavLinkContent
+                link={link}
+                label={title}
+                iconClassName={link.iconClassName}
+              />
             </a>
           ) : (
             <Link
@@ -120,10 +135,14 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
               disabled={disabled}
               className={`hover:text-primary text-sm font-medium transition-colors ${isActive ? '' : 'text-muted-foreground'}`}
             >
-              {title}
+              <TopNavLinkContent
+                link={link}
+                label={title}
+                iconClassName={link.iconClassName}
+              />
             </Link>
           )
-        )}
+        })}
       </nav>
     </>
   )

@@ -35,7 +35,7 @@ func setupTopUpInvoiceTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	model.DB = db
 	model.LOG_DB = db
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}))
 
 	t.Cleanup(func() {
 		model.DB = originalDB
@@ -88,13 +88,18 @@ func insertTopUpInvoiceOrder(t *testing.T, db *gorm.DB, userID int, status strin
 	return topUp
 }
 
-func performTopUpInvoiceRequest(topUpID int, requesterID int) *httptest.ResponseRecorder {
+func performTopUpInvoiceRequest(topUpID int, requester *model.User, download bool) *httptest.ResponseRecorder {
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	target := "/api/user/topup/" + strconv.Itoa(topUpID) + "/invoice"
+	if download {
+		target += "?download=1"
+	}
 	ctx.Request = httptest.NewRequest(http.MethodGet, target, nil)
 	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(topUpID)}}
-	ctx.Set("id", requesterID)
+	ctx.Set("id", requester.Id)
+	ctx.Set("username", requester.Username)
+	ctx.Set("role", requester.Role)
 	GetTopUpInvoice(ctx)
 	return recorder
 }
@@ -111,16 +116,16 @@ func requireTopUpInvoiceAPIError(t *testing.T, recorder *httptest.ResponseRecord
 	assert.Equal(t, message, payload.Message)
 }
 
-func TestGetTopUpInvoiceDownloadsCompletedOrderForOwner(t *testing.T) {
+func TestGetTopUpInvoiceShowsCompletedOrderInlineForOwner(t *testing.T) {
 	db := setupTopUpInvoiceTestDB(t)
 	user := insertTopUpInvoiceUser(t, db, "invoice_owner", common.RoleCommonUser)
 	topUp := insertTopUpInvoiceOrder(t, db, user.Id, common.TopUpStatusSuccess)
 
-	recorder := performTopUpInvoiceRequest(topUp.Id, user.Id)
+	recorder := performTopUpInvoiceRequest(topUp.Id, user, false)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	assert.Contains(t, recorder.Header().Get("Content-Type"), "text/html")
-	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "attachment")
+	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "inline")
 	assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
 	body := recorder.Body.String()
 	assert.Contains(t, body, "Top-up Invoice")
@@ -131,13 +136,40 @@ func TestGetTopUpInvoiceDownloadsCompletedOrderForOwner(t *testing.T) {
 	assert.Contains(t, body, user.Email)
 }
 
-func TestGetTopUpInvoiceDoesNotAllowAdminToDownloadAnotherUsersOrder(t *testing.T) {
+func TestGetTopUpInvoiceDownloadsCompletedOrderWhenRequested(t *testing.T) {
+	db := setupTopUpInvoiceTestDB(t)
+	user := insertTopUpInvoiceUser(t, db, "invoice_download", common.RoleCommonUser)
+	topUp := insertTopUpInvoiceOrder(t, db, user.Id, common.TopUpStatusSuccess)
+
+	recorder := performTopUpInvoiceRequest(topUp.Id, user, true)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "attachment")
+}
+
+func TestGetTopUpInvoiceAllowsAuditedAdminViewOfAnotherUsersOrder(t *testing.T) {
 	db := setupTopUpInvoiceTestDB(t)
 	owner := insertTopUpInvoiceUser(t, db, "invoice_owner_private", common.RoleCommonUser)
 	admin := insertTopUpInvoiceUser(t, db, "invoice_admin", common.RoleAdminUser)
 	topUp := insertTopUpInvoiceOrder(t, db, owner.Id, common.TopUpStatusSuccess)
 
-	recorder := performTopUpInvoiceRequest(topUp.Id, admin.Id)
+	recorder := performTopUpInvoiceRequest(topUp.Id, admin, false)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), topUp.TradeNo)
+	var auditLog model.Log
+	require.NoError(t, db.Where("user_id = ? AND type = ?", admin.Id, model.LogTypeManage).First(&auditLog).Error)
+	assert.Contains(t, auditLog.Content, topUp.TradeNo)
+	assert.Contains(t, auditLog.Other, "topup.invoice_view")
+}
+
+func TestGetTopUpInvoiceDoesNotAllowAnotherUserToViewOrder(t *testing.T) {
+	db := setupTopUpInvoiceTestDB(t)
+	owner := insertTopUpInvoiceUser(t, db, "invoice_other_owner", common.RoleCommonUser)
+	requester := insertTopUpInvoiceUser(t, db, "invoice_other_requester", common.RoleCommonUser)
+	topUp := insertTopUpInvoiceOrder(t, db, owner.Id, common.TopUpStatusSuccess)
+
+	recorder := performTopUpInvoiceRequest(topUp.Id, requester, false)
 
 	requireTopUpInvoiceAPIError(t, recorder, "充值订单不存在")
 	assert.NotContains(t, recorder.Body.String(), topUp.TradeNo)
@@ -148,7 +180,7 @@ func TestGetTopUpInvoiceRejectsIncompleteOrder(t *testing.T) {
 	user := insertTopUpInvoiceUser(t, db, "invoice_pending", common.RoleCommonUser)
 	topUp := insertTopUpInvoiceOrder(t, db, user.Id, common.TopUpStatusPending)
 
-	recorder := performTopUpInvoiceRequest(topUp.Id, user.Id)
+	recorder := performTopUpInvoiceRequest(topUp.Id, user, false)
 
 	requireTopUpInvoiceAPIError(t, recorder, "仅成功订单支持下载凭证")
 	assert.NotContains(t, recorder.Body.String(), "Top-up Invoice")

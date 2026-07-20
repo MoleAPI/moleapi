@@ -246,14 +246,32 @@ export async function getUserBillingHistory(
 export async function getAllBillingHistory(
   page: number,
   pageSize: number,
-  keyword?: string
+  filters:
+    | string
+    | {
+        keyword?: string
+        userKeyword?: string
+        startTimestamp?: number
+        endTimestamp?: number
+      } = {}
 ): Promise<ApiResponse<BillingHistoryResponse>> {
+  const resolvedFilters =
+    typeof filters === 'string' ? { keyword: filters } : filters
   const params = new URLSearchParams({
     p: page.toString(),
     page_size: pageSize.toString(),
   })
-  if (keyword) {
-    params.append('keyword', keyword)
+  if (resolvedFilters.keyword) {
+    params.append('keyword', resolvedFilters.keyword)
+  }
+  if (resolvedFilters.userKeyword) {
+    params.append('user_keyword', resolvedFilters.userKeyword)
+  }
+  if (resolvedFilters.startTimestamp) {
+    params.append('start_timestamp', resolvedFilters.startTimestamp.toString())
+  }
+  if (resolvedFilters.endTimestamp) {
+    params.append('end_timestamp', resolvedFilters.endTimestamp.toString())
   }
   const res = await api.get(`/api/user/topup?${params.toString()}`)
   return res.data

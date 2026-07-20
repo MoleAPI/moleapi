@@ -56,7 +56,7 @@ import {
   getStatusConfig,
   getPaymentMethodName,
   formatTimestamp,
-  getTopUpInvoiceDownloadUrl,
+  getTopUpInvoiceUrl,
 } from '../../lib/billing'
 import {
   formatHistoricalPaymentAmount,
@@ -66,6 +66,7 @@ import {
 interface BillingHistoryDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  initialUserKeyword?: string
 }
 
 const BILLING_HISTORY_SKELETON_IDS = Array.from(
@@ -73,10 +74,7 @@ const BILLING_HISTORY_SKELETON_IDS = Array.from(
   (_, index) => `billing-history-skeleton-${index + 1}`
 )
 
-export function BillingHistoryDialog({
-  open,
-  onOpenChange,
-}: BillingHistoryDialogProps) {
+export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
   const { t, i18n } = useTranslation()
   const {
     records,
@@ -84,14 +82,21 @@ export function BillingHistoryDialog({
     page,
     pageSize,
     keyword,
+    userKeyword,
+    startTime,
+    endTime,
     loading,
     completing,
     isAdmin,
     handlePageChange,
     handlePageSizeChange,
     handleSearch,
+    handleUserSearch,
+    handleStartTimeChange,
+    handleEndTimeChange,
+    resetFilters,
     handleCompleteOrder,
-  } = useBillingHistory()
+  } = useBillingHistory({ initialUserKeyword: props.initialUserKeyword })
   const currentUserId = useAuthStore((state) => state.auth.user?.id)
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
@@ -112,8 +117,8 @@ export function BillingHistoryDialog({
   return (
     <>
       <Dialog
-        open={open}
-        onOpenChange={onOpenChange}
+        open={props.open}
+        onOpenChange={props.onOpenChange}
         title={t('Billing History')}
         description={t(
           'View your topup transaction records and payment history'
@@ -124,7 +129,7 @@ export function BillingHistoryDialog({
       >
         <div className='min-h-0 space-y-3'>
           {/* Search and Filter Bar */}
-          <div className='flex items-center gap-2'>
+          <div className='flex flex-col gap-2 sm:flex-row sm:flex-wrap'>
             <div className='relative flex-1'>
               <Search className='text-muted-foreground absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2' />
               <Input
@@ -134,6 +139,42 @@ export function BillingHistoryDialog({
                 className='h-9 pl-10'
               />
             </div>
+            {isAdmin && (
+              <>
+                <Input
+                  aria-label={t('Search by user')}
+                  placeholder={t('User ID, username, email, or display name')}
+                  value={userKeyword}
+                  onChange={(event) => handleUserSearch(event.target.value)}
+                  className='h-9 sm:max-w-56'
+                />
+                <Input
+                  aria-label={t('Start time')}
+                  type='datetime-local'
+                  value={startTime}
+                  onChange={(event) =>
+                    handleStartTimeChange(event.target.value)
+                  }
+                  className='h-9 sm:max-w-48'
+                />
+                <Input
+                  aria-label={t('End time')}
+                  type='datetime-local'
+                  value={endTime}
+                  onChange={(event) => handleEndTimeChange(event.target.value)}
+                  className='h-9 sm:max-w-48'
+                />
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  className='h-9'
+                  onClick={resetFilters}
+                >
+                  {t('Reset filters')}
+                </Button>
+              </>
+            )}
             <Select
               items={[
                 { value: '10', label: t('10 / page') },
@@ -188,7 +229,7 @@ export function BillingHistoryDialog({
                   {t('No billing records found')}
                 </p>
                 <p className='mt-1 text-xs'>
-                  {keyword
+                  {keyword || userKeyword || startTime || endTime
                     ? t('Try adjusting your search')
                     : t('Your transaction history will appear here')}
                 </p>
@@ -200,9 +241,16 @@ export function BillingHistoryDialog({
                   const statusConfig = getStatusConfig(record.status)
                   const creditDisplay = formatHistoricalTopUpCredit(record)
                   const gatewayTradeNo = record.gateway_trade_no?.trim()
-                  const invoiceDownloadUrl = getTopUpInvoiceDownloadUrl(
+                  const invoiceViewUrl = getTopUpInvoiceUrl(
                     record,
-                    currentUserId
+                    currentUserId,
+                    isAdmin
+                  )
+                  const invoiceDownloadUrl = getTopUpInvoiceUrl(
+                    record,
+                    currentUserId,
+                    isAdmin,
+                    true
                   )
                   return (
                     <div
@@ -307,9 +355,29 @@ export function BillingHistoryDialog({
                         )}
                       </div>
 
-                      {(invoiceDownloadUrl ||
+                      {(invoiceViewUrl ||
                         (isAdmin && record.status === 'pending')) && (
                         <div className='mt-4 flex flex-wrap justify-end gap-2'>
+                          {invoiceViewUrl && (
+                            <Button
+                              size='sm'
+                              variant='outline'
+                              render={
+                                <a
+                                  href={invoiceViewUrl}
+                                  target='_blank'
+                                  rel='noreferrer noopener'
+                                />
+                              }
+                            >
+                              <HugeiconsIcon
+                                icon={InvoiceIcon}
+                                strokeWidth={2}
+                                data-icon='inline-start'
+                              />
+                              {t('View invoice')}
+                            </Button>
+                          )}
                           {invoiceDownloadUrl && (
                             <Button
                               size='sm'

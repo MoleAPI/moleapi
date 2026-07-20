@@ -24,6 +24,8 @@ import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { cn } from '@/lib/utils'
 
+import { BrandName } from './brand-name'
+
 interface FooterLink {
   text: string
   href: string
@@ -47,6 +49,15 @@ const NEW_API_FOOTER_ATTRIBUTION_KEY = [
   'new' + 'api',
   'projectAttributionSuffix',
 ].join('.')
+
+function formatFooterVersion(value: unknown, stripSuffix = false) {
+  if (typeof value !== 'string' || value.trim() === '') {
+    return ''
+  }
+  const normalized = value.trim().replace(/^v/i, '')
+  const display = stripSuffix ? normalized.split('-')[0] : normalized
+  return display ? `v${display}` : ''
+}
 
 function FooterLinkItem(props: { link: FooterLink }) {
   const { t } = useTranslation()
@@ -151,6 +162,7 @@ function ProjectAttribution(props: { currentYear: number; inline?: boolean }) {
 
 export function Footer(props: FooterProps) {
   const { t } = useTranslation()
+  const { status } = useStatus()
   const {
     systemName,
     logo: systemLogo,
@@ -162,6 +174,10 @@ export function Footer(props: FooterProps) {
   const displayName = systemName || props.name || 'New API'
   const isDemoSiteMode = Boolean(demoSiteEnabled)
   const currentYear = new Date().getFullYear()
+  const projectVersion = formatFooterVersion(status?.project_version, true)
+  const upstreamVersion = formatFooterVersion(
+    status?.upstream_version || status?.version
+  )
 
   const fallbackColumns = useMemo<FooterColumnProps[]>(
     () => [
@@ -260,9 +276,10 @@ export function Footer(props: FooterProps) {
                 alt={displayName}
                 className='size-7 rounded-lg object-contain'
               />
-              <span className='text-sm font-semibold tracking-tight'>
-                {displayName}
-              </span>
+              <BrandName
+                name={displayName}
+                className='text-sm tracking-tight'
+              />
             </Link>
             <p className='text-muted-foreground/60 mt-3 max-w-[200px] text-xs leading-relaxed'>
               {t('Powerful API Management Platform')}
@@ -288,6 +305,57 @@ export function Footer(props: FooterProps) {
               ))}
             </div>
           )}
+        </div>
+
+        <div className='text-muted-foreground/55 mt-10 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-center text-xs'>
+          <span>&copy; {currentYear}</span>
+          <BrandName name={displayName} className='text-xs' />
+          {projectVersion && <span>{projectVersion}</span>}
+          <span>{t('Designed and Developed by')}</span>
+          <a
+            href='https://github.com/ClarenceDan'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-foreground/70 hover:text-foreground font-medium transition-colors'
+          >
+            ClarenceDan
+          </a>
+          <span>{t('| Based on')}</span>
+          <a
+            href='https://github.com/QuantumNous/new-api'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-foreground/70 hover:text-foreground font-medium transition-colors'
+          >
+            New API {upstreamVersion}
+          </a>
+          <span>{t('by')}</span>
+          <a
+            href='https://github.com/QuantumNous'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-foreground/70 hover:text-foreground font-medium transition-colors'
+          >
+            QuantumNous
+          </a>
+          <span>·</span>
+          <a
+            href='https://github.com/songquanpeng/one-api'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-foreground/70 hover:text-foreground font-medium transition-colors'
+          >
+            One API
+          </a>
+          <span>{t('by')}</span>
+          <a
+            href='https://github.com/songquanpeng'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-foreground/70 hover:text-foreground font-medium transition-colors'
+          >
+            JustSong
+          </a>
         </div>
 
         {/* Copyright + optional legal links inline on the left, project

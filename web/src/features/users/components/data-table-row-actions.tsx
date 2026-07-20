@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { InvoiceIcon } from '@hugeicons/core-free-icons'
+import { HugeiconsIcon } from '@hugeicons/react'
 import type { Row } from '@tanstack/react-table'
 import {
   Pencil,
@@ -47,6 +49,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { UserSubscriptionsDialog } from '@/features/subscriptions/components/dialogs/user-subscriptions-dialog'
+import { BillingHistoryDialog } from '@/features/wallet/components/dialogs/billing-history-dialog'
 
 import { manageUser, resetUserPasskey, resetUserTwoFA } from '../api'
 import {
@@ -72,6 +75,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
   const [subscriptionsDialogOpen, setSubscriptionsDialogOpen] = useState(false)
+  const [billingDialogOpen, setBillingDialogOpen] = useState(false)
 
   const handleEdit = () => {
     setCurrentRow(user)
@@ -213,6 +217,18 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         <DropdownMenuItem
           onSelect={(event) => {
             event.preventDefault()
+            setBillingDialogOpen(true)
+          }}
+        >
+          {t('View billing history')}
+          <DropdownMenuShortcut>
+            <HugeiconsIcon icon={InvoiceIcon} strokeWidth={2} />
+          </DropdownMenuShortcut>
+        </DropdownMenuItem>
+
+        <DropdownMenuItem
+          onSelect={(event) => {
+            event.preventDefault()
             setSubscriptionsDialogOpen(true)
           }}
         >
@@ -301,6 +317,14 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
         user={{ id: user.id, username: user.username }}
         onSuccess={triggerRefresh}
       />
+
+      {billingDialogOpen && (
+        <BillingHistoryDialog
+          open={billingDialogOpen}
+          onOpenChange={setBillingDialogOpen}
+          initialUserKeyword={String(user.id)}
+        />
+      )}
     </div>
   )
 }
