@@ -240,13 +240,18 @@ func OpenAIChatRequestToClaudeMessages(c *gin.Context, textRequest dto.GeneralOp
 		if message.Role == "assistant" && message.ToolCalls != nil {
 			fmtMessage.ToolCalls = message.ToolCalls
 		}
+		if message.Role == "assistant" {
+			fmtMessage.ReasoningContent = message.ReasoningContent
+			fmtMessage.Reasoning = message.Reasoning
+		}
 		if lastMessage.Role == message.Role && lastMessage.Role != "tool" {
 			if lastMessage.IsStringContent() && message.IsStringContent() {
 				fmtMessage.SetStringContent(strings.Trim(fmt.Sprintf("%s %s", lastMessage.StringContent(), message.StringContent()), "\""))
 				formatMessages = formatMessages[:len(formatMessages)-1]
 			}
 		}
-		if fmtMessage.Content == nil || (fmtMessage.IsStringContent() && fmtMessage.StringContent() == "") {
+		if (fmtMessage.Content == nil || (fmtMessage.IsStringContent() && fmtMessage.StringContent() == "")) &&
+			!(fmtMessage.Role == "assistant" && (fmtMessage.ToolCalls != nil || fmtMessage.GetReasoningContent() != "")) {
 			fmtMessage.SetStringContent("...")
 		}
 		formatMessages = append(formatMessages, fmtMessage)
@@ -334,6 +339,12 @@ func OpenAIChatRequestToClaudeMessages(c *gin.Context, textRequest dto.GeneralOp
 			claudeMessage.Content = text
 		} else {
 			claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0)
+			if reasoningContent := message.GetReasoningContent(); message.Role == "assistant" && reasoningContent != "" {
+				claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
+					Type:     "thinking",
+					Thinking: common.GetPointer(reasoningContent),
+				})
+			}
 			for _, mediaMessage := range message.ParseContent() {
 				switch mediaMessage.Type {
 				case "text":
