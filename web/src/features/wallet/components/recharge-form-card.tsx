@@ -502,7 +502,7 @@ export function RechargeFormCard({
                   </p>
                   <p>
                     {t(
-                      'Invoices are available for the amount paid. Mainland China invoices are issued by a partner company.'
+                      'Top-ups are invoiced based on the amount paid. In some regions, invoices are issued by a partner company.'
                     )}
                   </p>
                 </AlertDescription>
