@@ -28,6 +28,7 @@ import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
 import { cn } from '@/lib/utils'
 
+import { appHeaderLayoutClasses } from '../lib/app-header-layout'
 import { BrandName } from './brand-name'
 
 type SystemBrandProps = {
@@ -63,18 +64,18 @@ export function SystemBrand(props: SystemBrandProps) {
         to='/'
         aria-label={t('Go to home')}
         className={cn(
-          'text-foreground inline-flex h-7 items-center gap-1.5 rounded-md px-1.5 text-sm font-medium transition-colors outline-none select-none',
+          appHeaderLayoutClasses.brandLink,
           'hover:bg-accent focus-visible:ring-ring/40 focus-visible:ring-2'
         )}
       >
-        <div className='flex size-5 items-center justify-center overflow-hidden rounded-md'>
+        <div className={appHeaderLayoutClasses.brandLogo}>
           <img
             src={logo}
             alt={t('Logo')}
             className='size-full rounded-md object-cover'
           />
         </div>
-        <BrandName name={name} className='max-w-[12rem] truncate text-sm' />
+        <BrandName name={name} className={appHeaderLayoutClasses.brandName} />
       </Link>
     )
   }

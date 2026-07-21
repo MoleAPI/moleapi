@@ -19,10 +19,18 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
-import { walletLayoutClasses } from '../lib/layout'
+import { rechargeFormLayoutClasses, walletLayoutClasses } from '../lib/layout'
 
 test('wallet stacks on small screens and uses the former 7/5 desktop split', () => {
   assert.ok(walletLayoutClasses.grid.includes('lg:grid-cols-12'))
   assert.ok(walletLayoutClasses.recharge.includes('lg:col-span-7'))
   assert.ok(walletLayoutClasses.referral.includes('lg:col-span-5'))
+})
+
+test('payment choices are full-width filled buttons with a highlighted bonus', () => {
+  assert.ok(rechargeFormLayoutClasses.paymentMethods.includes('grid-cols-1'))
+  assert.ok(rechargeFormLayoutClasses.paymentButton.includes('justify-center'))
+  assert.ok(rechargeFormLayoutClasses.paymentButton.includes('text-base'))
+  assert.ok(rechargeFormLayoutClasses.bonus.includes('text-success'))
+  assert.ok(rechargeFormLayoutClasses.bonus.includes('bg-success/10'))
 })

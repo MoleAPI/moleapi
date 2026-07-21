@@ -21,3 +21,11 @@ export const walletLayoutClasses = {
   recharge: 'scroll-mt-4 lg:col-span-7',
   referral: 'lg:col-span-5',
 } as const
+
+export const rechargeFormLayoutClasses = {
+  paymentMethods: 'grid grid-cols-1 gap-2 sm:gap-3',
+  paymentButton:
+    'min-h-14 w-full min-w-0 justify-center gap-2 rounded-lg px-4 py-3 text-center text-base font-semibold shadow-sm hover:shadow-md [&>svg]:!text-white',
+  bonus:
+    'bg-success/10 text-success rounded-md px-1.5 py-0.5 text-xs font-semibold',
+} as const

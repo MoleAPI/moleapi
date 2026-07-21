@@ -37,6 +37,7 @@ import {
 import { formatCurrencyFromUSD } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
+import { PAYMENT_TYPES } from '../constants'
 import {
   formatCurrency,
   getPaymentIcon,
@@ -46,6 +47,7 @@ import {
   getTopupBonusRate,
   getTopupDiscountRate,
 } from '../lib'
+import { rechargeFormLayoutClasses } from '../lib/layout'
 import type {
   PaymentMethod,
   PresetAmount,
@@ -267,7 +269,7 @@ export function RechargeFormCard({
                           <div className='text-muted-foreground text-xs'>
                             {t('Amount paid')} ¥{formatCurrency(actualPrice)}
                           </div>
-                          <div className='text-primary text-xs font-medium'>
+                          <div className={rechargeFormLayoutClasses.bonus}>
                             {t('Bonus {{percentage}}%', {
                               percentage: Math.round(bonus * 100),
                             })}
@@ -322,7 +324,7 @@ export function RechargeFormCard({
                   {t('Payment Method')}
                 </Label>
                 {hasStandardPaymentMethods ? (
-                  <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
+                  <div className={rechargeFormLayoutClasses.paymentMethods}>
                     {standardPaymentMethods.map((method) => {
                       const methodName = t(method.name)
                       const minTopup = method.min_topup || 0
@@ -335,11 +337,19 @@ export function RechargeFormCard({
                       const disabledLabel = disabled
                         ? `${t('Minimum:')} ${minTopup}`
                         : undefined
+                      let paymentTone =
+                        'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
+                      if (method.type === PAYMENT_TYPES.ALIPAY) {
+                        paymentTone =
+                          'border-[#1677ff] bg-[#1677ff] text-white hover:bg-[#1677ff]/90'
+                      } else if (method.type === PAYMENT_TYPES.WECHAT) {
+                        paymentTone =
+                          'border-[#07c160] bg-[#07c160] text-white hover:bg-[#07c160]/90'
+                      }
 
                       const button = (
                         <Button
                           key={method.type}
-                          variant='outline'
                           onClick={() => onPaymentMethodSelect(method)}
                           disabled={disabled || !!paymentLoading}
                           title={disabledReason}
@@ -348,19 +358,22 @@ export function RechargeFormCard({
                               ? `${methodName}. ${disabledReason}`
                               : methodName
                           }
-                          className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
+                          className={cn(
+                            rechargeFormLayoutClasses.paymentButton,
+                            paymentTone
+                          )}
                         >
                           {paymentLoading === method.type ? (
                             <Loader2 className='h-4 w-4 animate-spin' />
                           ) : (
                             getPaymentIcon(
                               method.type,
-                              'h-4 w-4',
+                              'size-5',
                               method.icon,
                               methodName
                             )
                           )}
-                          <span className='flex min-w-0 flex-col items-start gap-0.5'>
+                          <span className='flex min-w-0 flex-col items-center gap-0.5'>
                             <span className='max-w-full truncate'>
                               {methodName}
                             </span>
@@ -404,7 +417,7 @@ export function RechargeFormCard({
                     <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
                       {t('Waffo Payment')}
                     </Label>
-                    <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
+                    <div className={rechargeFormLayoutClasses.paymentMethods}>
                       {waffoPayMethods?.map((method, index) => {
                         const loadingKey = `waffo-${index}`
                         const methodKey = `${method.payMethodType ?? 'unknown'}-${method.payMethodName ?? method.name}`
@@ -437,7 +450,6 @@ export function RechargeFormCard({
                         const button = (
                           <Button
                             key={methodKey}
-                            variant='outline'
                             onClick={() => onWaffoMethodSelect(method, index)}
                             disabled={belowMin || !!paymentLoading}
                             title={disabledReason}
@@ -446,10 +458,13 @@ export function RechargeFormCard({
                                 ? `${method.name}. ${disabledReason}`
                                 : method.name
                             }
-                            className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
+                            className={cn(
+                              rechargeFormLayoutClasses.paymentButton,
+                              'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
+                            )}
                           >
                             {methodIcon}
-                            <span className='flex min-w-0 flex-col items-start gap-0.5'>
+                            <span className='flex min-w-0 flex-col items-center gap-0.5'>
                               <span className='max-w-full truncate'>
                                 {method.name}
                               </span>

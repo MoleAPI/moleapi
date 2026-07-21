@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Construction } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
@@ -33,7 +32,7 @@ function ServiceComplianceNotice() {
   return (
     <section
       aria-labelledby='service-compliance-title'
-      className='border-border bg-card text-card-foreground mx-auto max-w-4xl space-y-4 rounded-xl border p-6 shadow-sm'
+      className='border-border bg-card text-card-foreground mx-auto flex max-w-4xl flex-col gap-4 rounded-xl border p-6 text-center shadow-sm'
     >
       <h2 id='service-compliance-title' className='text-xl font-semibold'>
         {t('Service Compliance Notice')}
@@ -59,54 +58,19 @@ function ServiceComplianceNotice() {
           'To the extent permitted by applicable law, MoleAPI reserves the right to interpret and update this notice.'
         )}
       </p>
-      <div className='text-muted-foreground space-y-2 text-sm'>
-        <p>{t('Current availability references:')}</p>
-        <ul className='list-disc space-y-1 pl-5'>
-          <li>
-            <a
-              href='https://help.openai.com/en/articles/5347006-openai-api-supported-countries-and-territories'
-              target='_blank'
-              rel='noopener noreferrer'
-              className='text-primary hover:underline'
-            >
-              {t('OpenAI supported countries and territories')}
-            </a>
-          </li>
-          <li>
-            <a
-              href='https://www.anthropic.com/supported-countries'
-              target='_blank'
-              rel='noopener noreferrer'
-              className='text-primary hover:underline'
-            >
-              {t('Anthropic supported countries and regions')}
-            </a>
-          </li>
-        </ul>
-      </div>
     </section>
   )
 }
 
-function EmptyAboutState() {
+export function EmptyAboutState() {
   const { t } = useTranslation()
   const currentYear = new Date().getFullYear()
 
   return (
     <div className='flex min-h-[60vh] items-center justify-center p-8'>
-      <div className='max-w-2xl space-y-6 text-center'>
-        <div className='flex justify-center'>
-          <Construction className='text-muted-foreground h-24 w-24' />
-        </div>
-        <div className='space-y-2'>
-          <h2 className='text-2xl font-bold'>{t('No About Content Set')}</h2>
-          <p className='text-muted-foreground'>
-            {t(
-              'The administrator has not configured any about content yet. You can set it in the settings page, supporting HTML or URL.'
-            )}
-          </p>
-        </div>
-        <div className='space-y-4 text-sm'>
+      <div className='flex max-w-4xl flex-col gap-6 text-center'>
+        <ServiceComplianceNotice />
+        <div className='flex flex-col gap-4 text-sm'>
           <p>
             {t('New API Project Repository:')}{' '}
             <a
@@ -235,9 +199,11 @@ export function About() {
   return (
     <PublicLayout showMainContainer={!isUrl && !contentIsHtml}>
       {aboutContent}
-      <div className='px-4 pb-12'>
-        <ServiceComplianceNotice />
-      </div>
+      {hasContent ? (
+        <div className='px-4 pb-12'>
+          <ServiceComplianceNotice />
+        </div>
+      ) : null}
     </PublicLayout>
   )
 }

@@ -71,10 +71,8 @@ export function AffiliateRewardsCard({
 
   return (
     <TitledCard
-      title={t('Referral Program')}
-      description={t(
-        'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
-      )}
+      title={t('Referral Rewards')}
+      description={t('Invite friends to earn extra rewards.')}
       icon={<Share2 className='size-4' />}
       iconTone='chart-3'
       disableHoverEffect
@@ -98,19 +96,32 @@ export function AffiliateRewardsCard({
       </div>
 
       <div className='flex flex-col gap-2 rounded-lg border p-3'>
-        {[
-          [t('Inviter Reward'), formatQuota(inviterReward)],
-          [t('Invitee Reward'), formatQuota(inviteeReward)],
-          [t('First Top-Up Referral Reward'), formatQuota(firstTopupReward)],
-        ].map(([label, value]) => (
-          <div
-            key={label}
-            className='flex items-center justify-between gap-3 text-sm'
-          >
-            <span className='text-muted-foreground'>{label}</span>
-            <span className='shrink-0 font-medium tabular-nums'>{value}</span>
-          </div>
-        ))}
+        <h3 className='text-sm font-semibold'>{t('Reward Details')}</h3>
+        <ul className='text-muted-foreground flex list-disc flex-col gap-1.5 ps-5 text-sm'>
+          <li>
+            {t(
+              'Earn {{reward}} in referral credit for each friend who signs up.',
+              { reward: formatQuota(inviterReward) }
+            )}
+          </li>
+          <li>
+            {t(
+              'Friends who sign up with your referral code receive {{reward}} in account credit.',
+              { reward: formatQuota(inviteeReward) }
+            )}
+          </li>
+          <li>
+            {t(
+              "Earn an additional {{reward}} in referral credit after a friend's first top-up.",
+              { reward: formatQuota(firstTopupReward) }
+            )}
+          </li>
+          <li>
+            {t(
+              'Referral rewards are first added to referral credit and can be moved to your account balance using Transfer.'
+            )}
+          </li>
+        </ul>
       </div>
 
       <div className='flex flex-col gap-2'>
