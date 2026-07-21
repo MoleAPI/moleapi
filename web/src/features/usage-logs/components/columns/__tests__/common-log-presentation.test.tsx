@@ -45,12 +45,21 @@ const log = usageLogSchema.parse({
   channel: 7,
   channel_name: 'Primary',
   group: 'default',
+  request_id: '202607211431014826310688268d9d6UJDWU9My',
   other: JSON.stringify({
+    admin_info: {
+      use_channel: [7, 9],
+    },
     cache_tokens: 240,
     cache_creation_tokens: 80,
     model_ratio: 0.07,
+    completion_ratio: 4,
+    cache_ratio: 0.1,
+    cache_creation_ratio: 1.25,
     group_ratio: 1,
     frt: 600,
+    request_path: '/v1/chat/completions',
+    request_conversion: ['OpenAI Compatible'],
   }),
 })
 
@@ -173,17 +182,30 @@ test('timing combines duration, first token, and stream throughput', async () =>
 test('details preview uses the effective multiplier instead of standard', async () => {
   const detailsHtml = await renderCell('content')
 
-  assert.match(detailsHtml, /1\.0 · \$0\.14\/M/)
+  assert.match(detailsHtml, /1\.0 · \$0\.14 \/ \$0\.56\/M/)
   assert.doesNotMatch(detailsHtml, /Standard/)
 })
 
-test('expanded details keep token breakdown to input and output only', async () => {
+test('expanded details show request summary, cache tokens, and billing calculation', async () => {
   const detailsHtml = await renderInlineDetails()
 
+  assert.match(detailsHtml, /Request ID/)
+  assert.match(detailsHtml, /202607211431014826310688268d9d6UJDWU9My/)
+  assert.match(detailsHtml, /Channel/)
+  assert.match(detailsHtml, /7/)
+  assert.match(detailsHtml, /Retry Chain/)
+  assert.match(detailsHtml, /7 → 9/)
+  assert.match(detailsHtml, /Path/)
+  assert.match(detailsHtml, /\/v1\/chat\/completions/)
+  assert.match(detailsHtml, /Native format/)
   assert.match(detailsHtml, /Input Tokens/)
   assert.match(detailsHtml, /Output Tokens/)
-  assert.doesNotMatch(detailsHtml, /Cache Read/)
-  assert.doesNotMatch(detailsHtml, /Cache Write/)
+  assert.match(detailsHtml, /Cache Read/)
+  assert.match(detailsHtml, /240 Tokens/)
+  assert.match(detailsHtml, /Cache Write/)
+  assert.match(detailsHtml, /80 Tokens/)
+  assert.match(detailsHtml, /Calculation/)
+  assert.match(detailsHtml, /Total Cost/)
 })
 
 test('desktop common logs keep full values on one horizontally scrollable row', async () => {

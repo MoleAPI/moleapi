@@ -125,7 +125,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 		return
 	}
 
-	referenceId, err := model.NewTopUpTradeNo(model.PaymentProviderCreem)
+	referenceId, err := model.NewTopUpTradeNo(model.PaymentProviderCreem, id)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 生成充值订单号失败 user_id=%d error=%q", id, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})

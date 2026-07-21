@@ -149,7 +149,7 @@ func RequestLanTuPay(c *gin.Context) {
 	payMoneyText := decimal.NewFromFloat(payMoney).StringFixed(2)
 	payMoney, _ = decimal.RequireFromString(payMoneyText).Float64()
 
-	tradeNo, err := model.NewTopUpTradeNo(model.PaymentProviderLanTu)
+	tradeNo, err := model.NewTopUpTradeNo(model.PaymentProviderLanTu, userID)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("蓝兔支付生成订单号失败 user_id=%d error=%q", userID, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})

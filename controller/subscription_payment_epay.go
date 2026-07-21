@@ -94,7 +94,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 		return
 	}
 
-	tradeNo, err := model.NewSubscriptionTradeNo(model.PaymentProviderEpay)
+	tradeNo, err := model.NewSubscriptionTradeNo(model.PaymentProviderEpay, userId)
 	if err != nil {
 		common.ApiErrorMsg(c, "创建订单失败")
 		return

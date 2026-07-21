@@ -942,7 +942,7 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 
 		now := common.GetTimestamp()
 		// Historical balance orders keep their protected new-api-ref- identifiers; new orders use the unified format.
-		tradeNo, err := NewSubscriptionTradeNo(PaymentProviderBalance)
+		tradeNo, err := NewSubscriptionTradeNo(PaymentProviderBalance, userId)
 		if err != nil {
 			return err
 		}

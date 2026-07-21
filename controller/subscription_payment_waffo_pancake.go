@@ -75,7 +75,7 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 		}
 	}
 
-	tradeNo, err := model.NewSubscriptionTradeNo(model.PaymentProviderWaffoPancake)
+	tradeNo, err := model.NewSubscriptionTradeNo(model.PaymentProviderWaffoPancake, userId)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo Pancake 生成订阅订单号失败 user_id=%d plan_id=%d error=%q", userId, plan.Id, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})

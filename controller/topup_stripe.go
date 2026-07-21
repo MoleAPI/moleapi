@@ -144,7 +144,7 @@ func (*StripeAdaptor) RequestPay(c *gin.Context, req *StripePayRequest) {
 		return
 	}
 
-	referenceId, err := model.NewTopUpTradeNo(model.PaymentProviderStripe)
+	referenceId, err := model.NewTopUpTradeNo(model.PaymentProviderStripe, id)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 生成充值订单号失败 user_id=%d error=%q", id, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})

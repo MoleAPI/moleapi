@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { InvoiceIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Search, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react'
+import { Search, ChevronLeft, ChevronRight, Eye, Download } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -37,7 +37,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -47,7 +46,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { toIntlLocale } from '@/i18n/languages'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -62,6 +68,7 @@ import {
   formatHistoricalPaymentAmount,
   formatHistoricalTopUpCredit,
 } from '../../lib/format'
+import type { TopupRecord } from '../../types'
 
 interface BillingHistoryDialogProps {
   open: boolean
@@ -73,6 +80,21 @@ const BILLING_HISTORY_SKELETON_IDS = Array.from(
   { length: 5 },
   (_, index) => `billing-history-skeleton-${index + 1}`
 )
+
+function BillingDetailRow(props: {
+  label: React.ReactNode
+  value: React.ReactNode
+  mono?: boolean
+}) {
+  return (
+    <div className='grid min-w-0 grid-cols-[7.5rem_minmax(0,1fr)] gap-3 text-sm'>
+      <span className='text-muted-foreground text-xs'>{props.label}</span>
+      <span className={props.mono ? 'font-mono text-xs break-all' : 'text-sm'}>
+        {props.value}
+      </span>
+    </div>
+  )
+}
 
 export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
   const { t, i18n } = useTranslation()
@@ -100,10 +122,22 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
   const currentUserId = useAuthStore((state) => state.auth.user?.id)
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
-  const { copyToClipboard, copiedText } = useCopyToClipboard({ notify: false })
+  const [detailRecord, setDetailRecord] = useState<TopupRecord | null>(null)
 
   const totalPages = Math.ceil(total / pageSize)
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const detailCredit = detailRecord
+    ? formatHistoricalTopUpCredit(detailRecord)
+    : null
+  const detailStatus = detailRecord
+    ? getStatusConfig(detailRecord.status)
+    : null
+  const detailInvoiceViewUrl = detailRecord
+    ? getTopUpInvoiceUrl(detailRecord, currentUserId, isAdmin)
+    : null
+  const detailInvoiceDownloadUrl = detailRecord
+    ? getTopUpInvoiceUrl(detailRecord, currentUserId, isAdmin, true)
+    : null
 
   const handleConfirmComplete = async () => {
     if (confirmTradeNo) {
@@ -119,11 +153,11 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
       <Dialog
         open={props.open}
         onOpenChange={props.onOpenChange}
-        title={t('Billing History')}
+        title={t('Recharge Bills')}
         description={t(
           'View your topup transaction records and payment history'
         )}
-        contentClassName='flex max-h-[calc(100dvh-2rem)] flex-col max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4 sm:max-w-4xl'
+        contentClassName='flex max-h-[calc(100dvh-2rem)] flex-col max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4 sm:max-w-6xl'
         contentHeight='auto'
         bodyClassName='space-y-3'
       >
@@ -202,23 +236,17 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
           </div>
 
           {/* Records List */}
-          <div className='max-h-[min(54vh,520px)] overflow-y-auto pr-1'>
+          <div className='max-h-[min(58vh,560px)] overflow-y-auto rounded-md border'>
             {loading && (
-              <div className='space-y-3'>
+              <div className='space-y-2 p-3'>
                 {BILLING_HISTORY_SKELETON_IDS.map((id) => (
-                  <div key={id} className='rounded-lg border p-3 sm:p-4'>
-                    <div className='flex items-start justify-between'>
-                      <div className='flex-1 space-y-2'>
-                        <Skeleton className='h-4 w-48' />
-                        <Skeleton className='h-3 w-32' />
-                      </div>
-                      <Skeleton className='h-5 w-16' />
-                    </div>
-                    <div className='mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4'>
-                      <Skeleton className='h-3 w-full' />
-                      <Skeleton className='h-3 w-full' />
-                      <Skeleton className='h-3 w-full' />
-                    </div>
+                  <div key={id} className='flex items-center gap-3'>
+                    <Skeleton className='h-4 w-64' />
+                    <Skeleton className='h-4 w-24' />
+                    <Skeleton className='h-4 w-24' />
+                    <Skeleton className='h-4 w-20' />
+                    <Skeleton className='h-4 w-20' />
+                    <Skeleton className='h-4 w-32' />
                   </div>
                 ))}
               </div>
@@ -236,178 +264,168 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
               </div>
             )}
             {!loading && records.length > 0 && (
-              <div className='space-y-3'>
-                {records.map((record) => {
-                  const statusConfig = getStatusConfig(record.status)
-                  const creditDisplay = formatHistoricalTopUpCredit(record)
-                  const gatewayTradeNo = record.gateway_trade_no?.trim()
-                  const invoiceViewUrl = getTopUpInvoiceUrl(
-                    record,
-                    currentUserId,
-                    isAdmin
-                  )
-                  const invoiceDownloadUrl = getTopUpInvoiceUrl(
-                    record,
-                    currentUserId,
-                    isAdmin,
-                    true
-                  )
-                  return (
-                    <div
-                      key={record.id}
-                      className='rounded-lg border p-3 sm:p-4'
-                    >
-                      {/* Header Row */}
-                      <div className='flex items-start justify-between gap-2'>
-                        <div className='flex-1 space-y-1'>
-                          <div className='flex min-w-0 items-center gap-2'>
-                            <code className='text-foreground truncate font-mono text-sm'>
+              <Table className='min-w-[980px] text-xs [&_td]:text-xs [&_td_*]:text-xs [&_th]:text-xs'>
+                <TableHeader className='bg-muted/40 sticky top-0 z-10'>
+                  <TableRow>
+                    {isAdmin && <TableHead>{t('User ID')}</TableHead>}
+                    <TableHead>{t('Order')}</TableHead>
+                    <TableHead>{t('Payment Method')}</TableHead>
+                    <TableHead>{t('Amount')}</TableHead>
+                    <TableHead>{t('Payment')}</TableHead>
+                    <TableHead>{t('Status')}</TableHead>
+                    <TableHead>{t('Created At')}</TableHead>
+                    <TableHead className='text-right'>{t('Actions')}</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody className='[&>tr]:h-11'>
+                  {records.map((record) => {
+                    const statusConfig = getStatusConfig(record.status)
+                    const creditDisplay = formatHistoricalTopUpCredit(record)
+                    const invoiceViewUrl = getTopUpInvoiceUrl(
+                      record,
+                      currentUserId,
+                      isAdmin
+                    )
+                    const invoiceDownloadUrl = getTopUpInvoiceUrl(
+                      record,
+                      currentUserId,
+                      isAdmin,
+                      true
+                    )
+
+                    return (
+                      <TableRow
+                        key={record.id}
+                        className='cursor-pointer'
+                        onClick={() => setDetailRecord(record)}
+                        title={t('Click to view full details')}
+                      >
+                        {isAdmin && (
+                          <TableCell>
+                            <StatusBadge
+                              label={String(record.user_id ?? '-')}
+                              variant='neutral'
+                              size='sm'
+                              copyText={
+                                record.user_id != null
+                                  ? String(record.user_id)
+                                  : undefined
+                              }
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          <div className='flex min-w-0 items-center gap-1.5'>
+                            <code className='font-mono text-xs whitespace-nowrap'>
                               {record.trade_no}
                             </code>
+                            <CopyButton
+                              value={record.trade_no}
+                              size='icon'
+                              className='size-6'
+                              iconClassName='size-3'
+                              tooltip={t('Copy to clipboard')}
+                            />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {getPaymentMethodName(record.payment_method, t)}
+                        </TableCell>
+                        <TableCell className='font-medium'>
+                          {creditDisplay.value}
+                        </TableCell>
+                        <TableCell className='font-medium text-red-600'>
+                          {formatHistoricalPaymentAmount(
+                            record.money,
+                            record.payment_currency,
+                            locale
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <StatusBadge
+                            label={t(statusConfig.label)}
+                            variant={statusConfig.variant}
+                            showDot
+                            copyable={false}
+                          />
+                        </TableCell>
+                        <TableCell className='font-mono'>
+                          {formatTimestamp(record.create_time)}
+                        </TableCell>
+                        <TableCell>
+                          <div className='flex items-center justify-end gap-1.5'>
                             <Button
+                              size='sm'
                               variant='ghost'
-                              size='sm'
-                              className='h-5 w-5 p-0'
-                              onClick={() => copyToClipboard(record.trade_no)}
+                              className='h-7 px-2'
+                              onClick={(event) => {
+                                event.stopPropagation()
+                                setDetailRecord(record)
+                              }}
                             >
-                              {copiedText === record.trade_no ? (
-                                <Check className='h-3 w-3' />
-                              ) : (
-                                <Copy className='h-3 w-3' />
-                              )}
+                              <Eye className='size-3.5' />
+                              {t('Details')}
                             </Button>
-                            {isAdmin && record.user_id != null && (
-                              <StatusBadge
-                                label={`${t('User ID')}: ${record.user_id}`}
-                                variant='neutral'
+                            {invoiceViewUrl && (
+                              <Button
                                 size='sm'
-                                copyText={String(record.user_id)}
-                              />
-                            )}
-                          </div>
-                          <div className='text-muted-foreground text-xs'>
-                            {formatTimestamp(record.create_time)}
-                          </div>
-                        </div>
-                        <StatusBadge
-                          label={statusConfig.label}
-                          variant={statusConfig.variant}
-                          showDot
-                          copyable={false}
-                        />
-                      </div>
-
-                      {/* Details Grid */}
-                      <div className='mt-3 grid grid-cols-2 gap-3 sm:mt-4 sm:grid-cols-3 sm:gap-4'>
-                        <div className='space-y-1'>
-                          <Label className='text-muted-foreground text-xs'>
-                            {t('Payment Method')}
-                          </Label>
-                          <div className='text-sm font-medium'>
-                            {getPaymentMethodName(record.payment_method, t)}
-                          </div>
-                        </div>
-                        <div className='space-y-1'>
-                          <Label className='text-muted-foreground text-xs'>
-                            {t(
-                              creditDisplay.hasCreditedFact
-                                ? 'Credited amount'
-                                : 'Amount'
-                            )}
-                          </Label>
-                          <div className='text-sm font-semibold'>
-                            {creditDisplay.value}
-                          </div>
-                        </div>
-                        <div className='space-y-1'>
-                          <Label className='text-muted-foreground text-xs'>
-                            {t('Payment')}
-                          </Label>
-                          <div className='text-sm font-semibold text-red-600'>
-                            {formatHistoricalPaymentAmount(
-                              record.money,
-                              record.payment_currency,
-                              locale
-                            )}
-                          </div>
-                        </div>
-                        {gatewayTradeNo && (
-                          <div className='min-w-0 space-y-1'>
-                            <Label className='text-muted-foreground text-xs'>
-                              {t('Gateway transaction ID')}
-                            </Label>
-                            <div className='flex min-w-0 items-center gap-1'>
-                              <code
-                                className='truncate font-mono text-xs'
-                                title={gatewayTradeNo}
+                                variant='ghost'
+                                className='h-7 px-2'
+                                render={
+                                  <a
+                                    href={invoiceViewUrl}
+                                    target='_blank'
+                                    rel='noreferrer noopener'
+                                    onClick={(event) => event.stopPropagation()}
+                                  />
+                                }
                               >
-                                {gatewayTradeNo}
-                              </code>
-                              <CopyButton
-                                value={gatewayTradeNo}
-                                size='icon'
-                                className='size-6'
-                                iconClassName='size-3'
-                                tooltip={t('Copy to clipboard')}
-                              />
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {(invoiceViewUrl ||
-                        (isAdmin && record.status === 'pending')) && (
-                        <div className='mt-4 flex flex-wrap justify-end gap-2'>
-                          {invoiceViewUrl && (
-                            <Button
-                              size='sm'
-                              variant='outline'
-                              render={
-                                <a
-                                  href={invoiceViewUrl}
-                                  target='_blank'
-                                  rel='noreferrer noopener'
+                                <HugeiconsIcon
+                                  icon={InvoiceIcon}
+                                  strokeWidth={2}
+                                  data-icon='inline-start'
                                 />
-                              }
-                            >
-                              <HugeiconsIcon
-                                icon={InvoiceIcon}
-                                strokeWidth={2}
-                                data-icon='inline-start'
-                              />
-                              {t('View invoice')}
-                            </Button>
-                          )}
-                          {invoiceDownloadUrl && (
-                            <Button
-                              size='sm'
-                              variant='outline'
-                              render={<a href={invoiceDownloadUrl} download />}
-                            >
-                              <HugeiconsIcon
-                                icon={InvoiceIcon}
-                                strokeWidth={2}
-                                data-icon='inline-start'
-                              />
-                              {t('Download invoice')}
-                            </Button>
-                          )}
-                          {isAdmin && record.status === 'pending' && (
-                            <Button
-                              size='sm'
-                              variant='outline'
-                              onClick={() => setConfirmTradeNo(record.trade_no)}
-                              disabled={completing}
-                            >
-                              {t('Complete Order')}
-                            </Button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
+                                Invoice
+                              </Button>
+                            )}
+                            {invoiceDownloadUrl && (
+                              <Button
+                                size='sm'
+                                variant='ghost'
+                                className='h-7 px-2'
+                                render={
+                                  <a
+                                    href={invoiceDownloadUrl}
+                                    download
+                                    onClick={(event) => event.stopPropagation()}
+                                  />
+                                }
+                              >
+                                <Download className='size-3.5' />
+                                {t('Download')}
+                              </Button>
+                            )}
+                            {isAdmin && record.status === 'pending' && (
+                              <Button
+                                size='sm'
+                                variant='outline'
+                                className='h-7 px-2'
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  setConfirmTradeNo(record.trade_no)
+                                }}
+                                disabled={completing}
+                              >
+                                {t('Complete Order')}
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </TableBody>
+              </Table>
             )}
           </div>
 
@@ -446,6 +464,161 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
             </div>
           )}
         </div>
+      </Dialog>
+
+      <Dialog
+        open={!!detailRecord}
+        onOpenChange={(open) => !open && setDetailRecord(null)}
+        title={t('Top-up Details')}
+        description={t(
+          'View your topup transaction records and payment history'
+        )}
+        contentClassName='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-lg'
+        contentHeight='auto'
+        bodyClassName='space-y-3'
+        footer={
+          detailRecord ? (
+            <div className='flex flex-wrap justify-end gap-2'>
+              {detailInvoiceViewUrl && (
+                <Button
+                  size='sm'
+                  variant='outline'
+                  render={
+                    <a
+                      href={detailInvoiceViewUrl}
+                      target='_blank'
+                      rel='noreferrer noopener'
+                    />
+                  }
+                >
+                  <HugeiconsIcon
+                    icon={InvoiceIcon}
+                    strokeWidth={2}
+                    data-icon='inline-start'
+                  />
+                  {t('View invoice')}
+                </Button>
+              )}
+              {detailInvoiceDownloadUrl && (
+                <Button
+                  size='sm'
+                  variant='outline'
+                  render={<a href={detailInvoiceDownloadUrl} download />}
+                >
+                  <Download className='size-3.5' />
+                  {t('Download invoice')}
+                </Button>
+              )}
+              <Button
+                size='sm'
+                variant='secondary'
+                onClick={() => setDetailRecord(null)}
+              >
+                {t('Close')}
+              </Button>
+            </div>
+          ) : null
+        }
+      >
+        {detailRecord && detailCredit && detailStatus && (
+          <div className='space-y-2.5'>
+            {isAdmin && (
+              <BillingDetailRow
+                label={t('User ID')}
+                value={detailRecord.user_id ?? '-'}
+              />
+            )}
+            <BillingDetailRow
+              label={t('Order')}
+              mono
+              value={
+                <span className='inline-flex min-w-0 items-center gap-1.5'>
+                  <span className='break-all'>{detailRecord.trade_no}</span>
+                  <CopyButton
+                    value={detailRecord.trade_no}
+                    size='icon'
+                    className='size-6 shrink-0'
+                    iconClassName='size-3'
+                    tooltip={t('Copy to clipboard')}
+                  />
+                </span>
+              }
+            />
+            {detailRecord.gateway_trade_no?.trim() && (
+              <BillingDetailRow
+                label={t('Gateway transaction ID')}
+                mono
+                value={
+                  <span className='inline-flex min-w-0 items-center gap-1.5'>
+                    <span className='break-all'>
+                      {detailRecord.gateway_trade_no.trim()}
+                    </span>
+                    <CopyButton
+                      value={detailRecord.gateway_trade_no.trim()}
+                      size='icon'
+                      className='size-6 shrink-0'
+                      iconClassName='size-3'
+                      tooltip={t('Copy to clipboard')}
+                    />
+                  </span>
+                }
+              />
+            )}
+            <BillingDetailRow
+              label={t('Payment Method')}
+              value={getPaymentMethodName(detailRecord.payment_method, t)}
+            />
+            {detailRecord.payment_provider && (
+              <BillingDetailRow
+                label={t('Payment Channel')}
+                value={getPaymentMethodName(detailRecord.payment_provider, t)}
+              />
+            )}
+            <BillingDetailRow
+              label={t(
+                detailCredit.hasCreditedFact ? 'Credited amount' : 'Amount'
+              )}
+              value={<span className='font-medium'>{detailCredit.value}</span>}
+            />
+            <BillingDetailRow
+              label={t('Payment')}
+              value={
+                <span className='font-semibold text-red-600'>
+                  {formatHistoricalPaymentAmount(
+                    detailRecord.money,
+                    detailRecord.payment_currency,
+                    locale
+                  )}
+                </span>
+              }
+            />
+            <BillingDetailRow
+              label={t('Status')}
+              value={
+                <StatusBadge
+                  label={t(detailStatus.label)}
+                  variant={detailStatus.variant}
+                  showDot
+                  copyable={false}
+                />
+              }
+            />
+            <BillingDetailRow
+              label={t('Created At')}
+              mono
+              value={formatTimestamp(detailRecord.create_time)}
+            />
+            <BillingDetailRow
+              label={t('Completed')}
+              mono
+              value={
+                detailRecord.complete_time
+                  ? formatTimestamp(detailRecord.complete_time)
+                  : '-'
+              }
+            />
+          </div>
+        )}
       </Dialog>
 
       {/* Confirm Complete Order Dialog */}

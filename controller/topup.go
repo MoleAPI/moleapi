@@ -323,7 +323,7 @@ func RequestEpay(c *gin.Context) {
 	callBackAddress := service.GetCallbackAddress()
 	returnUrl, _ := url.Parse(paymentReturnPath("/usage-logs"))
 	notifyUrl, _ := url.Parse(callBackAddress + "/api/user/epay/notify")
-	tradeNo, err := model.NewTopUpTradeNo(model.PaymentProviderEpay)
+	tradeNo, err := model.NewTopUpTradeNo(model.PaymentProviderEpay, id)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("易支付 生成充值订单号失败 user_id=%d error=%q", id, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})

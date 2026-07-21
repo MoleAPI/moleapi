@@ -195,14 +195,6 @@ function MobileTokensField({ log }: { log: UsageLog }) {
 
   const promptTokens = log.prompt_tokens || 0
   const completionTokens = log.completion_tokens || 0
-  if (promptTokens === 0 && completionTokens === 0) {
-    return (
-      <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1.5'>
-        <span className='text-muted-foreground text-xs'>-</span>
-      </div>
-    )
-  }
-
   const other = parseLogOther(log.other)
   const cacheReadTokens = other?.cache_tokens || 0
   const cacheWrite5m = other?.cache_creation_tokens_5m || 0
@@ -210,7 +202,19 @@ function MobileTokensField({ log }: { log: UsageLog }) {
   const hasSplitCache = cacheWrite5m > 0 || cacheWrite1h > 0
   const cacheWriteTokens = hasSplitCache
     ? cacheWrite5m + cacheWrite1h
-    : other?.cache_creation_tokens || 0
+    : other?.cache_write_tokens || other?.cache_creation_tokens || 0
+  if (
+    promptTokens === 0 &&
+    completionTokens === 0 &&
+    cacheReadTokens === 0 &&
+    cacheWriteTokens === 0
+  ) {
+    return (
+      <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1.5'>
+        <span className='text-muted-foreground text-xs'>-</span>
+      </div>
+    )
+  }
   const showCache = cacheReadTokens > 0 || cacheWriteTokens > 0
 
   return (

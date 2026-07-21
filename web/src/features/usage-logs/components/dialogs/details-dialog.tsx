@@ -74,6 +74,7 @@ import {
   isViolationFeeLog,
   getFirstResponseTimeColor,
   getResponseTimeColor,
+  getImageTokenBreakdown,
   renderAuditContent,
 } from '../../lib/format'
 import {
@@ -215,6 +216,136 @@ function quotaSaturationKindLabel(
   return t('Invalid (NaN)')
 }
 
+function tokenCountText(
+  tokens: number | undefined,
+  t: (key: string) => string
+): string {
+  return `${(tokens || 0).toLocaleString()} ${t('Tokens')}`
+}
+
+function getCacheWriteTokens(other: LogOtherData | null | undefined): number {
+  if (!other) return 0
+  const split =
+    (other.cache_creation_tokens_5m || 0) +
+    (other.cache_creation_tokens_1h || 0)
+  if (split > 0) return split
+  return other.cache_write_tokens || other.cache_creation_tokens || 0
+}
+
+function getRequestConversionLabel(
+  t: TFunction,
+  other: LogOtherData | null
+): string {
+  const conversionChain =
+    other && Array.isArray(other.request_conversion)
+      ? other.request_conversion.filter(Boolean)
+      : []
+  return conversionChain.length <= 1
+    ? t('Native format')
+    : conversionChain.join(' -> ')
+}
+
+function LogOverviewSection(props: {
+  log: UsageLog
+  other: LogOtherData | null
+  isAdmin: boolean
+}) {
+  const { t } = useTranslation()
+  const { log, other, isAdmin } = props
+  const showTiming = isTimingLogType(log.type)
+  const useChannel = other?.admin_info?.use_channel
+  const channelChain =
+    useChannel && useChannel.length > 0 ? useChannel.join(' → ') : undefined
+  const showConversion =
+    log.type !== 6 && (other?.request_path || other?.request_conversion?.length)
+
+  return (
+    <DetailSection label={t('Request')}>
+      {log.request_id && (
+        <DetailRow label={t('Request ID')} value={log.request_id} mono />
+      )}
+      {log.upstream_request_id && (
+        <DetailRow
+          label={t('Upstream Request ID')}
+          value={log.upstream_request_id}
+          mono
+        />
+      )}
+      {isAdmin && log.channel > 0 && (
+        <DetailRow
+          label={t('Channel')}
+          value={
+            <span>
+              {log.channel}
+              {log.channel_name && (
+                <span className='text-muted-foreground'>
+                  {' '}
+                  ({log.channel_name})
+                </span>
+              )}
+            </span>
+          }
+          mono
+        />
+      )}
+      {channelChain && isAdmin && (
+        <DetailRow label={t('Retry Chain')} value={channelChain} mono />
+      )}
+      {log.token_name && (
+        <DetailRow label={t('Token')} value={log.token_name} mono />
+      )}
+      {(log.group || other?.group) && (
+        <DetailRow
+          label={t('Group')}
+          value={log.group || other?.group || ''}
+          mono
+        />
+      )}
+      {showTiming && log.use_time > 0 && (
+        <DetailRow
+          label={t('Response Time')}
+          value={
+            <span
+              className={cn(
+                'font-medium',
+                timingTextColorClass(
+                  getResponseTimeColor(log.use_time, log.completion_tokens)
+                )
+              )}
+            >
+              {formatUseTime(log.use_time)}
+              {log.is_stream && other?.frt != null && other.frt > 0 && (
+                <span
+                  className={cn(
+                    'font-normal',
+                    timingTextColorClass(
+                      getFirstResponseTimeColor(other.frt / 1000)
+                    )
+                  )}
+                >
+                  {' '}
+                  (FRT: {formatUseTime(other.frt / 1000)})
+                </span>
+              )}
+            </span>
+          }
+        />
+      )}
+      {showConversion && (
+        <>
+          {other?.request_path && (
+            <DetailRow label={t('Path')} value={other.request_path} mono />
+          )}
+          <DetailRow
+            label={t('Request Conversion')}
+            value={getRequestConversionLabel(t, other)}
+          />
+        </>
+      )}
+    </DetailSection>
+  )
+}
+
 function BillingBreakdown(props: {
   log: UsageLog
   other: LogOtherData
@@ -231,6 +362,10 @@ function BillingBreakdown(props: {
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
   const fmtPrice = (usd: number) => formatBillingCurrencyFromUSD(usd, priceOpts)
   const baseInputUSD = other.model_ratio != null ? other.model_ratio * 2.0 : 0
+  const promptTokens = log.prompt_tokens || 0
+  const completionTokens = log.completion_tokens || 0
+  const cacheReadTokens = other.cache_tokens || 0
+  const cacheWriteTokens = getCacheWriteTokens(other)
 
   if (isTieredExpr) {
     rows.push({
@@ -380,6 +515,119 @@ function BillingBreakdown(props: {
     })
   }
 
+  const calculationParts: string[] = []
+  const addTokenTerm = (
+    label: string,
+    tokens: number,
+    pricePerMillion: number | undefined
+  ) => {
+    if (tokens <= 0 || pricePerMillion == null || pricePerMillion <= 0) return
+    calculationParts.push(
+      `${label} ${tokens.toLocaleString()} × ${fmtPrice(pricePerMillion)}/M`
+    )
+  }
+
+  if (isTieredExpr && tieredSummary) {
+    for (const entry of tieredSummary.priceEntries) {
+      if (entry.field === 'inputPrice') {
+        addTokenTerm(t('Input'), promptTokens, entry.price)
+      } else if (entry.field === 'outputPrice') {
+        addTokenTerm(t('Output'), completionTokens, entry.price)
+      } else if (entry.field === 'cacheReadPrice') {
+        addTokenTerm(t('Cache Read'), cacheReadTokens, entry.price)
+      } else if (entry.field === 'cacheCreatePrice') {
+        addTokenTerm(
+          t('Cache Write'),
+          Math.max(cacheWriteTokens - (other.cache_creation_tokens_1h || 0), 0),
+          entry.price
+        )
+      } else if (entry.field === 'cacheCreate1hPrice') {
+        addTokenTerm(
+          t('Cache Creation (1h)'),
+          other.cache_creation_tokens_1h || 0,
+          entry.price
+        )
+      }
+    }
+  } else if (isPerCall && other.model_price != null) {
+    calculationParts.push(`${t('Per-call')} ${fmtPrice(other.model_price)}`)
+  } else if (other.model_ratio != null) {
+    const imageTokens = getImageTokenBreakdown(other).input
+    const audioTokens = other.audio_input_token_count || 0
+    const baseInputTokens = other.claude
+      ? promptTokens
+      : Math.max(
+          promptTokens -
+            cacheReadTokens -
+            cacheWriteTokens -
+            imageTokens -
+            audioTokens,
+          0
+        )
+
+    addTokenTerm(t('Input'), baseInputTokens, baseInputUSD)
+    if (other.completion_ratio != null) {
+      addTokenTerm(
+        t('Output'),
+        completionTokens,
+        baseInputUSD * other.completion_ratio
+      )
+    }
+    addTokenTerm(
+      t('Cache Read'),
+      cacheReadTokens,
+      baseInputUSD * (other.cache_ratio || 0)
+    )
+    if (
+      (other.cache_creation_tokens_5m || 0) > 0 ||
+      (other.cache_creation_tokens_1h || 0) > 0
+    ) {
+      addTokenTerm(
+        t('Cache Write'),
+        Math.max(
+          (other.cache_creation_tokens || 0) -
+            (other.cache_creation_tokens_5m || 0) -
+            (other.cache_creation_tokens_1h || 0),
+          0
+        ),
+        baseInputUSD * (other.cache_creation_ratio || 0)
+      )
+      addTokenTerm(
+        t('Cache Creation (5m)'),
+        other.cache_creation_tokens_5m || 0,
+        baseInputUSD * (other.cache_creation_ratio_5m || 0)
+      )
+      addTokenTerm(
+        t('Cache Creation (1h)'),
+        other.cache_creation_tokens_1h || 0,
+        baseInputUSD * (other.cache_creation_ratio_1h || 0)
+      )
+    } else {
+      addTokenTerm(
+        t('Cache Write'),
+        cacheWriteTokens,
+        baseInputUSD * (other.cache_creation_ratio || 0)
+      )
+    }
+    addTokenTerm(
+      t('Image input'),
+      imageTokens,
+      baseInputUSD * (other.image_ratio || 0)
+    )
+    addTokenTerm(t('Audio input'), audioTokens, other.audio_input_price)
+  }
+
+  if (calculationParts.length > 0) {
+    const ratioText =
+      effectiveGR != null && Number.isFinite(effectiveGR)
+        ? ` × ${formatRatio(effectiveGR)}x`
+        : ''
+    rows.push({
+      label: t('Calculation'),
+      value: `${calculationParts.join(' + ')}${ratioText} = ${formatLogQuota(log.quota)}`,
+    })
+  }
+
   if (isAdmin && other.admin_info) {
     rows.push({
       label: t('Billing Path'),
@@ -406,10 +654,17 @@ function BillingBreakdown(props: {
 function TokenBreakdown(props: { log: UsageLog }) {
   const { t } = useTranslation()
   const { log } = props
+  const other = parseLogOther(log.other)
 
   const promptTokens = log.prompt_tokens || 0
   const completionTokens = log.completion_tokens || 0
-  const hasTextTokens = promptTokens > 0 || completionTokens > 0
+  const cacheReadTokens = other?.cache_tokens || 0
+  const cacheWriteTokens = getCacheWriteTokens(other)
+  const hasTextTokens =
+    promptTokens > 0 ||
+    completionTokens > 0 ||
+    cacheReadTokens > 0 ||
+    cacheWriteTokens > 0
 
   if (!hasTextTokens) return null
 
@@ -423,6 +678,30 @@ function TokenBreakdown(props: { log: UsageLog }) {
     label: t('Output Tokens'),
     value: completionTokens.toLocaleString(),
   })
+  if (cacheReadTokens > 0) {
+    rows.push({
+      label: t('Cache Read'),
+      value: tokenCountText(cacheReadTokens, t),
+    })
+  }
+  if (cacheWriteTokens > 0) {
+    rows.push({
+      label: t('Cache Write'),
+      value: tokenCountText(cacheWriteTokens, t),
+    })
+  }
+  if ((other?.cache_creation_tokens_5m || 0) > 0) {
+    rows.push({
+      label: t('Cache Creation (5m)'),
+      value: tokenCountText(other?.cache_creation_tokens_5m, t),
+    })
+  }
+  if ((other?.cache_creation_tokens_1h || 0) > 0) {
+    rows.push({
+      label: t('Cache Creation (1h)'),
+      value: tokenCountText(other?.cache_creation_tokens_1h, t),
+    })
+  }
 
   return (
     <DetailSection label={t('Token Breakdown')}>
@@ -447,6 +726,13 @@ export function InlineLogDetails(props: { log: UsageLog; isAdmin: boolean }) {
 
   return (
     <div className='grid min-w-0 gap-3 py-1 lg:grid-cols-2'>
+      <div className='min-w-0 lg:col-span-2'>
+        <LogOverviewSection
+          log={props.log}
+          other={other}
+          isAdmin={props.isAdmin}
+        />
+      </div>
       {showTokens && <TokenBreakdown log={props.log} />}
       {showBilling && (
         <BillingBreakdown
@@ -587,18 +873,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
       ].filter(Boolean) as Array<{ label: string; value: string }>)
     : []
 
-  const conversionChain =
-    other && Array.isArray(other.request_conversion)
-      ? other.request_conversion.filter(Boolean)
-      : []
-  const conversionLabel =
-    conversionChain.length <= 1
-      ? t('Native format')
-      : conversionChain.join(' -> ')
+  const conversionLabel = getRequestConversionLabel(t, other)
   const showConversion =
-    props.isAdmin &&
     props.log.type !== 6 &&
-    (other?.request_path || conversionChain.length > 0)
+    (other?.request_path || other?.request_conversion?.length)
 
   const useChannel = other?.admin_info?.use_channel
   const channelChain =

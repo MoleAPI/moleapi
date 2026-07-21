@@ -5,9 +5,10 @@ import (
 	"encoding/base32"
 	"fmt"
 	"strings"
+	"time"
 )
 
-const paymentOrderPrefix = "MO1"
+const paymentOrderPrefix = "USR"
 
 var paymentProviderOrderCodes = map[string]string{
 	PaymentProviderEpay:         "EP",
@@ -19,29 +20,42 @@ var paymentProviderOrderCodes = map[string]string{
 	PaymentProviderBalance:      "BL",
 }
 
-func NewTopUpTradeNo(paymentProvider string) (string, error) {
-	return newPaymentOrderNo("T", paymentProvider)
+func NewTopUpTradeNo(paymentProvider string, userID int) (string, error) {
+	return newPaymentOrderNo("T", paymentProvider, userID)
 }
 
-func NewSubscriptionTradeNo(paymentProvider string) (string, error) {
-	return newPaymentOrderNo("S", paymentProvider)
+func NewSubscriptionTradeNo(paymentProvider string, userID int) (string, error) {
+	return newPaymentOrderNo("S", paymentProvider, userID)
 }
 
-func newPaymentOrderNo(orderType string, paymentProvider string) (string, error) {
+func newPaymentOrderNo(orderType string, paymentProvider string, userID int) (string, error) {
 	providerCode, ok := paymentProviderOrderCodes[paymentProvider]
 	if !ok {
 		return "", fmt.Errorf("unsupported payment provider: %s", paymentProvider)
 	}
 
-	random := make([]byte, 16)
+	if userID < 0 {
+		userID = 0
+	}
+
+	random := make([]byte, 2)
 	if _, err := rand.Read(random); err != nil {
 		return "", fmt.Errorf("generate payment order number: %w", err)
 	}
-	suffix := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(random)
-	return paymentOrderPrefix + orderType + providerCode + suffix, nil
+	suffix := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(random)[:4]
+	return fmt.Sprintf(
+		"%s%s%s%08d%s%s",
+		paymentOrderPrefix,
+		orderType,
+		providerCode,
+		userID%100000000,
+		time.Now().Format("20060102150405"),
+		suffix,
+	), nil
 }
 
 func IsWaffoPancakeSubscriptionTradeNo(tradeNo string) bool {
 	return strings.HasPrefix(tradeNo, paymentOrderPrefix+"SWP") ||
+		strings.HasPrefix(tradeNo, "MO1SWP") ||
 		strings.HasPrefix(tradeNo, "WAFFO_PANCAKE_SUB-")
 }

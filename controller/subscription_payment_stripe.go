@@ -76,7 +76,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		}
 	}
 
-	referenceId, err := model.NewSubscriptionTradeNo(model.PaymentProviderStripe)
+	referenceId, err := model.NewSubscriptionTradeNo(model.PaymentProviderStripe, userId)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 生成订阅订单号失败 user_id=%d plan_id=%d error=%q", userId, plan.Id, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})

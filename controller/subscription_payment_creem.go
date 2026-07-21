@@ -86,7 +86,7 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		}
 	}
 
-	referenceId, err := model.NewSubscriptionTradeNo(model.PaymentProviderCreem)
+	referenceId, err := model.NewSubscriptionTradeNo(model.PaymentProviderCreem, userId)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 生成订阅订单号失败 user_id=%d plan_id=%d error=%q", userId, plan.Id, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})

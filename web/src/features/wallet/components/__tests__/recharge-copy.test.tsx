@@ -26,7 +26,10 @@ import { I18nextProvider, initReactI18next } from 'react-i18next'
 import type { PaymentMethod } from '../../types'
 import { RechargeFormCard } from '../recharge-form-card'
 
-async function renderRechargeForm(payMethods: PaymentMethod[] = []) {
+async function renderRechargeForm(
+  payMethods: PaymentMethod[] = [],
+  showBillingButton = false
+) {
   const i18n = i18next.createInstance()
   await i18n.use(initReactI18next).init({ lng: 'en' })
 
@@ -59,6 +62,7 @@ async function renderRechargeForm(payMethods: PaymentMethod[] = []) {
         onRedemptionCodeChange={() => undefined}
         onRedeem={() => undefined}
         redeeming={false}
+        onOpenBilling={showBillingButton ? () => undefined : undefined}
       />
     </I18nextProvider>
   )
@@ -79,4 +83,11 @@ test('WeChat Pay keeps its brand green independently of the active theme', async
 
   assert.match(html, /bg-\[#07c160\]!/)
   assert.match(html, /hover:bg-\[#06ad56\]!/)
+})
+
+test('billing entry uses recharge bills copy', async () => {
+  const html = await renderRechargeForm([], true)
+
+  assert.match(html, /Recharge Bills/)
+  assert.doesNotMatch(html, /Order History/)
 })

@@ -272,7 +272,7 @@ func RequestWaffoPay(c *gin.Context) {
 	}
 
 	// paymentRequestId 与 merchantOrderId 保持一致，简化追踪。
-	merchantOrderId, err := model.NewTopUpTradeNo(model.PaymentProviderWaffo)
+	merchantOrderId, err := model.NewTopUpTradeNo(model.PaymentProviderWaffo, id)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo 生成充值订单号失败 user_id=%d error=%q", id, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
