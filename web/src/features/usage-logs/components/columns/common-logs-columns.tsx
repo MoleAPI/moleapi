@@ -334,7 +334,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         return value.includes(String(row.original.type))
       },
       enableHiding: false,
-      size: 76,
+      size: 70,
     },
   ]
 
@@ -365,7 +365,6 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             ? `${log.channel_name} #${log.channel}`
             : `#${log.channel}`
           const channelIdDisplay = `#${log.channel}`
-          const channelName = sensitiveVisible ? log.channel_name : '••••'
           const multiKeyIndex = other?.admin_info?.multi_key_index
           const showMultiKeyIndex =
             other?.admin_info?.is_multi_key === true &&
@@ -453,11 +452,6 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                       </button>
                     )}
                   </div>
-                  {log.channel_name && (
-                    <span className='text-muted-foreground/70 [font-family:var(--font-body)] !text-xs whitespace-nowrap'>
-                      {channelName}
-                    </span>
-                  )}
                 </TooltipTrigger>
                 <TooltipContent>
                   <div className='space-y-1'>
@@ -496,7 +490,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </TooltipProvider>
           )
         },
-        size: 150,
+        size: 86,
       },
       {
         id: 'user',
@@ -551,7 +545,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </button>
           )
         },
-        size: 130,
+        size: 112,
       }
     )
   }
@@ -596,7 +590,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         </div>
       )
     },
-    size: 160,
+    size: 132,
   })
   columns.push(
     {
@@ -632,7 +626,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </span>
         )
       },
-      size: 120,
+      size: 86,
     },
     {
       accessorKey: 'model_name',
@@ -654,7 +648,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         )
       },
       meta: { mobileTitle: true },
-      size: 160,
+      size: 190,
     },
     {
       accessorKey: 'prompt_tokens',
@@ -684,13 +678,13 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         }
 
         return (
-          <div className='flex flex-col gap-0.5'>
-            <span className='shrink-0 font-mono !text-[11px] font-normal tabular-nums'>
+          <div className='flex flex-col gap-0.5 pl-1'>
+            <span className='shrink-0 font-mono !text-[12px] font-medium tabular-nums'>
               {promptTokens.toLocaleString()} /{' '}
               {completionTokens.toLocaleString()}
             </span>
             {cacheReadTokens > 0 || cacheWriteTokens > 0 ? (
-              <div className='text-muted-foreground/70 flex flex-nowrap items-center gap-2 !text-[10px] leading-tight'>
+              <div className='text-muted-foreground/65 flex flex-nowrap items-center gap-1.5 !text-[9px] leading-tight'>
                 {cacheReadTokens > 0 ? (
                   <span className='shrink-0'>
                     {t('Cache Read')} {cacheReadTokens.toLocaleString()}
@@ -706,7 +700,57 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </div>
         )
       },
-      size: 165,
+      size: 145,
+    },
+    {
+      accessorKey: 'use_time',
+      header: t('Timing'),
+      cell: ({ row }) => {
+        const log = row.original
+        if (!isTimingLogType(log.type)) return null
+
+        const useTime = row.getValue('use_time') as number
+        const other = parseLogOther(log.other)
+
+        return (
+          <TimingMetricsCell
+            useTimeSec={useTime}
+            completionTokens={log.completion_tokens}
+            frtMs={other?.frt}
+            isStream={log.is_stream}
+            presentation='pills'
+          />
+        )
+      },
+      size: 92,
+    },
+    {
+      id: 'is_stream',
+      header: t('Stream'),
+      accessorFn: (row) => row.is_stream,
+      cell: ({ row }) => {
+        const log = row.original
+        if (!isTimingLogType(log.type)) return null
+
+        const useTime = log.use_time || 0
+        const other = parseLogOther(log.other)
+        const tokensPerSecond =
+          useTime > 0 && log.completion_tokens > 0
+            ? log.completion_tokens / useTime
+            : null
+
+        return (
+          <div className='inline-flex rounded-lg border border-sky-500/20 bg-sky-500/5 px-2 py-1 dark:border-sky-400/20 dark:bg-sky-400/5'>
+            <StreamTpsCell
+              isStream={log.is_stream}
+              tokensPerSecond={tokensPerSecond}
+              streamStatus={other?.stream_status}
+              inline
+            />
+          </div>
+        )
+      },
+      size: 104,
     },
     {
       accessorKey: 'quota',
@@ -752,41 +796,6 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         )
       },
       size: 90,
-    },
-
-    {
-      accessorKey: 'use_time',
-      header: t('Timing'),
-      cell: ({ row }) => {
-        const log = row.original
-        if (!isTimingLogType(log.type)) return null
-
-        const useTime = row.getValue('use_time') as number
-        const other = parseLogOther(log.other)
-        const tokensPerSecond =
-          useTime > 0 && log.completion_tokens > 0
-            ? log.completion_tokens / useTime
-            : null
-
-        return (
-          <div className='flex flex-col gap-1'>
-            <TimingMetricsCell
-              useTimeSec={useTime}
-              completionTokens={log.completion_tokens}
-              frtMs={other?.frt}
-              isStream={log.is_stream}
-              presentation='pills'
-            />
-            <StreamTpsCell
-              isStream={log.is_stream}
-              tokensPerSecond={tokensPerSecond}
-              streamStatus={other?.stream_status}
-              inline
-            />
-          </div>
-        )
-      },
-      size: 145,
     },
 
     {

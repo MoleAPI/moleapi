@@ -109,6 +109,11 @@ function TestDesktopLayout() {
       data-all-sized={columns.every((column) => column.size != null)}
       data-has-type-column={columnIds.has('type')}
       data-has-stream-column={columnIds.has('is_stream')}
+      data-column-order={columns
+        .map((column) =>
+          'accessorKey' in column ? column.accessorKey : column.id
+        )
+        .join('|')}
     >
       {totalWidth}
     </output>
@@ -165,18 +170,22 @@ test('cache uses explicit words and numeric cost stays unboxed', async () => {
 
   assert.match(tokensHtml, /Cache Read[^<]*240/)
   assert.match(tokensHtml, /Cache Write[^<]*80/)
+  assert.match(tokensHtml, /!\s*text-\[12px\]|!text-\[12px\]/)
+  assert.match(tokensHtml, /!\s*text-\[9px\]|!text-\[9px\]/)
   assert.doesNotMatch(tokensHtml, /[↓↑]/)
   assert.match(costHtml, /tabular-nums/)
   assert.doesNotMatch(costHtml, /\b(?:border|rounded|bg-)/)
 })
 
-test('timing combines duration, first token, and stream throughput', async () => {
+test('timing and stream render as separate pill columns', async () => {
   const timingHtml = await renderCell('use_time')
+  const streamHtml = await renderCell('is_stream')
 
   assert.equal(timingHtml.match(/rounded-lg/g)?.length, 2)
-  assert.match(timingHtml, /Stream/)
-  assert.match(timingHtml, /·/)
-  assert.match(timingHtml, /300 t\/s/)
+  assert.doesNotMatch(timingHtml, /Stream/)
+  assert.match(streamHtml, /rounded-lg/)
+  assert.match(streamHtml, /Stream/)
+  assert.match(streamHtml, /300 t\/s/)
 })
 
 test('details preview uses the effective multiplier instead of standard', async () => {
@@ -189,6 +198,7 @@ test('details preview uses the effective multiplier instead of standard', async 
 test('expanded details show request summary, cache tokens, and billing calculation', async () => {
   const detailsHtml = await renderInlineDetails()
 
+  assert.match(detailsHtml, /data-inline-log-details="merged"/)
   assert.match(detailsHtml, /Request ID/)
   assert.match(detailsHtml, /202607211431014826310688268d9d6UJDWU9My/)
   assert.match(detailsHtml, /Channel/)
@@ -226,7 +236,9 @@ test('desktop common logs keep full values on one horizontally scrollable row', 
 
   assert.match(layoutHtml, /data-all-sized="true"/)
   assert.match(layoutHtml, /data-has-type-column="true"/)
-  assert.match(layoutHtml, /data-has-stream-column="false">1536</)
+  assert.match(layoutHtml, /data-has-stream-column="true"/)
+  assert.match(layoutHtml, /prompt_tokens\|use_time\|is_stream\|quota/)
+  assert.match(layoutHtml, />1447</)
   assert.match(timeHtml, /font-mono/)
   assert.doesNotMatch(timeHtml, /font-mono[^"]*truncate/)
   assert.doesNotMatch(timeHtml, /data-slot="status-badge"/)

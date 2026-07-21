@@ -249,9 +249,10 @@ function LogOverviewSection(props: {
   log: UsageLog
   other: LogOtherData | null
   isAdmin: boolean
+  inline?: boolean
 }) {
   const { t } = useTranslation()
-  const { log, other, isAdmin } = props
+  const { log, other, isAdmin, inline } = props
   const showTiming = isTimingLogType(log.type)
   const useChannel = other?.admin_info?.use_channel
   const channelChain =
@@ -259,8 +260,8 @@ function LogOverviewSection(props: {
   const showConversion =
     log.type !== 6 && (other?.request_path || other?.request_conversion?.length)
 
-  return (
-    <DetailSection label={t('Request')}>
+  const rows = (
+    <>
       {log.request_id && (
         <DetailRow label={t('Request ID')} value={log.request_id} mono />
       )}
@@ -342,17 +343,22 @@ function LogOverviewSection(props: {
           />
         </>
       )}
-    </DetailSection>
+    </>
   )
+
+  if (inline) return rows
+
+  return <DetailSection label={t('Request')}>{rows}</DetailSection>
 }
 
 function BillingBreakdown(props: {
   log: UsageLog
   other: LogOtherData
   isAdmin: boolean
+  inline?: boolean
 }) {
   const { t } = useTranslation()
-  const { log, other, isAdmin } = props
+  const { log, other, isAdmin, inline } = props
   const isPerCall = isPerCallBilling(other.model_price)
   const isClaude = other.claude === true
   const isTieredExpr = other.billing_mode === 'tiered_expr'
@@ -642,16 +648,18 @@ function BillingBreakdown(props: {
 
   if (rows.length === 0) return null
 
+  const renderedRows = rows.map((row) => (
+    <DetailRow key={row.label} label={row.label} value={row.value} mono />
+  ))
+
+  if (inline) return <div className='contents'>{renderedRows}</div>
+
   return (
-    <DetailSection label={t('Billing Details')}>
-      {rows.map((row) => (
-        <DetailRow key={row.label} label={row.label} value={row.value} mono />
-      ))}
-    </DetailSection>
+    <DetailSection label={t('Billing Details')}>{renderedRows}</DetailSection>
   )
 }
 
-function TokenBreakdown(props: { log: UsageLog }) {
+function TokenBreakdown(props: { log: UsageLog; inline?: boolean }) {
   const { t } = useTranslation()
   const { log } = props
   const other = parseLogOther(log.other)
@@ -703,12 +711,25 @@ function TokenBreakdown(props: { log: UsageLog }) {
     })
   }
 
+  const renderedRows = rows.map((row) => (
+    <DetailRow key={row.label} label={row.label} value={row.value} mono />
+  ))
+
+  if (props.inline) return <div className='contents'>{renderedRows}</div>
+
   return (
-    <DetailSection label={t('Token Breakdown')}>
-      {rows.map((row) => (
-        <DetailRow key={row.label} label={row.label} value={row.value} mono />
-      ))}
-    </DetailSection>
+    <DetailSection label={t('Token Breakdown')}>{renderedRows}</DetailSection>
+  )
+}
+
+function InlineGroup(props: { label: string; children: React.ReactNode }) {
+  return (
+    <div className='min-w-0 space-y-1'>
+      <Label className='text-muted-foreground text-xs font-semibold'>
+        {props.label}
+      </Label>
+      <div className='min-w-0 space-y-1'>{props.children}</div>
+    </div>
   )
 }
 
@@ -725,31 +746,46 @@ export function InlineLogDetails(props: { log: UsageLog; isAdmin: boolean }) {
   }
 
   return (
-    <div className='grid min-w-0 gap-3 py-1 lg:grid-cols-2'>
-      <div className='min-w-0 lg:col-span-2'>
-        <LogOverviewSection
-          log={props.log}
-          other={other}
-          isAdmin={props.isAdmin}
-        />
-      </div>
-      {showTokens && <TokenBreakdown log={props.log} />}
-      {showBilling && (
-        <BillingBreakdown
-          log={props.log}
-          other={other}
-          isAdmin={props.isAdmin}
-        />
-      )}
-      {detailText && (
-        <div className='min-w-0 lg:col-span-2'>
-          <DetailSection label={t('Details')}>
-            <p className='font-mono text-xs break-all whitespace-pre-wrap'>
-              {detailText}
-            </p>
-          </DetailSection>
+    <div className='py-1' data-inline-log-details='merged'>
+      <DetailSection label={t('Details')}>
+        <div className='grid min-w-0 gap-x-6 gap-y-3 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]'>
+          <InlineGroup label={t('Request')}>
+            <LogOverviewSection
+              log={props.log}
+              other={other}
+              isAdmin={props.isAdmin}
+              inline
+            />
+          </InlineGroup>
+          {showTokens && (
+            <InlineGroup label={t('Token Breakdown')}>
+              <TokenBreakdown log={props.log} inline />
+            </InlineGroup>
+          )}
+          {showBilling && (
+            <InlineGroup label={t('Billing Details')}>
+              <BillingBreakdown
+                log={props.log}
+                other={other}
+                isAdmin={props.isAdmin}
+                inline
+              />
+            </InlineGroup>
+          )}
+          {detailText && (
+            <div className='min-w-0 lg:col-span-2'>
+              <Label className='text-muted-foreground text-xs font-semibold'>
+                {t('Details')}
+              </Label>
+              <div className='mt-1'>
+                <p className='font-mono text-xs break-all whitespace-pre-wrap'>
+                  {detailText}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </DetailSection>
     </div>
   )
 }
