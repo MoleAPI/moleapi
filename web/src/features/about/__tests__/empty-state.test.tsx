@@ -37,6 +37,10 @@ test('empty about page shows the centered compliance notice without provider ref
 
   assert.match(html, /Service Compliance Notice/)
   assert.match(html, /<section[^>]*class="[^"]*text-center/)
+  assert.doesNotMatch(
+    html,
+    /MoleAPI is operated outside China and the United States\./
+  )
   assert.doesNotMatch(html, /No About Content Set/)
   assert.doesNotMatch(html, /Current availability references/)
   assert.doesNotMatch(html, /supported-countries/)

@@ -470,6 +470,27 @@ For commercial licensing, please contact support@quantumnous.com
   animation: landing-fade-right 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+@keyframes hero-gradient-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.hero-gradient-orbit {
+  background: conic-gradient(
+    from 0deg,
+    oklch(0.72 0.18 250 / 65%),
+    oklch(0.7 0.16 285 / 55%),
+    oklch(0.74 0.14 205 / 55%),
+    oklch(0.72 0.18 250 / 65%)
+  );
+  animation: hero-gradient-rotate 18s linear infinite;
+}
+
+.hero-typewriter-cursor {
+  animation: terminal-demo-blink 1s step-end infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .landing-animate-fade-up,
   .landing-animate-fade-in,
@@ -479,6 +500,11 @@ For commercial licensing, please contact support@quantumnous.com
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
+  }
+
+  .hero-gradient-orbit,
+  .hero-typewriter-cursor {
+    animation: none !important;
   }
 }
 

@@ -29,6 +29,11 @@ export const STATIC_I18N_KEYS = [
 
   // Home
   'More apps…',
+  'Simple setup, ready in moments',
+  'One-click access, exceptional experience',
+  'One API, seamless switching',
+  'Better value, broader compatibility',
+  'Many models, one unified service',
 
   // Sidebar views (drill-in workspaces)
   'System Settings',

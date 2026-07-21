@@ -37,7 +37,6 @@ function ServiceComplianceNotice() {
       <h2 id='service-compliance-title' className='text-xl font-semibold'>
         {t('Service Compliance Notice')}
       </h2>
-      <p>{t('MoleAPI is operated outside China and the United States.')}</p>
       <p>
         {t(
           'MoleAPI does not provide services in China, the United States, or any country or region where an applicable upstream provider, including OpenAI or Anthropic, has not made the relevant service available.'

@@ -44,6 +44,7 @@ import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 
 import { HeroTerminalDemo } from '../hero-terminal-demo'
+import { HeroTypewriter } from '../hero-typewriter'
 import { SUPPORTED_APPS, SUPPORTED_APPS_MORE_KEY } from '../supported-apps'
 
 interface HeroProps {
@@ -122,6 +123,10 @@ export function Hero(props: HeroProps) {
           ].join(', '),
         }}
       />
+      <div
+        aria-hidden
+        className='hero-gradient-orbit pointer-events-none absolute -top-40 left-[8%] -z-10 size-[32rem] rounded-full opacity-30 blur-3xl dark:opacity-15'
+      />
       {/* Grid pattern */}
       <div
         aria-hidden
@@ -153,14 +158,12 @@ export function Hero(props: HeroProps) {
             <br />
             {t('The Unified LLM Gateway')}
           </h1>
-          <p
-            className='landing-animate-fade-up text-muted-foreground/80 mt-5 max-w-xl text-base leading-relaxed opacity-0 md:text-[15px]'
+          <div
+            className='landing-animate-fade-up opacity-0'
             style={{ animationDelay: '120ms' }}
           >
-            {t(
-              'Access a vast range of models through one standardized API. Power AI applications, manage digital assets efficiently, and build what comes next.'
-            )}
-          </p>
+            <HeroTypewriter />
+          </div>
 
           <div
             className='landing-animate-fade-up mt-8 flex flex-wrap items-center gap-3 opacity-0'
