@@ -2706,6 +2706,7 @@
     "Model prices": "モデル価格",
     "Model prices reset successfully": "モデル価格が正常にリセットされました",
     "Model Pricing": "モデル料金",
+    "Model Providers": "モデルプロバイダー",
     "Model pull failed: {{msg}}": "モデルのプルに失敗しました： __ PH_0 __",
     "Model ratio": "モデル倍率",
     "Model ratios": "モデル比率",

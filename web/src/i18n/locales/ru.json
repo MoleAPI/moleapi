@@ -2706,6 +2706,7 @@
     "Model prices": "Цены моделей",
     "Model prices reset successfully": "Цены моделей успешно сброшены",
     "Model Pricing": "Тарификация моделей",
+    "Model Providers": "Поставщики моделей",
     "Model pull failed: {{msg}}": "Ошибка тяги модели: {{msg}}",
     "Model ratio": "Коэффициент модели",
     "Model ratios": "Коэффициенты модели",
