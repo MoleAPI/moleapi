@@ -16,8 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export const walletLayoutClasses = {
-  grid: 'grid gap-4 lg:grid-cols-12 lg:items-start',
-  recharge: 'scroll-mt-4 lg:col-span-7',
-  referral: 'lg:col-span-5',
-} as const
+export const profileSecuritySectionOrder = [
+  'passkey',
+  'two-factor',
+  'account-bindings',
+] as const
+
+export type ProfileSecuritySection =
+  (typeof profileSecuritySectionOrder)[number]

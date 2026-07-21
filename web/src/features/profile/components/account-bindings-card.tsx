@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Settings } from 'lucide-react'
+import { Link2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
@@ -24,50 +24,44 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
 
 import type { UserProfile } from '../types'
-import { NotificationTab } from './tabs/notification-tab'
+import { AccountBindingsTab } from './tabs/account-bindings-tab'
 
-// ============================================================================
-// Profile Settings Card Component
-// ============================================================================
-
-interface ProfileSettingsCardProps {
+interface AccountBindingsCardProps {
   profile: UserProfile | null
   loading: boolean
   onProfileUpdate: () => void
 }
 
-export function ProfileSettingsCard({
-  profile,
-  loading,
-  onProfileUpdate,
-}: ProfileSettingsCardProps) {
+export function AccountBindingsCard(props: AccountBindingsCardProps) {
   const { t } = useTranslation()
 
-  if (loading) {
+  if (props.loading) {
     return (
       <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
         <CardHeader className='border-b p-3 !pb-3 sm:p-5 sm:!pb-5'>
           <Skeleton className='h-6 w-32' />
-          <Skeleton className='mt-2 h-4 w-48' />
         </CardHeader>
-        <CardContent className='flex flex-col gap-4 p-3 sm:p-5'>
-          {['notifications', 'preferences', 'actions'].map((key) => (
-            <Skeleton key={key} className='h-20 w-full' />
-          ))}
+        <CardContent className='grid grid-cols-1 gap-3 p-3 sm:p-5'>
+          <Skeleton className='h-16 w-full' />
+          <Skeleton className='h-16 w-full' />
         </CardContent>
       </Card>
     )
   }
 
+  if (!props.profile) return null
+
   return (
     <TitledCard
-      title={t('Settings & Preferences')}
-      description={t('Configure your account behavior preferences')}
-      icon={<Settings className='h-4 w-4' />}
+      title={t('Account Bindings')}
+      icon={<Link2 className='h-4 w-4' />}
       iconTone='info'
       disableHoverEffect
     >
-      <NotificationTab profile={profile} onUpdate={onProfileUpdate} />
+      <AccountBindingsTab
+        profile={props.profile}
+        onUpdate={props.onProfileUpdate}
+      />
     </TitledCard>
   )
 }

@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type { ReactNode } from 'react'
+
 import { Main } from '@/components/layout'
 import {
   CardStaggerContainer,
@@ -24,6 +26,7 @@ import {
 import { useStatus } from '@/hooks/use-status'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { AccountBindingsCard } from './components/account-bindings-card'
 import { CheckinCalendarCard } from './components/checkin-calendar-card'
 import { LanguagePreferencesCard } from './components/language-preferences-card'
 import { LoginSessionsCard } from './components/login-sessions-card'
@@ -34,6 +37,10 @@ import { ProfileSettingsCard } from './components/profile-settings-card'
 import { SidebarModulesCard } from './components/sidebar-modules-card'
 import { TwoFACard } from './components/two-fa-card'
 import { useProfile } from './hooks'
+import {
+  profileSecuritySectionOrder,
+  type ProfileSecuritySection,
+} from './lib/layout'
 
 export function Profile() {
   const { profile, loading, refreshProfile } = useProfile()
@@ -46,6 +53,17 @@ export function Profile() {
   )
   const turnstileSiteKey = status?.turnstile_site_key || ''
   const canConfigureSidebar = permissions?.sidebar_settings !== false
+  const securitySections: Record<ProfileSecuritySection, ReactNode> = {
+    passkey: <PasskeyCard loading={loading} />,
+    'two-factor': <TwoFACard loading={loading} />,
+    'account-bindings': (
+      <AccountBindingsCard
+        profile={profile}
+        loading={loading}
+        onProfileUpdate={refreshProfile}
+      />
+    ),
+  }
 
   return (
     <Main>
@@ -57,7 +75,7 @@ export function Profile() {
 
           <CardStaggerItem>
             <div className='grid gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:items-start'>
-              <div className='space-y-4 sm:space-y-6'>
+              <div className='flex flex-col gap-4 sm:gap-6'>
                 <ProfileSettingsCard
                   profile={profile}
                   loading={loading}
@@ -71,7 +89,7 @@ export function Profile() {
                 <LoginSessionsCard />
               </div>
 
-              <div className='space-y-4 sm:space-y-6 xl:sticky xl:top-6'>
+              <div className='flex flex-col gap-4 sm:gap-6'>
                 {checkinEnabled && (
                   <CheckinCalendarCard
                     checkinEnabled={checkinEnabled}
@@ -80,8 +98,11 @@ export function Profile() {
                   />
                 )}
                 {canConfigureSidebar && <SidebarModulesCard />}
-                <PasskeyCard loading={loading} />
-                <TwoFACard loading={loading} />
+                {profileSecuritySectionOrder.map((section) => (
+                  <div key={section} data-profile-section={section}>
+                    {securitySections[section]}
+                  </div>
+                ))}
               </div>
             </div>
           </CardStaggerItem>

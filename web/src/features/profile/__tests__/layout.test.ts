@@ -16,8 +16,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export const walletLayoutClasses = {
-  grid: 'grid gap-4 lg:grid-cols-12 lg:items-start',
-  recharge: 'scroll-mt-4 lg:col-span-7',
-  referral: 'lg:col-span-5',
-} as const
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
+
+import { profileSecuritySectionOrder } from '../lib/layout'
+
+test('account bindings appear immediately below two-factor authentication', () => {
+  const twoFactorIndex = profileSecuritySectionOrder.indexOf('two-factor')
+
+  assert.equal(
+    profileSecuritySectionOrder[twoFactorIndex + 1],
+    'account-bindings'
+  )
+})
