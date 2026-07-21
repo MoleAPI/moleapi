@@ -32,15 +32,18 @@ func TestGetStatusAdvertisesDefaultDashboard(t *testing.T) {
 	previousVersion := common.Version
 	previousUpstreamVersion := common.UpstreamVersion
 	previousCommit := common.Commit
+	previousLogo := common.Logo
 	common.OptionMap = map[string]string{}
 	common.Version = "v0.10.0-dev1"
 	common.UpstreamVersion = "v1.0.0-rc.21"
 	common.Commit = "abc1234"
+	common.Logo = ""
 	t.Cleanup(func() {
 		common.OptionMap = previousMap
 		common.Version = previousVersion
 		common.UpstreamVersion = previousUpstreamVersion
 		common.Commit = previousCommit
+		common.Logo = previousLogo
 	})
 	response := httptest.NewRecorder()
 	context, _ := gin.CreateTestContext(response)
@@ -60,4 +63,5 @@ func TestGetStatusAdvertisesDefaultDashboard(t *testing.T) {
 	assert.Equal(t, "v0.10.0-dev1", payload.Data["project_version"])
 	assert.Equal(t, "abc1234", payload.Data["commit"])
 	assert.Equal(t, "abc1234", payload.Data["project_commit"])
+	assert.Equal(t, "/logo.png", payload.Data["logo"])
 }
