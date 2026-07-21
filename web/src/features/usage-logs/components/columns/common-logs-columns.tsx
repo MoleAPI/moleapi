@@ -66,6 +66,8 @@ interface DetailSegment {
   danger?: boolean
 }
 
+const logPillClassName = 'ring-1 ring-inset ring-current/15'
+
 function formatRatioCompact(ratio: number | undefined): string {
   if (ratio == null || !Number.isFinite(ratio)) return '-'
   return ratio % 1 === 0
@@ -324,7 +326,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             variant={config.color as StatusBadgeProps['variant']}
             size='sm'
             copyable={false}
-            className='shrink-0 !text-xs [&_span]:!text-xs'
+            className={cn(
+              logPillClassName,
+              'shrink-0 !text-xs [&_span]:!text-xs'
+            )}
           />
         )
       },
@@ -386,7 +391,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                       copyText={String(log.channel)}
                       size='sm'
                       showDot={false}
-                      className='font-mono'
+                      className={cn(logPillClassName, 'font-mono')}
                     />
                     {showMultiKeyIndex && (
                       <StatusBadge
@@ -395,7 +400,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                         showDot={false}
                         copyable={false}
                         variant='neutral'
-                        className='h-5 min-w-5 justify-center rounded-full px-1 font-mono text-xs'
+                        className={cn(
+                          logPillClassName,
+                          'h-5 min-w-5 justify-center rounded-full px-1 font-mono text-xs'
+                        )}
                         aria-label={`${t('Key')} ${multiKeyIndex}`}
                       />
                     )}
@@ -573,7 +581,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                   copyText={sensitiveVisible ? tokenName : undefined}
                   size='sm'
                   showDot={false}
-                  className='text-foreground h-6 max-w-none gap-1.5 rounded-md px-2 py-0.5 [font-family:var(--font-body)] !text-[11px] font-normal [&_span]:font-normal'
+                  className={cn(
+                    logPillClassName,
+                    'text-foreground h-6 max-w-none gap-1.5 rounded-md px-2 py-0.5 [font-family:var(--font-body)] !text-[11px] font-normal [&_span]:font-normal'
+                  )}
                 >
                   <span className='!text-[11px] whitespace-nowrap'>
                     {displayName}
@@ -614,7 +625,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                 group={group}
                 label={sensitiveVisible ? undefined : '••••'}
                 size='sm'
-                className='max-w-full align-baseline !text-[11px] leading-none font-normal [&>span]:!text-[11px] [&>span]:leading-none [&>span]:font-normal'
+                className={cn(
+                  logPillClassName,
+                  'max-w-full align-baseline !text-[11px] leading-none font-normal [&>span]:!text-[11px] [&>span]:leading-none [&>span]:font-normal'
+                )}
               />
             ) : null}
             {group && groupRatio != null ? ' ' : null}
@@ -642,7 +656,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             <ModelBadge
               modelName={modelInfo.name}
               actualModel={modelInfo.actualModel}
-              className='!text-[11px] font-normal [&_span]:!text-[11px] [&_span]:font-normal'
+              className={cn(
+                logPillClassName,
+                '!text-[11px] font-normal [&_span]:!text-[11px] [&_span]:font-normal'
+              )}
             />
           </div>
         )
@@ -679,12 +696,12 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
 
         return (
           <div className='flex flex-col gap-0.5 pl-1'>
-            <span className='shrink-0 font-mono !text-[12px] font-medium tabular-nums'>
+            <span className='shrink-0 font-mono !text-[14px] leading-5 font-semibold tabular-nums'>
               {promptTokens.toLocaleString()} /{' '}
               {completionTokens.toLocaleString()}
             </span>
             {cacheReadTokens > 0 || cacheWriteTokens > 0 ? (
-              <div className='text-muted-foreground/65 flex flex-nowrap items-center gap-1.5 !text-[9px] leading-tight'>
+              <div className='text-muted-foreground/60 flex flex-nowrap items-center gap-1.5 !text-[8px] leading-none'>
                 {cacheReadTokens > 0 ? (
                   <span className='shrink-0'>
                     {t('Cache Read')} {cacheReadTokens.toLocaleString()}

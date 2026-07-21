@@ -19,7 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { getTopUpInvoiceDownloadUrl, getTopUpInvoiceUrl } from '../billing'
+import {
+  getInvoiceFilename,
+  getTopUpInvoiceDownloadUrl,
+  getTopUpInvoiceUrl,
+} from '../billing'
 
 describe('top-up invoice download', () => {
   test('links the owner to a completed top-up invoice', () => {
@@ -46,6 +50,20 @@ describe('top-up invoice download', () => {
     assert.equal(
       getTopUpInvoiceUrl({ id: 42, user_id: 7, status: 'success' }, 99, true),
       '/api/user/topup/42/invoice'
+    )
+  })
+
+  test('parses invoice filenames from content disposition headers', () => {
+    assert.equal(
+      getInvoiceFilename(
+        'attachment; filename="invoice-USR20260722010101.html"',
+        'fallback.html'
+      ),
+      'invoice-USR20260722010101.html'
+    )
+    assert.equal(
+      getInvoiceFilename(undefined, 'fallback.html'),
+      'fallback.html'
     )
   })
 

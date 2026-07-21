@@ -23,9 +23,9 @@ export const walletLayoutClasses = {
 } as const
 
 export const rechargeFormLayoutClasses = {
-  paymentMethods: 'grid grid-cols-2 gap-2 sm:gap-3',
+  paymentMethods: 'grid max-w-md grid-cols-2 gap-1.5 sm:gap-2',
   paymentButton:
-    'min-h-14 w-full min-w-0 justify-center gap-2 rounded-lg px-4 py-3 text-center text-base font-semibold shadow-sm hover:shadow-md [&>svg]:!text-white',
+    'min-h-11 w-full min-w-0 justify-center gap-1.5 rounded-lg px-3 py-2 text-center text-sm font-semibold shadow-sm hover:shadow-md [&>svg]:!text-white',
   bonus:
     'bg-success/10 text-success rounded-md px-1.5 py-0.5 text-xs font-semibold',
 } as const

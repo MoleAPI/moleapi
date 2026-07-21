@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { StatusBadgeProps } from '@/components/status-badge'
+import { api } from '@/lib/api'
 import { formatTimestampToDate } from '@/lib/format'
 
 import type { TopupRecord, TopupStatus } from '../types'
@@ -115,4 +116,50 @@ export function getTopUpInvoiceDownloadUrl(
   isAdmin = false
 ): string | null {
   return getTopUpInvoiceUrl(record, currentUserId, isAdmin, true)
+}
+
+export function getInvoiceFilename(
+  contentDisposition: string | undefined,
+  fallback: string
+): string {
+  const match = contentDisposition?.match(/filename="?([^";]+)"?/i)
+  return match?.[1] || fallback
+}
+
+export async function fetchTopUpInvoiceFile(
+  record: Pick<TopupRecord, 'id' | 'status' | 'user_id' | 'trade_no'>,
+  currentUserId: number | undefined,
+  isAdmin: boolean,
+  download = false
+): Promise<{ filename: string; url: string } | null> {
+  const path = getTopUpInvoiceUrl(
+    record,
+    isAdmin ? undefined : currentUserId,
+    isAdmin,
+    download
+  )
+  if (!path) return null
+
+  const response = await api.get(path, { responseType: 'blob' })
+  const contentTypeHeader = response.headers['content-type']
+  const contentDispositionHeader = response.headers['content-disposition']
+  const contentType =
+    typeof contentTypeHeader === 'string'
+      ? contentTypeHeader
+      : 'text/html; charset=utf-8'
+  const contentDisposition =
+    typeof contentDispositionHeader === 'string'
+      ? contentDispositionHeader
+      : undefined
+  const blob =
+    response.data instanceof Blob
+      ? response.data
+      : new Blob([response.data], { type: contentType })
+  return {
+    filename: getInvoiceFilename(
+      contentDisposition,
+      `invoice-${record.trade_no}.html`
+    ),
+    url: URL.createObjectURL(blob),
+  }
 }

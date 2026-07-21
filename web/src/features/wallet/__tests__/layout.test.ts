@@ -29,8 +29,10 @@ test('wallet stacks on small screens and uses the former 7/5 desktop split', () 
 
 test('payment choices use two filled buttons per row with a highlighted bonus', () => {
   assert.ok(rechargeFormLayoutClasses.paymentMethods.includes('grid-cols-2'))
+  assert.ok(rechargeFormLayoutClasses.paymentMethods.includes('max-w-md'))
   assert.ok(rechargeFormLayoutClasses.paymentButton.includes('justify-center'))
-  assert.ok(rechargeFormLayoutClasses.paymentButton.includes('text-base'))
+  assert.ok(rechargeFormLayoutClasses.paymentButton.includes('text-sm'))
+  assert.ok(rechargeFormLayoutClasses.paymentButton.includes('min-h-11'))
   assert.ok(rechargeFormLayoutClasses.bonus.includes('text-success'))
   assert.ok(rechargeFormLayoutClasses.bonus.includes('bg-success/10'))
 })

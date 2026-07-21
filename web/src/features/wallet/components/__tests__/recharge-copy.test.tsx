@@ -91,3 +91,10 @@ test('billing entry uses recharge bills copy', async () => {
   assert.match(html, /Recharge Bills/)
   assert.doesNotMatch(html, /Order History/)
 })
+
+test('recharge card title uses account recharge copy', async () => {
+  const html = await renderRechargeForm()
+
+  assert.match(html, /Account Recharge/)
+  assert.doesNotMatch(html, /Add Funds/)
+})

@@ -63,6 +63,7 @@ import {
   getPaymentMethodName,
   formatTimestamp,
   getTopUpInvoiceUrl,
+  fetchTopUpInvoiceFile,
 } from '../../lib/billing'
 import {
   formatHistoricalPaymentAmount,
@@ -145,6 +146,41 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
       if (success) {
         setConfirmTradeNo(null)
       }
+    }
+  }
+
+  const handleInvoice = async (record: TopupRecord, download = false) => {
+    const popup = download ? null : window.open('about:blank', '_blank')
+    if (popup) popup.opener = null
+    try {
+      const invoice = await fetchTopUpInvoiceFile(
+        record,
+        currentUserId,
+        isAdmin,
+        download
+      )
+      if (!invoice) {
+        popup?.close()
+        return
+      }
+      if (download) {
+        const link = document.createElement('a')
+        link.href = invoice.url
+        link.download = invoice.filename
+        document.body.append(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(invoice.url)
+        return
+      }
+      if (popup) {
+        popup.location.href = invoice.url
+      } else {
+        window.open(invoice.url, '_blank', 'noopener,noreferrer')
+      }
+      window.setTimeout(() => URL.revokeObjectURL(invoice.url), 60_000)
+    } catch {
+      popup?.close()
     }
   }
 
@@ -371,21 +407,17 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                 size='sm'
                                 variant='ghost'
                                 className='h-7 px-2'
-                                render={
-                                  <a
-                                    href={invoiceViewUrl}
-                                    target='_blank'
-                                    rel='noreferrer noopener'
-                                    onClick={(event) => event.stopPropagation()}
-                                  />
-                                }
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void handleInvoice(record)
+                                }}
                               >
                                 <HugeiconsIcon
                                   icon={InvoiceIcon}
                                   strokeWidth={2}
                                   data-icon='inline-start'
                                 />
-                                Invoice
+                                {t('View invoice')}
                               </Button>
                             )}
                             {invoiceDownloadUrl && (
@@ -393,13 +425,10 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                 size='sm'
                                 variant='ghost'
                                 className='h-7 px-2'
-                                render={
-                                  <a
-                                    href={invoiceDownloadUrl}
-                                    download
-                                    onClick={(event) => event.stopPropagation()}
-                                  />
-                                }
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void handleInvoice(record, true)
+                                }}
                               >
                                 <Download className='size-3.5' />
                                 {t('Download')}
@@ -483,13 +512,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                 <Button
                   size='sm'
                   variant='outline'
-                  render={
-                    <a
-                      href={detailInvoiceViewUrl}
-                      target='_blank'
-                      rel='noreferrer noopener'
-                    />
-                  }
+                  onClick={() => void handleInvoice(detailRecord)}
                 >
                   <HugeiconsIcon
                     icon={InvoiceIcon}
@@ -503,7 +526,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                 <Button
                   size='sm'
                   variant='outline'
-                  render={<a href={detailInvoiceDownloadUrl} download />}
+                  onClick={() => void handleInvoice(detailRecord, true)}
                 >
                   <Download className='size-3.5' />
                   {t('Download invoice')}

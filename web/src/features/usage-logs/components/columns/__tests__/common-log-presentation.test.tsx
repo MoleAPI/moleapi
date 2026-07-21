@@ -155,13 +155,17 @@ test('type, channel, token, group, and model use colored rounded labels', async 
   assert.match(typeHtml, /Consume/)
   assert.match(channelHtml, /data-slot="status-badge"/)
   assert.match(channelHtml, /bg-(?:chart|success|warning|info|muted)/)
+  assert.match(channelHtml, /ring-current\/15/)
   assert.equal(tokenHtml.match(/data-slot="status-badge"/g)?.length, 1)
+  assert.match(tokenHtml, /ring-current\/15/)
   assert.match(groupHtml, /data-slot="status-badge"/)
   assert.match(groupHtml, /bg-(?:chart|success|warning|info|muted)/)
+  assert.match(groupHtml, /ring-current\/15/)
   assert.match(groupHtml, /truncate/)
   assert.match(groupHtml, /font-normal/)
   assert.match(modelHtml, /data-slot="status-badge"/)
   assert.match(modelHtml, /bg-(?:chart|success|warning|info|muted)/)
+  assert.match(modelHtml, /ring-current\/15/)
 })
 
 test('cache uses explicit words and numeric cost stays unboxed', async () => {
@@ -170,8 +174,8 @@ test('cache uses explicit words and numeric cost stays unboxed', async () => {
 
   assert.match(tokensHtml, /Cache Read[^<]*240/)
   assert.match(tokensHtml, /Cache Write[^<]*80/)
-  assert.match(tokensHtml, /!\s*text-\[12px\]|!text-\[12px\]/)
-  assert.match(tokensHtml, /!\s*text-\[9px\]|!text-\[9px\]/)
+  assert.match(tokensHtml, /!\s*text-\[14px\]|!text-\[14px\]/)
+  assert.match(tokensHtml, /!\s*text-\[8px\]|!text-\[8px\]/)
   assert.doesNotMatch(tokensHtml, /[↓↑]/)
   assert.match(costHtml, /tabular-nums/)
   assert.doesNotMatch(costHtml, /\b(?:border|rounded|bg-)/)

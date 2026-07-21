@@ -200,7 +200,7 @@ export function RechargeFormCard({
 
   return (
     <TitledCard
-      title={t('Add Funds')}
+      title={t('Account Recharge')}
       description={t('Choose an amount and payment method')}
       icon={<WalletCards className='h-4 w-4' />}
       iconTone='success'
@@ -371,7 +371,7 @@ export function RechargeFormCard({
                           ) : (
                             getPaymentIcon(
                               method.type,
-                              'size-5',
+                              'size-4',
                               method.icon,
                               methodName
                             )
@@ -381,7 +381,7 @@ export function RechargeFormCard({
                               {methodName}
                             </span>
                             {disabledLabel && (
-                              <span className='text-muted-foreground max-w-full truncate text-[11px] leading-4 font-normal'>
+                              <span className='text-muted-foreground max-w-full truncate text-[10px] leading-3 font-normal'>
                                 {disabledLabel}
                               </span>
                             )}
@@ -445,7 +445,7 @@ export function RechargeFormCard({
                             <img
                               src={method.icon}
                               alt={method.name}
-                              className='h-4 w-4 object-contain'
+                              className='h-3.5 w-3.5 object-contain'
                             />
                           )
                         }
@@ -472,7 +472,7 @@ export function RechargeFormCard({
                                 {method.name}
                               </span>
                               {disabledLabel && (
-                                <span className='text-muted-foreground max-w-full truncate text-[11px] leading-4 font-normal'>
+                                <span className='text-muted-foreground max-w-full truncate text-[10px] leading-3 font-normal'>
                                   {disabledLabel}
                                 </span>
                               )}
