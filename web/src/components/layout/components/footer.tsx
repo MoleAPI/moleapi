@@ -289,14 +289,14 @@ export function Footer(props: FooterProps) {
           {/* Links columns */}
           {isDemoSiteMode && (
             <div className='grid grid-cols-3 gap-8 md:gap-16'>
-              {displayColumns.map((column, index) => (
-                <div key={index}>
+              {displayColumns.map((column) => (
+                <div key={column.title}>
                   <p className='text-muted-foreground/50 mb-3 text-xs font-medium tracking-wider uppercase'>
                     {t(column.title)}
                   </p>
                   <ul className='space-y-2.5'>
-                    {column.links.map((link, linkIndex) => (
-                      <li key={linkIndex}>
+                    {column.links.map((link) => (
+                      <li key={`${link.text}-${link.href}`}>
                         <FooterLinkItem link={link} />
                       </li>
                     ))}
@@ -307,7 +307,7 @@ export function Footer(props: FooterProps) {
           )}
         </div>
 
-        <div className='text-muted-foreground/55 mt-10 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 text-center text-xs'>
+        <div className='border-border/30 text-muted-foreground/55 mt-12 flex flex-wrap items-center justify-center gap-x-1.5 gap-y-1 border-t pt-6 text-center text-xs'>
           <span>&copy; {currentYear}</span>
           <BrandName name={displayName} className='text-xs' />
           {projectVersion && <span>{projectVersion}</span>}
@@ -356,19 +356,13 @@ export function Footer(props: FooterProps) {
           >
             JustSong
           </a>
-        </div>
-
-        {/* Copyright + optional legal links inline on the left, project
-            attribution on the right; wraps on narrow screens. */}
-        <div className='border-border/30 mt-12 flex flex-col items-center justify-between gap-x-3 gap-y-2 border-t pt-6 sm:flex-row'>
-          <div className='text-muted-foreground/40 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-xs sm:justify-start'>
-            <span>
-              &copy; {currentYear} {displayName}.{' '}
-              {props.copyright ?? t('footer.defaultCopyright')}
-            </span>
-            <LegalLinks leadingSeparator />
-          </div>
-          <ProjectAttribution currentYear={currentYear} />
+          {props.copyright && (
+            <>
+              <span aria-hidden='true'>·</span>
+              <span>{props.copyright}</span>
+            </>
+          )}
+          <LegalLinks leadingSeparator />
         </div>
       </div>
     </footer>

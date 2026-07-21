@@ -100,6 +100,37 @@ export function PublicHeader(props: PublicHeaderProps) {
   const displaySiteName = customSiteName || systemName
   const links = dynamicLinks.length > 0 ? dynamicLinks : navLinks
 
+  let logoContent: React.ReactNode = (
+    <HeaderLogo
+      src={systemLogo}
+      loading={loading}
+      logoLoaded={logoLoaded}
+      className='size-full rounded-lg object-contain'
+    />
+  )
+  if (customLogo) {
+    logoContent = customLogo
+  }
+  if (loading) {
+    logoContent = <Skeleton className='size-full rounded-lg' />
+  }
+
+  let authContent = (
+    <Button
+      size='sm'
+      className='h-8 rounded-lg px-3.5 text-xs font-medium'
+      render={<Link to='/sign-in' />}
+    >
+      {t('Sign in')}
+    </Button>
+  )
+  if (isAuthenticated) {
+    authContent = <ProfileDropdown />
+  }
+  if (loading) {
+    authContent = <Skeleton className='h-8 w-20 rounded-lg' />
+  }
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
     onScroll()
@@ -198,18 +229,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               className='group flex shrink-0 items-center gap-2.5'
             >
               <div className='flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
-                {loading ? (
-                  <Skeleton className='size-full rounded-lg' />
-                ) : customLogo ? (
-                  customLogo
-                ) : (
-                  <HeaderLogo
-                    src={systemLogo}
-                    loading={loading}
-                    logoLoaded={logoLoaded}
-                    className='size-full rounded-lg object-contain'
-                  />
-                )}
+                {logoContent}
               </div>
               {loading ? (
                 <Skeleton className='h-4 w-16' />
@@ -223,12 +243,12 @@ export function PublicHeader(props: PublicHeaderProps) {
 
             {/* Desktop nav */}
             <div className='hidden items-center gap-0.5 sm:flex'>
-              {links.map((link, i) => {
+              {links.map((link) => {
                 const isActive = pathname === link.href
                 if (link.external) {
                   return (
                     <a
-                      key={i}
+                      key={`${link.title}-${link.href}`}
                       href={link.href}
                       target='_blank'
                       rel='noopener noreferrer'
@@ -236,7 +256,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                       tabIndex={link.disabled ? -1 : undefined}
                       onClick={(event) => handleNavLinkClick(event, link)}
                       className={cn(
-                        'text-muted-foreground hover:text-foreground rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-200',
+                        'text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:bg-accent/70 focus-visible:text-foreground rounded-lg px-3 py-1.5 text-[13px] font-medium motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px',
                         link.disabled && 'pointer-events-none opacity-50'
                       )}
                     >
@@ -250,12 +270,12 @@ export function PublicHeader(props: PublicHeaderProps) {
                 }
                 return (
                   <Link
-                    key={i}
+                    key={`${link.title}-${link.href}`}
                     to={link.href}
                     disabled={link.disabled}
                     onClick={(event) => handleNavLinkClick(event, link)}
                     className={cn(
-                      'rounded-lg px-3 py-1.5 text-[13px] font-medium transition-colors duration-200',
+                      'hover:bg-accent/70 focus-visible:bg-accent/70 focus-visible:text-foreground rounded-lg px-3 py-1.5 text-[13px] font-medium motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px',
                       isActive
                         ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground',
@@ -295,19 +315,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               {showAuthButtons && (
                 <>
                   <div className='bg-border/40 mx-1 h-4 w-px' />
-                  {loading ? (
-                    <Skeleton className='h-8 w-20 rounded-lg' />
-                  ) : isAuthenticated ? (
-                    <ProfileDropdown />
-                  ) : (
-                    <Button
-                      size='sm'
-                      className='h-8 rounded-lg px-3.5 text-xs font-medium'
-                      render={<Link to='/sign-in' />}
-                    >
-                      {t('Sign in')}
-                    </Button>
-                  )}
+                  {authContent}
                 </>
               )}
             </div>
@@ -379,7 +387,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               if (link.external) {
                 return (
                   <a
-                    key={i}
+                    key={`${link.title}-${link.href}`}
                     href={link.href}
                     target='_blank'
                     rel='noopener noreferrer'
@@ -399,7 +407,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               }
               return (
                 <Link
-                  key={i}
+                  key={`${link.title}-${link.href}`}
                   to={link.href}
                   disabled={link.disabled}
                   onClick={(event) => handleNavLinkClick(event, link, true)}
