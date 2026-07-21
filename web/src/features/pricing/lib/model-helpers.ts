@@ -94,6 +94,35 @@ export function getDisplayGroupRatio(
   return minRatio === Number.POSITIVE_INFINITY ? 1 : minRatio
 }
 
+export function getDiscountPercent(ratio: number): number | null {
+  if (!Number.isFinite(ratio) || ratio < 0 || ratio >= 1) return null
+
+  const percent = Math.round((1 - ratio) * 100)
+  return percent > 0 ? percent : null
+}
+
+export function getModelPriceDisplay(
+  model: PricingModel,
+  selectedGroup?: string
+): { isStartingAt: boolean; discountPercent: number | null } {
+  const groups = Array.isArray(model.enable_groups) ? model.enable_groups : []
+  const hasSelectedGroup = Boolean(
+    selectedGroup &&
+    selectedGroup !== FILTER_ALL &&
+    groups.includes(selectedGroup)
+  )
+  const ratios = groups.map((group) =>
+    getConfiguredGroupRatio(model.group_ratio || {}, group)
+  )
+
+  return {
+    isStartingAt: !hasSelectedGroup && new Set(ratios).size > 1,
+    discountPercent: getDiscountPercent(
+      getDisplayGroupRatio(model, selectedGroup)
+    ),
+  }
+}
+
 /**
  * Replace model placeholder in endpoint path
  */

@@ -30,20 +30,12 @@ export const SUPPORTED_APPS = [
   {
     name: 'CC Switch',
     href: 'https://docs.moleapi.com/zh-CN/docs/apps/cc-switch',
-    icon: (
-      <span className='bg-primary/10 text-primary flex size-[22px] items-center justify-center rounded-md text-[9px] font-bold'>
-        CC
-      </span>
-    ),
+    icon: <img src='/app-icons/cc-switch.svg' alt='' className='size-[22px]' />,
   },
   {
     name: 'NextChat',
     href: 'https://docs.moleapi.com/zh-CN/docs/apps/nextchat',
-    icon: (
-      <span className='bg-primary/10 text-primary flex size-[22px] items-center justify-center rounded-md text-[9px] font-bold'>
-        NC
-      </span>
-    ),
+    icon: <img src='/app-icons/nextchat.svg' alt='' className='size-[22px]' />,
   },
   {
     name: 'Dify',
@@ -58,11 +50,7 @@ export const SUPPORTED_APPS = [
   {
     name: 'AionUI',
     href: 'https://docs.moleapi.com/zh-CN/docs/apps/aionui',
-    icon: (
-      <span className='bg-primary/10 text-primary flex size-[22px] items-center justify-center rounded-md text-[9px] font-bold'>
-        AI
-      </span>
-    ),
+    icon: <img src='/app-icons/aionui.svg' alt='' className='size-[22px]' />,
   },
   {
     name: 'Codex',

@@ -67,7 +67,13 @@ import {
   isDynamicPricingModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { getAvailableGroups, isTokenBasedModel } from '../lib/model-helpers'
+import {
+  getAvailableGroups,
+  getConfiguredGroupRatio,
+  getDiscountPercent,
+  isTokenBasedModel,
+  replaceModelInPath,
+} from '../lib/model-helpers'
 import { formatFixedPrice, formatGroupPrice } from '../lib/price'
 import type {
   ModelCapability,
@@ -447,7 +453,6 @@ function ModelBackendProviderSection(props: { model: PricingModel }) {
   const { t } = useTranslation()
   const model = props.model
   const groups = normalizeCatalogItems(model.enable_groups)
-  const endpoints = normalizeCatalogItems(model.supported_endpoint_types)
   const tags = parseTags(model.tags)
   const cells: React.ReactNode[] = []
 
@@ -469,14 +474,6 @@ function ModelBackendProviderSection(props: { model: PricingModel }) {
     cells.push(
       <CatalogInfoCell key='groups' label={t('Groups')}>
         <CatalogPillList items={groups} />
-      </CatalogInfoCell>
-    )
-  }
-
-  if (endpoints.length > 0) {
-    cells.push(
-      <CatalogInfoCell key='endpoints' label={t('Endpoints')}>
-        <CatalogPillList items={endpoints} />
       </CatalogInfoCell>
     )
   }
@@ -509,12 +506,65 @@ function ModelBackendProviderSection(props: { model: PricingModel }) {
   )
 }
 
-function ModelBackendDetailsSection(props: { model: PricingModel }) {
+function ModelEndpointsSection(props: {
+  model: PricingModel
+  endpointMap: Record<string, { path?: string; method?: string }>
+}) {
+  const { t } = useTranslation()
+  const endpoints = normalizeCatalogItems(props.model.supported_endpoint_types)
+    .map((type) => {
+      const info = props.endpointMap[type] || {}
+      const path = info.path?.includes('{model}')
+        ? replaceModelInPath(info.path, props.model.model_name || '')
+        : info.path
+
+      return { type, path, method: (info.method || 'POST').toUpperCase() }
+    })
+    .filter((endpoint) => Boolean(endpoint.path))
+
+  if (endpoints.length === 0) return null
+
+  return (
+    <section>
+      <SectionTitle>{t('API Endpoints')}</SectionTitle>
+      <p className='text-muted-foreground mb-3 text-sm'>
+        {t('Interface endpoints supported by this model')}
+      </p>
+      <div className='divide-y overflow-hidden rounded-lg border'>
+        {endpoints.map((endpoint) => (
+          <div
+            key={endpoint.type}
+            className='grid grid-cols-[auto_minmax(72px,.35fr)_minmax(0,1fr)] items-center gap-3 px-3 py-2.5'
+          >
+            <span className='bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-700 dark:text-emerald-300'>
+              {endpoint.method}
+            </span>
+            <span className='text-muted-foreground truncate text-xs font-medium'>
+              {endpoint.type}
+            </span>
+            <code className='text-foreground truncate text-xs'>
+              {endpoint.path}
+            </code>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function ModelBackendDetailsSection(props: {
+  model: PricingModel
+  endpointMap: Record<string, { path?: string; method?: string }>
+}) {
   return (
     <>
       <ModelBackendQuickStats model={props.model} />
       <ModelBackendSignalsSection model={props.model} />
       <ModelBackendProviderSection model={props.model} />
+      <ModelEndpointsSection
+        model={props.model}
+        endpointMap={props.endpointMap}
+      />
     </>
   )
 }
@@ -869,6 +919,14 @@ function GroupPricingSection(props: {
 
   const isTokenBased = isTokenBasedModel(props.model)
   const tokenUnitLabel = props.tokenUnit === 'K' ? '1K' : '1M'
+  const formatDiscount = (group: string) => {
+    const percent = getDiscountPercent(
+      getConfiguredGroupRatio(props.groupRatio, group)
+    )
+    return percent == null
+      ? t('No discount')
+      : t('{{percent}}% off', { percent })
+  }
 
   const extraPriceTypes = useMemo(() => {
     const types: { label: string; type: PriceType }[] = []
@@ -949,7 +1007,7 @@ function GroupPricingSection(props: {
     })
     const formattedPricesByGroup = new Map(
       availableGroups.map((group) => {
-        const ratio = props.groupRatio[group] || 1
+        const ratio = getConfiguredGroupRatio(props.groupRatio, group)
         return [
           group,
           getDynamicFormattedPricesByTier(dynamicTiers, {
@@ -969,7 +1027,6 @@ function GroupPricingSection(props: {
         <AutoGroupChain model={props.model} autoGroups={props.autoGroups} />
         <div className='space-y-3'>
           {availableGroups.map((group) => {
-            const ratio = props.groupRatio[group] || 1
             const formattedPricesByTier =
               formattedPricesByGroup.get(group) ??
               new Map<DynamicPricingTier, Map<string, string>>()
@@ -978,8 +1035,8 @@ function GroupPricingSection(props: {
               <div key={group} className='overflow-hidden rounded-lg border'>
                 <div className='bg-muted/20 flex items-center justify-between gap-3 border-b px-3 py-2'>
                   <GroupBadge group={group} size='sm' />
-                  <span className='text-muted-foreground font-mono text-xs'>
-                    {ratio}x
+                  <span className='text-xs font-medium text-emerald-700 dark:text-emerald-300'>
+                    {formatDiscount(group)}
                   </span>
                 </div>
                 <StaticDataTable
@@ -1061,11 +1118,11 @@ function GroupPricingSection(props: {
             cell: (group) => <GroupBadge group={group} size='sm' />,
           },
           {
-            id: 'ratio',
-            header: t('Ratio'),
+            id: 'discount',
+            header: t('Discount'),
             className: thClass,
-            cellClassName: 'text-muted-foreground py-2.5 font-mono',
-            cell: (group) => `${props.groupRatio[group] || 1}x`,
+            cellClassName: 'text-muted-foreground py-2.5',
+            cell: formatDiscount,
           },
           ...(isTokenBased
             ? [
@@ -1193,7 +1250,10 @@ export function ModelDetailsContent(props: ModelDetailsContentProps) {
             />
           </section>
 
-          <ModelBackendDetailsSection model={props.model} />
+          <ModelBackendDetailsSection
+            model={props.model}
+            endpointMap={props.endpointMap}
+          />
         </TabsContent>
 
         <TabsContent value='performance' className='outline-none'>

@@ -5255,6 +5255,13 @@
     "Zero retention": "Aucune rétention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Free Trial": "Essai gratuit",
+    "Learn about pricing": "Découvrir les tarifs",
+    "Starting at": "À partir de",
+    "{{percent}}% less than official": "{{percent}} % moins cher que le tarif officiel",
+    "No discount": "Aucune remise",
+    "{{percent}}% off": "{{percent}} % de remise",
+    "Interface endpoints supported by this model": "Points de terminaison d'API pris en charge par ce modèle"
   }
 }

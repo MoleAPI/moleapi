@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 
+import { isValidElement } from 'react'
+
 import { SUPPORTED_APPS } from '../components/supported-apps'
 
 test('supported application pills open the requested MoleAPI guides', () => {
@@ -37,4 +39,20 @@ test('supported application pills open the requested MoleAPI guides', () => {
       ['Codex', 'https://docs.moleapi.com/zh-CN/docs/apps/codex-app'],
     ]
   )
+})
+
+test('supported application pills use bundled product artwork instead of initials', () => {
+  const expectedIcons = new Map([
+    ['CC Switch', '/app-icons/cc-switch.svg'],
+    ['NextChat', '/app-icons/nextchat.svg'],
+    ['AionUI', '/app-icons/aionui.svg'],
+  ])
+
+  for (const app of SUPPORTED_APPS) {
+    const expectedSrc = expectedIcons.get(app.name)
+    if (!expectedSrc) continue
+
+    assert.ok(isValidElement<{ src?: string }>(app.icon))
+    assert.equal(app.icon.props.src, expectedSrc)
+  }
 })

@@ -5255,6 +5255,13 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Free Trial": "Dùng thử miễn phí",
+    "Learn about pricing": "Tìm hiểu giá",
+    "Starting at": "Chỉ từ",
+    "{{percent}}% less than official": "Rẻ hơn giá chính thức {{percent}}%",
+    "No discount": "Không giảm giá",
+    "{{percent}}% off": "Giảm {{percent}}%",
+    "Interface endpoints supported by this model": "Các điểm cuối API mà mô hình này hỗ trợ"
   }
 }

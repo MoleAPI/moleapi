@@ -183,7 +183,7 @@ export function Hero(props: HeroProps) {
                   className='group h-11 rounded-lg px-5 text-sm font-medium'
                   render={<Link to='/sign-up' />}
                 >
-                  {t('Get Started')}
+                  {t('Free Trial')}
                   <ArrowRight className='ml-1.5 size-4 transition-transform duration-200 group-hover:translate-x-0.5' />
                 </Button>
                 <Button
@@ -191,7 +191,7 @@ export function Hero(props: HeroProps) {
                   className='border-border/50 hover:border-border hover:bg-muted/50 h-11 rounded-lg px-5 text-sm font-medium'
                   render={<Link to='/pricing' />}
                 >
-                  {t('View Pricing')}
+                  {t('Learn about pricing')}
                 </Button>
                 {renderDocsButton()}
               </>

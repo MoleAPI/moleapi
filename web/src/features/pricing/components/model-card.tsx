@@ -30,7 +30,7 @@ import {
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { isTokenBasedModel } from '../lib/model-helpers'
+import { getModelPriceDisplay, isTokenBasedModel } from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
@@ -78,6 +78,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         ),
       })
     : null
+  const priceDisplay = getModelPriceDisplay(props.model, props.selectedGroup)
 
   const primaryGroup = groups[0]
   const bottomTags = [...endpoints.slice(0, 2), ...tags.slice(0, 2)]
@@ -89,6 +90,11 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
     copyToClipboard(props.model.model_name || '')
+  }
+
+  const handleDetailsClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    props.onClick()
   }
 
   let priceSummary: ReactNode
@@ -200,6 +206,13 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         'hover:bg-muted/20'
       )}
     >
+      <button
+        type='button'
+        aria-label={`${t('Details')}: ${props.model.model_name}`}
+        onClick={props.onClick}
+        className='focus-visible:ring-ring absolute inset-0 z-10 cursor-pointer rounded-xl focus-visible:ring-2 focus-visible:outline-none'
+      />
+
       {/* Header: icon + name + price + actions */}
       <div className='flex items-start justify-between gap-2.5 sm:gap-3'>
         <div className='flex min-w-0 items-start gap-2.5 sm:gap-3'>
@@ -215,7 +228,19 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               {props.model.model_name}
             </h3>
             <div className='mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm sm:mt-1 sm:gap-x-3'>
+              {priceDisplay.isStartingAt && (
+                <span className='text-muted-foreground text-xs font-medium'>
+                  {t('Starting at')}
+                </span>
+              )}
               {priceSummary}
+              {priceDisplay.discountPercent != null && (
+                <span className='rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-300'>
+                  {t('{{percent}}% less than official', {
+                    percent: priceDisplay.discountPercent,
+                  })}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -223,8 +248,8 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         <div className='flex shrink-0 items-center gap-1.5'>
           <button
             type='button'
-            onClick={props.onClick}
-            className='text-muted-foreground hover:text-foreground hover:bg-muted inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors sm:px-2.5 sm:py-1.5'
+            onClick={handleDetailsClick}
+            className='text-muted-foreground hover:text-foreground hover:bg-muted relative z-20 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors sm:px-2.5 sm:py-1.5'
           >
             {t('Details')}
             <ChevronRight className='size-3.5' />
@@ -232,7 +257,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           <button
             type='button'
             onClick={handleCopy}
-            className='text-muted-foreground hover:text-foreground hover:bg-muted rounded-md border p-1.5 transition-colors'
+            className='text-muted-foreground hover:text-foreground hover:bg-muted relative z-20 rounded-md border p-1.5 transition-colors'
             title={t('Copy')}
           >
             <Copy className='size-3.5' />

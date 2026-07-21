@@ -5255,6 +5255,13 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Free Trial": "免费试用",
+    "Learn about pricing": "了解价格",
+    "Starting at": "低至",
+    "{{percent}}% less than official": "比官方便宜 {{percent}}%",
+    "No discount": "暂无优惠",
+    "{{percent}}% off": "优惠 {{percent}}%",
+    "Interface endpoints supported by this model": "模型支持的接口端点信息"
   }
 }

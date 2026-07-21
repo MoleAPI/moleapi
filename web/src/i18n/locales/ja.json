@@ -5255,6 +5255,13 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Free Trial": "無料トライアル",
+    "Learn about pricing": "料金を確認",
+    "Starting at": "最低価格",
+    "{{percent}}% less than official": "公式価格より{{percent}}%お得",
+    "No discount": "割引なし",
+    "{{percent}}% off": "{{percent}}%オフ",
+    "Interface endpoints supported by this model": "このモデルが対応するAPIエンドポイント"
   }
 }
