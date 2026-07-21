@@ -23,19 +23,20 @@ import i18next from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 
+import type { PaymentMethod } from '../../types'
 import { RechargeFormCard } from '../recharge-form-card'
 
-test('top-up invoice note refers to partner invoicing in some regions', async () => {
+async function renderRechargeForm(payMethods: PaymentMethod[] = []) {
   const i18n = i18next.createInstance()
   await i18n.use(initReactI18next).init({ lng: 'en' })
 
-  const html = renderToStaticMarkup(
+  return renderToStaticMarkup(
     <I18nextProvider i18n={i18n}>
       <RechargeFormCard
         topupInfo={{
           enable_online_topup: true,
           enable_stripe_topup: false,
-          pay_methods: [],
+          pay_methods: payMethods,
           min_topup: 1,
           stripe_min_topup: 1,
           amount_options: [],
@@ -61,10 +62,21 @@ test('top-up invoice note refers to partner invoicing in some regions', async ()
       />
     </I18nextProvider>
   )
+}
+
+test('top-up invoice note refers to partner invoicing in some regions', async () => {
+  const html = await renderRechargeForm()
 
   assert.match(
     html,
     /Top-ups are invoiced based on the amount paid\. In some regions, invoices are issued by a partner company\./
   )
   assert.doesNotMatch(html, /Mainland China/)
+})
+
+test('WeChat Pay keeps its brand green independently of the active theme', async () => {
+  const html = await renderRechargeForm([{ name: 'WeChat Pay', type: 'wxpay' }])
+
+  assert.match(html, /bg-\[#07c160\]!/)
+  assert.match(html, /hover:bg-\[#06ad56\]!/)
 })

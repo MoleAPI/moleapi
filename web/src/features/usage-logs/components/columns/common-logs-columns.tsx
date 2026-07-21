@@ -93,12 +93,6 @@ function getGroupRatio(other: LogOtherData | null): number | null {
   return null
 }
 
-function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
-  const match = value.match(/^([^0-9+\-.,\s]+)(.+)$/)
-  if (!match) return { prefix: '', amount: value }
-  return { prefix: match[1], amount: match[2] }
-}
-
 function buildDetailSegments(
   log: UsageLog,
   other: LogOtherData | null,
@@ -300,8 +294,8 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const config = getLogTypeConfig(log.type)
 
         return (
-          <div className='flex min-w-0 flex-col gap-0.5'>
-            <span className='truncate font-mono text-xs tabular-nums'>
+          <div className='flex items-center gap-1'>
+            <span className='font-mono text-xs whitespace-nowrap tabular-nums'>
               {formatTimestampToDate(timestamp)}
             </span>
             <StatusBadge
@@ -309,7 +303,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
               variant={config.color as StatusBadgeProps['variant']}
               size='sm'
               copyable={false}
-              className='-ml-1.5 !text-xs [&_span]:!text-xs'
+              className='shrink-0 !text-xs [&_span]:!text-xs'
             />
           </div>
         )
@@ -363,10 +357,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
               <Tooltip>
                 <TooltipTrigger
                   render={
-                    <div className='flex max-w-[160px] flex-col gap-0.5' />
+                    <div className='flex max-w-none items-center gap-1' />
                   }
                 >
-                  <div className='relative inline-flex w-fit items-center gap-1'>
+                  <div className='relative inline-flex items-center gap-1'>
                     <StatusBadge
                       label={channelIdDisplay}
                       autoColor={String(log.channel)}
@@ -440,7 +434,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                     )}
                   </div>
                   {log.channel_name && (
-                    <span className='text-muted-foreground/70 truncate [font-family:var(--font-body)] !text-xs'>
+                    <span className='text-muted-foreground/70 [font-family:var(--font-body)] !text-xs whitespace-nowrap'>
                       {channelName}
                     </span>
                   )}
@@ -482,6 +476,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </TooltipProvider>
           )
         },
+        size: 150,
       },
       {
         id: 'user',
@@ -523,7 +518,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                 <Tooltip>
                   <TooltipTrigger
                     render={
-                      <span className='text-muted-foreground max-w-[100px] truncate text-sm hover:underline' />
+                      <span className='text-muted-foreground text-sm whitespace-nowrap hover:underline' />
                     }
                   >
                     {sensitiveVisible ? log.username : '••••'}
@@ -536,6 +531,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </button>
           )
         },
+        size: 130,
       }
     )
   }
@@ -558,18 +554,19 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
       const groupRatio = getGroupRatio(other)
 
       return (
-        <div className='flex max-w-[200px] flex-col gap-0.5'>
+        <div className='flex max-w-none items-center gap-1'>
           <TooltipProvider delay={300}>
             <Tooltip>
-              <TooltipTrigger render={<div className='max-w-full' />}>
+              <TooltipTrigger render={<div className='max-w-none' />}>
                 <StatusBadge
-                  label={displayName}
                   icon={KeyRound}
                   copyText={sensitiveVisible ? tokenName : undefined}
                   size='sm'
                   showDot={false}
-                  className='border-border/60 bg-muted/30 text-foreground h-6 max-w-full gap-1.5 overflow-hidden rounded-md border px-2 py-0.5 [font-family:var(--font-body)]'
-                />
+                  className='text-foreground h-6 max-w-none gap-1.5 rounded-md px-2 py-0.5 [font-family:var(--font-body)]'
+                >
+                  <span className='whitespace-nowrap'>{displayName}</span>
+                </StatusBadge>
               </TooltipTrigger>
               {sensitiveVisible && tokenName.length > 16 && (
                 <TooltipContent side='top' className='max-w-xs break-all'>
@@ -579,12 +576,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             </Tooltip>
           </TooltipProvider>
           {(group || groupRatio != null) && (
-            <span className='block max-w-full truncate text-xs leading-none'>
+            <span className='inline-flex items-center text-xs leading-none whitespace-nowrap'>
               {group ? (
                 <GroupBadge
                   group={group}
                   label={sensitiveVisible ? undefined : '••••'}
-                  type='text'
                   size='sm'
                   className='inline align-baseline text-xs leading-none [&>span]:leading-none'
                 />
@@ -600,7 +596,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         </div>
       )
     },
-    size: 160,
+    size: 200,
   })
   columns.push(
     {
@@ -613,7 +609,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const modelInfo = formatModelName(log)
 
         return (
-          <div className='flex w-fit flex-col gap-0.5'>
+          <div className='flex w-fit'>
             <ModelBadge
               modelName={modelInfo.name}
               actualModel={modelInfo.actualModel}
@@ -622,6 +618,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         )
       },
       meta: { mobileTitle: true },
+      size: 180,
     },
     {
       accessorKey: 'is_stream',
@@ -642,10 +639,12 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             isStream={log.is_stream}
             tokensPerSecond={tokensPerSecond}
             streamStatus={other?.stream_status}
+            className='flex-row! items-center! gap-1.5!'
           />
         )
       },
       meta: { label: t('Stream') },
+      size: 100,
     },
     {
       accessorKey: 'prompt_tokens',
@@ -671,28 +670,29 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           : other?.cache_creation_tokens || 0
 
         return (
-          <div className='flex flex-col gap-0.5'>
-            <span className='font-mono text-xs font-medium tabular-nums'>
+          <div className='flex items-center gap-2'>
+            <span className='shrink-0 font-mono text-xs font-medium tabular-nums'>
               {promptTokens.toLocaleString()} /{' '}
               {completionTokens.toLocaleString()}
             </span>
-            {(cacheReadTokens > 0 || cacheWriteTokens > 0) && (
-              <div className='flex items-center gap-1 text-[11px]'>
-                {cacheReadTokens > 0 && (
-                  <span className='text-muted-foreground/60'>
-                    {t('Cache')}↓ {cacheReadTokens.toLocaleString()}
+            {cacheReadTokens > 0 || cacheWriteTokens > 0 ? (
+              <div className='text-muted-foreground/70 flex flex-nowrap items-center gap-2 text-xs'>
+                {cacheReadTokens > 0 ? (
+                  <span className='shrink-0'>
+                    {t('Cache Read')} {cacheReadTokens.toLocaleString()}
                   </span>
-                )}
-                {cacheWriteTokens > 0 && (
-                  <span className='text-muted-foreground/60'>
-                    ↑ {cacheWriteTokens.toLocaleString()}
+                ) : null}
+                {cacheWriteTokens > 0 ? (
+                  <span className='shrink-0'>
+                    {t('Cache Write')} {cacheWriteTokens.toLocaleString()}
                   </span>
-                )}
+                ) : null}
               </div>
-            )}
+            ) : null}
           </div>
         )
       },
+      size: 270,
     },
     {
       accessorKey: 'quota',
@@ -716,6 +716,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                       variant='success'
                       size='sm'
                       copyable={false}
+                      type='text'
                       className='cursor-help'
                     />
                   }
@@ -730,20 +731,13 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           )
         }
 
-        const quotaStr = formatLogQuota(quota)
-        const quotaDisplay = splitQuotaDisplay(quotaStr)
-
         return (
-          <div className='flex flex-col gap-0.5'>
-            <span className='border-border/80 bg-muted/60 inline-flex h-6 w-fit items-center rounded-md border px-2 [font-family:var(--font-body)] text-sm leading-none font-semibold tabular-nums'>
-              {quotaDisplay.prefix && (
-                <span className='mr-1'>{quotaDisplay.prefix}</span>
-              )}
-              <span>{quotaDisplay.amount}</span>
-            </span>
-          </div>
+          <span className='text-foreground font-medium tabular-nums'>
+            {formatLogQuota(quota)}
+          </span>
         )
       },
+      size: 90,
     },
 
     {
@@ -762,9 +756,11 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             completionTokens={log.completion_tokens}
             frtMs={other?.frt}
             isStream={log.is_stream}
+            className='gap-1.5 [&>div]:flex-row [&>div]:items-baseline [&>div]:gap-2'
           />
         )
       },
+      size: 180,
     },
 
     {
@@ -776,34 +772,29 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         const other = parseLogOther(log.other)
 
         const segments = buildDetailSegments(log, other, t, isAdmin)
-        const primary = segments[0]
-        const hasMore = segments.length > 1
-        let primaryTextClass = 'text-foreground'
-        if (primary?.muted) {
-          primaryTextClass = 'text-muted-foreground/60'
-        } else if (primary?.danger) {
-          primaryTextClass = 'text-red-600 dark:text-red-400'
-        }
         let detailPreview = <span className='text-muted-foreground/40'>—</span>
-        if (primary) {
+        if (segments.length > 0) {
           detailPreview = (
-            <span
-              className={cn(
-                'truncate leading-snug group-hover:underline',
-                primaryTextClass
-              )}
-            >
-              {primary.text}
-              {hasMore && (
-                <span className='text-muted-foreground/40 ml-0.5'>
-                  +{segments.length - 1}
+            <span className='leading-snug whitespace-nowrap group-hover:underline'>
+              {segments.map((segment, index) => (
+                <span
+                  key={`${segment.text}-${segment.muted ? 'muted' : ''}-${segment.danger ? 'danger' : ''}`}
+                  className={cn(
+                    segment.muted && 'text-muted-foreground/60',
+                    segment.danger && 'text-red-600 dark:text-red-400'
+                  )}
+                >
+                  {index > 0 && (
+                    <span className='text-muted-foreground/40 mx-1'>·</span>
+                  )}
+                  {segment.text}
                 </span>
-              )}
+              ))}
             </span>
           )
         } else if (log.content) {
           detailPreview = (
-            <span className='text-muted-foreground truncate group-hover:underline'>
+            <span className='text-muted-foreground whitespace-nowrap group-hover:underline'>
               {log.content}
             </span>
           )
@@ -813,7 +804,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           <>
             <button
               type='button'
-              className='group flex max-w-[200px] items-center gap-1 text-left text-xs'
+              className='group flex items-center gap-1 text-left text-xs'
               onClick={() => setDialogOpen(true)}
               title={t('Click to view full details')}
             >
@@ -828,8 +819,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           </>
         )
       },
-      size: 180,
-      maxSize: 200,
+      size: 220,
     }
   )
 

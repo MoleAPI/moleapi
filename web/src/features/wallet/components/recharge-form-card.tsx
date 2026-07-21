@@ -344,7 +344,7 @@ export function RechargeFormCard({
                           'border-[#1677ff] bg-[#1677ff] text-white hover:bg-[#1677ff]/90'
                       } else if (method.type === PAYMENT_TYPES.WECHAT) {
                         paymentTone =
-                          'border-[#07c160] bg-[#07c160] text-white hover:bg-[#07c160]/90'
+                          'border-[#07c160]! bg-[#07c160]! text-white! hover:border-[#06ad56]! hover:bg-[#06ad56]!'
                       }
 
                       const button = (

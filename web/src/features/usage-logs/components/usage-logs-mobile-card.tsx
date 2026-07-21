@@ -187,7 +187,7 @@ function MobileLogTimeStatus({
   )
 }
 
-/** Mobile-only Tokens block: always show cache ↓/↑ when present (no label). */
+/** Mobile-only token block with explicit cache read/write labels. */
 function MobileTokensField({ log }: { log: UsageLog }) {
   const { t } = useTranslation()
 
@@ -220,15 +220,17 @@ function MobileTokensField({ log }: { log: UsageLog }) {
           {promptTokens.toLocaleString()} / {completionTokens.toLocaleString()}
         </span>
         {showCache ? (
-          <div className='text-muted-foreground flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] leading-none'>
-            {cacheReadTokens > 0 && (
+          <div className='text-muted-foreground flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs leading-none'>
+            {cacheReadTokens > 0 ? (
               <span>
-                {t('Cache')}↓ {cacheReadTokens.toLocaleString()}
+                {t('Cache Read')} {cacheReadTokens.toLocaleString()}
               </span>
-            )}
-            {cacheWriteTokens > 0 && (
-              <span>↑ {cacheWriteTokens.toLocaleString()}</span>
-            )}
+            ) : null}
+            {cacheWriteTokens > 0 ? (
+              <span>
+                {t('Cache Write')} {cacheWriteTokens.toLocaleString()}
+              </span>
+            ) : null}
           </div>
         ) : (
           <span className='text-muted-foreground/50 text-[11px] leading-none'>

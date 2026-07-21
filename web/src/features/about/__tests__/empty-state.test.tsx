@@ -37,10 +37,11 @@ test('empty about page shows the centered compliance notice without provider ref
 
   assert.match(html, /Service Compliance Notice/)
   assert.match(html, /<section[^>]*class="[^"]*text-center/)
-  assert.doesNotMatch(
+  assert.match(
     html,
-    /MoleAPI is operated outside China and the United States\./
+    /MoleAPI does not provide services in any country or region where the relevant upstream provider, including OpenAI or Anthropic, has not made the corresponding service available\./
   )
+  assert.doesNotMatch(html, /China|United States/)
   assert.doesNotMatch(html, /No About Content Set/)
   assert.doesNotMatch(html, /Current availability references/)
   assert.doesNotMatch(html, /supported-countries/)

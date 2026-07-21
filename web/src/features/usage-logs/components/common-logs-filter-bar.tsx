@@ -414,21 +414,22 @@ export function CommonLogsFilterBar<TData>(
       table={props.table}
       stats={statsBar}
       actionStart={sensitiveToggle}
+      compactDesktop
       primaryFilters={
         <>
+          {typeFilter}
           {dateRangeFilter}
           {modelFilter}
           {groupFilter}
-          {typeFilter}
+          {advancedFilters}
         </>
       }
-      advancedFilters={advancedFilters}
       mobilePinnedFilters={dateRangeFilter}
       mobileFilters={
         <>
+          {typeFilter}
           {modelFilter}
           {groupFilter}
-          {typeFilter}
           {advancedFilters}
         </>
       }
@@ -436,8 +437,6 @@ export function CommonLogsFilterBar<TData>(
         [filters.model, filters.group, hasTypeFilter].filter(Boolean).length +
         expandedFilterCount
       }
-      hasAdvancedActiveFilters={hasExpandedFilters}
-      advancedFilterCount={expandedFilterCount}
       hasActiveFilters={hasAdditionalFilters}
       onSearch={handleApply}
       searchLoading={fetchingLogs > 0}

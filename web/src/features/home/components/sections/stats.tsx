@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { useRef, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ModelProviders } from '../model-providers'
+
 interface CounterProps {
   end: number
   suffix?: string
@@ -122,6 +124,7 @@ export function Stats(_props: StatsProps) {
             </div>
           ))}
         </div>
+        <ModelProviders />
       </div>
     </div>
   )

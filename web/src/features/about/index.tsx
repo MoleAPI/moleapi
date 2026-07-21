@@ -39,7 +39,7 @@ function ServiceComplianceNotice() {
       </h2>
       <p>
         {t(
-          'MoleAPI does not provide services in China, the United States, or any country or region where an applicable upstream provider, including OpenAI or Anthropic, has not made the relevant service available.'
+          'MoleAPI does not provide services in any country or region where the relevant upstream provider, including OpenAI or Anthropic, has not made the corresponding service available.'
         )}
       </p>
       <p>

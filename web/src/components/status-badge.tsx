@@ -90,6 +90,30 @@ export const textColorMap = {
   yellow: 'text-warning',
 } as const
 
+export const badgeColorMap = {
+  success: 'bg-success/10',
+  warning: 'bg-warning/10',
+  danger: 'bg-destructive/10',
+  info: 'bg-info/10',
+  neutral: 'bg-muted',
+  purple: 'bg-chart-4/10',
+  amber: 'bg-warning/10',
+  blue: 'bg-chart-1/10',
+  cyan: 'bg-chart-2/10',
+  green: 'bg-success/10',
+  grey: 'bg-muted',
+  indigo: 'bg-chart-1/10',
+  'light-blue': 'bg-info/10',
+  'light-green': 'bg-success/10',
+  lime: 'bg-chart-3/10',
+  orange: 'bg-warning/10',
+  pink: 'bg-chart-5/10',
+  red: 'bg-destructive/10',
+  teal: 'bg-chart-2/10',
+  violet: 'bg-chart-4/10',
+  yellow: 'bg-warning/10',
+} as const
+
 export type StatusVariant = keyof typeof dotColorMap
 
 /** Controls the visual style of the badge.
@@ -190,6 +214,7 @@ export function StatusBadge({
               type === 'underline' && 'border-b border-current pb-px'
             ),
         textColorMap[computedVariant],
+        isBadge && badgeColorMap[computedVariant],
         pulse && 'animate-pulse',
         copyable &&
           'cursor-copy hover:brightness-95 active:scale-95 dark:hover:brightness-110',

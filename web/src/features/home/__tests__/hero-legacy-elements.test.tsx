@@ -30,6 +30,7 @@ import {
   PUBLIC_API_BASE_URL,
 } from '../components/hero-terminal-demo-data'
 import { HeroTypewriter } from '../components/hero-typewriter'
+import { Stats } from '../components/sections/stats'
 
 async function renderWithEnglish(element: ReactNode) {
   const i18n = i18next.createInstance()
@@ -49,15 +50,37 @@ test('hero restores the simple-setup typewriter message', async () => {
 test('hero API demo shows the MoleAPI base URL and cycles common routes', async () => {
   const html = await renderWithEnglish(<HeroTerminalDemo />)
 
-  assert.match(html, /https:\/\/api\.moleapi\.com\/v1\/chat\/completions/)
+  assert.match(html, /https:\/\/api\.moleapi\.com/)
+  assert.match(html, /\/v1\/chat\/completions/)
+  assert.match(html, /cURL/)
+  assert.match(html, /Python/)
+  assert.match(html, /Node\.js/)
+  assert.match(html, /Copy to clipboard/)
+  assert.doesNotMatch(html, />Response</)
+  assert.doesNotMatch(html, /200 ok/i)
+  assert.doesNotMatch(html, /tokens · cost/i)
   assert.equal(PUBLIC_API_BASE_URL, 'https://api.moleapi.com')
   assert.deepEqual(
     API_DEMOS.map((demo) => demo.endpoint),
     [
       '/v1/chat/completions',
       '/v1/responses',
+      '/v1/embeddings',
+      '/v1/rerank',
+      '/v1/moderations',
+      '/v1/images/generations',
       '/v1/messages',
       '/v1beta/models/{model}:generateContent',
     ]
   )
+})
+
+test('model providers follow the four gateway capability totals', async () => {
+  const html = await renderWithEnglish(<Stats />)
+
+  assert.ok(
+    html.indexOf('scheduling controls') < html.indexOf('Model Providers')
+  )
+  assert.match(html, /Model Providers/)
+  assert.match(html, /OpenAI/)
 })

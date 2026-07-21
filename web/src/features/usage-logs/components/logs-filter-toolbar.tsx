@@ -52,6 +52,7 @@ interface LogsFilterToolbarProps<TData> {
   searchLoading?: boolean
   onReset: () => void
   onSearch: () => void
+  compactDesktop?: boolean
   className?: string
 }
 
@@ -242,6 +243,50 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
     )
   }
 
+  const desktopActions = (
+    <>
+      {props.actionStart}
+      <Button
+        type='button'
+        variant='outline'
+        onClick={props.onReset}
+        disabled={!props.hasActiveFilters}
+      >
+        {t('Reset')}
+      </Button>
+      <Button
+        type='button'
+        onClick={props.onSearch}
+        disabled={props.searchLoading}
+      >
+        {props.searchLoading && <Loader2 className='animate-spin' />}
+        {t('Search')}
+      </Button>
+      <DataTableViewOptions table={props.table} />
+    </>
+  )
+
+  if (props.compactDesktop) {
+    return (
+      <div
+        className={cn(
+          'bg-card/50 rounded-lg border p-2.5 sm:p-3',
+          props.className
+        )}
+      >
+        <div className='grid grid-cols-1 gap-2 sm:grid-cols-4 lg:grid-cols-8'>
+          {props.primaryFilters}
+          <div className='flex min-w-0 items-center sm:col-span-2 lg:col-span-3'>
+            {props.stats}
+          </div>
+          <div className='flex min-w-0 items-center justify-end gap-1.5 sm:col-span-2 sm:gap-2 lg:col-span-3'>
+            {desktopActions}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className={cn(
@@ -269,24 +314,7 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
       <div className='mt-2 flex flex-wrap items-center gap-2'>
         {props.stats}
         <div className='ms-auto flex flex-wrap items-center justify-end gap-1.5 sm:gap-2'>
-          {props.actionStart}
-          <Button
-            type='button'
-            variant='outline'
-            onClick={props.onReset}
-            disabled={!props.hasActiveFilters}
-          >
-            {t('Reset')}
-          </Button>
-          <Button
-            type='button'
-            onClick={props.onSearch}
-            disabled={props.searchLoading}
-          >
-            {props.searchLoading && <Loader2 className='animate-spin' />}
-            {t('Search')}
-          </Button>
-          <DataTableViewOptions table={props.table} />
+          {desktopActions}
         </div>
       </div>
     </div>
