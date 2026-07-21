@@ -53,6 +53,10 @@ func GetStatus(c *gin.Context) {
 	if upstreamVersion == "" {
 		upstreamVersion = common.Version
 	}
+	logo := common.Logo
+	if logo == "" {
+		logo = "/logo.png"
+	}
 
 	data := gin.H{
 		"version":                     upstreamVersion,
@@ -73,7 +77,7 @@ func GetStatus(c *gin.Context) {
 		"telegram_bot_name":           common.TelegramBotName,
 		"theme":                       "default",
 		"system_name":                 common.SystemName,
-		"logo":                        common.Logo,
+		"logo":                        logo,
 		"footer_html":                 common.Footer,
 		"wechat_qrcode":               common.WeChatAccountQRCodeImageURL,
 		"wechat_login":                common.WeChatAuthEnabled,
