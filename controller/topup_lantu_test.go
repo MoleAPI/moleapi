@@ -316,7 +316,7 @@ func TestRequestLanTuPayCreatesPendingOrderBeforeUpstreamAndMarksFailure(t *test
 		assert.Equal(t, "https://app.example.com/api/user/lantu/notify", request.Form.Get("notify_url"))
 		tradeNo := request.Form.Get("out_trade_no")
 		assert.Len(t, tradeNo, 32)
-		assert.True(t, strings.HasPrefix(tradeNo, "MO1TLT"))
+		assert.True(t, strings.HasPrefix(tradeNo, "USRTLT00000741"))
 		pending := model.GetTopUpByTradeNo(tradeNo)
 		sawPending = pending != nil && pending.Status == common.TopUpStatusPending
 		signed := map[string]string{
