@@ -50,6 +50,16 @@ const barColorMap: Record<StatusVariant, string> = {
   neutral: 'bg-neutral/80',
 }
 
+const pillColorMap: Partial<Record<StatusVariant, string>> = {
+  success:
+    'border-emerald-500/25 text-emerald-600 dark:border-emerald-400/20 dark:text-emerald-400',
+  warning:
+    'border-amber-500/25 text-amber-600 dark:border-amber-400/20 dark:text-amber-400',
+  danger:
+    'border-rose-500/25 text-rose-600 dark:border-rose-400/20 dark:text-rose-400',
+  neutral: 'border-border text-muted-foreground',
+}
+
 interface TimingMetricsCellProps {
   useTimeSec: number
   completionTokens: number
@@ -63,6 +73,7 @@ interface TimingMetricsCellProps {
    * indicator used elsewhere on the mobile card.
    */
   indicator?: 'bar' | 'dot'
+  presentation?: 'labels' | 'pills'
 }
 
 export function TimingMetricsCell(props: TimingMetricsCellProps) {
@@ -82,6 +93,30 @@ export function TimingMetricsCell(props: TimingMetricsCellProps) {
   const firstTokenLabel =
     firstTokenSeconds == null ? t('N/A') : formatUseTime(firstTokenSeconds)
   const totalTimeLabel = formatUseTime(props.useTimeSec)
+
+  if (props.presentation === 'pills') {
+    const pillClassName =
+      'bg-background/40 rounded-lg border px-2 py-0.5 font-mono text-[11px] leading-5 tabular-nums'
+
+    return (
+      <div className={cn('flex items-center gap-1.5', props.className)}>
+        <span
+          className={cn(pillClassName, pillColorMap[totalTimeVariant])}
+          title={`${t('Duration')}: ${totalTimeLabel}`}
+        >
+          {totalTimeLabel}
+        </span>
+        {showFirstToken && (
+          <span
+            className={cn(pillClassName, pillColorMap[firstTokenVariant])}
+            title={`${t('First token')}: ${firstTokenLabel}`}
+          >
+            {firstTokenLabel}
+          </span>
+        )}
+      </div>
+    )
+  }
 
   const labels = (
     <div className='flex min-h-8 min-w-0 flex-col justify-center gap-0.5 text-xs leading-tight'>
@@ -154,6 +189,7 @@ interface StreamTpsCellProps {
   tokensPerSecond?: number | null
   streamStatus?: LogOtherData['stream_status']
   className?: string
+  inline?: boolean
 }
 
 export function StreamTpsCell(props: StreamTpsCellProps) {
@@ -165,20 +201,22 @@ export function StreamTpsCell(props: StreamTpsCellProps) {
       ? `${Math.round(props.tokensPerSecond)} t/s`
       : '—'
   const streamLabel = props.isStream ? t('Stream') : t('Non-stream')
+  let streamTone = 'text-muted-foreground/70 font-normal'
+  if (!props.inline) {
+    streamTone = props.isStream
+      ? 'text-info font-medium'
+      : 'text-muted-foreground font-medium'
+  }
 
   return (
     <div
       className={cn(
-        'flex shrink-0 flex-col items-start justify-center gap-0.5 text-xs leading-tight',
+        'flex shrink-0 items-start justify-center text-xs leading-tight',
+        props.inline ? 'flex-row gap-1 !text-[10px]' : 'flex-col gap-0.5',
         props.className
       )}
     >
-      <span
-        className={cn(
-          'inline-flex items-center gap-1 font-medium',
-          props.isStream ? 'text-info' : 'text-muted-foreground'
-        )}
-      >
+      <span className={cn('inline-flex items-center gap-1', streamTone)}>
         {streamLabel}
         {showStreamError && (
           <TooltipProvider>
@@ -203,6 +241,11 @@ export function StreamTpsCell(props: StreamTpsCellProps) {
           </TooltipProvider>
         )}
       </span>
+      {props.inline && (
+        <span className='text-muted-foreground/50' aria-hidden>
+          ·
+        </span>
+      )}
       <span className='text-muted-foreground/60 px-0.5 tabular-nums'>
         {tpsLabel}
       </span>

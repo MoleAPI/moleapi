@@ -56,7 +56,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
   return (
     <>
       {/* 移动端下拉菜单 */}
-      <div className='lg:hidden'>
+      <div className='2xl:hidden'>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger
             render={<Button size='icon' variant='outline' className='size-7' />}
@@ -107,7 +107,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
       {/* 桌面端水平导航 */}
       <nav
         className={cn(
-          'hidden items-center space-x-4 lg:flex lg:space-x-4 xl:space-x-6',
+          'hidden flex-nowrap items-center gap-1 2xl:flex 2xl:gap-1.5',
           className
         )}
         {...props}
@@ -121,7 +121,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
               target='_blank'
               rel='noopener noreferrer'
               className={cn(
-                'hover:bg-accent/70 hover:text-primary focus-visible:bg-accent/70 rounded-lg px-3 py-1.5 text-sm font-medium motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px',
+                'hover:bg-accent/70 hover:text-primary focus-visible:bg-accent/70 shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium whitespace-nowrap motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px 2xl:px-3',
                 !isActive && 'text-muted-foreground'
               )}
             >
@@ -137,7 +137,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
               to={href}
               disabled={disabled}
               className={cn(
-                'hover:bg-accent/70 hover:text-primary focus-visible:bg-accent/70 rounded-lg px-3 py-1.5 text-sm font-medium motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px',
+                'hover:bg-accent/70 hover:text-primary focus-visible:bg-accent/70 shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium whitespace-nowrap motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px 2xl:px-3',
                 !isActive && 'text-muted-foreground'
               )}
             >

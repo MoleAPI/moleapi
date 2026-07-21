@@ -342,7 +342,10 @@ export function RechargeFormCard({
                       if (method.type === PAYMENT_TYPES.ALIPAY) {
                         paymentTone =
                           'border-[#1677ff] bg-[#1677ff] text-white hover:bg-[#1677ff]/90'
-                      } else if (method.type === PAYMENT_TYPES.WECHAT) {
+                      } else if (
+                        method.type === PAYMENT_TYPES.WECHAT ||
+                        method.type === PAYMENT_TYPES.LANTU
+                      ) {
                         paymentTone =
                           'border-[#07c160]! bg-[#07c160]! text-white! hover:border-[#06ad56]! hover:bg-[#06ad56]!'
                       }

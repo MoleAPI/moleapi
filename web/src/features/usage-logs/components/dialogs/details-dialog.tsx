@@ -70,7 +70,6 @@ import {
   parseAuditLine,
   decodeBillingExprB64,
   getTieredBillingSummary,
-  getImageTokenBreakdown,
   hasAnyCacheTokens,
   isViolationFeeLog,
   getFirstResponseTimeColor,
@@ -404,77 +403,26 @@ function BillingBreakdown(props: {
   )
 }
 
-function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
+function TokenBreakdown(props: { log: UsageLog }) {
   const { t } = useTranslation()
-  const { log, other } = props
+  const { log } = props
 
   const promptTokens = log.prompt_tokens || 0
   const completionTokens = log.completion_tokens || 0
-  const cacheRead = other.cache_tokens || 0
-  const cacheWrite = other.cache_creation_tokens || 0
-  const cacheWrite5m = other.cache_creation_tokens_5m || 0
-  const cacheWrite1h = other.cache_creation_tokens_1h || 0
-  const imageTokens = getImageTokenBreakdown(other)
   const hasTextTokens = promptTokens > 0 || completionTokens > 0
-  const hasTokens =
-    hasTextTokens || imageTokens.input > 0 || imageTokens.output > 0
 
-  if (!hasTokens) return null
+  if (!hasTextTokens) return null
 
   const rows: Array<{ label: string; value: string }> = []
 
-  if (hasTextTokens) {
-    rows.push({
-      label: t('Input Tokens'),
-      value: promptTokens.toLocaleString(),
-    })
-    rows.push({
-      label: t('Output Tokens'),
-      value: completionTokens.toLocaleString(),
-    })
-  }
-
-  if (cacheRead > 0) {
-    rows.push({
-      label: t('Cache Read'),
-      value: cacheRead.toLocaleString(),
-    })
-  }
-
-  if (cacheWrite > 0 && cacheWrite5m === 0 && cacheWrite1h === 0) {
-    rows.push({
-      label: t('Cache Write'),
-      value: cacheWrite.toLocaleString(),
-    })
-  }
-
-  if (cacheWrite5m > 0) {
-    rows.push({
-      label: t('Cache Write (5m)'),
-      value: cacheWrite5m.toLocaleString(),
-    })
-  }
-
-  if (cacheWrite1h > 0) {
-    rows.push({
-      label: t('Cache Write (1h)'),
-      value: cacheWrite1h.toLocaleString(),
-    })
-  }
-
-  if (imageTokens.input > 0) {
-    rows.push({
-      label: t('Image Input Tokens'),
-      value: imageTokens.input.toLocaleString(),
-    })
-  }
-
-  if (imageTokens.output > 0) {
-    rows.push({
-      label: t('Image Output Tokens'),
-      value: imageTokens.output.toLocaleString(),
-    })
-  }
+  rows.push({
+    label: t('Input Tokens'),
+    value: promptTokens.toLocaleString(),
+  })
+  rows.push({
+    label: t('Output Tokens'),
+    value: completionTokens.toLocaleString(),
+  })
 
   return (
     <DetailSection label={t('Token Breakdown')}>
@@ -482,6 +430,41 @@ function TokenBreakdown(props: { log: UsageLog; other: LogOtherData }) {
         <DetailRow key={row.label} label={row.label} value={row.value} mono />
       ))}
     </DetailSection>
+  )
+}
+
+export function InlineLogDetails(props: { log: UsageLog; isAdmin: boolean }) {
+  const { t } = useTranslation()
+  const other = parseLogOther(props.log.other)
+  const isConsume = props.log.type === 2
+  const detailText = renderAuditContent(other, t) || props.log.content
+  const showTokens = other && isDisplayableType(props.log.type)
+  const showBilling = other && isConsume && !isViolationFeeLog(other)
+
+  if (!showTokens && !showBilling && !detailText) {
+    return <span className='text-muted-foreground'>—</span>
+  }
+
+  return (
+    <div className='grid min-w-0 gap-3 py-1 lg:grid-cols-2'>
+      {showTokens && <TokenBreakdown log={props.log} />}
+      {showBilling && (
+        <BillingBreakdown
+          log={props.log}
+          other={other}
+          isAdmin={props.isAdmin}
+        />
+      )}
+      {detailText && (
+        <div className='min-w-0 lg:col-span-2'>
+          <DetailSection label={t('Details')}>
+            <p className='font-mono text-xs break-all whitespace-pre-wrap'>
+              {detailText}
+            </p>
+          </DetailSection>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -1077,7 +1060,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
 
         {/* Token breakdown (for consume/error types with token data) */}
         {isDisplayableType(props.log.type) && other && (
-          <TokenBreakdown log={props.log} other={other} />
+          <TokenBreakdown log={props.log} />
         )}
 
         {/* Billing breakdown (consume type) */}

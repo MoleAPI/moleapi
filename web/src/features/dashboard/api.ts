@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  ChannelSuccessData,
   FlowQuotaDataItem,
   QuotaDataItem,
   UptimeGroupResult,
@@ -81,6 +82,14 @@ export async function getFlowQuotaDates(
     data?: FlowQuotaDataItem[]
     message?: string
   }>(endpoint, { params })
+  return res.data
+}
+
+export async function getChannelSuccessMetrics(hours: number) {
+  const res = await api.get<{ success: boolean; data: ChannelSuccessData }>(
+    '/api/data/channel-success',
+    { params: { hours } }
+  )
   return res.data
 }
 

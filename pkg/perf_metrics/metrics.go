@@ -28,6 +28,9 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 	if info == nil {
 		return
 	}
+	if success {
+		RecordChannelAttempt(info.ChannelId, true)
+	}
 	now := time.Now()
 	hasTtft := info.IsStream && info.HasSendResponse()
 	ttftMs := int64(0)

@@ -5297,6 +5297,15 @@
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
-    "MoleAPI does not provide services in any country or region where the relevant upstream provider, including OpenAI or Anthropic, has not made the corresponding service available.": "MoleAPI does not provide services in any country or region where the relevant upstream provider, including OpenAI or Anthropic, has not made the corresponding service available."
+    "MoleAPI does not provide services in any country or region where the relevant upstream provider, including OpenAI or Anthropic, has not made the corresponding service available.": "MoleAPI does not provide services in any country or region where the relevant upstream provider, including OpenAI or Anthropic, has not made the corresponding service available.",
+    "Channel Success Rate": "Channel Success Rate",
+    "Calculated from upstream attempts, including retries.": "Calculated from upstream attempts, including retries.",
+    "Last 6 hours": "Last 6 hours",
+    "Last 24 hours": "Last 24 hours",
+    "Last 7 days": "Last 7 days",
+    "No channel performance data available": "No channel performance data available",
+    "Channel performance data appears after new calls are recorded.": "Channel performance data appears after new calls are recorded.",
+    "Success rate trend": "Success rate trend",
+    "Channel ranking": "Channel ranking"
   }
 }

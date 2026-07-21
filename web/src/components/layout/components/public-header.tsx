@@ -214,7 +214,7 @@ export function PublicHeader(props: PublicHeaderProps) {
           className={cn(
             'pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
             scrolled
-              ? 'max-w-[52rem] px-3 pt-3'
+              ? 'max-w-[68rem] px-3 pt-3'
               : publicHeaderLayoutClasses.unscrolledFrame
           )}
         >
@@ -245,7 +245,7 @@ export function PublicHeader(props: PublicHeaderProps) {
             </Link>
 
             {/* Desktop nav */}
-            <div className='hidden items-center gap-0.5 sm:flex'>
+            <div className='hidden flex-nowrap items-center gap-0.5 xl:flex'>
               {links.map((link) => {
                 const isActive = pathname === link.href
                 if (link.external) {
@@ -259,7 +259,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                       tabIndex={link.disabled ? -1 : undefined}
                       onClick={(event) => handleNavLinkClick(event, link)}
                       className={cn(
-                        'text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:bg-accent/70 focus-visible:text-foreground rounded-lg px-3 py-1.5 text-[13px] font-medium motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px',
+                        'text-muted-foreground hover:bg-accent/70 hover:text-foreground focus-visible:bg-accent/70 focus-visible:text-foreground shrink-0 rounded-lg px-2.5 py-1.5 text-[13px] font-medium whitespace-nowrap motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px 2xl:px-3',
                         link.disabled && 'pointer-events-none opacity-50'
                       )}
                     >
@@ -278,7 +278,7 @@ export function PublicHeader(props: PublicHeaderProps) {
                     disabled={link.disabled}
                     onClick={(event) => handleNavLinkClick(event, link)}
                     className={cn(
-                      'hover:bg-accent/70 focus-visible:bg-accent/70 focus-visible:text-foreground rounded-lg px-3 py-1.5 text-[13px] font-medium motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px',
+                      'hover:bg-accent/70 focus-visible:bg-accent/70 focus-visible:text-foreground shrink-0 rounded-lg px-2.5 py-1.5 text-[13px] font-medium whitespace-nowrap motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px 2xl:px-3',
                       isActive
                         ? 'text-foreground'
                         : 'text-muted-foreground hover:text-foreground',
@@ -324,7 +324,7 @@ export function PublicHeader(props: PublicHeaderProps) {
             </div>
 
             {/* Mobile: compact actions + hamburger */}
-            <div className='flex items-center gap-2 sm:hidden'>
+            <div className='flex items-center gap-2 xl:hidden'>
               {showThemeSwitch && <ThemeSwitch />}
               {showAuthButtons && !loading && isAuthenticated && (
                 <ProfileDropdown />
@@ -366,7 +366,7 @@ export function PublicHeader(props: PublicHeaderProps) {
       {/* Mobile full-screen overlay */}
       <div
         className={cn(
-          'bg-background/98 fixed inset-0 z-40 backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] sm:pointer-events-none sm:hidden',
+          'bg-background/98 fixed inset-0 z-40 backdrop-blur-2xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] xl:pointer-events-none xl:hidden',
           mobileOpen
             ? 'pointer-events-auto opacity-100'
             : 'pointer-events-none opacity-0'

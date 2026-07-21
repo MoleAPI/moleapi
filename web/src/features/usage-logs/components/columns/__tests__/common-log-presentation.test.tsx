@@ -25,6 +25,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 
 import { usageLogSchema, type UsageLog } from '../../../data/schema'
+import { InlineLogDetails } from '../../dialogs/details-dialog'
 import { UsageLogsProvider } from '../../usage-logs-provider'
 import { useCommonLogsColumns } from '../common-logs-columns'
 
@@ -39,12 +40,17 @@ const log = usageLogSchema.parse({
   quota: 25_000,
   prompt_tokens: 1_200,
   completion_tokens: 300,
+  use_time: 1,
+  is_stream: true,
   channel: 7,
   channel_name: 'Primary',
   group: 'default',
   other: JSON.stringify({
     cache_tokens: 240,
     cache_creation_tokens: 80,
+    model_ratio: 0.07,
+    group_ratio: 1,
+    frt: 600,
   }),
 })
 
@@ -79,13 +85,22 @@ function TestCell(props: {
 
 function TestDesktopLayout() {
   const columns = useCommonLogsColumns(true)
+  const columnIds = new Set(
+    columns.map((column) =>
+      'accessorKey' in column ? column.accessorKey : column.id
+    )
+  )
   const totalWidth = columns.reduce(
     (total, column) => total + (column.size ?? 0),
     0
   )
 
   return (
-    <output data-all-sized={columns.every((column) => column.size != null)}>
+    <output
+      data-all-sized={columns.every((column) => column.size != null)}
+      data-has-type-column={columnIds.has('type')}
+      data-has-stream-column={columnIds.has('is_stream')}
+    >
       {totalWidth}
     </output>
   )
@@ -104,18 +119,33 @@ async function renderCell(columnId: string, isAdmin = false) {
   )
 }
 
-test('channel, token, group, and model use colored rounded labels', async () => {
+async function renderInlineDetails() {
+  const i18n = i18next.createInstance()
+  await i18n.use(initReactI18next).init({ lng: 'en' })
+
+  return renderToStaticMarkup(
+    <I18nextProvider i18n={i18n}>
+      <InlineLogDetails log={log} isAdmin />
+    </I18nextProvider>
+  )
+}
+
+test('type, channel, token, group, and model use colored rounded labels', async () => {
+  const typeHtml = await renderCell('type')
   const channelHtml = await renderCell('channel', true)
   const tokenHtml = await renderCell('token_name')
+  const groupHtml = await renderCell('group')
   const modelHtml = await renderCell('model_name')
 
+  assert.match(typeHtml, /data-slot="status-badge"/)
+  assert.match(typeHtml, /Consume/)
   assert.match(channelHtml, /data-slot="status-badge"/)
   assert.match(channelHtml, /bg-(?:chart|success|warning|info|muted)/)
-  assert.equal(tokenHtml.match(/data-slot="status-badge"/g)?.length, 2)
-  assert.equal(
-    tokenHtml.match(/\bbg-(?:chart|success|warning|info|muted)/g)?.length,
-    2
-  )
+  assert.equal(tokenHtml.match(/data-slot="status-badge"/g)?.length, 1)
+  assert.match(groupHtml, /data-slot="status-badge"/)
+  assert.match(groupHtml, /bg-(?:chart|success|warning|info|muted)/)
+  assert.match(groupHtml, /truncate/)
+  assert.match(groupHtml, /font-normal/)
   assert.match(modelHtml, /data-slot="status-badge"/)
   assert.match(modelHtml, /bg-(?:chart|success|warning|info|muted)/)
 })
@@ -131,6 +161,31 @@ test('cache uses explicit words and numeric cost stays unboxed', async () => {
   assert.doesNotMatch(costHtml, /\b(?:border|rounded|bg-)/)
 })
 
+test('timing combines duration, first token, and stream throughput', async () => {
+  const timingHtml = await renderCell('use_time')
+
+  assert.equal(timingHtml.match(/rounded-lg/g)?.length, 2)
+  assert.match(timingHtml, /Stream/)
+  assert.match(timingHtml, /·/)
+  assert.match(timingHtml, /300 t\/s/)
+})
+
+test('details preview uses the effective multiplier instead of standard', async () => {
+  const detailsHtml = await renderCell('content')
+
+  assert.match(detailsHtml, /1\.0 · \$0\.14\/M/)
+  assert.doesNotMatch(detailsHtml, /Standard/)
+})
+
+test('expanded details keep token breakdown to input and output only', async () => {
+  const detailsHtml = await renderInlineDetails()
+
+  assert.match(detailsHtml, /Input Tokens/)
+  assert.match(detailsHtml, /Output Tokens/)
+  assert.doesNotMatch(detailsHtml, /Cache Read/)
+  assert.doesNotMatch(detailsHtml, /Cache Write/)
+})
+
 test('desktop common logs keep full values on one horizontally scrollable row', async () => {
   const i18n = i18next.createInstance()
   await i18n.use(initReactI18next).init({ lng: 'en' })
@@ -143,12 +198,18 @@ test('desktop common logs keep full values on one horizontally scrollable row', 
     </I18nextProvider>
   )
   const timeHtml = await renderCell('created_at', true)
+  const typeHtml = await renderCell('type', true)
   const tokensHtml = await renderCell('prompt_tokens', true)
   const modelHtml = await renderCell('model_name', true)
 
-  assert.match(layoutHtml, /data-all-sized="true">1700</)
-  assert.match(timeHtml, /items-center/)
+  assert.match(layoutHtml, /data-all-sized="true"/)
+  assert.match(layoutHtml, /data-has-type-column="true"/)
+  assert.match(layoutHtml, /data-has-stream-column="false">1536</)
+  assert.match(timeHtml, /font-mono/)
   assert.doesNotMatch(timeHtml, /font-mono[^"]*truncate/)
+  assert.doesNotMatch(timeHtml, /data-slot="status-badge"/)
+  assert.match(typeHtml, /data-slot="status-badge"/)
+  assert.match(tokensHtml, /flex-col/)
   assert.match(tokensHtml, /flex-nowrap/)
   assert.doesNotMatch(tokensHtml, /flex-wrap/)
   assert.doesNotMatch(tokensHtml, /overflow-hidden/)

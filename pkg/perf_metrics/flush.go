@@ -19,6 +19,7 @@ func flushLoop() {
 			continue
 		}
 		flushCompletedBuckets()
+		flushCompletedChannelBuckets()
 		cleanupExpiredMetrics(setting.RetentionDays)
 	}
 }
@@ -74,6 +75,9 @@ func cleanupExpiredMetrics(retentionDays int) {
 	cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour).Unix()
 	if err := model.DeletePerfMetricsBefore(cutoff); err != nil {
 		common.SysError("failed to cleanup expired perf metrics: " + err.Error())
+	}
+	if err := model.DeleteChannelPerfMetricsBefore(cutoff); err != nil {
+		common.SysError("failed to cleanup expired channel metrics: " + err.Error())
 	}
 }
 

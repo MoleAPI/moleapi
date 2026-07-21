@@ -5297,6 +5297,15 @@
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
     "Zoom": "缩放",
-    "MoleAPI does not provide services in any country or region where the relevant upstream provider, including OpenAI or Anthropic, has not made the corresponding service available.": "MoleAPI 不向 OpenAI、Anthropic 等相关上游服务商尚未开放对应服务的任何国家或地区提供服务。"
+    "MoleAPI does not provide services in any country or region where the relevant upstream provider, including OpenAI or Anthropic, has not made the corresponding service available.": "MoleAPI 不向 OpenAI、Anthropic 等相关上游服务商尚未开放对应服务的任何国家或地区提供服务。",
+    "Channel Success Rate": "渠道成功率",
+    "Calculated from upstream attempts, including retries.": "基于上游请求尝试计算，包含重试。",
+    "Last 6 hours": "最近 6 小时",
+    "Last 24 hours": "最近 24 小时",
+    "Last 7 days": "最近 7 天",
+    "No channel performance data available": "暂无渠道性能数据",
+    "Channel performance data appears after new calls are recorded.": "记录新的调用后，这里将显示渠道性能数据。",
+    "Success rate trend": "成功率趋势",
+    "Channel ranking": "渠道排行"
   }
 }

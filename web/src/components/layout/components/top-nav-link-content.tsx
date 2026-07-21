@@ -28,7 +28,7 @@ export function TopNavLinkContent(props: {
   iconClassName?: string
 }) {
   return (
-    <span className='inline-flex items-center gap-1.5'>
+    <span className='inline-flex min-w-0 items-center gap-1.5 whitespace-nowrap'>
       {props.link.icon && (
         <HugeiconsIcon
           icon={props.link.icon}
@@ -37,7 +37,7 @@ export function TopNavLinkContent(props: {
           strokeWidth={2}
         />
       )}
-      <span>{props.label}</span>
+      <span className='whitespace-nowrap'>{props.label}</span>
     </span>
   )
 }

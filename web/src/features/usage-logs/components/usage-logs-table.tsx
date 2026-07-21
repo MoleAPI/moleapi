@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
+import { Fragment, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -27,6 +28,7 @@ import {
   DataTableRow,
   useDataTable,
 } from '@/components/data-table'
+import { TableCell, TableRow } from '@/components/ui/table'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { cn } from '@/lib/utils'
@@ -36,11 +38,13 @@ import {
   LOG_TYPE_ALL_VALUE,
   LOG_TYPE_ENUM,
 } from '../constants'
+import type { UsageLog } from '../data/schema'
 import { useColumnsByCategory } from '../lib/columns'
 import { parseLogOther } from '../lib/format'
 import { fetchLogsByCategory } from '../lib/utils'
 import type { LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
+import { InlineLogDetails } from './dialogs/details-dialog'
 import { TaskLogsFilterBar } from './task-logs-filter-bar'
 import { UsageLogsMobileList } from './usage-logs-mobile-card'
 import { useLogsViewScope } from './usage-logs-provider'
@@ -82,6 +86,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const { isAdminView: isAdmin } = useLogsViewScope()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null)
 
   const {
     columnFilters,
@@ -96,7 +101,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     globalFilter: { enabled: false },
     columnFilters: [
       {
-        columnId: 'created_at',
+        columnId: 'type',
         searchKey: 'type',
         type: 'array' as const,
         deserialize: deserializeLogTypeFilter,
@@ -171,6 +176,10 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     ),
     pagination,
     enableRowSelection: false,
+    enableSorting: true,
+    // ponytail: sort the loaded page only; add API sorting if cross-page order is needed.
+    withSortedRowModel: true,
+    getRowId: (row) => String(row.id),
     onPaginationChange,
     onColumnFiltersChange,
     manualPagination: true,
@@ -194,7 +203,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
       skeletonKeyPrefix='usage-log-skeleton'
       applyHeaderSize
       tableClassName={cn(
-        '[&_[data-slot=table]]:text-[0.8125rem] [&_[data-slot=table]_td]:text-[0.8125rem] [&_[data-slot=table]_td_*]:text-[0.8125rem] [&_[data-slot=table]_th]:text-[0.8125rem] [&_[data-slot=table]_th_*]:text-[0.8125rem]'
+        '[&_[data-slot=table]]:text-xs [&_[data-slot=table]_td]:text-xs [&_[data-slot=table]_td_*]:text-xs [&_[data-slot=table]_th]:text-xs [&_[data-slot=table]_th_*]:text-xs'
       )}
       mobile={
         <UsageLogsMobileList
@@ -211,27 +220,68 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
         )
       }
       renderRow={(row) => {
-        const logType = (row.original as Record<string, unknown>).type as
-          | number
-          | undefined
+        const log = row.original as unknown as UsageLog
+        const logType = log.type as number | undefined
+        const rowExpanded = isCommon && expandedLogId === String(log.id)
         let tintClass =
           isCommon && logType != null ? (logTypeRowTint[logType] ?? '') : ''
         if (isCommon && isAdmin) {
-          const other = parseLogOther(
-            ((row.original as Record<string, unknown>).other as string) ?? ''
-          )
+          const other = parseLogOther(log.other ?? '')
           if (other?.admin_info?.quota_saturation) {
             tintClass = quotaSaturationRowTint
           }
         }
 
+        const toggleExpanded = () => {
+          if (!isCommon) return
+          const logId = String(log.id)
+          setExpandedLogId((current) => (current === logId ? null : logId))
+        }
+
         return (
-          <DataTableRow
-            key={row.id}
-            row={row}
-            className={cn('transition-colors', tintClass)}
-            getColumnClassName={() => (isCommon ? 'py-2' : 'py-3.5')}
-          />
+          <Fragment key={row.id}>
+            <DataTableRow
+              row={row}
+              className={cn(
+                'transition-colors',
+                isCommon &&
+                  'focus-visible:ring-ring cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-inset',
+                rowExpanded && 'bg-muted/40',
+                tintClass
+              )}
+              getColumnClassName={() => (isCommon ? 'py-1.5' : 'py-3.5')}
+              onClick={(event) => {
+                if (
+                  (event.target as HTMLElement).closest(
+                    'button, a, input, select, textarea, [role="button"]'
+                  )
+                ) {
+                  return
+                }
+                toggleExpanded()
+              }}
+              onKeyDown={(event) => {
+                if (event.target !== event.currentTarget) return
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  toggleExpanded()
+                }
+              }}
+              tabIndex={isCommon ? 0 : undefined}
+              aria-expanded={isCommon ? rowExpanded : undefined}
+              title={isCommon ? t('Click to view full details') : undefined}
+            />
+            {rowExpanded && (
+              <TableRow className='bg-muted/20 hover:bg-muted/20'>
+                <TableCell
+                  colSpan={row.getVisibleCells().length}
+                  className='px-4 py-3'
+                >
+                  <InlineLogDetails log={log} isAdmin={isAdmin} />
+                </TableCell>
+              </TableRow>
+            )}
+          </Fragment>
         )
       }}
     />

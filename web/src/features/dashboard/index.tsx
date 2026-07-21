@@ -18,7 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { getRouteApi, useNavigate } from '@tanstack/react-router'
 import { Eye, EyeOff } from 'lucide-react'
-import { useState, useCallback, useMemo, lazy, Suspense } from 'react'
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  lazy,
+  Suspense,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { SectionPageLayout } from '@/components/layout'
@@ -76,6 +83,10 @@ const PERFORMANCE_MODEL_FALLBACK_KEYS = [
   'primary-model',
   'secondary-model',
 ] as const
+const ADMIN_ONLY_SECTION_IDS = new Set<DashboardSectionId>([
+  'channels',
+  'users',
+])
 
 const LazyLogStatCards = lazy(() =>
   import('./components/models/log-stat-cards').then((m) => ({
@@ -110,6 +121,12 @@ const LazyUserCharts = lazy(() =>
 const LazyFlowCharts = lazy(() =>
   import('./components/flow/flow-charts').then((m) => ({
     default: m.FlowCharts,
+  }))
+)
+
+const LazyChannelSuccessCharts = lazy(() =>
+  import('./components/channels/channel-success-charts').then((m) => ({
+    default: m.ChannelSuccessCharts,
   }))
 )
 
@@ -183,6 +200,9 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
   models: {
     titleKey: 'Model Call Analytics',
   },
+  channels: {
+    titleKey: 'Channel Success Rate',
+  },
   flow: {
     titleKey: 'Flow',
   },
@@ -248,10 +268,21 @@ export function Dashboard() {
   const visibleSections = useMemo(
     () =>
       DASHBOARD_SECTION_IDS.filter(
-        (section) => section !== 'overview' && (section !== 'users' || isAdmin)
+        (section) =>
+          section !== 'overview' &&
+          (isAdmin || !ADMIN_ONLY_SECTION_IDS.has(section))
       ),
     [isAdmin]
   )
+
+  useEffect(() => {
+    if (isAdmin || !ADMIN_ONLY_SECTION_IDS.has(activeSection)) return
+    void navigate({
+      to: '/dashboard/$section',
+      params: { section: 'models' },
+      replace: true,
+    })
+  }, [activeSection, isAdmin, navigate])
   const handleSectionChange = useCallback(
     (section: string) => {
       void navigate({
@@ -397,6 +428,13 @@ export function Dashboard() {
                   filters={userChartsFilters}
                   onFiltersChange={setUserChartsFilters}
                 />
+              </Suspense>
+            </FadeIn>
+          )}
+          {activeSection === 'channels' && isAdmin && (
+            <FadeIn>
+              <Suspense fallback={<ModelChartsFallback />}>
+                <LazyChannelSuccessCharts />
               </Suspense>
             </FadeIn>
           )}

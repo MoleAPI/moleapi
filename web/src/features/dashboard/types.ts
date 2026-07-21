@@ -48,6 +48,26 @@ export interface FlowQuotaDataItem {
   quota?: number
 }
 
+export interface ChannelSuccessPoint {
+  ts: number
+  request_count: number
+  success_count: number
+  success_rate: number
+}
+
+export interface ChannelSuccessSummary {
+  channel_id: number
+  channel_name: string
+  request_count: number
+  success_count: number
+  success_rate: number
+  series: ChannelSuccessPoint[]
+}
+
+export interface ChannelSuccessData {
+  channels: ChannelSuccessSummary[]
+}
+
 export type FlowMetric = 'quota' | 'tokens' | 'requests'
 
 export type FlowOverflowMode = 'aggregate' | 'hide'

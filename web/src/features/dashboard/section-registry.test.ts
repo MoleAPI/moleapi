@@ -16,16 +16,26 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export const walletLayoutClasses = {
-  grid: 'grid gap-4 lg:grid-cols-12 lg:items-start',
-  recharge: 'scroll-mt-4 lg:col-span-7',
-  referral: 'lg:col-span-5',
-} as const
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
 
-export const rechargeFormLayoutClasses = {
-  paymentMethods: 'grid grid-cols-2 gap-2 sm:gap-3',
-  paymentButton:
-    'min-h-14 w-full min-w-0 justify-center gap-2 rounded-lg px-4 py-3 text-center text-base font-semibold shadow-sm hover:shadow-md [&>svg]:!text-white',
-  bonus:
-    'bg-success/10 text-success rounded-md px-1.5 py-0.5 text-xs font-semibold',
-} as const
+import type { TFunction } from 'i18next'
+
+import { getDashboardSectionNavItems } from './section-registry'
+
+const translate = ((key: string) => key) as TFunction
+
+test('channel success rate follows model analytics and is admin-only', () => {
+  const adminTitles = getDashboardSectionNavItems(translate, {
+    isAdmin: true,
+  }).map((item) => item.title)
+  const userTitles = getDashboardSectionNavItems(translate).map(
+    (item) => item.title
+  )
+
+  assert.equal(
+    adminTitles.indexOf('Channel Success Rate'),
+    adminTitles.indexOf('Model Call Analytics') + 1
+  )
+  assert.equal(userTitles.includes('Channel Success Rate'), false)
+})

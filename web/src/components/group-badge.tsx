@@ -85,7 +85,10 @@ export function GroupBadge(props: GroupBadgeProps) {
       showDot={showDot ?? (isSpecialGroup ? false : undefined)}
       variant={isSpecialGroup ? 'neutral' : undefined}
       autoColor={isSpecialGroup ? undefined : groupName}
-      className={cn('min-w-0 shrink overflow-hidden', className)}
+      className={cn(
+        'max-w-full min-w-0 shrink overflow-hidden font-normal [&>span]:min-w-0 [&>span]:truncate [&>span]:font-normal',
+        className
+      )}
     />
   )
 
