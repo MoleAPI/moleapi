@@ -149,6 +149,8 @@ export interface TopupInfo {
   discount: Record<number, number>
   /** Bonus quota rates by minimum amount */
   bonus: Record<number, number>
+  /** Current user's payment multiplier */
+  topup_group_ratio?: number
   /** Quota awarded to an inviter when a referred user signs up */
   quota_for_inviter: number
   /** Quota awarded to a newly referred user */

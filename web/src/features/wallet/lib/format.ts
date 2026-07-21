@@ -148,13 +148,15 @@ export function calculatePresetPricing(
   presetValue: number,
   priceRatio: number,
   discount: number,
-  usdExchangeRate: number = 1
+  usdExchangeRate: number = 1,
+  bonus: number = 0
 ) {
   const originalPrice = presetValue * priceRatio
   const actualPrice = originalPrice * discount
   const savedAmount = originalPrice - actualPrice
   const hasDiscount = discount < 1.0
   const displayValue = presetValue * usdExchangeRate
+  const receivedAmount = presetValue * (1 + bonus)
 
   return {
     displayValue,
@@ -162,5 +164,6 @@ export function calculatePresetPricing(
     actualPrice,
     savedAmount,
     hasDiscount,
+    receivedAmount,
   }
 }

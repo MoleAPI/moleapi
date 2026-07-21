@@ -235,10 +235,15 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 		if err := lockForUpdate(tx).Select("id", "quota", "email", "stripe_customer", "inviter_id", "inviter_topup_rewarded").Where("id = ?", topUp.UserId).First(user).Error; err != nil {
 			return err
 		}
-		quotaAfterTopUp := int64(user.Quota) + int64(creditedQuota)
-		if quotaAfterTopUp > int64(common.MaxQuota) {
+		balanceLimit := common.MaxQuota
+		if user.Quota > common.MaxQuota {
+			// ponytail: legacy BIGINT balances already exceed MaxQuota; keep them creditable up to native int until quota columns share one width.
+			balanceLimit = math.MaxInt
+		}
+		if user.Quota < 0 || creditedQuota > balanceLimit-user.Quota {
 			return ErrTopUpQuotaInvalid
 		}
+		quotaAfterTopUp := user.Quota + creditedQuota
 
 		userUpdates := map[string]interface{}{}
 		if applyDetails != nil {

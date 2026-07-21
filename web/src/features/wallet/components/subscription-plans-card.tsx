@@ -64,7 +64,6 @@ import type { TopupInfo } from '../types'
 
 interface SubscriptionPlansCardProps {
   topupInfo: TopupInfo | null
-  onAvailabilityChange?: (available: boolean) => void
   userQuota?: number
   onPurchaseSuccess?: () => void | Promise<void>
 }
@@ -89,7 +88,6 @@ function getBillingPreferenceLabel(
 
 export function SubscriptionPlansCard({
   topupInfo,
-  onAvailabilityChange,
   userQuota,
   onPurchaseSuccess,
 }: SubscriptionPlansCardProps) {
@@ -184,7 +182,6 @@ export function SubscriptionPlansCard({
 
   const hasActive = activeSubscriptions.length > 0
   const hasAny = allSubscriptions.length > 0
-  const isAvailable = loading || plans.length > 0 || hasAny
   const disablePref = !hasActive
   const isSubPref =
     billingPreference === 'subscription_first' ||
@@ -201,10 +198,6 @@ export function SubscriptionPlansCard({
     }
     return map
   }, [allSubscriptions])
-
-  useEffect(() => {
-    onAvailabilityChange?.(isAvailable)
-  }, [isAvailable, onAvailabilityChange])
 
   const planTitleMap = useMemo(() => {
     const map = new Map<number, string>()

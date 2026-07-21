@@ -65,7 +65,7 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 		if !hasLanTu {
 			payMethods = append(payMethods, map[string]string{
-				"name":      "LanTu",
+				"name":      "WeChat",
 				"type":      model.PaymentMethodLanTu,
 				"color":     "#07C160",
 				"min_topup": strconv.FormatInt(getLanTuMinTopUp(), 10),
@@ -116,6 +116,15 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 	}
 
+	topupGroupRatio := 1.0
+	if userId := c.GetInt("id"); userId > 0 {
+		if group, err := model.GetUserGroup(userId, true); err == nil {
+			if ratio := common.GetTopupGroupRatio(group); ratio > 0 {
+				topupGroupRatio = ratio
+			}
+		}
+	}
+
 	data := gin.H{
 		"enable_online_topup":              isEpayTopUpEnabled(),
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
@@ -142,6 +151,7 @@ func GetTopUpInfo(c *gin.Context) {
 		"amount_options":                   operation_setting.GetPaymentSetting().AmountOptions,
 		"bonus":                            operation_setting.GetTopupBonusMapForAPI(),
 		"discount":                         operation_setting.GetTopupDiscountMapForAPI(),
+		"topup_group_ratio":                topupGroupRatio,
 		"topup_link":                       common.TopUpLink,
 		"quota_for_inviter":                common.QuotaForInviter,
 		"quota_for_invitee":                common.QuotaForInvitee,

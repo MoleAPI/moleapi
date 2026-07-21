@@ -93,6 +93,23 @@ func TestManualCompleteTopUpUsesCreemQuotaSnapshot(t *testing.T) {
 	assert.Equal(t, 130, getUserQuotaForPaymentGuardTest(t, 526))
 }
 
+func TestManualCompleteTopUpPreservesLegacyLargeBalance(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+
+	legacyBalance := common.MaxQuota + 1_000
+	insertUserForPaymentGuardTest(t, 527, legacyBalance)
+	insertTopUpForSettlementTest(t, "manual-legacy-balance", 527, 1, 7.3, PaymentProviderEpay)
+
+	require.NoError(t, ManualCompleteTopUp("manual-legacy-balance", "203.0.113.13"))
+	assert.Equal(t, legacyBalance+100, getUserQuotaForPaymentGuardTest(t, 527))
+
+	topUp := GetTopUpByTradeNo("manual-legacy-balance")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	assert.Equal(t, 100, topUp.CreditedQuota)
+}
+
 func TestRechargeStripeSettlesPaymentDetailsAndCustomerOnce(t *testing.T) {
 	truncateTables(t)
 	useQuotaPerUnitForTopUpTest(t, 100)

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
+import { calculatePresetPricing } from '../format'
 import {
   getTopupBonusRate,
   getTopupDiscountRate,
@@ -47,5 +48,12 @@ describe('top-up pricing tiers', () => {
         { value: 250, discount: 0.9, bonus: 0.05 },
       ]
     )
+  })
+
+  test('shows the actual payment and credited amount for a preset', () => {
+    const pricing = calculatePresetPricing(1, 6.9, 1, 1, 0.05)
+
+    assert.equal(pricing.actualPrice, 6.9)
+    assert.equal(pricing.receivedAmount, 1.05)
   })
 })

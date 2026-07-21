@@ -21,10 +21,9 @@ import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { IconBadge } from '@/components/ui/icon-badge'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
+import { TitledCard } from '@/components/ui/titled-card'
 import { formatQuota } from '@/lib/format'
 
 import type { UserWalletData } from '../types'
@@ -33,6 +32,8 @@ interface AffiliateRewardsCardProps {
   user: UserWalletData | null
   affiliateLink: string
   onTransfer: () => void
+  inviterReward?: number
+  inviteeReward?: number
   firstTopupReward?: number
   complianceConfirmed?: boolean
   loading?: boolean
@@ -42,6 +43,8 @@ export function AffiliateRewardsCard({
   user,
   affiliateLink,
   onTransfer,
+  inviterReward = 0,
+  inviteeReward = 0,
   firstTopupReward = 0,
   complianceConfirmed = true,
   loading,
@@ -49,66 +52,73 @@ export function AffiliateRewardsCard({
   const { t } = useTranslation()
   if (loading) {
     return (
-      <Card data-card-hover='false' className='bg-muted/20 py-0'>
-        <CardContent className='grid gap-4 p-3 sm:p-4 lg:grid-cols-[minmax(220px,1fr)_minmax(220px,0.72fr)_minmax(320px,1.15fr)] lg:items-center'>
-          <div>
-            <Skeleton className='h-5 w-32' />
-            <Skeleton className='mt-2 h-4 w-48' />
-          </div>
-          <Skeleton className='h-14 rounded-lg' />
-          <Skeleton className='h-10 rounded-lg' />
-        </CardContent>
-      </Card>
+      <TitledCard
+        title={<Skeleton className='h-6 w-32' />}
+        description={<Skeleton className='h-4 w-56' />}
+        icon={<Share2 className='size-4' />}
+        iconTone='chart-3'
+        disableHoverEffect
+        contentClassName='flex flex-col gap-4'
+      >
+        <Skeleton className='h-20 rounded-lg' />
+        <Skeleton className='h-32 rounded-lg' />
+        <Skeleton className='h-10 rounded-lg' />
+      </TitledCard>
     )
   }
 
   const hasRewards = (user?.aff_quota ?? 0) > 0
 
   return (
-    <Card data-card-hover='false' className='bg-muted/20 py-0'>
-      <CardContent className='grid gap-3 p-3 sm:gap-4 sm:p-4 lg:grid-cols-[minmax(200px,1fr)_minmax(180px,0.65fr)_minmax(280px,1fr)] lg:items-center'>
-        <div className='flex min-w-0 items-center gap-2.5'>
-          <IconBadge tone='chart-3'>
-            <Share2 />
-          </IconBadge>
-          <div className='min-w-0'>
-            <h3 className='truncate text-sm font-semibold'>
-              {t('Referral Program')}
-            </h3>
-            <p className='text-muted-foreground line-clamp-1 text-xs'>
-              {firstTopupReward > 0
-                ? t(
-                    'Earn referral rewards when users join, plus {{reward}} after their first top-up.',
-                    { reward: formatQuota(firstTopupReward) }
-                  )
-                : t(
-                    'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
-                  )}
-            </p>
-          </div>
-        </div>
-
-        <div className='grid grid-cols-3 gap-1.5 text-center'>
-          {[
-            [t('Pending'), formatQuota(user?.aff_quota ?? 0)],
-            [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
-            [t('Invites'), String(user?.aff_count ?? 0)],
-          ].map(([label, value]) => (
-            <div key={label}>
-              <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
-                {label}
-              </div>
-              <div className='mt-0.5 truncate text-sm font-semibold tabular-nums'>
-                {value}
-              </div>
+    <TitledCard
+      title={t('Referral Program')}
+      description={t(
+        'Earn rewards when users join through your referral link. Transfer accumulated rewards to your balance anytime.'
+      )}
+      icon={<Share2 className='size-4' />}
+      iconTone='chart-3'
+      disableHoverEffect
+      contentClassName='flex flex-col gap-5'
+    >
+      <div className='grid grid-cols-3 gap-2 text-center'>
+        {[
+          [t('Pending'), formatQuota(user?.aff_quota ?? 0)],
+          [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
+          [t('Invites'), String(user?.aff_count ?? 0)],
+        ].map(([label, value]) => (
+          <div key={label} className='bg-muted/30 rounded-lg border p-2.5'>
+            <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
+              {label}
             </div>
-          ))}
-        </div>
+            <div className='mt-1 truncate text-sm font-semibold tabular-nums'>
+              {value}
+            </div>
+          </div>
+        ))}
+      </div>
 
+      <div className='flex flex-col gap-2 rounded-lg border p-3'>
+        {[
+          [t('Inviter Reward'), formatQuota(inviterReward)],
+          [t('Invitee Reward'), formatQuota(inviteeReward)],
+          [t('First Top-Up Referral Reward'), formatQuota(firstTopupReward)],
+        ].map(([label, value]) => (
+          <div
+            key={label}
+            className='flex items-center justify-between gap-3 text-sm'
+          >
+            <span className='text-muted-foreground'>{label}</span>
+            <span className='shrink-0 font-medium tabular-nums'>{value}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className='flex flex-col gap-2'>
         <div className='flex items-center gap-2'>
           <Input
             value={affiliateLink}
             readOnly
+            aria-label={t('Copy referral link')}
             className='border-muted bg-background/70 h-9 min-w-0 flex-1 font-mono text-xs'
           />
           <CopyButton
@@ -119,25 +129,25 @@ export function AffiliateRewardsCard({
             tooltip={t('Copy referral link')}
             aria-label={t('Copy referral link')}
           />
-          {hasRewards && (
-            <Button
-              onClick={onTransfer}
-              disabled={!complianceConfirmed}
-              className='h-9 shrink-0 px-3'
-              size='sm'
-            >
-              {t('Transfer to Balance')}
-            </Button>
-          )}
         </div>
+        {hasRewards ? (
+          <Button
+            onClick={onTransfer}
+            disabled={!complianceConfirmed}
+            className='h-9 w-full'
+            size='sm'
+          >
+            {t('Transfer to Balance')}
+          </Button>
+        ) : null}
         {!complianceConfirmed ? (
-          <p className='text-muted-foreground text-xs lg:col-span-3'>
+          <p className='text-muted-foreground text-xs'>
             {t(
               'Referral reward transfer is disabled until the administrator confirms compliance terms.'
             )}
           </p>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </TitledCard>
   )
 }

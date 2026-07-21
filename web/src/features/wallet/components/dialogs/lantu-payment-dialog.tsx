@@ -71,7 +71,7 @@ export function LanTuPaymentDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className='max-sm:w-[calc(100vw-1.5rem)] sm:max-w-sm'>
         <DialogHeader>
-          <DialogTitle>{t('WeChat Pay (LanTu)')}</DialogTitle>
+          <DialogTitle>{t('WeChat Pay')}</DialogTitle>
           <DialogDescription>
             {t('Scan the QR code with WeChat to complete payment')}
           </DialogDescription>

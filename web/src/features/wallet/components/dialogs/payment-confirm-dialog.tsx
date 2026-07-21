@@ -152,7 +152,9 @@ export function PaymentConfirmDialog({
                   paymentMethod?.icon,
                   paymentMethod?.name
                 )}
-                <span className='font-medium'>{paymentMethod?.name}</span>
+                <span className='font-medium'>
+                  {paymentMethod?.name ? t(paymentMethod.name) : ''}
+                </span>
               </div>
             </div>
           </div>

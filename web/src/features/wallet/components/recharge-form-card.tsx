@@ -34,12 +34,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { formatNumber } from '@/lib/format'
+import { formatCurrencyFromUSD } from '@/lib/currency'
 import { cn } from '@/lib/utils'
 
 import {
   formatCurrency,
-  getDiscountLabel,
   getPaymentIcon,
   getMinTopupAmount,
   calculatePresetPricing,
@@ -240,54 +239,44 @@ export function RechargeFormCard({
                       const bonus =
                         preset.bonus ??
                         getTopupBonusRate(topupInfo?.bonus ?? {}, preset.value)
-                      const {
-                        displayValue,
-                        actualPrice,
-                        savedAmount,
-                        hasDiscount,
-                      } = calculatePresetPricing(
-                        preset.value,
-                        priceRatio,
-                        discount,
-                        usdExchangeRate
-                      )
+                      const { actualPrice, receivedAmount } =
+                        calculatePresetPricing(
+                          preset.value,
+                          priceRatio * (topupInfo?.topup_group_ratio || 1),
+                          discount,
+                          usdExchangeRate,
+                          bonus
+                        )
                       return (
                         <Button
                           key={preset.value}
                           variant='outline'
                           className={cn(
-                            'flex min-h-16 flex-col items-start rounded-lg px-3 py-2.5 text-left whitespace-normal sm:min-h-[72px] sm:p-4',
+                            'flex min-h-28 flex-col items-start gap-1 rounded-lg px-3 py-2.5 text-left whitespace-normal sm:min-h-32 sm:p-4',
                             selectedPreset === preset.value
                               ? 'border-foreground bg-foreground/5 dark:border-foreground dark:bg-foreground/10'
                               : 'border-muted'
                           )}
                           onClick={() => onSelectPreset(preset)}
                         >
-                          <div className='flex w-full items-center justify-between'>
-                            <div className='text-base font-semibold sm:text-lg'>
-                              {formatNumber(displayValue)}
-                            </div>
-                            <div className='flex gap-1.5 text-xs font-medium text-green-600'>
-                              {hasDiscount ? (
-                                <span>{getDiscountLabel(discount)}</span>
-                              ) : null}
-                              {bonus > 0 ? (
-                                <span>
-                                  {t('{{percentage}}% extra', {
-                                    percentage: Math.round(bonus * 100),
-                                  })}
-                                </span>
-                              ) : null}
-                            </div>
+                          <div className='text-base font-semibold sm:text-lg'>
+                            {formatCurrencyFromUSD(preset.value, {
+                              abbreviate: false,
+                            })}
                           </div>
-                          <div className='text-muted-foreground mt-1.5 w-full text-xs sm:mt-2'>
-                            Pay {formatCurrency(actualPrice)}
-                            {hasDiscount && savedAmount > 0 && (
-                              <span className='text-green-600'>
-                                {' '}
-                                • Save {formatCurrency(savedAmount)}
-                              </span>
-                            )}
+                          <div className='text-muted-foreground text-xs'>
+                            {t('Amount paid')} ¥{formatCurrency(actualPrice)}
+                          </div>
+                          <div className='text-primary text-xs font-medium'>
+                            {t('Bonus {{percentage}}%', {
+                              percentage: Math.round(bonus * 100),
+                            })}
+                          </div>
+                          <div className='text-muted-foreground text-xs'>
+                            {t('Amount received')}{' '}
+                            {formatCurrencyFromUSD(receivedAmount, {
+                              abbreviate: false,
+                            })}
                           </div>
                         </Button>
                       )
@@ -321,7 +310,7 @@ export function RechargeFormCard({
                       <Skeleton className='h-5 w-16' />
                     ) : (
                       <span className='text-sm font-semibold'>
-                        {formatCurrency(paymentAmount)}
+                        ¥{formatCurrency(paymentAmount)}
                       </span>
                     )}
                   </div>
@@ -335,6 +324,7 @@ export function RechargeFormCard({
                 {hasStandardPaymentMethods ? (
                   <div className='grid grid-cols-2 gap-1.5 sm:gap-3 lg:grid-cols-3'>
                     {standardPaymentMethods.map((method) => {
+                      const methodName = t(method.name)
                       const minTopup = method.min_topup || 0
                       const disabled = minTopup > topupAmount
                       const disabledReason = disabled
@@ -355,8 +345,8 @@ export function RechargeFormCard({
                           title={disabledReason}
                           aria-label={
                             disabledReason
-                              ? `${method.name}. ${disabledReason}`
-                              : method.name
+                              ? `${methodName}. ${disabledReason}`
+                              : methodName
                           }
                           className='min-h-14 min-w-0 justify-start gap-2 rounded-lg px-3 py-2 text-left'
                         >
@@ -367,12 +357,12 @@ export function RechargeFormCard({
                               method.type,
                               'h-4 w-4',
                               method.icon,
-                              method.name
+                              methodName
                             )
                           )}
                           <span className='flex min-w-0 flex-col items-start gap-0.5'>
                             <span className='max-w-full truncate'>
-                              {method.name}
+                              {methodName}
                             </span>
                             {disabledLabel && (
                               <span className='text-muted-foreground max-w-full truncate text-[11px] leading-4 font-normal'>
@@ -486,6 +476,22 @@ export function RechargeFormCard({
                     </div>
                   </div>
                 )}
+
+              <Alert>
+                <Gift />
+                <AlertDescription className='flex flex-col gap-1.5'>
+                  <p>
+                    {t(
+                      'Higher top-up amounts earn larger bonuses, up to 40% extra.'
+                    )}
+                  </p>
+                  <p>
+                    {t(
+                      'Invoices are available for the amount paid. Mainland China invoices are issued by a partner company.'
+                    )}
+                  </p>
+                </AlertDescription>
+              </Alert>
             </>
           )}
         </div>

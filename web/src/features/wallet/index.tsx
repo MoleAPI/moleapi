@@ -51,6 +51,7 @@ import {
   getTopupBonusRate,
   getTopupDiscountRate,
 } from './lib'
+import { walletLayoutClasses } from './lib/layout'
 import type {
   UserWalletData,
   PaymentMethod,
@@ -82,7 +83,6 @@ export function Wallet(props: WalletProps) {
   const [creemDialogOpen, setCreemDialogOpen] = useState(false)
   const [selectedCreemProduct, setSelectedCreemProduct] =
     useState<CreemProduct | null>(null)
-  const [showSubscriptionPanel, setShowSubscriptionPanel] = useState(true)
 
   const { status } = useStatus()
   const { currency } = useSystemConfig()
@@ -293,13 +293,6 @@ export function Wallet(props: WalletProps) {
     return getTopupBonusRate(topupInfo?.bonus ?? {}, topupAmount)
   }, [topupInfo, topupAmount])
 
-  const handleSubscriptionAvailabilityChange = useCallback(
-    (available: boolean) => {
-      setShowSubscriptionPanel(available)
-    },
-    []
-  )
-
   return (
     <>
       <SectionPageLayout>
@@ -308,14 +301,11 @@ export function Wallet(props: WalletProps) {
           <div className='mx-auto flex w-full max-w-7xl flex-col gap-4 sm:gap-5'>
             <WalletStatsCard user={user} loading={userLoading} />
 
-            <div
-              className={
-                showSubscriptionPanel
-                  ? 'grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)] xl:items-start'
-                  : 'grid gap-4'
-              }
-            >
-              <div id='wallet-add-funds' className='scroll-mt-4'>
+            <div className={walletLayoutClasses.grid}>
+              <div
+                id='wallet-add-funds'
+                className={walletLayoutClasses.recharge}
+              >
                 <RechargeFormCard
                   topupInfo={topupInfo}
                   presetAmounts={presetAmounts}
@@ -349,25 +339,28 @@ export function Wallet(props: WalletProps) {
                 />
               </div>
 
-              <SubscriptionPlansCard
-                topupInfo={topupInfo}
-                onAvailabilityChange={handleSubscriptionAvailabilityChange}
-                userQuota={user?.quota}
-                onPurchaseSuccess={fetchUser}
-              />
+              <div className={walletLayoutClasses.referral}>
+                <AffiliateRewardsCard
+                  user={user}
+                  affiliateLink={affiliateLink}
+                  onTransfer={() => setTransferDialogOpen(true)}
+                  inviterReward={topupInfo?.quota_for_inviter ?? 0}
+                  inviteeReward={topupInfo?.quota_for_invitee ?? 0}
+                  firstTopupReward={
+                    topupInfo?.quota_for_inviter_on_first_topup ?? 0
+                  }
+                  complianceConfirmed={
+                    topupInfo?.payment_compliance_confirmed !== false
+                  }
+                  loading={affiliateLoading}
+                />
+              </div>
             </div>
 
-            <AffiliateRewardsCard
-              user={user}
-              affiliateLink={affiliateLink}
-              onTransfer={() => setTransferDialogOpen(true)}
-              firstTopupReward={
-                topupInfo?.quota_for_inviter_on_first_topup ?? 0
-              }
-              complianceConfirmed={
-                topupInfo?.payment_compliance_confirmed !== false
-              }
-              loading={affiliateLoading}
+            <SubscriptionPlansCard
+              topupInfo={topupInfo}
+              userQuota={user?.quota}
+              onPurchaseSuccess={fetchUser}
             />
           </div>
         </SectionPageLayout.Content>
