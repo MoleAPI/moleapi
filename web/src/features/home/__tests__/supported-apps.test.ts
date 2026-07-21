@@ -21,7 +21,14 @@ import { test } from 'node:test'
 
 import { isValidElement } from 'react'
 
-import { SUPPORTED_APPS } from '../components/supported-apps'
+import {
+  SUPPORTED_APPS,
+  SUPPORTED_APPS_MORE_KEY,
+} from '../components/supported-apps'
+
+test('supported application pills make clear that the list is not exhaustive', () => {
+  assert.equal(SUPPORTED_APPS_MORE_KEY, 'More apps…')
+})
 
 test('supported application pills open the requested MoleAPI guides', () => {
   assert.deepEqual(

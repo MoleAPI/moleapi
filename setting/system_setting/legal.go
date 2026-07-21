@@ -7,9 +7,16 @@ type LegalSettings struct {
 	PrivacyPolicy string `json:"privacy_policy"`
 }
 
+const (
+	builtInUserAgreement = "builtin://user-agreement"
+	builtInPrivacyPolicy = "builtin://privacy-policy"
+)
+
 var defaultLegalSettings = LegalSettings{
-	UserAgreement: "",
-	PrivacyPolicy: "",
+	// ponytail: reserved values keep the defaults translatable in the browser;
+	// add structured legal-document modes only if more built-in variants are needed.
+	UserAgreement: builtInUserAgreement,
+	PrivacyPolicy: builtInPrivacyPolicy,
 }
 
 func init() {

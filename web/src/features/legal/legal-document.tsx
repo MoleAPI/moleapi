@@ -27,6 +27,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { isHttpUrl, isLikelyHtml } from '@/lib/content-format'
 
+import { resolveLegalDocumentContent } from './content'
 import type { LegalDocumentResponse } from './types'
 
 type LegalDocumentProps = {
@@ -34,6 +35,7 @@ type LegalDocumentProps = {
   queryKey: string
   fetchDocument: () => Promise<LegalDocumentResponse>
   emptyMessage: string
+  builtInContent: string
 }
 
 export function LegalDocument({
@@ -41,6 +43,7 @@ export function LegalDocument({
   queryKey,
   fetchDocument,
   emptyMessage,
+  builtInContent,
 }: LegalDocumentProps) {
   const { t } = useTranslation()
   const { data, isLoading } = useQuery({
@@ -49,7 +52,11 @@ export function LegalDocument({
     staleTime: 10 * 60 * 1000,
   })
 
-  const rawContent = data?.data?.trim() ?? ''
+  const rawContent = resolveLegalDocumentContent(
+    data?.data ?? '',
+    queryKey,
+    builtInContent
+  )
   const hasContent = rawContent.length > 0
   const isUrl = hasContent && isHttpUrl(rawContent)
   const contentIsHtml = hasContent && isLikelyHtml(rawContent)

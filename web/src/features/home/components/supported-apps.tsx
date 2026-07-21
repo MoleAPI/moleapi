@@ -21,6 +21,8 @@ import Codex from '@lobehub/icons/es/Codex/components/Color'
 import Dify from '@lobehub/icons/es/Dify/components/Color'
 import LobeHub from '@lobehub/icons/es/LobeHub/components/Color'
 
+export const SUPPORTED_APPS_MORE_KEY = 'More apps…'
+
 export const SUPPORTED_APPS = [
   {
     name: 'Cherry Studio',

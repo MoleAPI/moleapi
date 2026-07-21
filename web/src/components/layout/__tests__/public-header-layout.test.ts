@@ -16,22 +16,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useTranslation } from 'react-i18next'
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
 
-import { getUserAgreement } from './api'
-import { LegalDocument } from './legal-document'
+import { publicHeaderLayoutClasses } from '../lib/public-header-layout'
 
-export function UserAgreement() {
-  const { t } = useTranslation()
-  return (
-    <LegalDocument
-      title={t('User Agreement')}
-      queryKey='user-agreement'
-      fetchDocument={getUserAgreement}
-      builtInContent={t('Default user agreement content')}
-      emptyMessage={t(
-        'The administrator has not configured a user agreement yet.'
-      )}
-    />
-  )
-}
+test('public header keeps breathing room above an enlarged brand', () => {
+  assert.ok(publicHeaderLayoutClasses.unscrolledFrame.includes('pt-2'))
+  assert.ok(publicHeaderLayoutClasses.brandLogo.includes('size-8'))
+  assert.ok(publicHeaderLayoutClasses.brandName.includes('text-base'))
+})

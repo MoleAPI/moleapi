@@ -44,7 +44,7 @@ import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 
 import { HeroTerminalDemo } from '../hero-terminal-demo'
-import { SUPPORTED_APPS } from '../supported-apps'
+import { SUPPORTED_APPS, SUPPORTED_APPS_MORE_KEY } from '../supported-apps'
 
 interface HeroProps {
   className?: string
@@ -147,18 +147,18 @@ export function Hero(props: HeroProps) {
             className='landing-animate-fade-up text-[clamp(2.25rem,4.5vw,3.25rem)] leading-[1.15] font-bold tracking-tight'
             style={{ animationDelay: '60ms' }}
           >
-            {t('Unified API Gateway for')}
-            <br />
             <span className='bg-gradient-to-r from-blue-400 via-violet-400 to-purple-500 bg-clip-text text-transparent'>
-              {t('Vast Range of AI Models')}
+              MoleAPI
             </span>
+            <br />
+            {t('The Unified LLM Gateway')}
           </h1>
           <p
             className='landing-animate-fade-up text-muted-foreground/80 mt-5 max-w-xl text-base leading-relaxed opacity-0 md:text-[15px]'
             style={{ animationDelay: '120ms' }}
           >
             {t(
-              'Access a vast selection of models via a standard, unified API protocol. Power AI applications, manage digital assets, and connect the Future.'
+              'Access a vast range of models through one standardized API. Power AI applications, manage digital assets efficiently, and build what comes next.'
             )}
           </p>
 
@@ -228,6 +228,9 @@ export function Hero(props: HeroProps) {
                   <span>{app.name}</span>
                 </a>
               ))}
+              <div className='border-border/50 bg-muted/10 text-muted-foreground flex items-center rounded-full border border-dashed px-4 py-2 text-sm font-medium'>
+                {t(SUPPORTED_APPS_MORE_KEY)}
+              </div>
             </div>
           </div>
         </div>

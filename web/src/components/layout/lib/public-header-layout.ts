@@ -16,22 +16,9 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useTranslation } from 'react-i18next'
-
-import { getUserAgreement } from './api'
-import { LegalDocument } from './legal-document'
-
-export function UserAgreement() {
-  const { t } = useTranslation()
-  return (
-    <LegalDocument
-      title={t('User Agreement')}
-      queryKey='user-agreement'
-      fetchDocument={getUserAgreement}
-      builtInContent={t('Default user agreement content')}
-      emptyMessage={t(
-        'The administrator has not configured a user agreement yet.'
-      )}
-    />
-  )
-}
+export const publicHeaderLayoutClasses = {
+  unscrolledFrame: 'max-w-7xl px-4 pt-2 md:px-6',
+  brandLogo:
+    'flex size-8 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105',
+  brandName: 'text-base tracking-tight',
+} as const

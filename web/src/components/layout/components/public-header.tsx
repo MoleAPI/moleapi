@@ -34,6 +34,7 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { defaultTopNavLinks } from '../config/top-nav.config'
+import { publicHeaderLayoutClasses } from '../lib/public-header-layout'
 import type { TopNavLink } from '../types'
 import { BrandName } from './brand-name'
 import { HeaderLogo } from './header-logo'
@@ -212,7 +213,9 @@ export function PublicHeader(props: PublicHeaderProps) {
         <div
           className={cn(
             'pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            scrolled ? 'max-w-[52rem] px-3 pt-3' : 'max-w-7xl px-4 pt-0 md:px-6'
+            scrolled
+              ? 'max-w-[52rem] px-3 pt-3'
+              : publicHeaderLayoutClasses.unscrolledFrame
           )}
         >
           <nav
@@ -228,7 +231,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               to={homeUrl}
               className='group flex shrink-0 items-center gap-2.5'
             >
-              <div className='flex size-7 shrink-0 items-center justify-center transition-all duration-300 group-hover:scale-105'>
+              <div className={publicHeaderLayoutClasses.brandLogo}>
                 {logoContent}
               </div>
               {loading ? (
@@ -236,7 +239,7 @@ export function PublicHeader(props: PublicHeaderProps) {
               ) : (
                 <BrandName
                   name={displaySiteName}
-                  className='text-sm tracking-tight'
+                  className={publicHeaderLayoutClasses.brandName}
                 />
               )}
             </Link>

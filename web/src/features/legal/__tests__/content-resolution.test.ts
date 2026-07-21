@@ -16,22 +16,29 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useTranslation } from 'react-i18next'
+import assert from 'node:assert/strict'
+import { test } from 'node:test'
 
-import { getUserAgreement } from './api'
-import { LegalDocument } from './legal-document'
+import { resolveLegalDocumentContent } from '../content'
 
-export function UserAgreement() {
-  const { t } = useTranslation()
-  return (
-    <LegalDocument
-      title={t('User Agreement')}
-      queryKey='user-agreement'
-      fetchDocument={getUserAgreement}
-      builtInContent={t('Default user agreement content')}
-      emptyMessage={t(
-        'The administrator has not configured a user agreement yet.'
-      )}
-    />
+test('built-in legal document marker selects the translated default', () => {
+  assert.equal(
+    resolveLegalDocumentContent(
+      ' builtin://user-agreement ',
+      'user-agreement',
+      ' translated agreement '
+    ),
+    'translated agreement'
   )
-}
+})
+
+test('custom legal document content remains authoritative', () => {
+  assert.equal(
+    resolveLegalDocumentContent(
+      ' # Custom agreement ',
+      'user-agreement',
+      'translated agreement'
+    ),
+    '# Custom agreement'
+  )
+})
