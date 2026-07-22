@@ -826,7 +826,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         let detailPreview = <span className='text-muted-foreground/40'>—</span>
         if (segments.length > 0) {
           detailPreview = (
-            <span className='leading-snug whitespace-nowrap'>
+            <span className='block max-w-full min-w-0 leading-snug break-words whitespace-normal'>
               {segments.map((segment, index) => (
                 <span
                   key={`${segment.text}-${segment.muted ? 'muted' : ''}-${segment.danger ? 'danger' : ''}`}
@@ -845,14 +845,16 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           )
         } else if (log.content) {
           detailPreview = (
-            <span className='text-muted-foreground whitespace-nowrap'>
+            <span className='text-muted-foreground break-all whitespace-normal sm:wrap-break-word'>
               {log.content}
             </span>
           )
         }
 
         return (
-          <span className='flex items-center text-left'>{detailPreview}</span>
+          <span className='block max-w-full min-w-0 text-left leading-snug'>
+            {detailPreview}
+          </span>
         )
       },
       enableSorting: false,

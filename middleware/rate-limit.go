@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -157,23 +159,94 @@ func rateLimitFactory(maxRequestNum int, duration int64, mark string) func(c *gi
 	}
 }
 
+func pathRateLimitFactory(maxRequestNum int, duration int64, mark string) func(c *gin.Context) {
+	if !common.RedisEnabled {
+		inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+	}
+	return func(c *gin.Context) {
+		routePath := c.FullPath()
+		if routePath == "" && c.Request != nil && c.Request.URL != nil {
+			routePath = c.Request.URL.Path
+		}
+		if routePath == "" {
+			if common.RedisEnabled {
+				redisRateLimiter(c, maxRequestNum, duration, mark)
+			} else {
+				memoryRateLimiter(c, maxRequestNum, duration, mark)
+			}
+			return
+		}
+		routeMark := mark + ":" + routePath
+		if common.RedisEnabled {
+			redisRateLimiter(c, maxRequestNum, duration, routeMark)
+		} else {
+			memoryRateLimiter(c, maxRequestNum, duration, routeMark)
+		}
+	}
+}
+
+func shouldSkipGlobalAPIRateLimit(urlPath string) bool {
+	switch urlPath {
+	case "/api/verification",
+		"/api/reset_password",
+		"/api/user/reset",
+		"/api/oauth/state",
+		"/api/oauth/wechat",
+		"/api/oauth/telegram/login",
+		"/api/ratio_config",
+		"/api/user/auth/refresh",
+		"/api/user/auth/logout",
+		"/api/user/register",
+		"/api/user/login",
+		"/api/user/login/2fa",
+		"/api/user/passkey/login/begin",
+		"/api/user/passkey/login/finish":
+		return true
+	}
+	return strings.HasPrefix(urlPath, "/api/oauth/")
+}
+
+func shouldSkipGlobalWebRateLimit(urlPath string) bool {
+	if strings.HasPrefix(urlPath, "/assets/") {
+		return true
+	}
+	switch strings.ToLower(path.Ext(urlPath)) {
+	case ".css", ".js", ".map", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".ico", ".woff", ".woff2", ".ttf", ".txt", ".json":
+		return true
+	default:
+		return false
+	}
+}
+
 func GlobalWebRateLimit() func(c *gin.Context) {
 	if common.GlobalWebRateLimitEnable {
-		return rateLimitFactory(common.GlobalWebRateLimitNum, common.GlobalWebRateLimitDuration, "GW")
+		limiter := rateLimitFactory(common.GlobalWebRateLimitNum, common.GlobalWebRateLimitDuration, "GW")
+		return func(c *gin.Context) {
+			if c.Request != nil && c.Request.URL != nil && shouldSkipGlobalWebRateLimit(c.Request.URL.Path) {
+				return
+			}
+			limiter(c)
+		}
 	}
 	return defNext
 }
 
 func GlobalAPIRateLimit() func(c *gin.Context) {
 	if common.GlobalApiRateLimitEnable {
-		return rateLimitFactory(common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration, "GA")
+		limiter := rateLimitFactory(common.GlobalApiRateLimitNum, common.GlobalApiRateLimitDuration, "GA")
+		return func(c *gin.Context) {
+			if c.Request != nil && c.Request.URL != nil && shouldSkipGlobalAPIRateLimit(c.Request.URL.Path) {
+				return
+			}
+			limiter(c)
+		}
 	}
 	return defNext
 }
 
 func CriticalRateLimit() func(c *gin.Context) {
 	if common.CriticalRateLimitEnable {
-		return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
+		return pathRateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
 	}
 	return defNext
 }

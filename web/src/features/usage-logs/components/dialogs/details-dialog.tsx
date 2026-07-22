@@ -166,8 +166,10 @@ function DetailSection(props: {
 }
 
 function formatRatio(ratio: number | undefined): string {
-  if (ratio == null) return '-'
-  return ratio.toFixed(4)
+  if (ratio == null || !Number.isFinite(ratio)) return '-'
+  return ratio % 1 === 0
+    ? ratio.toFixed(1)
+    : ratio.toFixed(4).replace(/\.?0+$/, '')
 }
 
 function getUsageBillingPathLabel(

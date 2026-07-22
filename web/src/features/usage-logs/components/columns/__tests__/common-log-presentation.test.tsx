@@ -120,26 +120,26 @@ function TestDesktopLayout() {
   )
 }
 
-async function renderCell(columnId: string, isAdmin = false) {
+async function renderCell(columnId: string, isAdmin = false, value = log) {
   const i18n = i18next.createInstance()
   await i18n.use(initReactI18next).init({ lng: 'en' })
 
   return renderToStaticMarkup(
     <I18nextProvider i18n={i18n}>
       <UsageLogsProvider>
-        <TestCell columnId={columnId} isAdmin={isAdmin} value={log} />
+        <TestCell columnId={columnId} isAdmin={isAdmin} value={value} />
       </UsageLogsProvider>
     </I18nextProvider>
   )
 }
 
-async function renderInlineDetails() {
+async function renderInlineDetails(value = log) {
   const i18n = i18next.createInstance()
   await i18n.use(initReactI18next).init({ lng: 'en' })
 
   return renderToStaticMarkup(
     <I18nextProvider i18n={i18n}>
-      <InlineLogDetails log={log} isAdmin />
+      <InlineLogDetails log={value} isAdmin />
     </I18nextProvider>
   )
 }
@@ -196,7 +196,23 @@ test('details preview uses the effective multiplier instead of standard', async 
   const detailsHtml = await renderCell('content')
 
   assert.match(detailsHtml, /1\.0 · \$0\.14 \/ \$0\.56\/M/)
+  assert.match(detailsHtml, /whitespace-normal/)
   assert.doesNotMatch(detailsHtml, /Standard/)
+  assert.doesNotMatch(detailsHtml, /whitespace-nowrap/)
+})
+
+test('details column wraps long raw content', async () => {
+  const longErrorLog = usageLogSchema.parse({
+    ...log,
+    type: 0,
+    content: `provider_error_${'x'.repeat(160)}`,
+    other: '',
+  })
+  const detailsHtml = await renderCell('content', false, longErrorLog)
+
+  assert.match(detailsHtml, /provider_error_/)
+  assert.match(detailsHtml, /break-all/)
+  assert.match(detailsHtml, /whitespace-normal/)
 })
 
 test('expanded details show request summary, cache tokens, and billing calculation', async () => {
@@ -219,7 +235,39 @@ test('expanded details show request summary, cache tokens, and billing calculati
   assert.match(detailsHtml, /Cache Write/)
   assert.match(detailsHtml, /80 Tokens/)
   assert.match(detailsHtml, /Calculation/)
+  assert.match(detailsHtml, /1\.0x/)
+  assert.doesNotMatch(detailsHtml, /1\.0000x/)
   assert.match(detailsHtml, /Total Cost/)
+})
+
+test('dynamic billing details use compact ratio formatting for media pricing logs', async () => {
+  const tieredLog = usageLogSchema.parse({
+    ...log,
+    other: JSON.stringify({
+      billing_mode: 'tiered_expr',
+      expr_b64: Buffer.from(
+        'tier("standard", p * 2 + c * 8 + img * 3 + ai * 10 + ao * 40)'
+      ).toString('base64'),
+      matched_tier: 'standard',
+      group_ratio: 1,
+      request_path: '/v1/chat/completions',
+      request_conversion: ['OpenAI Compatible'],
+      image_input_tokens: 20,
+      audio_input_token_count: 30,
+      admin_info: {
+        use_channel: [7],
+      },
+    }),
+  })
+
+  const detailsHtml = await renderInlineDetails(tieredLog)
+
+  assert.match(detailsHtml, /Dynamic Pricing/)
+  assert.match(detailsHtml, /Image In/)
+  assert.match(detailsHtml, /Audio In/)
+  assert.match(detailsHtml, /Audio Out/)
+  assert.match(detailsHtml, /1\.0x/)
+  assert.doesNotMatch(detailsHtml, /1\.0000x/)
 })
 
 test('desktop common logs keep full values on one horizontally scrollable row', async () => {
