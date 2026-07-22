@@ -56,15 +56,12 @@ describe('top-up invoice download', () => {
   test('parses invoice filenames from content disposition headers', () => {
     assert.equal(
       getInvoiceFilename(
-        'attachment; filename="invoice-USR20260722010101.html"',
-        'fallback.html'
+        'attachment; filename="invoice-USR20260722010101.pdf"',
+        'fallback.pdf'
       ),
-      'invoice-USR20260722010101.html'
+      'invoice-USR20260722010101.pdf'
     )
-    assert.equal(
-      getInvoiceFilename(undefined, 'fallback.html'),
-      'fallback.html'
-    )
+    assert.equal(getInvoiceFilename(undefined, 'fallback.pdf'), 'fallback.pdf')
   })
 
   test('does not expose invoice links for incomplete or another users records', () => {

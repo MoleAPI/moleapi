@@ -178,7 +178,7 @@ func TestAdaptorReturnsErrorWhenNoRouteMatchesPath(t *testing.T) {
 			},
 		},
 	})
-	info.RequestURLPath = "/v1/chat/completions"
+	info.RequestURLPath = "/v1/images/generations"
 
 	_, err := adaptor.GetRequestURL(info)
 	require.Error(t, err)
@@ -423,14 +423,13 @@ func TestAdaptorBuildModelListRequestRequiresConfiguredRoute(t *testing.T) {
 	assert.Contains(t, err.Error(), "does not configure a /v1/models route")
 }
 
-func TestAdaptorConvertsResponsesRequestToOpenAIChatUpstream(t *testing.T) {
+func TestAdaptorConvertsResponsesRequestToInferredOpenAIChatUpstream(t *testing.T) {
 	adaptor := &Adaptor{}
 	info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{
 		Routes: []dto.AdvancedCustomRoute{
 			{
-				IncomingPath: "/v1/responses",
+				IncomingPath: "/v1/chat/completions",
 				UpstreamPath: "/v1/chat/completions",
-				Converter:    relayconvert.ConverterOpenAIResponsesToOpenAIChat,
 			},
 		},
 	})

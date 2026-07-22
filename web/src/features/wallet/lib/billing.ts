@@ -158,7 +158,7 @@ export async function fetchTopUpInvoiceFile(
   return {
     filename: getInvoiceFilename(
       contentDisposition,
-      `invoice-${record.trade_no}.html`
+      `invoice-${record.trade_no}.pdf`
     ),
     url: URL.createObjectURL(blob),
   }

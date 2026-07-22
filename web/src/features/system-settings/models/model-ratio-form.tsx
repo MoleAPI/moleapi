@@ -1,24 +1,13 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { useQuery } from '@tanstack/react-query'
-import { Code2, Eye, RotateCcw, Save } from 'lucide-react'
-import { memo, useCallback, useEffect, useRef, useState } from 'react'
+import { Code2, Download, Eye, RotateCcw, Save, Upload } from 'lucide-react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -66,8 +55,12 @@ type ModelRatioFormProps = {
   savedValues: ModelFormValues
   onSave: (values: ModelFormValues) => Promise<void>
   onReset: () => void
+  onExport: () => void
+  onImport: (file: File) => void
   isSaving: boolean
   isResetting: boolean
+  isExporting: boolean
+  isImporting: boolean
   variant?: 'default' | 'unset'
 }
 
@@ -166,14 +159,19 @@ export const ModelRatioForm = memo(function ModelRatioForm({
   savedValues,
   onSave,
   onReset,
+  onExport,
+  onImport,
   isSaving,
   isResetting,
+  isExporting,
+  isImporting,
   variant = 'default',
 }: ModelRatioFormProps) {
   const { t } = useTranslation()
   const isUnsetVariant = variant === 'unset'
   const [editMode, setEditMode] = useState<'visual' | 'json'>('visual')
   const visualEditorRef = useRef<ModelRatioVisualEditorHandle>(null)
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   const enabledModelsQuery = useQuery({
     queryKey: ['enabled-models'],
@@ -216,10 +214,48 @@ export const ModelRatioForm = memo(function ModelRatioForm({
     await form.handleSubmit(onSave)()
   }, [editMode, form, onSave])
 
+  const handleImportChange = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0]
+      event.target.value = ''
+      if (file) {
+        onImport(file)
+      }
+    },
+    [onImport]
+  )
+
   return (
     <div className='space-y-6'>
       {!isUnsetVariant && (
         <div className='flex flex-wrap justify-end gap-2'>
+          <input
+            ref={importInputRef}
+            type='file'
+            accept='application/json'
+            className='hidden'
+            onChange={handleImportChange}
+          />
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={onExport}
+            disabled={isExporting}
+          >
+            <Download data-icon='inline-start' />
+            {t('Export Pricing')}
+          </Button>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            onClick={() => importInputRef.current?.click()}
+            disabled={isImporting}
+          >
+            <Upload data-icon='inline-start' />
+            {t('Import Pricing')}
+          </Button>
           <Button
             type='button'
             variant='destructive'

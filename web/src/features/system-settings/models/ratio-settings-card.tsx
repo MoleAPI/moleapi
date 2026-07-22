@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -27,10 +9,15 @@ import * as z from 'zod'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-import { resetModelRatios } from '../api'
+import {
+  exportModelPricing,
+  importModelPricing,
+  resetModelRatios,
+} from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import type { ModelPricingExport } from '../types'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
 import { ToolPriceSettings } from './tool-price-settings'
@@ -176,6 +163,45 @@ export function RatioSettingsCard({
     },
     onError: (error: Error) => {
       toast.error(error.message || t('Failed to reset model ratios'))
+    },
+  })
+
+  const exportPricingMutation = useMutation({
+    mutationFn: exportModelPricing,
+    onSuccess: (data) => {
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: 'application/json',
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `model-pricing-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+      toast.success(t('Model pricing exported'))
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || t('Failed to export model pricing'))
+    },
+  })
+
+  const importPricingMutation = useMutation({
+    mutationFn: importModelPricing,
+    onSuccess: (data) => {
+      if (!data.success) {
+        toast.error(data.message || t('Failed to import model pricing'))
+        return
+      }
+      toast.success(
+        t('Imported {{count}} pricing settings', {
+          count: data.data?.updated_options || 0,
+        })
+      )
+      queryClient.invalidateQueries({ queryKey: ['system-options'] })
+      queryClient.invalidateQueries({ queryKey: ['pricing'] })
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || t('Failed to import model pricing'))
     },
   })
 
@@ -395,6 +421,26 @@ export function RatioSettingsCard({
     resetMutate()
   }, [resetMutate])
 
+  const { mutate: exportPricingMutate } = exportPricingMutation
+  const handleExportPricing = useCallback(() => {
+    exportPricingMutate()
+  }, [exportPricingMutate])
+
+  const { mutate: importPricingMutate } = importPricingMutation
+  const handleImportPricing = useCallback(
+    async (file: File) => {
+      try {
+        const data = JSON.parse(await file.text()) as ModelPricingExport
+        importPricingMutate(data)
+      } catch (error) {
+        toast.error(
+          (error as Error)?.message || t('Invalid model pricing backup')
+        )
+      }
+    },
+    [importPricingMutate, t]
+  )
+
   const tabLabels: Record<RatioTabId, string> = {
     models: 'Model prices',
     'unset-models': 'Unset price models',
@@ -420,8 +466,12 @@ export function RatioSettingsCard({
           savedValues={savedModelValues}
           onSave={saveModelRatios}
           onReset={handleResetRatios}
+          onExport={handleExportPricing}
+          onImport={handleImportPricing}
           isSaving={updateOption.isPending}
           isResetting={resetMutation.isPending}
+          isExporting={exportPricingMutation.isPending}
+          isImporting={importPricingMutation.isPending}
           variant={tab === 'unset-models' ? 'unset' : 'default'}
         />
       )

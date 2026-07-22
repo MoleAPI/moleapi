@@ -29,6 +29,7 @@ interface LegalConsentProps {
   checked: boolean
   onCheckedChange: (nextValue: boolean) => void
   className?: string
+  error?: string
 }
 
 export function LegalConsent({
@@ -36,6 +37,7 @@ export function LegalConsent({
   checked,
   onCheckedChange,
   className,
+  error,
 }: LegalConsentProps) {
   const { t } = useTranslation()
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
@@ -50,48 +52,57 @@ export function LegalConsent({
   }
 
   return (
-    <div
-      className={cn(
-        'border-border/60 bg-muted/40 flex items-start gap-3 rounded-md border p-3',
-        className
-      )}
-    >
-      <Checkbox
-        id='legal-consent'
-        checked={checked}
-        onCheckedChange={handleChange}
-        className='mt-0.5'
-      />
-      <Label
-        htmlFor='legal-consent'
-        className='text-muted-foreground items-start gap-1 text-left text-xs leading-5 font-normal'
+    <div className={className}>
+      <div
+        className={cn(
+          'border-border/60 bg-muted/40 flex items-start gap-3 rounded-md border p-3',
+          error && 'border-destructive/60 bg-destructive/5'
+        )}
       >
-        <span>
-          {t('I have read and agree to the')}{' '}
-          {hasUserAgreement && (
-            <a
-              href='/user-agreement'
-              target='_blank'
-              rel='noopener noreferrer'
-              className='text-primary hover:underline'
-            >
-              {t('User Agreement')}
-            </a>
-          )}
-          {hasUserAgreement && hasPrivacyPolicy ? <> {t('and')} </> : null}
-          {hasPrivacyPolicy && (
-            <a
-              href='/privacy-policy'
-              target='_blank'
-              rel='noopener noreferrer'
-              className='text-primary hover:underline'
-            >
-              {t('Privacy Policy')}
-            </a>
-          )}
-          .
-        </span>
-      </Label>
+        <Checkbox
+          id='legal-consent'
+          checked={checked}
+          onCheckedChange={handleChange}
+          className='mt-0.5'
+          aria-invalid={Boolean(error)}
+          aria-describedby={error ? 'legal-consent-error' : undefined}
+        />
+        <Label
+          htmlFor='legal-consent'
+          className='text-muted-foreground items-start gap-1 text-left text-xs leading-5 font-normal'
+        >
+          <span>
+            {t('I have read and agree to the')}{' '}
+            {hasUserAgreement && (
+              <a
+                href='/user-agreement'
+                target='_blank'
+                rel='noopener noreferrer'
+                className='text-primary hover:underline'
+              >
+                {t('User Agreement')}
+              </a>
+            )}
+            {hasUserAgreement && hasPrivacyPolicy ? <> {t('and')} </> : null}
+            {hasPrivacyPolicy && (
+              <a
+                href='/privacy-policy'
+                target='_blank'
+                rel='noopener noreferrer'
+                className='text-primary hover:underline'
+              >
+                {t('Privacy Policy')}
+              </a>
+            )}
+            .
+          </span>
+        </Label>
+      </div>
+      {error && (
+        <p id='legal-consent-error' className='text-destructive mt-1 text-xs'>
+          {error}
+        </p>
+      )}
     </div>
   )
 }
