@@ -14,6 +14,7 @@ const (
 	CodingPlanProviderQwenTokenPlan = "qwen-token-plan"
 	CodingPlanProviderMiniMax       = "minimax-token-plan"
 	CodingPlanProviderOpenCodeGo    = "opencode-go"
+	CodingPlanProviderCustom        = "custom-coding-plan"
 )
 
 type CodingPlanPreset struct {
@@ -76,6 +77,13 @@ var codingPlanPresets = []CodingPlanPreset{
 		OpenAIBaseURL:    "https://opencode.ai/zen/go/v1",
 		AnthropicBaseURL: "https://opencode.ai/zen/go/v1",
 		ModelListBaseURL: "https://opencode.ai/zen/go/v1",
+	},
+	{
+		ID:               CodingPlanProviderCustom,
+		OpenAIBaseURL:    "https://your-openai-compatible-base-url.example/v1",
+		AnthropicBaseURL: "https://your-anthropic-compatible-base-url.example",
+		ResponsesBaseURL: "https://your-openai-compatible-base-url.example/v1",
+		ModelListBaseURL: "https://your-openai-compatible-base-url.example/v1",
 	},
 }
 

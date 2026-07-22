@@ -95,6 +95,14 @@ export const CODING_PLAN_PROVIDER_OPTIONS: CodingPlanProvider[] = [
     anthropicBaseUrl: 'https://opencode.ai/zen/go/v1',
     modelListBaseUrl: 'https://opencode.ai/zen/go/v1',
   },
+  {
+    value: 'custom-coding-plan',
+    label: 'Custom Coding Plan',
+    openAIBaseUrl: 'https://your-openai-compatible-base-url.example/v1',
+    anthropicBaseUrl: 'https://your-anthropic-compatible-base-url.example',
+    responsesBaseUrl: 'https://your-openai-compatible-base-url.example/v1',
+    modelListBaseUrl: 'https://your-openai-compatible-base-url.example/v1',
+  },
 ]
 
 export function getDefaultCodingPlanProvider(): string {

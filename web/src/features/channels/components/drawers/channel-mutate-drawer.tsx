@@ -151,10 +151,13 @@ import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   CHANNEL_TYPE_CODING_PLAN,
   CODING_PLAN_PROVIDER_OPTIONS,
+  buildCodingPlanAdvancedCustomConfig,
   channelFormSchema,
   channelsQueryKeys,
   getDefaultCodingPlanProvider,
   getAdvancedCustomStats,
+  normalizeCodingPlanProvider,
+  stringifyAdvancedCustomConfig,
   transformChannelToFormDefaults,
   type ChannelFormValues,
   deduplicateKeys,
@@ -1282,8 +1285,25 @@ export function ChannelMutateDrawer({
 
     if (currentType === CHANNEL_TYPE_CODING_PLAN) {
       const currentBaseUrlValue = form.getValues('base_url')
-      if (!currentBaseUrlValue || currentBaseUrlValue === '') {
-        form.setValue('base_url', getDefaultCodingPlanProvider())
+      const normalizedProvider = normalizeCodingPlanProvider(
+        currentBaseUrlValue
+      )
+      const currentConfig =
+        buildCodingPlanAdvancedCustomConfig(normalizedProvider)
+      const provider = currentConfig
+        ? normalizedProvider
+        : getDefaultCodingPlanProvider()
+      const config =
+        currentConfig || buildCodingPlanAdvancedCustomConfig(provider)
+
+      if (provider !== currentBaseUrlValue) {
+        form.setValue('base_url', provider)
+      }
+      if (!form.getValues('advanced_custom')?.trim() && config) {
+        form.setValue(
+          'advanced_custom',
+          stringifyAdvancedCustomConfig(config)
+        )
       }
     }
 
@@ -2794,7 +2814,24 @@ export function ChannelMutateDrawer({
                                           label: option.label,
                                         })
                                       )}
-                                      onValueChange={field.onChange}
+                                      onValueChange={(value) => {
+                                        const provider =
+                                          value || getDefaultCodingPlanProvider()
+                                        field.onChange(provider)
+                                        const config =
+                                          buildCodingPlanAdvancedCustomConfig(
+                                            provider
+                                          )
+                                        if (!config) return
+                                        form.setValue(
+                                          'advanced_custom',
+                                          stringifyAdvancedCustomConfig(config),
+                                          {
+                                            shouldDirty: true,
+                                            shouldValidate: true,
+                                          }
+                                        )
+                                      }}
                                       value={
                                         field.value ||
                                         getDefaultCodingPlanProvider()
@@ -2865,7 +2902,10 @@ export function ChannelMutateDrawer({
                                 />
                               )}
 
-                            {currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && (
+                            {[
+                              CHANNEL_TYPE_ADVANCED_CUSTOM,
+                              CHANNEL_TYPE_CODING_PLAN,
+                            ].includes(currentType) && (
                               <FormField
                                 control={form.control}
                                 name='advanced_custom'

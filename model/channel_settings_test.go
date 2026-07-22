@@ -83,3 +83,30 @@ func TestCodingPlanChannelBuildsAdvancedCustomSettingsFromProvider(t *testing.T)
 	assert.True(t, settings.AdvancedCustom.SupportsPathForModel("/v1/messages", "glm-5-turbo"))
 	assert.True(t, settings.AdvancedCustom.SupportsPathForModel("/v1/chat/completions", "glm-5-turbo"))
 }
+
+func TestCodingPlanChannelPreservesEditedAdvancedCustomSettings(t *testing.T) {
+	baseURL := dto.CodingPlanProviderGLMChina
+	channel := &Channel{
+		Type:    constant.ChannelTypeCodingPlan,
+		BaseURL: &baseURL,
+	}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{
+		CodingPlanProvider: dto.CodingPlanProviderGLMChina,
+		AdvancedCustom: &dto.AdvancedCustomConfig{
+			Routes: []dto.AdvancedCustomRoute{
+				{
+					IncomingPath: "/v1/chat/completions",
+					UpstreamPath: "https://custom.example/v1/chat/completions",
+					Converter:    "none",
+				},
+			},
+		},
+	})
+
+	require.NoError(t, channel.ValidateSettings())
+
+	settings := channel.GetOtherSettings()
+	route, ok := settings.AdvancedCustom.MatchPath("/v1/chat/completions")
+	require.True(t, ok)
+	assert.Equal(t, "https://custom.example/v1/chat/completions", route.UpstreamPath)
+}

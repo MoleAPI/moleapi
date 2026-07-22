@@ -1230,16 +1230,22 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 	}
 
 	settings := channel.GetOtherSettings()
-	if req.AdvancedCustom != nil && channel.Type == constant.ChannelTypeAdvancedCustom {
+	if req.AdvancedCustom != nil {
 		rawConfig := strings.TrimSpace(*req.AdvancedCustom)
 		if rawConfig == "" {
-			return nil, fmt.Errorf("advanced_custom is required")
+			if channel.Type != constant.ChannelTypeCodingPlan {
+				return nil, fmt.Errorf("advanced_custom is required")
+			}
+			if err := settings.ApplyCodingPlanPreset(resolveCodingPlanPreviewProvider(channel, req)); err != nil {
+				return nil, err
+			}
+		} else {
+			var config dto.AdvancedCustomConfig
+			if err := common.UnmarshalJsonStr(rawConfig, &config); err != nil {
+				return nil, err
+			}
+			settings.AdvancedCustom = &config
 		}
-		var config dto.AdvancedCustomConfig
-		if err := common.UnmarshalJsonStr(rawConfig, &config); err != nil {
-			return nil, err
-		}
-		settings.AdvancedCustom = &config
 	} else if channel.Type == constant.ChannelTypeCodingPlan {
 		if err := settings.ApplyCodingPlanPreset(resolveCodingPlanPreviewProvider(channel, req)); err != nil {
 			return nil, err

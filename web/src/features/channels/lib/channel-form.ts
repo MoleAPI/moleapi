@@ -297,6 +297,15 @@ export const channelFormSchema = z
       if (!provider || !config) {
         addRequiredIssue(ctx, 'base_url', 'Coding plan provider is required')
       }
+      const advancedCustomConfig = data.advanced_custom?.trim()
+        ? parseAdvancedCustomConfig(data.advanced_custom)
+        : config
+      const advancedCustomError = validateAdvancedCustomConfig(
+        advancedCustomConfig
+      )
+      if (advancedCustomError) {
+        addRequiredIssue(ctx, 'advanced_custom', advancedCustomError.message)
+      }
     }
 
     if ([3, 18, 21, 39, 41, 49].includes(data.type) && !data.other?.trim()) {
@@ -499,6 +508,14 @@ export function transformChannelToFormDefaults(
       console.error('Failed to parse channel settings:', error)
     }
   }
+  if (!advancedCustom && channel.type === CHANNEL_TYPE_CODING_PLAN) {
+    const config = buildCodingPlanAdvancedCustomConfig(
+      codingPlanProvider || channel.base_url || ''
+    )
+    if (config) {
+      advancedCustom = stringifyAdvancedCustomConfig(config)
+    }
+  }
 
   return {
     name: channel.name || '',
@@ -697,6 +714,13 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
   } else if (formData.type === CHANNEL_TYPE_CODING_PLAN) {
     const provider = normalizeCodingPlanProvider(formData.base_url)
     settingsObj.coding_plan_provider = provider
+    const advancedCustomConfig = parseAdvancedCustomConfig(
+      formData.advanced_custom
+    )
+    if (advancedCustomConfig) {
+      settingsObj.advanced_custom = advancedCustomConfig
+      return JSON.stringify(settingsObj)
+    }
     const codingPlanConfig = buildCodingPlanAdvancedCustomConfig(provider)
     if (codingPlanConfig) {
       settingsObj.advanced_custom = codingPlanConfig

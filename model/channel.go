@@ -1043,7 +1043,15 @@ func (channel *Channel) applyCodingPlanPreset(setting *dto.ChannelOtherSettings)
 	if provider == "" {
 		return fmt.Errorf("coding plan provider is required")
 	}
-	return setting.ApplyCodingPlanPreset(provider)
+	preset, ok := dto.ResolveCodingPlanPreset(provider)
+	if !ok {
+		return fmt.Errorf("unknown coding plan provider: %s", provider)
+	}
+	setting.CodingPlanProvider = preset.ID
+	if setting.AdvancedCustom != nil {
+		return nil
+	}
+	return setting.ApplyCodingPlanPreset(preset.ID)
 }
 
 func (channel *Channel) GetParamOverride() map[string]interface{} {
