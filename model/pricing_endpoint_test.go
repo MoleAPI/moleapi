@@ -182,15 +182,23 @@ func TestPricingNativeChannelEndpointTypesUnchanged(t *testing.T) {
 	insertPricingEndpointChannel(t, 201, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
 	insertPricingEndpointChannel(t, 202, constant.ChannelTypeGemini, dto.ChannelOtherSettings{})
 	insertPricingEndpointChannel(t, 203, constant.ChannelTypeAnthropic, dto.ChannelOtherSettings{})
+	insertPricingEndpointChannel(t, 204, constant.ChannelTypeZhipu_v4, dto.ChannelOtherSettings{})
 	insertPricingEndpointAbility(t, 201, "gpt-4o")
 	insertPricingEndpointAbility(t, 202, "gemini-2.5-flash")
 	insertPricingEndpointAbility(t, 203, "claude-3-5-sonnet")
+	insertPricingEndpointAbility(t, 204, "glm-5-turbo")
 
 	byModel := pricingEndpointTypesByModel(t)
 
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, byModel["gpt-4o"])
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}, byModel["gemini-2.5-flash"])
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeAnthropic, constant.EndpointTypeOpenAI}, byModel["claude-3-5-sonnet"])
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeOpenAI,
+		constant.EndpointTypeAnthropic,
+		constant.EndpointTypeOpenAIResponse,
+		constant.EndpointTypeGemini,
+	}, byModel["glm-5-turbo"])
 }
 
 func TestInitChannelCacheInvalidatesPricingCache(t *testing.T) {
