@@ -11,7 +11,7 @@ import (
 )
 
 var StartTime = time.Now().Unix() // unit: second
-var Version = "v0.10.1"           // this hard coding will be replaced automatically when building, no need to manually change
+var Version = "v0.10.2"           // this hard coding will be replaced automatically when building, no need to manually change
 var UpstreamVersion = "v1.0.0-rc.21"
 var Commit = ""
 var SystemName = "New API"
@@ -208,8 +208,8 @@ var (
 	GlobalWebRateLimitDuration int64
 
 	CriticalRateLimitEnable   bool
-	CriticalRateLimitNum            = 20
-	CriticalRateLimitDuration int64 = 20 * 60
+	CriticalRateLimitNum            = 120
+	CriticalRateLimitDuration int64 = 60
 
 	UploadRateLimitNum            = 10
 	UploadRateLimitDuration int64 = 60

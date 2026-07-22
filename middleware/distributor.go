@@ -409,6 +409,9 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		common.SetContextKey(c, constant.ContextKeyTokenGroup, modelRequest.Group)
 	}
 
+	if redirectedModel, redirected := common.GetSystemRedirectedModelName(modelRequest.Model); redirected {
+		modelRequest.Model = redirectedModel
+	}
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/responses/compact") && modelRequest.Model != "" {
 		modelRequest.Model = ratio_setting.WithCompactModelSuffix(modelRequest.Model)
 	}

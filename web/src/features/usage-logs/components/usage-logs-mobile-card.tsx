@@ -105,7 +105,7 @@ function CompactCell<TData>({
   return (
     <div
       className={cn(
-        'min-w-0 overflow-hidden leading-tight [&_button]:max-w-full [&_span]:max-w-full',
+        'min-w-0 overflow-hidden text-xs leading-tight [&_button]:max-w-full [&_span]:max-w-full',
         primaryOnly &&
           '[&_.flex-col]:min-w-0 [&_.flex-col>*:not(:first-child)]:hidden',
         className
@@ -136,11 +136,9 @@ function SummaryField<TData>({
   if (!cell) return null
 
   return (
-    <div
-      className={cn('bg-muted/20 min-w-0 rounded-md px-2 py-1.5', className)}
-    >
+    <div className={cn('bg-muted/20 min-w-0 rounded-md px-2 py-1', className)}>
       {label != null && label !== '' && (
-        <div className='text-muted-foreground mb-1 text-[11px] leading-none font-medium select-none'>
+        <div className='text-muted-foreground mb-1 text-[10px] leading-none font-medium select-none'>
           {label}
         </div>
       )}
@@ -168,7 +166,7 @@ function MobileLogTimeStatus({
 
   return (
     <div className='space-y-1'>
-      <div className='font-mono text-xs leading-tight tabular-nums'>
+      <div className='font-mono text-[11px] leading-tight tabular-nums'>
         {formatTimestampToDate(timestamp)}
       </div>
       <div
@@ -210,7 +208,7 @@ function MobileTokensField({ log }: { log: UsageLog }) {
     cacheWriteTokens === 0
   ) {
     return (
-      <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1.5'>
+      <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1'>
         <span className='text-muted-foreground text-xs'>-</span>
       </div>
     )
@@ -218,7 +216,7 @@ function MobileTokensField({ log }: { log: UsageLog }) {
   const showCache = cacheReadTokens > 0 || cacheWriteTokens > 0
 
   return (
-    <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1.5'>
+    <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1'>
       <div className='flex flex-col gap-0.5'>
         <span className='font-mono text-xs font-medium tabular-nums'>
           {promptTokens.toLocaleString()} / {completionTokens.toLocaleString()}
@@ -256,7 +254,7 @@ function MobileUserField({ log }: { log: UsageLog }) {
   return (
     <button
       type='button'
-      className='bg-muted/20 flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1.5 text-left'
+      className='bg-muted/20 flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left'
       onClick={(e) => {
         e.stopPropagation()
         setSelectedUserId(log.user_id)
@@ -276,7 +274,7 @@ function MobileUserField({ log }: { log: UsageLog }) {
           {sensitiveVisible ? getUserAvatarFallback(log.username) : '•'}
         </AvatarFallback>
       </Avatar>
-      <span className='text-foreground min-w-0 truncate text-sm'>
+      <span className='text-foreground min-w-0 truncate text-xs'>
         {sensitiveVisible ? log.username : '••••'}
       </span>
     </button>
@@ -295,7 +293,7 @@ function MobileStreamTimingField({ log }: { log: UsageLog }) {
       : null
 
   return (
-    <div className='bg-muted/20 flex min-w-0 items-center gap-2.5 rounded-md px-2 py-1.5'>
+    <div className='bg-muted/20 flex min-w-0 items-center gap-2 rounded-md px-2 py-1'>
       <TimingMetricsCell
         useTimeSec={useTime}
         completionTokens={log.completion_tokens}
@@ -335,8 +333,8 @@ function CommonLogsCard<TData>({
         />
       </div>
 
-      <div className='grid grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)] gap-1.5'>
-        <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1.5'>
+      <div className='grid grid-cols-1 gap-1.5 min-[420px]:grid-cols-[minmax(0,1fr)_minmax(0,0.8fr)]'>
+        <div className='bg-muted/20 min-w-0 rounded-md px-2 py-1'>
           <MobileLogTimeStatus
             createdAt={rowData?.created_at}
             type={rowData?.type}
@@ -368,7 +366,7 @@ function CommonLogsCard<TData>({
         <SummaryField
           label={t('Details')}
           cell={cells.get('content')}
-          className='col-span-2 bg-transparent px-0 py-0'
+          className='bg-transparent px-0 py-0 min-[420px]:col-span-2'
         />
       </div>
     </div>
@@ -393,13 +391,13 @@ function TaskLogsCard<TData>({
         <CompactCell cell={statusCell} className='shrink-0 text-right' />
       </div>
 
-      <div className='grid grid-cols-2 gap-1.5'>
+      <div className='grid grid-cols-1 gap-1.5 min-[420px]:grid-cols-2'>
         <SummaryField label={t('Submit Time')} cell={submitTimeCell} />
         <SummaryField label={t('User')} cell={cells.get('user')} primaryOnly />
         <SummaryField
           label={t('Result')}
           cell={cells.get('fail_reason')}
-          className='col-span-2 bg-transparent px-0 py-0'
+          className='bg-transparent px-0 py-0 min-[420px]:col-span-2'
         />
       </div>
     </div>
@@ -424,7 +422,7 @@ function DrawingLogsCard<TData>({
         <CompactCell cell={codeCell} className='shrink-0 text-right' />
       </div>
 
-      <div className='grid grid-cols-2 gap-1.5'>
+      <div className='grid grid-cols-1 gap-1.5 min-[420px]:grid-cols-2'>
         <SummaryField label={t('Submit Time')} cell={submitTimeCell} />
         <SummaryField
           label={t('Channel')}
@@ -446,7 +444,7 @@ function DrawingLogsCard<TData>({
         <SummaryField
           label={t('Fail Reason')}
           cell={cells.get('fail_reason')}
-          className='col-span-2 bg-transparent px-0 py-0'
+          className='bg-transparent px-0 py-0 min-[420px]:col-span-2'
         />
       </div>
     </div>
@@ -505,7 +503,7 @@ export function UsageLogsMobileList<TData>({
           <div
             key={row.id}
             className={cn(
-              'border-border/40 border-b border-l-2 border-l-transparent p-3 transition-colors last:border-b-0',
+              'border-border/40 border-b border-l-2 border-l-transparent p-2.5 transition-colors last:border-b-0',
               tintClass
             )}
           >

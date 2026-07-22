@@ -223,3 +223,35 @@ func TestRedisFailurePolicies(t *testing.T) {
 	assert.Empty(t, userResponse.Body.String())
 	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/email", "192.0.2.62:12345").Code)
 }
+
+func TestCriticalRateLimitIsPerRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	previousRedisEnabled := common.RedisEnabled
+	previousEnabled := common.CriticalRateLimitEnable
+	previousLimit := common.CriticalRateLimitNum
+	previousDuration := common.CriticalRateLimitDuration
+	common.RedisEnabled = false
+	common.CriticalRateLimitEnable = true
+	common.CriticalRateLimitNum = 1
+	common.CriticalRateLimitDuration = 60
+	t.Cleanup(func() {
+		common.RedisEnabled = previousRedisEnabled
+		common.CriticalRateLimitEnable = previousEnabled
+		common.CriticalRateLimitNum = previousLimit
+		common.CriticalRateLimitDuration = previousDuration
+	})
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.GET("/ratio_config", CriticalRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/user/login", CriticalRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	remoteAddr := "192.0.2.70:12345"
+	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/ratio_config", remoteAddr).Code)
+	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/user/login", remoteAddr).Code)
+	assert.Equal(t, http.StatusTooManyRequests, performRateLimitRequest(router, "/user/login", remoteAddr).Code)
+}

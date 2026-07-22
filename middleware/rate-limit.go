@@ -157,6 +157,32 @@ func rateLimitFactory(maxRequestNum int, duration int64, mark string) func(c *gi
 	}
 }
 
+func pathRateLimitFactory(maxRequestNum int, duration int64, mark string) func(c *gin.Context) {
+	if !common.RedisEnabled {
+		inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+	}
+	return func(c *gin.Context) {
+		routePath := c.FullPath()
+		if routePath == "" && c.Request != nil && c.Request.URL != nil {
+			routePath = c.Request.URL.Path
+		}
+		if routePath == "" {
+			if common.RedisEnabled {
+				redisRateLimiter(c, maxRequestNum, duration, mark)
+			} else {
+				memoryRateLimiter(c, maxRequestNum, duration, mark)
+			}
+			return
+		}
+		routeMark := mark + ":" + routePath
+		if common.RedisEnabled {
+			redisRateLimiter(c, maxRequestNum, duration, routeMark)
+		} else {
+			memoryRateLimiter(c, maxRequestNum, duration, routeMark)
+		}
+	}
+}
+
 func GlobalWebRateLimit() func(c *gin.Context) {
 	if common.GlobalWebRateLimitEnable {
 		return rateLimitFactory(common.GlobalWebRateLimitNum, common.GlobalWebRateLimitDuration, "GW")
@@ -173,7 +199,7 @@ func GlobalAPIRateLimit() func(c *gin.Context) {
 
 func CriticalRateLimit() func(c *gin.Context) {
 	if common.CriticalRateLimitEnable {
-		return rateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
+		return pathRateLimitFactory(common.CriticalRateLimitNum, common.CriticalRateLimitDuration, "CT")
 	}
 	return defNext
 }
