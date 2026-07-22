@@ -100,7 +100,7 @@ func Distribute() func(c *gin.Context) {
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
-				requestPath := requestPathForChannelSelection(c.Request.URL.Path)
+				requestPath := requestPathForChannelSelection(c.Request.URL.Path, modelRequest.Model)
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
@@ -184,7 +184,11 @@ func channelSupportsRequestPath(channel *model.Channel, requestPath string, requ
 	return config != nil && config.SupportsPathForModel(requestPath, requestModel)
 }
 
-func requestPathForChannelSelection(path string) string {
+func requestPathForChannelSelection(path string, model string) string {
+	if common.IsImageGenerationModel(model) &&
+		(strings.HasPrefix(path, "/v1/chat/completions") || strings.HasPrefix(path, "/pg/chat/completions")) {
+		return "/v1/images/generations"
+	}
 	if strings.HasPrefix(path, "/pg/chat/completions") {
 		return "/v1/chat/completions"
 	}

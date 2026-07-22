@@ -178,11 +178,16 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 	}()
 
+	requestPath := c.Request.URL.Path
+	if relayInfo.RelayMode == relayconstant.RelayModeImagesGenerations && common.IsImageGenerationModel(relayInfo.OriginModelName) {
+		requestPath = "/v1/images/generations"
+	}
+
 	retryParam := &service.RetryParam{
 		Ctx:         c,
 		TokenGroup:  relayInfo.TokenGroup,
 		ModelName:   relayInfo.OriginModelName,
-		RequestPath: c.Request.URL.Path,
+		RequestPath: requestPath,
 		Retry:       common.GetPointer(0),
 	}
 	relayInfo.RetryIndex = 0

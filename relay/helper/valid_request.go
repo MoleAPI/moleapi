@@ -23,7 +23,17 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 
 	switch format {
 	case types.RelayFormatOpenAI:
-		request, err = GetAndValidateTextRequest(c, relayMode)
+		var textRequest *dto.GeneralOpenAIRequest
+		textRequest, err = GetAndValidateTextRequest(c, relayMode)
+		if err == nil && shouldHandleOpenAIChatAsImage(relayMode, textRequest.Model) {
+			request, err = imageRequestFromOpenAIChat(textRequest)
+			if err == nil {
+				c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
+				c.Set("chat_image_completion_bridge", true)
+			}
+		} else {
+			request = textRequest
+		}
 	case types.RelayFormatGemini:
 		if strings.Contains(c.Request.URL.Path, ":embedContent") {
 			request, err = GetAndValidateGeminiEmbeddingRequest(c)
@@ -53,6 +63,52 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 		return nil, fmt.Errorf("unsupported relay format: %s", format)
 	}
 	return request, err
+}
+
+func shouldHandleOpenAIChatAsImage(relayMode int, model string) bool {
+	return relayMode == relayconstant.RelayModeChatCompletions && common.IsImageGenerationModel(model)
+}
+
+func imageRequestFromOpenAIChat(request *dto.GeneralOpenAIRequest) (*dto.ImageRequest, error) {
+	prompt := strings.TrimSpace(lastTextPromptFromMessages(request.Messages))
+	if prompt == "" {
+		return nil, errors.New("prompt is required")
+	}
+
+	imageRequest := &dto.ImageRequest{
+		Model:  request.Model,
+		Prompt: prompt,
+		Size:   request.Size,
+		Stream: request.Stream,
+		User:   request.User,
+	}
+	if request.N != nil {
+		if *request.N < 0 || *request.N > dto.MaxImageN {
+			return nil, fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN)
+		}
+		if *request.N > 0 {
+			imageRequest.N = common.GetPointer(uint(*request.N))
+		}
+	}
+	return imageRequest, nil
+}
+
+func lastTextPromptFromMessages(messages []dto.Message) string {
+	for i := len(messages) - 1; i >= 0; i-- {
+		message := messages[i]
+		if message.Role != "user" {
+			continue
+		}
+		if content := message.StringContent(); strings.TrimSpace(content) != "" {
+			return content
+		}
+	}
+	for i := len(messages) - 1; i >= 0; i-- {
+		if content := messages[i].StringContent(); strings.TrimSpace(content) != "" {
+			return content
+		}
+	}
+	return ""
 }
 
 func GetAndValidAudioRequest(c *gin.Context, relayMode int) (*dto.AudioRequest, error) {

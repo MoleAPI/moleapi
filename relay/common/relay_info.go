@@ -502,8 +502,8 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		},
 	}
 
-	if info.RelayMode == relayconstant.RelayModeUnknown {
-		info.RelayMode = c.GetInt("relay_mode")
+	if relayMode := c.GetInt("relay_mode"); relayMode != relayconstant.RelayModeUnknown {
+		info.RelayMode = relayMode
 	}
 
 	if strings.HasPrefix(c.Request.URL.Path, "/pg") {

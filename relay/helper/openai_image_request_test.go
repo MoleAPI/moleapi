@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -70,6 +71,30 @@ func TestGetAndValidOpenAIImageRequestMultipartStream(t *testing.T) {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "invalid stream value")
 	})
+}
+
+func TestGetAndValidateRequestConvertsImageChatToImageRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := `{"model":"gpt-image-2","messages":[{"role":"system","content":"ignore"},{"role":"user","content":"draw a cat"}],"stream":true,"n":2,"size":"1024x1024"}`
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewBufferString(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	request, err := GetAndValidateRequest(c, types.RelayFormatOpenAI)
+	require.NoError(t, err)
+
+	imageRequest, ok := request.(*dto.ImageRequest)
+	require.True(t, ok)
+	require.Equal(t, "gpt-image-2", imageRequest.Model)
+	require.Equal(t, "draw a cat", imageRequest.Prompt)
+	require.Equal(t, "1024x1024", imageRequest.Size)
+	require.NotNil(t, imageRequest.Stream)
+	require.True(t, *imageRequest.Stream)
+	require.NotNil(t, imageRequest.N)
+	require.EqualValues(t, 2, *imageRequest.N)
+	require.Equal(t, relayconstant.RelayModeImagesGenerations, c.GetInt("relay_mode"))
+	require.True(t, c.GetBool("chat_image_completion_bridge"))
 }
 
 // TestGetAndValidOpenAIImageRequestNBounds guards the billing invariant that

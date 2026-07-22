@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -106,6 +107,49 @@ func TestOpenaiImageDoResponseUsesInfoIsStream(t *testing.T) {
 		require.NotNil(t, usage)
 		require.Contains(t, recorder.Body.String(), `event: image_generation.completed`)
 		require.Contains(t, recorder.Body.String(), `data: [DONE]`)
+	})
+}
+
+func TestOpenaiImageChatCompletionWrapper(t *testing.T) {
+	oldMode := gin.Mode()
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(func() { gin.SetMode(oldMode) })
+
+	body := `{"created":1710000000,"data":[{"url":"https://example.test/cat.png"}],"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7}}`
+
+	t.Run("non-stream image response is returned as chat completion", func(t *testing.T) {
+		c, recorder, resp, info := newImageTestContext(t, body, "application/json", false)
+		info.RelayMode = relayconstant.RelayModeImagesGenerations
+		info.RelayFormat = types.RelayFormatOpenAI
+		info.RequestURLPath = "/v1/chat/completions"
+		info.OriginModelName = "gpt-image-2"
+
+		usage, err := OpenaiImageHandler(c, info, resp)
+
+		require.Nil(t, err)
+		require.Equal(t, 3, usage.PromptTokens)
+		require.Equal(t, 4, usage.CompletionTokens)
+		require.Contains(t, recorder.Body.String(), `"object":"chat.completion"`)
+		require.Contains(t, recorder.Body.String(), `![generated image](https://example.test/cat.png)`)
+	})
+
+	t.Run("stream image response is returned as chat completion chunks", func(t *testing.T) {
+		c, recorder, resp, info := newImageTestContext(t, body, "application/json", true)
+		info.RelayMode = relayconstant.RelayModeImagesGenerations
+		info.RelayFormat = types.RelayFormatOpenAI
+		info.RequestURLPath = "/v1/chat/completions"
+		info.OriginModelName = "gpt-image-2"
+
+		usage, err := OpenaiImageStreamHandler(c, info, resp)
+
+		require.Nil(t, err)
+		require.Equal(t, 3, usage.PromptTokens)
+		require.Equal(t, 4, usage.CompletionTokens)
+		require.Equal(t, "text/event-stream", recorder.Header().Get("Content-Type"))
+		require.Contains(t, recorder.Body.String(), `"object":"chat.completion.chunk"`)
+		require.Contains(t, recorder.Body.String(), `![generated image](https://example.test/cat.png)`)
+		require.Contains(t, recorder.Body.String(), `data: [DONE]`)
+		require.NotContains(t, recorder.Body.String(), `event: image_generation.completed`)
 	})
 }
 
