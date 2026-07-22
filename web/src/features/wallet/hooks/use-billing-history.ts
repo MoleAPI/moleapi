@@ -21,6 +21,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { toast } from 'sonner'
 
 import { useIsAdmin } from '@/hooks/use-admin'
+import { useDebounce } from '@/hooks/use-debounce'
 
 import {
   getUserBillingHistory,
@@ -61,6 +62,8 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
   const [endTime, setEndTime] = useState('')
   const [loading, setLoading] = useState(false)
   const [completing, setCompleting] = useState(false)
+  const debouncedKeyword = useDebounce(keyword, 500)
+  const debouncedUserKeyword = useDebounce(userKeyword, 500)
 
   /**
    * Fetch billing history
@@ -70,8 +73,8 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     try {
       const response = isAdmin
         ? await getAllBillingHistory(page, pageSize, {
-            keyword,
-            userKeyword,
+            keyword: debouncedKeyword,
+            userKeyword: debouncedUserKeyword,
             startTimestamp: startTime
               ? Math.floor(new Date(startTime).getTime() / 1000)
               : undefined,
@@ -79,7 +82,7 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
               ? Math.floor(new Date(endTime).getTime() / 1000)
               : undefined,
           })
-        : await getUserBillingHistory(page, pageSize, keyword)
+        : await getUserBillingHistory(page, pageSize, debouncedKeyword)
 
       if (isApiSuccess(response) && response.data) {
         setRecords(response.data.items || [])
@@ -100,7 +103,15 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
     } finally {
       setLoading(false)
     }
-  }, [isAdmin, page, pageSize, keyword, userKeyword, startTime, endTime])
+  }, [
+    isAdmin,
+    page,
+    pageSize,
+    debouncedKeyword,
+    debouncedUserKeyword,
+    startTime,
+    endTime,
+  ])
 
   /**
    * Complete a pending order (admin only)

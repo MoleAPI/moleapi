@@ -25,6 +25,7 @@ import { toast } from 'sonner'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { useDebounce } from '@/hooks/use-debounce'
 
 import { checkClusterNameAvailability, updateDeploymentName } from '../../api'
 import { deploymentsQueryKeys } from '../../lib'
@@ -50,28 +51,35 @@ export function RenameDeploymentDialog({
   }, [open, currentName])
 
   const trimmed = name.trim()
+  const debouncedTrimmed = useDebounce(trimmed, 500)
 
   const { data: checkRes, isFetching: isChecking } = useQuery({
-    queryKey: ['deployment-rename-check', trimmed],
-    queryFn: () => (trimmed ? checkClusterNameAvailability(trimmed) : null),
-    enabled: open && Boolean(trimmed),
+    queryKey: ['deployment-rename-check', debouncedTrimmed],
+    queryFn: () =>
+      debouncedTrimmed ? checkClusterNameAvailability(debouncedTrimmed) : null,
+    enabled: open && Boolean(debouncedTrimmed),
     staleTime: 10_000,
   })
 
+  const isWaitingForCheck = trimmed !== debouncedTrimmed
   const available =
-    checkRes?.success === true ? checkRes?.data?.available : undefined
+    !isWaitingForCheck && checkRes?.success === true
+      ? checkRes?.data?.available
+      : undefined
 
   const helper = useMemo(() => {
     if (!trimmed) return t('Enter a new name')
-    if (isChecking) return t('Checking name...')
+    if (isWaitingForCheck || isChecking) return t('Checking name...')
     if (available === true) return t('Name is available')
     if (available === false) return t('Name is not available')
     return ''
-  }, [available, isChecking, t, trimmed])
+  }, [available, isChecking, isWaitingForCheck, t, trimmed])
 
   const canSubmit =
     Boolean(deploymentId) &&
     Boolean(trimmed) &&
+    !isWaitingForCheck &&
+    !isChecking &&
     available !== false &&
     !isSubmitting
 
