@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/types"
 
@@ -32,13 +33,20 @@ const (
 type Adaptor struct {
 }
 
-func (a *Adaptor) ConvertGeminiRequest(*gin.Context, *relaycommon.RelayInfo, *dto.GeminiChatRequest) (any, error) {
-	//TODO implement me
-	return nil, errors.New("not implemented")
+func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeminiChatRequest) (any, error) {
+	result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAI, request)
+	if err != nil {
+		return nil, err
+	}
+	openAIRequest, ok := result.Value.(*dto.GeneralOpenAIRequest)
+	if !ok {
+		return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
+	}
+	return a.ConvertOpenAIRequest(c, info, openAIRequest)
 }
 
 func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayInfo, req *dto.ClaudeRequest) (any, error) {
-	if _, ok := channelconstant.ChannelSpecialBases[info.ChannelBaseUrl]; ok {
+	if channel.IsCodingPlanBase(info.ChannelBaseUrl) {
 		adaptor := claude.Adaptor{}
 		return adaptor.ConvertClaudeRequest(c, info, req)
 	}
@@ -237,27 +245,23 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if requestURL, ok := channel.CodingPlanRequestURL(info); ok {
+		return requestURL, nil
+	}
 	baseUrl := info.ChannelBaseUrl
 	if baseUrl == "" {
 		baseUrl = channelconstant.ChannelBaseURLs[channelconstant.ChannelTypeVolcEngine]
 	}
-	specialPlan, hasSpecialPlan := channelconstant.ChannelSpecialBases[baseUrl]
 
 	switch info.RelayFormat {
 	case types.RelayFormatClaude:
-		if hasSpecialPlan && specialPlan.ClaudeBaseURL != "" {
-			return fmt.Sprintf("%s/v1/messages", specialPlan.ClaudeBaseURL), nil
-		}
 		if strings.HasPrefix(info.UpstreamModelName, "bot") {
 			return fmt.Sprintf("%s/api/v3/bots/chat/completions", baseUrl), nil
 		}
 		return fmt.Sprintf("%s/api/v3/chat/completions", baseUrl), nil
 	default:
 		switch info.RelayMode {
-		case constant.RelayModeChatCompletions:
-			if hasSpecialPlan && specialPlan.OpenAIBaseURL != "" {
-				return fmt.Sprintf("%s/chat/completions", specialPlan.OpenAIBaseURL), nil
-			}
+		case constant.RelayModeChatCompletions, constant.RelayModeGemini:
 			if strings.HasPrefix(info.UpstreamModelName, "bot") {
 				return fmt.Sprintf("%s/api/v3/bots/chat/completions", baseUrl), nil
 			}
@@ -347,10 +351,18 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
 	if info.RelayFormat == types.RelayFormatClaude {
-		if _, ok := channelconstant.ChannelSpecialBases[info.ChannelBaseUrl]; ok {
+		if channel.IsCodingPlanBase(info.ChannelBaseUrl) {
 			adaptor := claude.Adaptor{}
 			return adaptor.DoResponse(c, resp, info)
 		}
+	}
+
+	if info.RelayFormat == types.RelayFormatOpenAIResponses &&
+		info.GetFinalRequestRelayFormat() == types.RelayFormatOpenAI {
+		if info.IsStream {
+			return openai.OaiChatToResponsesStreamHandler(c, info, resp)
+		}
+		return openai.OaiChatToResponsesHandler(c, info, resp)
 	}
 
 	if info.RelayMode == constant.RelayModeAudioSpeech {

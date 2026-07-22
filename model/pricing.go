@@ -109,6 +109,14 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 }
 
 func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig) []constant.EndpointType {
+	if _, ok := constant.ChannelSpecialBases[strings.TrimSpace(ability.ChannelBaseUrl)]; ok {
+		return []constant.EndpointType{
+			constant.EndpointTypeOpenAI,
+			constant.EndpointTypeAnthropic,
+			constant.EndpointTypeOpenAIResponse,
+			constant.EndpointTypeGemini,
+		}
+	}
 	if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
 		return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
 	}

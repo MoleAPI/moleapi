@@ -32,6 +32,10 @@ func resetPricingEndpointTestTables(t *testing.T) {
 }
 
 func insertPricingEndpointChannel(t *testing.T, channelID int, channelType int, settings dto.ChannelOtherSettings) {
+	insertPricingEndpointChannelWithBase(t, channelID, channelType, "", settings)
+}
+
+func insertPricingEndpointChannelWithBase(t *testing.T, channelID int, channelType int, baseURL string, settings dto.ChannelOtherSettings) {
 	t.Helper()
 	channel := &Channel{
 		Id:     channelID,
@@ -39,6 +43,9 @@ func insertPricingEndpointChannel(t *testing.T, channelID int, channelType int, 
 		Key:    fmt.Sprintf("key-%d", channelID),
 		Status: common.ChannelStatusEnabled,
 		Name:   fmt.Sprintf("channel-%d", channelID),
+	}
+	if baseURL != "" {
+		channel.BaseURL = &baseURL
 	}
 	if settings.AdvancedCustom != nil {
 		channel.SetOtherSettings(settings)
@@ -182,7 +189,7 @@ func TestPricingNativeChannelEndpointTypesUnchanged(t *testing.T) {
 	insertPricingEndpointChannel(t, 201, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
 	insertPricingEndpointChannel(t, 202, constant.ChannelTypeGemini, dto.ChannelOtherSettings{})
 	insertPricingEndpointChannel(t, 203, constant.ChannelTypeAnthropic, dto.ChannelOtherSettings{})
-	insertPricingEndpointChannel(t, 204, constant.ChannelTypeZhipu_v4, dto.ChannelOtherSettings{})
+	insertPricingEndpointChannelWithBase(t, 204, constant.ChannelTypeZhipu_v4, "glm-coding-plan", dto.ChannelOtherSettings{})
 	insertPricingEndpointAbility(t, 201, "gpt-4o")
 	insertPricingEndpointAbility(t, 202, "gemini-2.5-flash")
 	insertPricingEndpointAbility(t, 203, "claude-3-5-sonnet")

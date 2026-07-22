@@ -40,13 +40,27 @@ func TestZhipuV4CodingPlanRoutesUseOfficialPaths(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "https://open.bigmodel.cn/api/anthropic/v1/messages", claudeURL)
+
+	responsesViaChatURL, err := adaptor.GetRequestURL(&relaycommon.RelayInfo{
+		RelayFormat:            types.RelayFormatOpenAIResponses,
+		RelayMode:              relayconstant.RelayModeResponses,
+		RequestConversionChain: []types.RelayFormat{types.RelayFormatOpenAIResponses, types.RelayFormatOpenAI},
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelBaseUrl:    "glm-coding-plan",
+			UpstreamModelName: "glm-5-turbo",
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", responsesViaChatURL)
 }
 
 func TestZhipuV4ConvertsResponsesRequestToChat(t *testing.T) {
 	maxOutputTokens := uint(16)
 	adaptor := &Adaptor{}
 
-	converted, err := adaptor.ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{}, dto.OpenAIResponsesRequest{
+	converted, err := adaptor.ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{ChannelBaseUrl: "glm-coding-plan"},
+	}, dto.OpenAIResponsesRequest{
 		Model:           "glm-5-turbo",
 		Input:           mustZhipuV4RawMessage(t, "hello"),
 		MaxOutputTokens: &maxOutputTokens,

@@ -52,6 +52,9 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 }
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
+	if requestURL, ok := channel.CodingPlanRequestURL(info); ok {
+		return requestURL, nil
+	}
 	baseURL := info.ChannelBaseUrl
 	if baseURL == "" {
 		baseURL = channelconstant.ChannelBaseURLs[channelconstant.ChannelTypeZhipu_v4]
@@ -110,6 +113,9 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
+	if info != nil && info.ChannelMeta != nil && channel.CodingPlanSupportsResponses(info.ChannelBaseUrl) {
+		return request, nil
+	}
 	result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAI, &request)
 	if err != nil {
 		return nil, err
