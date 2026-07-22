@@ -121,13 +121,15 @@ func (s *ChannelOtherSettings) ApplyCodingPlanPreset(provider string) error {
 }
 
 func (p CodingPlanPreset) AdvancedCustomConfig() *AdvancedCustomConfig {
-	routes := make([]AdvancedCustomRoute, 0, 6)
+	routes := make([]AdvancedCustomRoute, 0, 7)
 	if p.OpenAIBaseURL != "" {
 		chatURL := codingPlanJoinPath(p.OpenAIBaseURL, "chat/completions")
+		imageURL := codingPlanJoinPath(p.OpenAIBaseURL, "images/generations")
 		routes = append(routes,
 			codingPlanRoute(advancedCustomEndpointPathOpenAIChat, chatURL, advancedCustomConverterNone),
 			codingPlanRoute(advancedCustomEndpointPathOpenAICompletions, chatURL, advancedCustomConverterOpenAICompletionsToChat),
 			codingPlanRoute("/v1beta/models/{model}:generateContent", chatURL, advancedCustomConverterGeminiContentToOpenAIChat),
+			codingPlanRoute(advancedCustomEndpointPathImageGeneration, imageURL, advancedCustomConverterNone),
 		)
 		if p.ResponsesBaseURL == "" {
 			routes = append(routes, codingPlanRoute(advancedCustomEndpointPathOpenAIResponses, chatURL, advancedCustomConverterOpenAIResponsesToOpenAIChat))

@@ -97,6 +97,31 @@ func TestGetAndValidateRequestConvertsImageChatToImageRequest(t *testing.T) {
 	require.True(t, c.GetBool("chat_image_completion_bridge"))
 }
 
+func TestGetAndValidateRequestConvertsImageResponsesToImageRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	body := `{"model":"gpt-image-2","input":[{"role":"user","content":[{"type":"input_text","text":"draw a cat"}]}],"stream":true,"n":2,"size":"1024x1024","quality":"high"}`
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewBufferString(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	request, err := GetAndValidateRequest(c, types.RelayFormatOpenAIResponses)
+	require.NoError(t, err)
+
+	imageRequest, ok := request.(*dto.ImageRequest)
+	require.True(t, ok)
+	require.Equal(t, "gpt-image-2", imageRequest.Model)
+	require.Equal(t, "draw a cat", imageRequest.Prompt)
+	require.Equal(t, "1024x1024", imageRequest.Size)
+	require.Equal(t, "high", imageRequest.Quality)
+	require.NotNil(t, imageRequest.Stream)
+	require.True(t, *imageRequest.Stream)
+	require.NotNil(t, imageRequest.N)
+	require.EqualValues(t, 2, *imageRequest.N)
+	require.Equal(t, relayconstant.RelayModeImagesGenerations, c.GetInt("relay_mode"))
+	require.True(t, c.GetBool("responses_image_generation_bridge"))
+}
+
 // TestGetAndValidOpenAIImageRequestNBounds guards the billing invariant that
 // the image generation count can never reach quota calculation with a value
 // large enough to overflow int64 into a negative charge.

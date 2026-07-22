@@ -186,7 +186,9 @@ func channelSupportsRequestPath(channel *model.Channel, requestPath string, requ
 
 func requestPathForChannelSelection(path string, model string) string {
 	if common.IsImageGenerationModel(model) &&
-		(strings.HasPrefix(path, "/v1/chat/completions") || strings.HasPrefix(path, "/pg/chat/completions")) {
+		(strings.HasPrefix(path, "/v1/chat/completions") ||
+			strings.HasPrefix(path, "/pg/chat/completions") ||
+			strings.HasPrefix(path, "/v1/responses")) {
 		return "/v1/images/generations"
 	}
 	if strings.HasPrefix(path, "/pg/chat/completions") {

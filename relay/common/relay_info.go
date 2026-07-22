@@ -511,6 +511,9 @@ func genBaseRelayInfo(c *gin.Context, request dto.Request) *RelayInfo {
 		info.RequestURLPath = strings.TrimPrefix(info.RequestURLPath, "/pg")
 		info.RequestURLPath = "/v1" + info.RequestURLPath
 	}
+	if c.GetBool("chat_image_completion_bridge") || c.GetBool("responses_image_generation_bridge") {
+		info.RequestURLPath = "/v1/images/generations"
+	}
 
 	userSetting, ok := common.GetContextKeyType[dto.UserSetting](c, constant.ContextKeyUserSetting)
 	if ok {
@@ -566,6 +569,11 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 	case types.RelayFormatEmbedding:
 		info = GenRelayInfoEmbedding(c, request)
 	case types.RelayFormatOpenAIResponses:
+		if request, ok := request.(*dto.ImageRequest); ok && c.GetBool("responses_image_generation_bridge") {
+			info = genBaseRelayInfo(c, request)
+			info.RelayFormat = types.RelayFormatOpenAIResponses
+			break
+		}
 		if request, ok := request.(*dto.OpenAIResponsesRequest); ok {
 			info = GenRelayInfoResponses(c, request)
 			break

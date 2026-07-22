@@ -46,6 +46,13 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 		request, err = GetAndValidateClaudeRequest(c)
 	case types.RelayFormatOpenAIResponses:
 		request, err = GetAndValidateResponsesRequest(c)
+		if responseRequest, ok := request.(*dto.OpenAIResponsesRequest); err == nil && ok && shouldHandleOpenAIResponsesAsImage(relayMode, responseRequest.Model) {
+			request, err = imageRequestFromOpenAIResponses(c, responseRequest)
+			if err == nil {
+				c.Set("relay_mode", relayconstant.RelayModeImagesGenerations)
+				c.Set("responses_image_generation_bridge", true)
+			}
+		}
 	case types.RelayFormatOpenAIResponsesCompaction:
 		request, err = GetAndValidateResponsesCompactionRequest(c)
 
@@ -67,6 +74,10 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 
 func shouldHandleOpenAIChatAsImage(relayMode int, model string) bool {
 	return relayMode == relayconstant.RelayModeChatCompletions && common.IsImageGenerationModel(model)
+}
+
+func shouldHandleOpenAIResponsesAsImage(relayMode int, model string) bool {
+	return relayMode == relayconstant.RelayModeResponses && common.IsImageGenerationModel(model)
 }
 
 func imageRequestFromOpenAIChat(request *dto.GeneralOpenAIRequest) (*dto.ImageRequest, error) {
@@ -93,6 +104,47 @@ func imageRequestFromOpenAIChat(request *dto.GeneralOpenAIRequest) (*dto.ImageRe
 	return imageRequest, nil
 }
 
+func imageRequestFromOpenAIResponses(c *gin.Context, request *dto.OpenAIResponsesRequest) (*dto.ImageRequest, error) {
+	imageRequest := &dto.ImageRequest{
+		Model:  request.Model,
+		Prompt: strings.TrimSpace(lastTextPromptFromResponses(request)),
+		Stream: request.Stream,
+		User:   request.User,
+	}
+
+	if storage, err := common.GetBodyStorage(c); err == nil {
+		if body, err := storage.Bytes(); err == nil {
+			var rawImageRequest dto.ImageRequest
+			if err := common.Unmarshal(body, &rawImageRequest); err == nil {
+				if strings.TrimSpace(rawImageRequest.Prompt) != "" {
+					imageRequest.Prompt = rawImageRequest.Prompt
+				}
+				rawImageRequest.Model = imageRequest.Model
+				rawImageRequest.Prompt = imageRequest.Prompt
+				if rawImageRequest.Stream == nil {
+					rawImageRequest.Stream = imageRequest.Stream
+				}
+				if len(rawImageRequest.User) == 0 {
+					rawImageRequest.User = imageRequest.User
+				}
+				imageRequest = &rawImageRequest
+			}
+		}
+	}
+
+	if strings.TrimSpace(imageRequest.Prompt) == "" {
+		return nil, errors.New("prompt is required")
+	}
+	if imageRequest.N != nil {
+		if *imageRequest.N == 0 {
+			imageRequest.N = nil
+		} else if *imageRequest.N > dto.MaxImageN {
+			return nil, fmt.Errorf("n must be an integer between 1 and %d", dto.MaxImageN)
+		}
+	}
+	return imageRequest, nil
+}
+
 func lastTextPromptFromMessages(messages []dto.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		message := messages[i]
@@ -106,6 +158,16 @@ func lastTextPromptFromMessages(messages []dto.Message) string {
 	for i := len(messages) - 1; i >= 0; i-- {
 		if content := messages[i].StringContent(); strings.TrimSpace(content) != "" {
 			return content
+		}
+	}
+	return ""
+}
+
+func lastTextPromptFromResponses(request *dto.OpenAIResponsesRequest) string {
+	inputs := request.ParseInput()
+	for i := len(inputs) - 1; i >= 0; i-- {
+		if inputs[i].Type == "input_text" && strings.TrimSpace(inputs[i].Text) != "" {
+			return inputs[i].Text
 		}
 	}
 	return ""

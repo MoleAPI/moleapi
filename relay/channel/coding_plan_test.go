@@ -50,6 +50,26 @@ func TestCodingPlanRequestURLNativeRoutes(t *testing.T) {
 			want: "https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions",
 		},
 		{
+			name: "image generations",
+			info: &relaycommon.RelayInfo{
+				RelayMode:              relayconstant.RelayModeImagesGenerations,
+				RelayFormat:            types.RelayFormatOpenAI,
+				RequestConversionChain: []types.RelayFormat{types.RelayFormatOpenAI},
+				ChannelMeta:            &relaycommon.ChannelMeta{ChannelBaseUrl: "doubao-coding-plan"},
+			},
+			want: "https://ark.cn-beijing.volces.com/api/coding/v3/images/generations",
+		},
+		{
+			name: "responses image bridge",
+			info: &relaycommon.RelayInfo{
+				RelayMode:              relayconstant.RelayModeImagesGenerations,
+				RelayFormat:            types.RelayFormatOpenAIResponses,
+				RequestConversionChain: []types.RelayFormat{types.RelayFormatOpenAIResponses, types.RelayFormatOpenAIImage},
+				ChannelMeta:            &relaycommon.ChannelMeta{ChannelBaseUrl: "kimi-coding-plan"},
+			},
+			want: "https://api.kimi.com/coding/v1/images/generations",
+		},
+		{
 			name: "responses",
 			info: &relaycommon.RelayInfo{
 				RelayMode:              relayconstant.RelayModeResponses,

@@ -53,5 +53,6 @@ func TestRequestPathForChannelSelectionNormalizesPlaygroundChat(t *testing.T) {
 	assert.Equal(t, "/v1/chat/completions", requestPathForChannelSelection("/pg/chat/completions", "gpt-4o"))
 	assert.Equal(t, "/v1/images/generations", requestPathForChannelSelection("/pg/chat/completions", "gpt-image-2"))
 	assert.Equal(t, "/v1/images/generations", requestPathForChannelSelection("/v1/chat/completions", "gpt-image-2"))
+	assert.Equal(t, "/v1/images/generations", requestPathForChannelSelection("/v1/responses", "gpt-image-2"))
 	assert.Equal(t, "/v1/responses", requestPathForChannelSelection("/v1/responses", "gpt-4o"))
 }

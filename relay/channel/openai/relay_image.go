@@ -29,10 +29,18 @@ func updateOpenAIImageCount(info *relaycommon.RelayInfo, count int64) {
 	info.PriceData.AddOtherRatio("n", float64(count))
 }
 
-func shouldWrapImageAsChatCompletion(info *relaycommon.RelayInfo) bool {
+func shouldWrapImageAsChatCompletion(c *gin.Context, info *relaycommon.RelayInfo) bool {
 	return info != nil &&
 		info.RelayFormat == types.RelayFormatOpenAI &&
-		strings.HasPrefix(info.RequestURLPath, "/v1/chat/completions")
+		((c != nil && c.GetBool("chat_image_completion_bridge")) ||
+			strings.HasPrefix(info.RequestURLPath, "/v1/chat/completions"))
+}
+
+func shouldWrapImageAsResponses(c *gin.Context, info *relaycommon.RelayInfo) bool {
+	return c != nil &&
+		info != nil &&
+		info.RelayFormat == types.RelayFormatOpenAIResponses &&
+		c.GetBool("responses_image_generation_bridge")
 }
 
 // OpenaiImageHandler handles non-streaming OpenAI image responses
@@ -59,12 +67,20 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
 
-	if shouldWrapImageAsChatCompletion(info) {
+	if shouldWrapImageAsChatCompletion(c, info) {
 		chatBody, err := buildImageChatCompletionResponse(c, info, responseBody, &usageResp.Usage)
 		if err != nil {
 			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 		}
 		service.IOCopyBytesGracefully(c, resp, chatBody)
+		return &usageResp.Usage, nil
+	}
+	if shouldWrapImageAsResponses(c, info) {
+		responsesBody, err := buildImageResponsesResponse(c, info, responseBody, &usageResp.Usage)
+		if err != nil {
+			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+		}
+		service.IOCopyBytesGracefully(c, resp, responsesBody)
 		return &usageResp.Usage, nil
 	}
 
@@ -164,13 +180,71 @@ func imageMarkdownFromResult(image gjson.Result) string {
 	return ""
 }
 
+func buildImageResponsesResponse(c *gin.Context, info *relaycommon.RelayInfo, responseBody []byte, usage *dto.Usage) ([]byte, error) {
+	created := gjson.GetBytes(responseBody, "created").Int()
+	if created == 0 {
+		created = time.Now().Unix()
+	}
+	response := map[string]any{
+		"id":         imageResponsesID(c),
+		"object":     "response",
+		"created_at": created,
+		"status":     "completed",
+		"model":      imageChatCompletionModel(info, responseBody),
+		"output":     imageResponsesOutputItems(c, responseBody),
+		"usage":      usage,
+	}
+	return common.Marshal(response)
+}
+
+func imageResponsesID(c *gin.Context) string {
+	return "resp_" + strings.TrimPrefix(helper.GetResponseID(c), "chatcmpl-")
+}
+
+func imageResponsesOutputItems(c *gin.Context, responseBody []byte) []map[string]any {
+	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
+	items := make([]map[string]any, 0, imageCount)
+	for i := int64(0); i < imageCount; i++ {
+		items = append(items, imageResponsesOutputItem(c, i, gjson.GetBytes(responseBody, "data."+strconv.FormatInt(i, 10))))
+	}
+	return items
+}
+
+func imageResponsesOutputItem(c *gin.Context, index int64, image gjson.Result) map[string]any {
+	item := map[string]any{
+		"id":     imageResponsesOutputItemID(c, index),
+		"type":   dto.ResponsesOutputTypeImageGenerationCall,
+		"status": "completed",
+	}
+	if b64 := strings.TrimSpace(image.Get("b64_json").String()); b64 != "" {
+		item["result"] = b64
+	}
+	if url := strings.TrimSpace(image.Get("url").String()); url != "" {
+		item["url"] = url
+		if _, ok := item["result"]; !ok {
+			item["result"] = url
+		}
+	}
+	if revisedPrompt := strings.TrimSpace(image.Get("revised_prompt").String()); revisedPrompt != "" {
+		item["revised_prompt"] = revisedPrompt
+	}
+	return item
+}
+
+func imageResponsesOutputItemID(c *gin.Context, index int64) string {
+	return fmt.Sprintf("ig_%s_%d", strings.TrimPrefix(helper.GetResponseID(c), "chatcmpl-"), index)
+}
+
 func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		logger.LogError(c, "invalid image stream response")
 		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
 	}
-	if shouldWrapImageAsChatCompletion(info) {
+	if shouldWrapImageAsChatCompletion(c, info) {
 		return openaiImageChatStreamHandler(c, info, resp)
+	}
+	if shouldWrapImageAsResponses(c, info) {
+		return openaiImageResponsesStreamHandler(c, info, resp)
 	}
 
 	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
@@ -321,6 +395,125 @@ func openaiImageChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 	return usage, nil
 }
 
+func openaiImageResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	contentType := strings.ToLower(resp.Header.Get("Content-Type"))
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return OpenaiImageHandler(c, info, resp)
+	}
+	if !strings.Contains(contentType, "text/event-stream") {
+		return openaiImageJSONAsResponsesStreamHandler(c, info, resp)
+	}
+
+	usage := &dto.Usage{}
+	var lastStreamData []byte
+	var completedImages int64
+	items := make([]map[string]any, 0)
+	id := imageResponsesID(c)
+	created := time.Now().Unix()
+	model := imageChatCompletionModel(info, nil)
+
+	helper.SetEventStreamHeaders(c)
+	c.Status(http.StatusOK)
+	if err := writeResponsesImageEvent(c, "response.created", map[string]any{
+		"type": "response.created",
+		"response": map[string]any{
+			"id":         id,
+			"object":     "response",
+			"created_at": created,
+			"status":     "in_progress",
+			"model":      model,
+		},
+	}); err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+	}
+
+	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		raw := common.StringToByteSlice(data)
+		lastStreamData = raw
+		if isOpenAIImageStreamErrorEvent(raw) {
+			sr.Error(fmt.Errorf("%s", extractOpenAIImageStreamErrorMessage(raw)))
+		}
+
+		chunk := gjson.ParseBytes(raw)
+		chunkType := chunk.Get("type").String()
+		var chunkUsage dto.Usage
+		if err := common.UnmarshalJsonStr(chunk.Get("usage").Raw, &chunkUsage); err == nil {
+			normalizeOpenAIUsage(&chunkUsage)
+			if service.ValidUsage(&chunkUsage) {
+				usage = &chunkUsage
+			}
+		}
+
+		switch chunkType {
+		case "image_generation.partial_image":
+			payload := map[string]any{
+				"type":                "response.image_generation_call.partial_image",
+				"item_id":             imageResponsesOutputItemID(c, completedImages),
+				"output_index":        completedImages,
+				"partial_image_index": chunk.Get("partial_image_index").Int(),
+				"partial_image_b64":   chunk.Get("b64_json").String(),
+			}
+			if err := writeResponsesImageEvent(c, "response.image_generation_call.partial_image", payload); err != nil {
+				sr.Stop(err)
+			}
+		case "image_generation.completed", "image_edit.completed":
+			item := imageResponsesOutputItem(c, completedImages, chunk)
+			items = append(items, item)
+			if err := writeResponsesImageEvent(c, dto.ResponsesOutputTypeItemDone, map[string]any{
+				"type":         dto.ResponsesOutputTypeItemDone,
+				"output_index": completedImages,
+				"item":         item,
+			}); err != nil {
+				sr.Stop(err)
+				return
+			}
+			if err := writeResponsesImageEvent(c, "response.image_generation_call.completed", map[string]any{
+				"type":         "response.image_generation_call.completed",
+				"item_id":      item["id"],
+				"output_index": completedImages,
+			}); err != nil {
+				sr.Stop(err)
+				return
+			}
+			completedImages++
+		}
+	})
+
+	applyUsagePostProcessing(info, usage, lastStreamData)
+	if info.StreamStatus != nil &&
+		(info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone ||
+			info.StreamStatus.EndReason == relaycommon.StreamEndReasonEOF) {
+		if err := writeResponsesImageEvent(c, "response.completed", map[string]any{
+			"type": "response.completed",
+			"response": map[string]any{
+				"id":         id,
+				"object":     "response",
+				"created_at": created,
+				"status":     "completed",
+				"model":      model,
+				"output":     items,
+				"usage":      usage,
+			},
+		}); err != nil {
+			return usage, nil
+		}
+		helper.Done(c)
+	}
+
+	if info.StreamStatus != nil {
+		upstreamFinished := info.StreamStatus.EndReason == relaycommon.StreamEndReasonDone ||
+			info.StreamStatus.EndReason == relaycommon.StreamEndReasonEOF
+		requestedN := 1.0
+		if n, ok := info.PriceData.OtherRatios()["n"]; ok {
+			requestedN = n
+		}
+		if upstreamFinished || float64(completedImages) > requestedN {
+			updateOpenAIImageCount(info, completedImages)
+		}
+	}
+	return usage, nil
+}
+
 func openaiImageJSONAsChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	defer service.CloseResponseBodyGracefully(resp)
 
@@ -387,6 +580,94 @@ func openaiImageJSONAsChatStreamHandler(c *gin.Context, info *relaycommon.RelayI
 	return &usageResp.Usage, nil
 }
 
+func openaiImageJSONAsResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
+	defer service.CloseResponseBodyGracefully(resp)
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
+	}
+
+	var usageResp dto.SimpleResponse
+	if err := common.Unmarshal(responseBody, &usageResp); err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	if oaiError := usageResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
+	}
+	normalizeOpenAIUsage(&usageResp.Usage)
+	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
+
+	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
+	updateOpenAIImageCount(info, imageCount)
+
+	helper.SetEventStreamHeaders(c)
+	c.Status(http.StatusOK)
+
+	created := gjson.GetBytes(responseBody, "created").Int()
+	if created == 0 {
+		created = time.Now().Unix()
+	}
+	if info != nil {
+		info.SetFirstResponseTime()
+	}
+	id := imageResponsesID(c)
+	model := imageChatCompletionModel(info, responseBody)
+	if err := writeResponsesImageEvent(c, "response.created", map[string]any{
+		"type": "response.created",
+		"response": map[string]any{
+			"id":         id,
+			"object":     "response",
+			"created_at": created,
+			"status":     "in_progress",
+			"model":      model,
+		},
+	}); err != nil {
+		return &usageResp.Usage, nil
+	}
+
+	items := imageResponsesOutputItems(c, responseBody)
+	for index, item := range items {
+		if err := writeResponsesImageEvent(c, dto.ResponsesOutputTypeItemDone, map[string]any{
+			"type":         dto.ResponsesOutputTypeItemDone,
+			"output_index": index,
+			"item":         item,
+		}); err != nil {
+			return &usageResp.Usage, nil
+		}
+		if err := writeResponsesImageEvent(c, "response.image_generation_call.completed", map[string]any{
+			"type":         "response.image_generation_call.completed",
+			"item_id":      item["id"],
+			"output_index": index,
+		}); err != nil {
+			return &usageResp.Usage, nil
+		}
+	}
+	if err := writeResponsesImageEvent(c, "response.completed", map[string]any{
+		"type": "response.completed",
+		"response": map[string]any{
+			"id":         id,
+			"object":     "response",
+			"created_at": created,
+			"status":     "completed",
+			"model":      model,
+			"output":     items,
+			"usage":      &usageResp.Usage,
+		},
+	}); err != nil {
+		return &usageResp.Usage, nil
+	}
+	helper.Done(c)
+	if info != nil {
+		info.ReceivedResponseCount += int(imageCount)
+		if info.StreamStatus == nil {
+			info.StreamStatus = relaycommon.NewStreamStatus()
+		}
+		info.StreamStatus.SetEndReason(relaycommon.StreamEndReasonDone, nil)
+	}
+	return &usageResp.Usage, nil
+}
+
 func imageChatCompletionModel(info *relaycommon.RelayInfo, responseBody []byte) string {
 	if info != nil && info.OriginModelName != "" {
 		return info.OriginModelName
@@ -412,6 +693,14 @@ func writeChatImageContentChunk(c *gin.Context, id string, created int64, model 
 			},
 		},
 	})
+}
+
+func writeResponsesImageEvent(c *gin.Context, eventType string, payload map[string]any) error {
+	data, err := common.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	return helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: eventType}, string(data))
 }
 
 // writeOpenaiImageStreamChunk rebuilds the SSE frame for an image stream chunk:

@@ -31,6 +31,9 @@ func CodingPlanRequestURL(info *relaycommon.RelayInfo) (string, bool) {
 	if info.RelayMode == relayconstant.RelayModeResponsesCompact {
 		return joinCodingPlanURL(plan.ResponsesBaseURL, "/responses/compact")
 	}
+	if info.RelayMode == relayconstant.RelayModeImagesGenerations {
+		return joinCodingPlanURL(plan.OpenAIBaseURL, "/images/generations")
+	}
 
 	switch info.GetFinalRequestRelayFormat() {
 	case types.RelayFormatClaude:

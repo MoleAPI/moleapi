@@ -24,6 +24,11 @@ func TestCodingPlanPresetBuildsGLMFallbackResponsesRoute(t *testing.T) {
 	assert.Equal(t, advancedCustomConverterOpenAICompletionsToChat, route.Converter)
 	assert.Equal(t, "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", route.UpstreamPath)
 
+	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathImageGeneration)
+	require.True(t, ok)
+	assert.Equal(t, advancedCustomConverterNone, route.Converter)
+	assert.Equal(t, "https://open.bigmodel.cn/api/coding/paas/v4/images/generations", route.UpstreamPath)
+
 	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathClaudeMessages)
 	require.True(t, ok)
 	assert.Equal(t, advancedCustomConverterNone, route.Converter)
@@ -57,6 +62,10 @@ func TestCodingPlanPresetBuildsCustomPlaceholderRoutes(t *testing.T) {
 	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathOpenAIResponses)
 	require.True(t, ok)
 	assert.Equal(t, "https://your-openai-compatible-base-url.example/v1/responses", route.UpstreamPath)
+
+	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathImageGeneration)
+	require.True(t, ok)
+	assert.Equal(t, "https://your-openai-compatible-base-url.example/v1/images/generations", route.UpstreamPath)
 
 	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathClaudeMessages)
 	require.True(t, ok)

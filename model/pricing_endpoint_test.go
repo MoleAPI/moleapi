@@ -221,6 +221,7 @@ func TestPricingCodingPlanUsesGeneratedEndpointTypes(t *testing.T) {
 		constant.EndpointTypeOpenAIResponse,
 		constant.EndpointTypeAnthropic,
 		constant.EndpointTypeGemini,
+		constant.EndpointTypeImageGeneration,
 	}, byModel["glm-5-turbo"])
 }
 

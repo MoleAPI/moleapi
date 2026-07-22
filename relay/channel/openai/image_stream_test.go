@@ -119,9 +119,10 @@ func TestOpenaiImageChatCompletionWrapper(t *testing.T) {
 
 	t.Run("non-stream image response is returned as chat completion", func(t *testing.T) {
 		c, recorder, resp, info := newImageTestContext(t, body, "application/json", false)
+		c.Set("chat_image_completion_bridge", true)
 		info.RelayMode = relayconstant.RelayModeImagesGenerations
 		info.RelayFormat = types.RelayFormatOpenAI
-		info.RequestURLPath = "/v1/chat/completions"
+		info.RequestURLPath = "/v1/images/generations"
 		info.OriginModelName = "gpt-image-2"
 
 		usage, err := OpenaiImageHandler(c, info, resp)
@@ -135,9 +136,10 @@ func TestOpenaiImageChatCompletionWrapper(t *testing.T) {
 
 	t.Run("stream image response is returned as chat completion chunks", func(t *testing.T) {
 		c, recorder, resp, info := newImageTestContext(t, body, "application/json", true)
+		c.Set("chat_image_completion_bridge", true)
 		info.RelayMode = relayconstant.RelayModeImagesGenerations
 		info.RelayFormat = types.RelayFormatOpenAI
-		info.RequestURLPath = "/v1/chat/completions"
+		info.RequestURLPath = "/v1/images/generations"
 		info.OriginModelName = "gpt-image-2"
 
 		usage, err := OpenaiImageStreamHandler(c, info, resp)
@@ -149,6 +151,67 @@ func TestOpenaiImageChatCompletionWrapper(t *testing.T) {
 		require.Contains(t, recorder.Body.String(), `"object":"chat.completion.chunk"`)
 		require.Contains(t, recorder.Body.String(), `![generated image](https://example.test/cat.png)`)
 		require.Contains(t, recorder.Body.String(), `data: [DONE]`)
+		require.NotContains(t, recorder.Body.String(), `event: image_generation.completed`)
+	})
+}
+
+func TestOpenaiImageResponsesWrapper(t *testing.T) {
+	oldMode := gin.Mode()
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(func() { gin.SetMode(oldMode) })
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+
+	body := `{"created":1710000000,"data":[{"b64_json":"image-b64"}],"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7}}`
+
+	t.Run("non-stream image response is returned as responses object", func(t *testing.T) {
+		c, recorder, resp, info := newImageTestContext(t, body, "application/json", false)
+		c.Set("responses_image_generation_bridge", true)
+		info.RelayMode = relayconstant.RelayModeImagesGenerations
+		info.RelayFormat = types.RelayFormatOpenAIResponses
+		info.RequestURLPath = "/v1/images/generations"
+		info.OriginModelName = "gpt-image-2"
+
+		usage, err := OpenaiImageHandler(c, info, resp)
+
+		require.Nil(t, err)
+		require.Equal(t, 3, usage.PromptTokens)
+		require.Equal(t, 4, usage.CompletionTokens)
+		require.Contains(t, recorder.Body.String(), `"object":"response"`)
+		require.Contains(t, recorder.Body.String(), `"type":"image_generation_call"`)
+		require.Contains(t, recorder.Body.String(), `"result":"image-b64"`)
+	})
+
+	t.Run("stream image response is returned as responses events", func(t *testing.T) {
+		streamBody := strings.Join([]string{
+			`event: image_generation.partial_image`,
+			`data: {"type":"image_generation.partial_image","partial_image_index":0,"b64_json":"partial"}`,
+			``,
+			`event: image_generation.completed`,
+			`data: {"type":"image_generation.completed","b64_json":"image-b64","usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7}}`,
+			``,
+			`data: [DONE]`,
+			``,
+		}, "\n")
+		c, recorder, resp, info := newImageTestContext(t, streamBody, "text/event-stream", true)
+		c.Set("responses_image_generation_bridge", true)
+		info.RelayMode = relayconstant.RelayModeImagesGenerations
+		info.RelayFormat = types.RelayFormatOpenAIResponses
+		info.RequestURLPath = "/v1/images/generations"
+		info.OriginModelName = "gpt-image-2"
+
+		usage, err := OpenaiImageStreamHandler(c, info, resp)
+
+		require.Nil(t, err)
+		require.Equal(t, 3, usage.PromptTokens)
+		require.Equal(t, 4, usage.CompletionTokens)
+		require.Contains(t, recorder.Body.String(), `event: response.created`)
+		require.Contains(t, recorder.Body.String(), `event: response.image_generation_call.partial_image`)
+		require.Contains(t, recorder.Body.String(), `"partial_image_b64":"partial"`)
+		require.Contains(t, recorder.Body.String(), `event: response.image_generation_call.completed`)
+		require.Contains(t, recorder.Body.String(), `event: response.completed`)
+		require.Contains(t, recorder.Body.String(), `"result":"image-b64"`)
 		require.NotContains(t, recorder.Body.String(), `event: image_generation.completed`)
 	})
 }
