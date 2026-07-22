@@ -118,6 +118,24 @@ func TestAdaptorSetupRequestHeaderUsesDefaultBearerAuth(t *testing.T) {
 	assert.Equal(t, "Bearer sk-test", header.Get("Authorization"))
 }
 
+func TestAdaptorUsesNormalizedRelayInfoPathForPlayground(t *testing.T) {
+	adaptor := &Adaptor{}
+	info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{
+		Routes: []dto.AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/chat/completions",
+				UpstreamPath: "https://upstream.example/v1/chat/completions",
+				Converter:    relayconvert.ConverterNone,
+			},
+		},
+	})
+	c := advancedCustomGinContext("/pg/chat/completions")
+	header := http.Header{}
+
+	require.NoError(t, adaptor.SetupRequestHeader(c, &header, info))
+	assert.Equal(t, "Bearer sk-test", header.Get("Authorization"))
+}
+
 func TestAdaptorSetupRequestHeaderUsesConfiguredHeaderAuth(t *testing.T) {
 	adaptor := &Adaptor{}
 	info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{

@@ -48,3 +48,8 @@ func TestGetModelRequestNormalizesClientModelAliasesFromPath(t *testing.T) {
 		})
 	}
 }
+
+func TestRequestPathForChannelSelectionNormalizesPlaygroundChat(t *testing.T) {
+	assert.Equal(t, "/v1/chat/completions", requestPathForChannelSelection("/pg/chat/completions"))
+	assert.Equal(t, "/v1/responses", requestPathForChannelSelection("/v1/responses"))
+}
