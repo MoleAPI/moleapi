@@ -19,6 +19,11 @@ func TestCodingPlanPresetBuildsGLMFallbackResponsesRoute(t *testing.T) {
 	assert.Equal(t, advancedCustomConverterOpenAIResponsesToOpenAIChat, route.Converter)
 	assert.Equal(t, "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", route.UpstreamPath)
 
+	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathOpenAICompletions)
+	require.True(t, ok)
+	assert.Equal(t, advancedCustomConverterOpenAICompletionsToChat, route.Converter)
+	assert.Equal(t, "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", route.UpstreamPath)
+
 	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathClaudeMessages)
 	require.True(t, ok)
 	assert.Equal(t, advancedCustomConverterNone, route.Converter)

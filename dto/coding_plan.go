@@ -118,7 +118,7 @@ func (p CodingPlanPreset) AdvancedCustomConfig() *AdvancedCustomConfig {
 		chatURL := codingPlanJoinPath(p.OpenAIBaseURL, "chat/completions")
 		routes = append(routes,
 			codingPlanRoute(advancedCustomEndpointPathOpenAIChat, chatURL, advancedCustomConverterNone),
-			codingPlanRoute(advancedCustomEndpointPathOpenAICompletions, codingPlanJoinPath(p.OpenAIBaseURL, "completions"), advancedCustomConverterNone),
+			codingPlanRoute(advancedCustomEndpointPathOpenAICompletions, chatURL, advancedCustomConverterOpenAICompletionsToChat),
 			codingPlanRoute("/v1beta/models/{model}:generateContent", chatURL, advancedCustomConverterGeminiContentToOpenAIChat),
 		)
 		if p.ResponsesBaseURL == "" {

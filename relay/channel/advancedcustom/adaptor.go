@@ -64,6 +64,8 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 			return nil, err
 		}
 		return result.Value, nil
+	case relayconvert.ConverterOpenAICompletionsToOpenAIChat:
+		return a.convertOpenAICompatibleRequest(c, info, openAICompletionsRequestToChat(request))
 	default:
 		return nil, fmt.Errorf("converter %q does not support OpenAI chat completions requests", converter)
 	}
@@ -327,6 +329,8 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	case relayconvert.ConverterClaudeMessagesToOpenAIChat,
 		relayconvert.ConverterGeminiContentToOpenAIChat:
 		return a.openaiAdaptor.DoResponse(c, resp, info)
+	case relayconvert.ConverterOpenAICompletionsToOpenAIChat:
+		return a.doOpenAICompletionsConvertedResponse(c, resp, info)
 	case relayconvert.ConverterOpenAIChatToClaudeMessages:
 		return a.claudeAdaptor.DoResponse(c, resp, info)
 	case relayconvert.ConverterGeminiContentToClaudeMessages,
@@ -350,6 +354,165 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	default:
 		return nil, types.NewOpenAIError(fmt.Errorf("unsupported advanced custom converter: %s", a.converter), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
+}
+
+type openAICompletionsResponse struct {
+	Id      string                    `json:"id"`
+	Object  string                    `json:"object"`
+	Created any                       `json:"created"`
+	Model   string                    `json:"model"`
+	Choices []openAICompletionsChoice `json:"choices"`
+	Usage   dto.Usage                 `json:"usage"`
+}
+
+type openAICompletionsChoice struct {
+	Text         string `json:"text"`
+	Index        int    `json:"index"`
+	Logprobs     any    `json:"logprobs"`
+	FinishReason any    `json:"finish_reason"`
+}
+
+type openAICompletionsStreamResponse struct {
+	Id      string                    `json:"id"`
+	Object  string                    `json:"object"`
+	Created int64                     `json:"created"`
+	Model   string                    `json:"model"`
+	Choices []openAICompletionsChoice `json:"choices"`
+	Usage   *dto.Usage                `json:"usage,omitempty"`
+}
+
+func (a *Adaptor) doOpenAICompletionsConvertedResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	if info.IsStream {
+		return a.doOpenAICompletionsConvertedStreamResponse(c, resp, info)
+	}
+	if resp == nil || resp.Body == nil {
+		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+	}
+	defer service.CloseResponseBodyGracefully(resp)
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
+	}
+
+	var chatResponse dto.OpenAITextResponse
+	if err := common.Unmarshal(responseBody, &chatResponse); err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	if oaiError := chatResponse.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
+		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
+	}
+
+	completionResponse := openAICompletionsResponse{
+		Id:      chatResponse.Id,
+		Object:  "text_completion",
+		Created: chatResponse.Created,
+		Model:   chatResponse.Model,
+		Choices: make([]openAICompletionsChoice, 0, len(chatResponse.Choices)),
+		Usage:   chatResponse.Usage,
+	}
+	completionText := strings.Builder{}
+	for _, choice := range chatResponse.Choices {
+		text := choice.Message.StringContent()
+		completionText.WriteString(text)
+		completionResponse.Choices = append(completionResponse.Choices, openAICompletionsChoice{
+			Text:         text,
+			Index:        choice.Index,
+			Logprobs:     nil,
+			FinishReason: choice.FinishReason,
+		})
+	}
+	if completionResponse.Usage.PromptTokens == 0 {
+		completionTokens := completionResponse.Usage.CompletionTokens
+		if completionTokens == 0 {
+			completionTokens = service.CountTextToken(completionText.String(), info.UpstreamModelName)
+		}
+		completionResponse.Usage = dto.Usage{
+			PromptTokens:     info.GetEstimatePromptTokens(),
+			CompletionTokens: completionTokens,
+			TotalTokens:      info.GetEstimatePromptTokens() + completionTokens,
+		}
+	}
+
+	responseBody, err = common.Marshal(completionResponse)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
+	}
+	service.IOCopyBytesGracefully(c, resp, responseBody)
+	return &completionResponse.Usage, nil
+}
+
+func (a *Adaptor) doOpenAICompletionsConvertedStreamResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	if resp == nil || resp.Body == nil {
+		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+	}
+	defer service.CloseResponseBodyGracefully(resp)
+
+	usage := &dto.Usage{}
+	containStreamUsage := false
+	responseTextBuilder := strings.Builder{}
+	var streamErr *types.NewAPIError
+
+	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		if streamErr != nil {
+			sr.Stop(streamErr)
+			return
+		}
+
+		var chatChunk dto.ChatCompletionsStreamResponse
+		if err := common.UnmarshalJsonStr(data, &chatChunk); err != nil {
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+			sr.Stop(streamErr)
+			return
+		}
+		if service.ValidUsage(chatChunk.Usage) {
+			usage = chatChunk.Usage
+			containStreamUsage = true
+		}
+
+		completionChunk := openAICompletionsStreamResponse{
+			Id:      chatChunk.Id,
+			Object:  "text_completion",
+			Created: chatChunk.Created,
+			Model:   chatChunk.Model,
+			Choices: make([]openAICompletionsChoice, 0, len(chatChunk.Choices)),
+			Usage:   chatChunk.Usage,
+		}
+		for _, choice := range chatChunk.Choices {
+			text := choice.Delta.GetContentString()
+			responseTextBuilder.WriteString(text)
+			completionChunk.Choices = append(completionChunk.Choices, openAICompletionsChoice{
+				Text:         text,
+				Index:        choice.Index,
+				Logprobs:     nil,
+				FinishReason: choice.FinishReason,
+			})
+		}
+		if len(completionChunk.Choices) > 0 || completionChunk.Usage != nil {
+			if err := helper.ObjectData(c, completionChunk); err != nil {
+				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+				sr.Stop(streamErr)
+			}
+		}
+	})
+	if streamErr != nil {
+		return nil, streamErr
+	}
+	if !containStreamUsage {
+		usage = service.ResponseText2Usage(c, responseTextBuilder.String(), info.UpstreamModelName, info.GetEstimatePromptTokens())
+	}
+	if info.ShouldIncludeUsage && !containStreamUsage {
+		_ = helper.ObjectData(c, openAICompletionsStreamResponse{
+			Id:      helper.GetResponseID(c),
+			Object:  "text_completion",
+			Created: common.GetTimestamp(),
+			Model:   info.UpstreamModelName,
+			Choices: []openAICompletionsChoice{},
+			Usage:   usage,
+		})
+	}
+	helper.Done(c)
+	return usage, nil
 }
 
 func (a *Adaptor) doClaudeConvertedResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (any, *types.NewAPIError) {
@@ -714,6 +877,35 @@ func (a *Adaptor) convertOpenAICompatibleRequest(c *gin.Context, info *relaycomm
 	converted, err := a.openaiAdaptor.ConvertOpenAIRequest(c, info, request)
 	info.ChannelType = old
 	return converted, err
+}
+
+func openAICompletionsRequestToChat(request *dto.GeneralOpenAIRequest) *dto.GeneralOpenAIRequest {
+	converted := *request
+	converted.Prompt = nil
+	converted.Messages = []dto.Message{{
+		Role:    "user",
+		Content: openAICompletionsPromptText(request.Prompt),
+	}}
+	return &converted
+}
+
+func openAICompletionsPromptText(prompt any) string {
+	switch value := prompt.(type) {
+	case nil:
+		return ""
+	case string:
+		return value
+	case []string:
+		return strings.Join(value, "\n")
+	case []any:
+		parts := make([]string, 0, len(value))
+		for _, item := range value {
+			parts = append(parts, fmt.Sprint(item))
+		}
+		return strings.Join(parts, "\n")
+	default:
+		return fmt.Sprint(value)
+	}
 }
 
 func (a *Adaptor) convertOpenAICompatibleResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {

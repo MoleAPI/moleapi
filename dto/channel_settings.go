@@ -68,6 +68,7 @@ const (
 	advancedCustomConverterClaudeMessagesToOpenAIChat  = "anthropic_messages_to_openai_chat_completions"
 	advancedCustomConverterClaudeMessagesToResponses   = "claude_messages_to_openai_responses"
 	advancedCustomConverterGeminiContentToClaude       = "gemini_generate_content_to_claude_messages"
+	advancedCustomConverterOpenAICompletionsToChat     = "openai_completions_to_openai_chat_completions"
 	advancedCustomConverterOpenAIChatToClaudeMessages  = "openai_chat_completions_to_anthropic_messages"
 	advancedCustomConverterOpenAIChatToOpenAIResponses = "openai_chat_completions_to_openai_responses"
 	advancedCustomConverterOpenAIResponsesToClaude     = "openai_responses_to_claude_messages"
@@ -260,6 +261,7 @@ func advancedCustomRouteUpstreamTextEndpointType(route AdvancedCustomRoute) (con
 		}
 		return advancedCustomTextEndpointType(endpointType)
 	case advancedCustomConverterClaudeMessagesToOpenAIChat,
+		advancedCustomConverterOpenAICompletionsToChat,
 		advancedCustomConverterOpenAIResponsesToOpenAIChat,
 		advancedCustomConverterGeminiContentToOpenAIChat:
 		return constant.EndpointTypeOpenAI, true
@@ -427,6 +429,7 @@ func IsAdvancedCustomConverterAllowed(converter string) bool {
 		advancedCustomConverterClaudeMessagesToOpenAIChat,
 		advancedCustomConverterClaudeMessagesToResponses,
 		advancedCustomConverterGeminiContentToClaude,
+		advancedCustomConverterOpenAICompletionsToChat,
 		advancedCustomConverterOpenAIChatToClaudeMessages,
 		advancedCustomConverterOpenAIChatToOpenAIResponses,
 		advancedCustomConverterOpenAIResponsesToClaude,
@@ -612,6 +615,10 @@ func validateAdvancedCustomConverterPath(index int, incomingPath string, convert
 		advancedCustomConverterOpenAIChatToOpenAIResponses,
 		advancedCustomConverterOpenAIChatToGeminiContent:
 		if incomingPath == "/v1/chat/completions" {
+			return nil
+		}
+	case advancedCustomConverterOpenAICompletionsToChat:
+		if incomingPath == "/v1/completions" {
 			return nil
 		}
 	case advancedCustomConverterOpenAIResponsesToClaude,

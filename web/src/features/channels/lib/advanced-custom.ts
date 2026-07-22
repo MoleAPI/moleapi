@@ -64,6 +64,11 @@ export const ADVANCED_CUSTOM_CONVERTER_OPTIONS: Array<{
     triggerLabel: 'To Anthropic Messages',
   },
   {
+    value: 'openai_completions_to_openai_chat_completions',
+    label: 'OpenAI Completions to OpenAI Chat',
+    triggerLabel: 'To OpenAI Chat',
+  },
+  {
     value: 'openai_chat_completions_to_openai_responses',
     label: 'OpenAI Chat to OpenAI Responses',
     triggerLabel: 'To OpenAI Responses',
@@ -402,6 +407,7 @@ export function getAdvancedCustomConverterDefaults(
   if (
     converter === 'anthropic_messages_to_openai_chat_completions' ||
     converter === 'gemini_generate_content_to_openai_chat_completions' ||
+    converter === 'openai_completions_to_openai_chat_completions' ||
     converter === 'openai_responses_to_openai_chat_completions'
   ) {
     return { upstream_path: openAIChatPath, auth: bearerHeaderAuth() }
@@ -868,6 +874,9 @@ function isConverterPathAllowed(
     converter === 'openai_chat_completions_to_gemini_generate_content'
   ) {
     return incomingPath === '/v1/chat/completions'
+  }
+  if (converter === 'openai_completions_to_openai_chat_completions') {
+    return incomingPath === '/v1/completions'
   }
   if (
     converter === 'openai_responses_to_claude_messages' ||

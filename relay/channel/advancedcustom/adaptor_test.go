@@ -936,6 +936,138 @@ func TestAdaptorConvertsOpenAIChatRequestToGeminiUpstream(t *testing.T) {
 	assert.Equal(t, "user", geminiReq.Contents[0].Role)
 }
 
+func TestAdaptorConvertsOpenAICompletionsRequestToChatUpstream(t *testing.T) {
+	adaptor := &Adaptor{}
+	info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{
+		Routes: []dto.AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/completions",
+				UpstreamPath: "/v1/chat/completions",
+				Converter:    relayconvert.ConverterOpenAICompletionsToOpenAIChat,
+			},
+		},
+	})
+	info.RelayMode = relayconstant.RelayModeCompletions
+	info.RequestURLPath = "/v1/completions"
+	c := advancedCustomGinContext("/v1/completions")
+	maxTokens := uint(16)
+
+	converted, err := adaptor.ConvertOpenAIRequest(c, info, &dto.GeneralOpenAIRequest{
+		Model:     "gpt-test",
+		Prompt:    "hello",
+		MaxTokens: &maxTokens,
+	})
+	require.NoError(t, err)
+
+	chatReq, ok := converted.(*dto.GeneralOpenAIRequest)
+	require.True(t, ok)
+	assert.Nil(t, chatReq.Prompt)
+	require.Len(t, chatReq.Messages, 1)
+	assert.Equal(t, "user", chatReq.Messages[0].Role)
+	assert.Equal(t, "hello", chatReq.Messages[0].StringContent())
+	assert.Equal(t, uint(16), *chatReq.MaxTokens)
+}
+
+func TestAdaptorConvertsChatResponseToOpenAICompletionsResponse(t *testing.T) {
+	adaptor := &Adaptor{}
+	info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{
+		Routes: []dto.AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/completions",
+				UpstreamPath: "/v1/chat/completions",
+				Converter:    relayconvert.ConverterOpenAICompletionsToOpenAIChat,
+			},
+		},
+	})
+	info.RelayMode = relayconstant.RelayModeCompletions
+	info.RequestURLPath = "/v1/completions"
+
+	payload := dto.OpenAITextResponse{
+		Id:      "chatcmpl-test",
+		Object:  "chat.completion",
+		Created: int64(123),
+		Model:   "gpt-test",
+		Choices: []dto.OpenAITextResponseChoice{
+			{
+				Index: 0,
+				Message: dto.Message{
+					Role:    "assistant",
+					Content: "READY",
+				},
+				FinishReason: "stop",
+			},
+		},
+		Usage: dto.Usage{PromptTokens: 2, CompletionTokens: 3, TotalTokens: 5},
+	}
+	body, err := common.Marshal(payload)
+	require.NoError(t, err)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/completions", nil)
+
+	usage, newAPIError := adaptor.DoResponse(c, &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(bytes.NewReader(body)),
+	}, info)
+	require.Nil(t, newAPIError)
+	require.NotNil(t, usage)
+
+	got := recorder.Body.String()
+	assert.Contains(t, got, `"object":"text_completion"`)
+	assert.Contains(t, got, `"text":"READY"`)
+	assert.NotContains(t, got, `"message"`)
+}
+
+func TestAdaptorConvertsChatStreamToOpenAICompletionsStream(t *testing.T) {
+	oldStreamingTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	defer func() {
+		constant.StreamingTimeout = oldStreamingTimeout
+	}()
+
+	adaptor := &Adaptor{}
+	info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{
+		Routes: []dto.AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/completions",
+				UpstreamPath: "/v1/chat/completions",
+				Converter:    relayconvert.ConverterOpenAICompletionsToOpenAIChat,
+			},
+		},
+	})
+	info.RelayMode = relayconstant.RelayModeCompletions
+	info.RequestURLPath = "/v1/completions"
+	info.IsStream = true
+	info.ShouldIncludeUsage = true
+
+	body := strings.Join([]string{
+		`data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":123,"model":"gpt-test","choices":[{"index":0,"delta":{"content":"RE"},"finish_reason":null}]}`,
+		``,
+		`data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":123,"model":"gpt-test","choices":[{"index":0,"delta":{"content":"ADY"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5}}`,
+		``,
+		`data: [DONE]`,
+		``,
+	}, "\n")
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/completions", nil)
+
+	usage, newAPIError := adaptor.DoResponse(c, &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}, info)
+	require.Nil(t, newAPIError)
+	require.NotNil(t, usage)
+
+	got := recorder.Body.String()
+	assert.Contains(t, got, `"object":"text_completion"`)
+	assert.Contains(t, got, `"text":"RE"`)
+	assert.Contains(t, got, `"text":"ADY"`)
+	assert.Contains(t, got, `[DONE]`)
+}
+
 func TestAdaptorConvertsClaudeRequestToOpenAIChatUpstream(t *testing.T) {
 	adaptor := &Adaptor{}
 	info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{

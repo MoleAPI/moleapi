@@ -361,6 +361,24 @@ func TestAdvancedCustomMatchPathForModelInfersTextEndpointsFromOpenAIChatRoute(t
 	assert.False(t, ok)
 }
 
+func TestAdvancedCustomAllowsOpenAICompletionsToChatConverter(t *testing.T) {
+	config := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/completions",
+				UpstreamPath: "/v1/chat/completions",
+				Converter:    advancedCustomConverterOpenAICompletionsToChat,
+			},
+		},
+	}
+
+	require.NoError(t, config.Validate())
+
+	route, ok := config.MatchPathForModel("/v1/completions", "glm-5-turbo")
+	require.True(t, ok)
+	assert.Equal(t, advancedCustomConverterOpenAICompletionsToChat, route.Converter)
+}
+
 func TestAdvancedCustomMatchPathForModelInfersTextEndpointsFromClaudeRoute(t *testing.T) {
 	config := &AdvancedCustomConfig{
 		Routes: []AdvancedCustomRoute{

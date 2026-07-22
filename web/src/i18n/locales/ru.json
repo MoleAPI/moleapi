@@ -4974,7 +4974,7 @@
     "Upstream model detection task started. Track progress in System Info, then refresh to review staged updates.": "Задача обнаружения моделей вышестоящего источника запущена. Следите за ходом в разделе «Информация о системе», затем обновите, чтобы просмотреть подготовленные изменения.",
     "Upstream Model Update Check": "Проверка обновлений моделей провайдера",
     "Upstream Model Updates": "Обновления моделей источника",
-    "Upstream model updates applied: {{added}} added, {{removed}} removed, {{ignored}} ignored this time, {{totalIgnored}} total ignored models": "Обновления моделей применены: {{added}} добавлено, {{removed}} удалено, {{ignored}} проигнорировано, всего {{totalIgnored}} проигнорированных моделей",
+    "Upstream model updates applied: {{added}} added, {{removed}} removed, {{ignored}} ignored this time, {{totalIgnored}} total ignored models": "Upstream model updates applied: {{added}} added, {{removed}} removed, {{ignored}} ignored this time, {{totalIgnored}} total ignored models",
     "Upstream path": "Путь upstream",
     "Upstream path is required": "Путь upstream обязателен",
     "Upstream path must be a full URL or a path starting with /": "Путь upstream должен быть полным URL или путем, начинающимся с /",
@@ -5337,5 +5337,6 @@
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom"
-  }
+  },
+  "OpenAI Completions to OpenAI Chat": "OpenAI Completions в OpenAI Chat"
 }

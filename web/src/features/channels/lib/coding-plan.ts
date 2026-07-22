@@ -130,8 +130,8 @@ export function buildCodingPlanAdvancedCustomConfig(
       codingPlanRoute('/v1/chat/completions', chatUrl, 'none'),
       codingPlanRoute(
         '/v1/completions',
-        joinProviderPath(provider.openAIBaseUrl, 'completions'),
-        'none'
+        chatUrl,
+        'openai_completions_to_openai_chat_completions'
       ),
       codingPlanRoute(
         '/v1beta/models/{model}:generateContent',
