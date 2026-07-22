@@ -45,6 +45,10 @@ const (
 // do not receive automatic refunds from tasks covered by reconciliation.
 const TaskRefundLegacyCutoff int64 = 1740182400 // 2025-02-22 00:00:00 UTC
 
+// ponytail: hard-coded upgrade epoch; use an explicit refund marker if older
+// deployments need per-row reconciliation state.
+const TaskRefundReconciliationCutoff int64 = 1784678400 // 2026-07-22 00:00:00 UTC
+
 type Task struct {
 	ID         int64                 `json:"id" gorm:"primary_key;AUTO_INCREMENT"`
 	CreatedAt  int64                 `json:"created_at" gorm:"index"`
@@ -320,6 +324,7 @@ func GetUnrefundedFailedTasks(updatedBefore int64, limit int) []*Task {
 	err := DB.Where("status = ?", TaskStatusFailure).
 		Where("quota != ?", 0).
 		Where("updated_at <= ?", updatedBefore).
+		Where("updated_at >= ?", TaskRefundReconciliationCutoff).
 		Where("(submit_time <= ? OR submit_time >= ?)", 0, TaskRefundLegacyCutoff).
 		Order("id").
 		Limit(limit).
@@ -368,6 +373,7 @@ func HasTaskPollingWork() bool {
 	err := DB.Model(&Task{}).
 		Where("status = ?", TaskStatusFailure).
 		Where("quota != ?", 0).
+		Where("updated_at >= ?", TaskRefundReconciliationCutoff).
 		Where("(submit_time <= ? OR submit_time >= ?)", 0, TaskRefundLegacyCutoff).
 		Limit(1).
 		Pluck("id", &id).Error

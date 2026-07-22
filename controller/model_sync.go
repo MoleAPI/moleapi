@@ -29,11 +29,37 @@ const (
 func normalizeLocale(locale string) (string, bool) {
 	l := strings.ToLower(strings.TrimSpace(locale))
 	switch l {
-	case "en", "zh-CN", "zh-TW", "ja":
+	case "en", "ja":
 		return l, true
+	case "zh", "zh-cn", "zh-hans", "zh-tw", "zh-hant":
+		return "zh", true
 	default:
 		return "", false
 	}
+}
+
+func localizedDescriptionLocale(locale string) (string, bool) {
+	l, ok := normalizeLocale(locale)
+	return l, ok && l != "en"
+}
+
+func applyLocalizedModelDescription(m *model.Model, locale string, description string) error {
+	translations := modelDescriptionTranslations(m.DescriptionI18N)
+	if translations == nil {
+		translations = map[string]string{}
+	}
+	description = strings.TrimSpace(description)
+	if description == "" {
+		delete(translations, locale)
+	} else {
+		translations[locale] = description
+	}
+	raw, err := marshalModelDescriptionTranslations(translations)
+	if err != nil {
+		return err
+	}
+	m.DescriptionI18N = raw
+	return nil
 }
 
 func getUpstreamBase() string {
@@ -180,10 +206,10 @@ func fetchJSON[T any](ctx context.Context, url string, out *upstreamEnvelope[T])
 				cacheMutex.Unlock()
 
 				// Try decode as envelope first
-				if err := json.Unmarshal(buf, out); err != nil {
+				if err := common.Unmarshal(buf, out); err != nil {
 					// Try decode as pure array
 					var arr []T
-					if err2 := json.Unmarshal(buf, &arr); err2 != nil {
+					if err2 := common.Unmarshal(buf, &arr); err2 != nil {
 						lastErr = err
 						return
 					}
@@ -205,9 +231,9 @@ func fetchJSON[T any](ctx context.Context, url string, out *upstreamEnvelope[T])
 					lastErr = errors.New("cache miss for 304 response")
 					return
 				}
-				if err := json.Unmarshal(buf, out); err != nil {
+				if err := common.Unmarshal(buf, out); err != nil {
 					var arr []T
-					if err2 := json.Unmarshal(buf, &arr); err2 != nil {
+					if err2 := common.Unmarshal(buf, &arr); err2 != nil {
 						lastErr = err
 						return
 					}
@@ -348,6 +374,7 @@ func SyncUpstreamModels(c *gin.Context) {
 	skipped := make([]string, 0)
 	createdList := make([]string, 0)
 	updatedList := make([]string, 0)
+	descriptionLocale, syncLocalizedDescription := localizedDescriptionLocale(req.Locale)
 
 	// 本地缓存：vendorName -> id
 	vendorIDCache := make(map[string]int)
@@ -380,6 +407,9 @@ func SyncUpstreamModels(c *gin.Context) {
 			VendorID:    vendorID,
 			Status:      chooseStatus(up.Status, 1),
 			NameRule:    up.NameRule,
+		}
+		if syncLocalizedDescription {
+			_ = applyLocalizedModelDescription(mi, descriptionLocale, up.Description)
 		}
 		if err := mi.Insert(); err == nil {
 			createdModels++
@@ -414,7 +444,13 @@ func SyncUpstreamModels(c *gin.Context) {
 			_ = model.DB.Transaction(func(tx *gorm.DB) error {
 				needUpdate := false
 				if containsField(ow.Fields, "description") {
-					local.Description = up.Description
+					if syncLocalizedDescription {
+						if err := applyLocalizedModelDescription(&local, descriptionLocale, up.Description); err != nil {
+							return err
+						}
+					} else {
+						local.Description = up.Description
+					}
 					needUpdate = true
 				}
 				if containsField(ow.Fields, "icon") {
@@ -504,6 +540,7 @@ func SyncUpstreamPreview(c *gin.Context) {
 
 	locale := c.Query("locale")
 	modelsURL, vendorsURL := getUpstreamURLs(locale)
+	descriptionLocale, syncLocalizedDescription := localizedDescriptionLocale(locale)
 
 	var vendorsEnv upstreamEnvelope[upstreamVendor]
 	var modelsEnv upstreamEnvelope[upstreamModel]
@@ -594,8 +631,12 @@ func SyncUpstreamPreview(c *gin.Context) {
 			continue
 		}
 		fields := make([]conflictField, 0, 6)
-		if strings.TrimSpace(local.Description) != strings.TrimSpace(up.Description) {
-			fields = append(fields, conflictField{Field: "description", Local: local.Description, Upstream: up.Description})
+		localDescription := local.Description
+		if syncLocalizedDescription {
+			localDescription = modelDescriptionTranslations(local.DescriptionI18N)[descriptionLocale]
+		}
+		if strings.TrimSpace(localDescription) != strings.TrimSpace(up.Description) {
+			fields = append(fields, conflictField{Field: "description", Local: localDescription, Upstream: up.Description})
 		}
 		if strings.TrimSpace(local.Icon) != strings.TrimSpace(up.Icon) {
 			fields = append(fields, conflictField{Field: "icon", Local: local.Icon, Upstream: up.Icon})

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relay/channel"
@@ -16,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/relayconvert"
 	"github.com/QuantumNous/new-api/types"
@@ -86,6 +88,16 @@ func (a *Adaptor) ConvertClaudeRequest(c *gin.Context, info *relaycommon.RelayIn
 			return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
 		}
 		return a.convertOpenAICompatibleRequest(c, info, chatRequest)
+	case relayconvert.ConverterClaudeMessagesToOpenAIResponses:
+		result, err := service.ConvertRequestByID(c, info, converter, request)
+		if err != nil {
+			return nil, err
+		}
+		responsesRequest, ok := result.Value.(*dto.OpenAIResponsesRequest)
+		if !ok {
+			return nil, fmt.Errorf("expected OpenAI responses request, got %T", result.Value)
+		}
+		return responsesRequest, nil
 	default:
 		return nil, fmt.Errorf("converter %q does not support Anthropic Messages requests", converter)
 	}
@@ -100,6 +112,16 @@ func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayIn
 	switch converter {
 	case relayconvert.ConverterNone:
 		return a.geminiAdaptor.ConvertGeminiRequest(c, info, request)
+	case relayconvert.ConverterGeminiContentToClaudeMessages:
+		result, err := service.ConvertRequestByID(c, info, converter, request)
+		if err != nil {
+			return nil, err
+		}
+		claudeRequest, ok := result.Value.(*dto.ClaudeRequest)
+		if !ok {
+			return nil, fmt.Errorf("expected Anthropic Messages request, got %T", result.Value)
+		}
+		return claudeRequest, nil
 	case relayconvert.ConverterGeminiContentToOpenAIChat:
 		result, err := service.ConvertRequestByID(c, info, converter, request)
 		if err != nil {
@@ -123,6 +145,16 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 	switch converter {
 	case relayconvert.ConverterNone:
 		return a.convertOpenAICompatibleResponsesRequest(c, info, request)
+	case relayconvert.ConverterOpenAIResponsesToClaudeMessages:
+		result, err := service.ConvertRequestByID(c, info, converter, request)
+		if err != nil {
+			return nil, err
+		}
+		claudeRequest, ok := result.Value.(*dto.ClaudeRequest)
+		if !ok {
+			return nil, fmt.Errorf("expected Anthropic Messages request, got %T", result.Value)
+		}
+		return claudeRequest, nil
 	case relayconvert.ConverterOpenAIResponsesToOpenAIChat:
 		result, err := service.ConvertRequestByID(c, info, converter, request)
 		if err != nil {
@@ -297,11 +329,15 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 		return a.openaiAdaptor.DoResponse(c, resp, info)
 	case relayconvert.ConverterOpenAIChatToClaudeMessages:
 		return a.claudeAdaptor.DoResponse(c, resp, info)
+	case relayconvert.ConverterGeminiContentToClaudeMessages,
+		relayconvert.ConverterOpenAIResponsesToClaudeMessages:
+		return a.doClaudeConvertedResponse(c, resp, info)
 	case relayconvert.ConverterOpenAIChatToGeminiContent:
 		return a.geminiAdaptor.DoResponse(c, resp, info)
 	case relayconvert.ConverterOpenAIResponsesToGemini:
 		return a.geminiAdaptor.DoResponse(c, resp, info)
-	case relayconvert.ConverterOpenAIChatToOpenAIResponses:
+	case relayconvert.ConverterOpenAIChatToOpenAIResponses,
+		relayconvert.ConverterClaudeMessagesToOpenAIResponses:
 		if info.IsStream {
 			return openai.OaiResponsesToChatStreamHandler(c, info, resp)
 		}
@@ -314,6 +350,159 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	default:
 		return nil, types.NewOpenAIError(fmt.Errorf("unsupported advanced custom converter: %s", a.converter), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 	}
+}
+
+func (a *Adaptor) doClaudeConvertedResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (any, *types.NewAPIError) {
+	if info.IsStream {
+		return a.doClaudeConvertedStreamResponse(c, resp, info)
+	}
+	return a.doClaudeConvertedJSONResponse(c, resp, info)
+}
+
+func (a *Adaptor) doClaudeConvertedJSONResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	if resp == nil || resp.Body == nil {
+		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+	}
+	defer service.CloseResponseBodyGracefully(resp)
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError)
+	}
+	var claudeResponse dto.ClaudeResponse
+	if err := common.Unmarshal(responseBody, &claudeResponse); err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	if claudeErr := claudeResponse.GetClaudeError(); claudeErr != nil && claudeErr.Type != "" {
+		return nil, types.WithClaudeError(*claudeErr, resp.StatusCode)
+	}
+
+	result, err := relayconvert.ConvertResponse(c, info, info.RelayFormat, &claudeResponse)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+	}
+	responseBody, err = common.Marshal(result.Value)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeJsonMarshalFailed, http.StatusInternalServerError)
+	}
+	service.IOCopyBytesGracefully(c, resp, responseBody)
+	return result.Usage, nil
+}
+
+func (a *Adaptor) doClaudeConvertedStreamResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (*dto.Usage, *types.NewAPIError) {
+	if resp == nil || resp.Body == nil {
+		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
+	}
+	defer service.CloseResponseBodyGracefully(resp)
+
+	responseID := ""
+	if c != nil {
+		responseID = helper.GetResponseID(c)
+	}
+	created := common.GetTimestamp()
+	claudeInfo := &relayconvert.ClaudeResponseInfo{
+		ResponseId:   responseID,
+		Created:      created,
+		Model:        info.UpstreamModelName,
+		ResponseText: strings.Builder{},
+		Usage:        &dto.Usage{},
+	}
+	state, err := relayconvert.NewResponseStreamState(types.RelayFormatClaude, info.RelayFormat, relayconvert.ResponseStreamOptions{
+		ID:           responseID,
+		Model:        info.UpstreamModelName,
+		Created:      created,
+		IncludeUsage: info.ShouldIncludeUsage,
+	})
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+	}
+
+	var streamErr *types.NewAPIError
+	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		if streamErr != nil {
+			sr.Stop(streamErr)
+			return
+		}
+		var claudeResponse dto.ClaudeResponse
+		if err := common.UnmarshalJsonStr(data, &claudeResponse); err != nil {
+			sr.Error(err)
+			return
+		}
+		if claudeErr := claudeResponse.GetClaudeError(); claudeErr != nil && claudeErr.Type != "" {
+			streamErr = types.WithClaudeError(*claudeErr, resp.StatusCode)
+			sr.Stop(streamErr)
+			return
+		}
+		if claudeResponse.Type == "message_delta" {
+			claudeResponse.Usage = relayconvert.BuildMessageDeltaPatchUsage(&claudeResponse, claudeInfo)
+		}
+		chatResponse := relayconvert.StreamResponseClaude2OpenAI(&claudeResponse)
+		if !relayconvert.FormatClaudeResponseInfo(&claudeResponse, chatResponse, claudeInfo) {
+			return
+		}
+
+		results, err := relayconvert.ConvertStreamResponseChunk(c, info, state, &claudeResponse)
+		if err != nil {
+			streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+			sr.Stop(streamErr)
+			return
+		}
+		for _, result := range results {
+			if err := sendAdvancedCustomConvertedStreamResult(c, result); err != nil {
+				streamErr = types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+				sr.Stop(streamErr)
+				return
+			}
+		}
+	})
+	if streamErr != nil {
+		return nil, streamErr
+	}
+
+	usage := state.Usage()
+	if usage == nil || usage.TotalTokens == 0 {
+		usage = service.ResponseText2Usage(c, state.UsageText(), info.UpstreamModelName, info.GetEstimatePromptTokens())
+		state.SetUsage(usage)
+	}
+	finalResults, err := relayconvert.FinalizeStreamResponse(c, info, state)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+	}
+	for _, result := range finalResults {
+		if err := sendAdvancedCustomConvertedStreamResult(c, result); err != nil {
+			return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponse, http.StatusInternalServerError)
+		}
+	}
+	return usage, nil
+}
+
+func sendAdvancedCustomConvertedStreamResult(c *gin.Context, result relayconvert.ResponseResult) error {
+	switch value := result.Value.(type) {
+	case relayconvert.ChatToResponsesStreamEvent:
+		data, err := common.Marshal(value.Payload)
+		if err != nil {
+			return err
+		}
+		return helper.ResponseChunkData(c, dto.ResponsesStreamResponse{Type: value.Type}, string(data))
+	case dto.GeminiChatResponse:
+		return sendAdvancedCustomGeminiStreamResponse(c, &value)
+	case *dto.GeminiChatResponse:
+		return sendAdvancedCustomGeminiStreamResponse(c, value)
+	default:
+		return fmt.Errorf("unsupported converted stream response type %T", result.Value)
+	}
+}
+
+func sendAdvancedCustomGeminiStreamResponse(c *gin.Context, response *dto.GeminiChatResponse) error {
+	if response == nil {
+		return nil
+	}
+	data, err := common.Marshal(response)
+	if err != nil {
+		return err
+	}
+	c.Render(-1, common.CustomEvent{Data: "data: " + string(data)})
+	return helper.FlushWriter(c)
 }
 
 func (a *Adaptor) GetModelList() []string {
@@ -489,6 +678,8 @@ func useGeminiStreamGenerateContentURL(parsedURL *url.URL) {
 
 func shouldApplyClaudeHeaders(converter string, info *relaycommon.RelayInfo) bool {
 	return converter == relayconvert.ConverterOpenAIChatToClaudeMessages ||
+		converter == relayconvert.ConverterOpenAIResponsesToClaudeMessages ||
+		converter == relayconvert.ConverterGeminiContentToClaudeMessages ||
 		(converter == relayconvert.ConverterNone && info != nil && info.RelayFormat == types.RelayFormatClaude)
 }
 

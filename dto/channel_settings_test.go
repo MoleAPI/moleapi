@@ -32,6 +32,17 @@ func TestAdvancedCustomValidateResponsesToChatConverterPath(t *testing.T) {
 	}
 	require.NoError(t, validGemini.Validate())
 
+	validClaude := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/responses",
+				UpstreamPath: "/v1/messages",
+				Converter:    advancedCustomConverterOpenAIResponsesToClaude,
+			},
+		},
+	}
+	require.NoError(t, validClaude.Validate())
+
 	tests := []struct {
 		name         string
 		incomingPath string
@@ -56,6 +67,58 @@ func TestAdvancedCustomValidateResponsesToChatConverterPath(t *testing.T) {
 			assert.Contains(t, err.Error(), "converter does not match incoming_path")
 		})
 	}
+}
+
+func TestAdvancedCustomValidateGeminiToClaudeConverterPath(t *testing.T) {
+	valid := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1beta/models/{model}:generateContent",
+				UpstreamPath: "/v1/messages",
+				Converter:    advancedCustomConverterGeminiContentToClaude,
+			},
+		},
+	}
+	require.NoError(t, valid.Validate())
+
+	invalid := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/chat/completions",
+				UpstreamPath: "/v1/messages",
+				Converter:    advancedCustomConverterGeminiContentToClaude,
+			},
+		},
+	}
+	err := invalid.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "converter does not match incoming_path")
+}
+
+func TestAdvancedCustomValidateClaudeToResponsesConverterPath(t *testing.T) {
+	valid := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/messages",
+				UpstreamPath: "/v1/responses",
+				Converter:    advancedCustomConverterClaudeMessagesToResponses,
+			},
+		},
+	}
+	require.NoError(t, valid.Validate())
+
+	invalid := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/responses",
+				UpstreamPath: "/v1/responses",
+				Converter:    advancedCustomConverterClaudeMessagesToResponses,
+			},
+		},
+	}
+	err := invalid.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "converter does not match incoming_path")
 }
 
 func TestAdvancedCustomValidateModelListRouteConstraints(t *testing.T) {

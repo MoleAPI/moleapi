@@ -1,7 +1,7 @@
 package controller
 
 import (
-	"encoding/json"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // GetAllModelsMeta 获取模型列表（分页）
@@ -169,6 +170,163 @@ func DeleteModelMeta(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+type modelDescriptionExportItem struct {
+	ModelName       string            `json:"model_name"`
+	Description     string            `json:"description"`
+	DescriptionI18N map[string]string `json:"description_i18n,omitempty"`
+}
+
+type modelDescriptionExport struct {
+	Version    int                          `json:"version"`
+	ExportedAt int64                        `json:"exported_at"`
+	Models     []modelDescriptionExportItem `json:"models"`
+}
+
+type modelDescriptionImportItem struct {
+	ModelName       string            `json:"model_name"`
+	Description     *string           `json:"description,omitempty"`
+	DescriptionI18N map[string]string `json:"description_i18n,omitempty"`
+}
+
+type modelDescriptionImport struct {
+	Models []modelDescriptionImportItem `json:"models"`
+}
+
+func cleanModelDescriptionTranslations(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for locale, description := range in {
+		locale = strings.TrimSpace(locale)
+		description = strings.TrimSpace(description)
+		if locale == "" || description == "" {
+			continue
+		}
+		out[locale] = description
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func modelDescriptionTranslations(raw model.JSONValue) map[string]string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var translations map[string]string
+	if err := common.Unmarshal([]byte(raw), &translations); err != nil {
+		return nil
+	}
+	return cleanModelDescriptionTranslations(translations)
+}
+
+func marshalModelDescriptionTranslations(translations map[string]string) (model.JSONValue, error) {
+	cleaned := cleanModelDescriptionTranslations(translations)
+	if len(cleaned) == 0 {
+		return nil, nil
+	}
+	b, err := common.Marshal(cleaned)
+	if err != nil {
+		return nil, err
+	}
+	return model.JSONValue(b), nil
+}
+
+func ExportModelDescriptions(c *gin.Context) {
+	var modelsMeta []model.Model
+	if err := model.DB.Order("model_name ASC").Find(&modelsMeta).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	items := make([]modelDescriptionExportItem, 0, len(modelsMeta))
+	for _, m := range modelsMeta {
+		items = append(items, modelDescriptionExportItem{
+			ModelName:       m.ModelName,
+			Description:     m.Description,
+			DescriptionI18N: modelDescriptionTranslations(m.DescriptionI18N),
+		})
+	}
+
+	body, err := common.Marshal(modelDescriptionExport{
+		Version:    1,
+		ExportedAt: common.GetTimestamp(),
+		Models:     items,
+	})
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	c.Header("Content-Disposition", `attachment; filename="model-descriptions.json"`)
+	c.Data(http.StatusOK, "application/json; charset=utf-8", body)
+}
+
+func ImportModelDescriptions(c *gin.Context) {
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 10<<20)
+	var req modelDescriptionImport
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorMsg(c, "invalid model description backup")
+		return
+	}
+	if len(req.Models) == 0 {
+		common.ApiErrorMsg(c, "no model descriptions to import")
+		return
+	}
+
+	now := common.GetTimestamp()
+	updated := 0
+	skipped := make([]string, 0)
+	err := model.DB.Transaction(func(tx *gorm.DB) error {
+		for _, item := range req.Models {
+			name := strings.TrimSpace(item.ModelName)
+			if name == "" {
+				continue
+			}
+			updates := map[string]interface{}{
+				"updated_time": now,
+			}
+			if item.Description != nil {
+				updates["description"] = strings.TrimSpace(*item.Description)
+			}
+			if item.DescriptionI18N != nil {
+				raw, err := marshalModelDescriptionTranslations(item.DescriptionI18N)
+				if err != nil {
+					return err
+				}
+				updates["description_i18n"] = raw
+			}
+			if len(updates) == 1 {
+				continue
+			}
+			result := tx.Model(&model.Model{}).Where("model_name = ?", name).Updates(updates)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				skipped = append(skipped, name)
+				continue
+			}
+			updated++
+		}
+		return nil
+	})
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if updated > 0 {
+		model.RefreshPricing()
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"updated_models": updated,
+		"skipped_models": skipped,
+	})
+}
+
 // enrichModels 批量填充附加信息：端点、渠道、分组、计费类型，避免 N+1 查询
 func enrichModels(models []*model.Model) {
 	if len(models) == 0 {
@@ -201,7 +359,7 @@ func enrichModels(models []*model.Model) {
 			mm := models[idx]
 			if mm.Endpoints == "" {
 				eps := model.GetModelSupportEndpointTypes(mm.ModelName)
-				if b, err := json.Marshal(eps); err == nil {
+				if b, err := common.Marshal(eps); err == nil {
 					mm.Endpoints = string(b)
 				}
 			}
@@ -291,7 +449,7 @@ func enrichModels(models []*model.Model) {
 			for et := range es {
 				eps = append(eps, et)
 			}
-			if b, err := json.Marshal(eps); err == nil {
+			if b, err := common.Marshal(eps); err == nil {
 				mm.Endpoints = string(b)
 			}
 		}

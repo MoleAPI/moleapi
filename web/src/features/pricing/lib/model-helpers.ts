@@ -123,6 +123,64 @@ export function getModelPriceDisplay(
   }
 }
 
+function getDescriptionTranslations(
+  model: PricingModel
+): Record<string, string> {
+  const value = model.description_i18n
+  if (!value) return {}
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value)
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, string>)
+        : {}
+    } catch {
+      return {}
+    }
+  }
+  return value
+}
+
+function getLanguageCandidates(language?: string): string[] {
+  const normalized = (language || '').trim()
+  const lower = normalized.toLowerCase()
+  const candidates = [normalized]
+
+  if (lower.startsWith('zh-hant') || lower.startsWith('zh-tw')) {
+    candidates.push('zh-TW', 'zh')
+  } else if (lower.startsWith('zh')) {
+    candidates.push('zh')
+  } else if (lower) {
+    candidates.push(lower.split('-')[0])
+  }
+
+  candidates.push('en')
+  return candidates.filter(Boolean)
+}
+
+export function getLocalizedModelDescription(
+  model: PricingModel,
+  language?: string
+): string {
+  const translations = getDescriptionTranslations(model)
+  for (const locale of getLanguageCandidates(language)) {
+    const description = translations[locale]
+    if (typeof description === 'string' && description.trim()) {
+      return description
+    }
+  }
+  return model.description || ''
+}
+
+export function getModelDescriptionSearchText(model: PricingModel): string {
+  return [
+    model.description,
+    ...Object.values(getDescriptionTranslations(model)),
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
 /**
  * Replace model placeholder in endpoint path
  */

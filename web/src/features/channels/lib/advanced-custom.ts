@@ -44,8 +44,23 @@ export const ADVANCED_CUSTOM_CONVERTER_OPTIONS: Array<{
     triggerLabel: 'To OpenAI Chat',
   },
   {
+    value: 'claude_messages_to_openai_responses',
+    label: 'Anthropic Messages to OpenAI Responses',
+    triggerLabel: 'To OpenAI Responses',
+  },
+  {
     value: 'openai_chat_completions_to_anthropic_messages',
     label: 'OpenAI Chat to Anthropic Messages',
+    triggerLabel: 'To Anthropic Messages',
+  },
+  {
+    value: 'openai_responses_to_claude_messages',
+    label: 'OpenAI Responses to Anthropic Messages',
+    triggerLabel: 'To Anthropic Messages',
+  },
+  {
+    value: 'gemini_generate_content_to_claude_messages',
+    label: 'Gemini Generate Content to Anthropic Messages',
     triggerLabel: 'To Anthropic Messages',
   },
   {
@@ -394,7 +409,14 @@ export function getAdvancedCustomConverterDefaults(
   if (converter === 'openai_chat_completions_to_openai_responses') {
     return { upstream_path: openAIResponsesPath, auth: bearerHeaderAuth() }
   }
-  if (converter === 'openai_chat_completions_to_anthropic_messages') {
+  if (converter === 'claude_messages_to_openai_responses') {
+    return { upstream_path: openAIResponsesPath, auth: bearerHeaderAuth() }
+  }
+  if (
+    converter === 'openai_chat_completions_to_anthropic_messages' ||
+    converter === 'openai_responses_to_claude_messages' ||
+    converter === 'gemini_generate_content_to_claude_messages'
+  ) {
     return { upstream_path: claudeMessagesPath, auth: apiKeyHeaderAuth() }
   }
   if (
@@ -837,6 +859,9 @@ function isConverterPathAllowed(
   if (converter === 'anthropic_messages_to_openai_chat_completions') {
     return incomingPath === '/v1/messages'
   }
+  if (converter === 'claude_messages_to_openai_responses') {
+    return incomingPath === '/v1/messages'
+  }
   if (
     converter === 'openai_chat_completions_to_anthropic_messages' ||
     converter === 'openai_chat_completions_to_openai_responses' ||
@@ -844,11 +869,18 @@ function isConverterPathAllowed(
   ) {
     return incomingPath === '/v1/chat/completions'
   }
-  if (converter === 'openai_responses_to_openai_chat_completions') {
+  if (
+    converter === 'openai_responses_to_claude_messages' ||
+    converter === 'openai_responses_to_openai_chat_completions' ||
+    converter === 'openai_responses_to_gemini_generate_content'
+  ) {
     return incomingPath === '/v1/responses'
   }
-  if (converter === 'openai_responses_to_gemini_generate_content') {
-    return incomingPath === '/v1/responses'
+  if (converter === 'gemini_generate_content_to_claude_messages') {
+    return (
+      incomingPath.includes(':generateContent') ||
+      incomingPath.includes(':streamGenerateContent')
+    )
   }
   return (
     incomingPath.includes(':generateContent') ||

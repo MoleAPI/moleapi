@@ -37,6 +37,7 @@ export interface Model {
   id: number
   model_name: string
   description?: string
+  description_i18n?: Record<string, string> | string
   icon?: string
   tags?: string
   vendor_id?: number
@@ -189,6 +190,27 @@ export interface SyncUpstreamResponse {
     created_models?: number
     updated_models?: number
     created_vendors?: number
+    skipped_models?: string[]
+  }
+}
+
+export interface ModelDescriptionExportItem {
+  model_name: string
+  description?: string
+  description_i18n?: Record<string, string>
+}
+
+export interface ModelDescriptionExport {
+  version: number
+  exported_at: number
+  models: ModelDescriptionExportItem[]
+}
+
+export interface ModelDescriptionImportResponse {
+  success: boolean
+  message?: string
+  data?: {
+    updated_models?: number
     skipped_models?: string[]
   }
 }
