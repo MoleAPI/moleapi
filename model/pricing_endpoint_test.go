@@ -208,6 +208,22 @@ func TestPricingNativeChannelEndpointTypesUnchanged(t *testing.T) {
 	}, byModel["glm-5-turbo"])
 }
 
+func TestPricingCodingPlanUsesGeneratedEndpointTypes(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+
+	insertPricingEndpointChannelWithBase(t, 205, constant.ChannelTypeCodingPlan, dto.CodingPlanProviderGLMChina, dto.ChannelOtherSettings{})
+	insertPricingEndpointAbility(t, 205, "glm-5-turbo")
+
+	byModel := pricingEndpointTypesByModel(t)
+
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeOpenAI,
+		constant.EndpointTypeOpenAIResponse,
+		constant.EndpointTypeAnthropic,
+		constant.EndpointTypeGemini,
+	}, byModel["glm-5-turbo"])
+}
+
 func TestInitChannelCacheInvalidatesPricingCache(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 

@@ -544,6 +544,11 @@ export const STATIC_I18N_KEYS = [
   'OpenAI Models route must use native forwarding',
   'OpenAI Models upstream path must not contain {model}',
   'OpenAI Models route is required to enable upstream model checks',
+  'Coding Plan',
+  'Coding Plan Provider',
+  'Select a coding plan provider',
+  'Coding plan provider is required',
+  'Base URLs and conversions are generated automatically from the selected provider preset.',
 
   // Dashboard flow stages (labels/descriptions passed to t at runtime)
   'User',

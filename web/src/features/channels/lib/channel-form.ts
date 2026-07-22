@@ -32,6 +32,11 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
+import {
+  CHANNEL_TYPE_CODING_PLAN,
+  buildCodingPlanAdvancedCustomConfig,
+  normalizeCodingPlanProvider,
+} from './coding-plan'
 
 // ============================================================================
 // Form Validation Schema
@@ -286,6 +291,14 @@ export const channelFormSchema = z
       }
     }
 
+    if (data.type === CHANNEL_TYPE_CODING_PLAN) {
+      const provider = normalizeCodingPlanProvider(data.base_url)
+      const config = buildCodingPlanAdvancedCustomConfig(provider)
+      if (!provider || !config) {
+        addRequiredIssue(ctx, 'base_url', 'Coding plan provider is required')
+      }
+    }
+
     if ([3, 18, 21, 39, 41, 49].includes(data.type) && !data.other?.trim()) {
       addRequiredIssue(
         ctx,
@@ -450,6 +463,7 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateCheckEnabled = false
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
+  let codingPlanProvider = ''
   let advancedCustom = ''
 
   if (channel.settings) {
@@ -476,6 +490,7 @@ export function transformChannelToFormDefaults(
       )
         ? parsed.upstream_model_update_ignored_models.join(',')
         : ''
+      codingPlanProvider = parsed.coding_plan_provider || ''
       if (parsed.advanced_custom) {
         advancedCustom = stringifyAdvancedCustomConfig(parsed.advanced_custom)
       }
@@ -488,7 +503,10 @@ export function transformChannelToFormDefaults(
   return {
     name: channel.name || '',
     type: channel.type,
-    base_url: channel.base_url || '',
+    base_url:
+      channel.type === CHANNEL_TYPE_CODING_PLAN
+        ? codingPlanProvider || channel.base_url || ''
+        : channel.base_url || '',
     key: '', // Never populate key from backend for security
     openai_organization: channel.openai_organization || '',
     models: channel.models || '',
@@ -673,8 +691,23 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     if (advancedCustomConfig) {
       settingsObj.advanced_custom = advancedCustomConfig
     }
-  } else if ('advanced_custom' in settingsObj) {
-    delete settingsObj.advanced_custom
+    if ('coding_plan_provider' in settingsObj) {
+      delete settingsObj.coding_plan_provider
+    }
+  } else if (formData.type === CHANNEL_TYPE_CODING_PLAN) {
+    const provider = normalizeCodingPlanProvider(formData.base_url)
+    settingsObj.coding_plan_provider = provider
+    const codingPlanConfig = buildCodingPlanAdvancedCustomConfig(provider)
+    if (codingPlanConfig) {
+      settingsObj.advanced_custom = codingPlanConfig
+    }
+  } else {
+    if ('advanced_custom' in settingsObj) {
+      delete settingsObj.advanced_custom
+    }
+    if ('coding_plan_provider' in settingsObj) {
+      delete settingsObj.coding_plan_provider
+    }
   }
 
   return JSON.stringify(settingsObj)

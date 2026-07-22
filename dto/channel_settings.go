@@ -52,6 +52,7 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastDetectedModels []string              `json:"upstream_model_update_last_detected_models,omitempty"` // 上次检测到的可加入模型
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
+	CodingPlanProvider                    string                `json:"coding_plan_provider,omitempty"`
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
 }
 
@@ -107,6 +108,7 @@ const (
 
 const (
 	advancedCustomEndpointPathOpenAIChat             = "/v1/chat/completions"
+	advancedCustomEndpointPathOpenAICompletions      = "/v1/completions"
 	advancedCustomEndpointPathOpenAIResponses        = "/v1/responses"
 	advancedCustomEndpointPathOpenAIResponsesCompact = "/v1/responses/compact"
 	advancedCustomEndpointPathClaudeMessages         = "/v1/messages"
@@ -317,6 +319,8 @@ func advancedCustomTextConverter(incomingEndpoint constant.EndpointType, upstrea
 func advancedCustomEndpointTypeFromIncomingPath(incomingPath string) (constant.EndpointType, bool) {
 	switch incomingPath {
 	case advancedCustomEndpointPathOpenAIChat:
+		return constant.EndpointTypeOpenAI, true
+	case advancedCustomEndpointPathOpenAICompletions:
 		return constant.EndpointTypeOpenAI, true
 	case advancedCustomEndpointPathOpenAIResponses:
 		return constant.EndpointTypeOpenAIResponse, true

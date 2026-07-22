@@ -1206,7 +1206,7 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 		if err != nil {
 			return nil, err
 		}
-		if savedChannel.Type != constant.ChannelTypeAdvancedCustom {
+		if !constant.IsAdvancedCustomLikeChannelType(savedChannel.Type) {
 			return nil, fmt.Errorf("channel %d is not an advanced custom channel", req.ChannelID)
 		}
 		channel = savedChannel
@@ -1221,7 +1221,7 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 		}
 	}
 
-	if channel.Type != constant.ChannelTypeAdvancedCustom {
+	if !constant.IsAdvancedCustomLikeChannelType(channel.Type) {
 		return nil, fmt.Errorf("channel type must be advanced custom")
 	}
 	if req.BaseURL != nil {
@@ -1230,7 +1230,7 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 	}
 
 	settings := channel.GetOtherSettings()
-	if req.AdvancedCustom != nil {
+	if req.AdvancedCustom != nil && channel.Type == constant.ChannelTypeAdvancedCustom {
 		rawConfig := strings.TrimSpace(*req.AdvancedCustom)
 		if rawConfig == "" {
 			return nil, fmt.Errorf("advanced_custom is required")
@@ -1240,6 +1240,10 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 			return nil, err
 		}
 		settings.AdvancedCustom = &config
+	} else if channel.Type == constant.ChannelTypeCodingPlan {
+		if err := settings.ApplyCodingPlanPreset(resolveCodingPlanPreviewProvider(channel, req)); err != nil {
+			return nil, err
+		}
 	} else if req.ChannelID <= 0 {
 		return nil, fmt.Errorf("advanced_custom is required")
 	}
@@ -1267,6 +1271,20 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 	return channel, nil
 }
 
+func resolveCodingPlanPreviewProvider(channel *model.Channel, req fetchModelsRequest) string {
+	if req.BaseURL != nil && strings.TrimSpace(*req.BaseURL) != "" {
+		return strings.TrimSpace(*req.BaseURL)
+	}
+	settings := channel.GetOtherSettings()
+	if settings.CodingPlanProvider != "" {
+		return settings.CodingPlanProvider
+	}
+	if channel.BaseURL != nil {
+		return strings.TrimSpace(*channel.BaseURL)
+	}
+	return ""
+}
+
 func FetchModels(c *gin.Context) {
 	var req fetchModelsRequest
 
@@ -1279,7 +1297,7 @@ func FetchModels(c *gin.Context) {
 	}
 
 	var channel *model.Channel
-	if req.Type == constant.ChannelTypeAdvancedCustom || req.ChannelID > 0 {
+	if constant.IsAdvancedCustomLikeChannelType(req.Type) || req.ChannelID > 0 {
 		var err error
 		channel, err = buildAdvancedCustomModelPreviewChannel(req)
 		if err != nil {

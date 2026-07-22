@@ -961,7 +961,10 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
-	if channel.Type == constant.ChannelTypeAdvancedCustom {
+	if err := channel.applyCodingPlanPreset(channelOtherSettings); err != nil {
+		return err
+	}
+	if constant.IsAdvancedCustomLikeChannelType(channel.Type) {
 		if channelOtherSettings.AdvancedCustom == nil {
 			return fmt.Errorf("advanced_custom is required")
 		}
@@ -971,7 +974,7 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
-	if channel.Type == constant.ChannelTypeAdvancedCustom && channelOtherSettings.UpstreamModelUpdateCheckEnabled {
+	if constant.IsAdvancedCustomLikeChannelType(channel.Type) && channelOtherSettings.UpstreamModelUpdateCheckEnabled {
 		if _, ok := channelOtherSettings.AdvancedCustom.ModelListRoute(); !ok {
 			return fmt.Errorf("advanced custom channels require a %s route when upstream model update checks are enabled", dto.AdvancedCustomModelListPath)
 		}
@@ -1011,16 +1014,36 @@ func (channel *Channel) GetOtherSettings() dto.ChannelOtherSettings {
 			_ = channel.Save()           // 保存修改
 		}
 	}
+	if err := channel.applyCodingPlanPreset(&setting); err != nil {
+		common.SysLog(fmt.Sprintf("failed to apply coding plan preset: channel_id=%d, error=%v", channel.Id, err))
+	}
 	return setting
 }
 
 func (channel *Channel) SetOtherSettings(setting dto.ChannelOtherSettings) {
+	if err := channel.applyCodingPlanPreset(&setting); err != nil {
+		common.SysLog(fmt.Sprintf("failed to apply coding plan preset before marshal: channel_id=%d, error=%v", channel.Id, err))
+	}
 	settingBytes, err := common.Marshal(setting)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("failed to marshal setting: channel_id=%d, error=%v", channel.Id, err))
 		return
 	}
 	channel.OtherSettings = string(settingBytes)
+}
+
+func (channel *Channel) applyCodingPlanPreset(setting *dto.ChannelOtherSettings) error {
+	if channel.Type != constant.ChannelTypeCodingPlan {
+		return nil
+	}
+	provider := strings.TrimSpace(setting.CodingPlanProvider)
+	if provider == "" && channel.BaseURL != nil {
+		provider = strings.TrimSpace(*channel.BaseURL)
+	}
+	if provider == "" {
+		return fmt.Errorf("coding plan provider is required")
+	}
+	return setting.ApplyCodingPlanPreset(provider)
 }
 
 func (channel *Channel) GetParamOverride() map[string]interface{} {

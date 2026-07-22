@@ -149,8 +149,11 @@ import { useChannelMutateForm } from '../../hooks/use-channel-mutate-form'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
   CHANNEL_TYPE_ADVANCED_CUSTOM,
+  CHANNEL_TYPE_CODING_PLAN,
+  CODING_PLAN_PROVIDER_OPTIONS,
   channelFormSchema,
   channelsQueryKeys,
+  getDefaultCodingPlanProvider,
   getAdvancedCustomStats,
   transformChannelToFormDefaults,
   type ChannelFormValues,
@@ -761,7 +764,10 @@ export function ChannelMutateDrawer({
   )
   const shouldPreviewUnsavedModels =
     !isEditing ||
-    (currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && canEditSensitive)
+    ([CHANNEL_TYPE_ADVANCED_CUSTOM, CHANNEL_TYPE_CODING_PLAN].includes(
+      currentType
+    ) &&
+      canEditSensitive)
   const {
     unlocked: doubaoApiEditUnlocked,
     handleClick: handleApiConfigSecretClick,
@@ -958,7 +964,13 @@ export function ChannelMutateDrawer({
   )
   const advancedHaveErrors =
     hasAdvancedSettingsErrors(formErrors) || Boolean(formErrors.advanced_custom)
-  const providerRequiresBaseUrl = [3, 8, 36, 45].includes(currentType)
+  const providerRequiresBaseUrl = [
+    3,
+    8,
+    36,
+    45,
+    CHANNEL_TYPE_CODING_PLAN,
+  ].includes(currentType)
   const providerRequiresOther = [3, 18, 21, 39, 41, 49].includes(currentType)
   const identityComplete = Boolean(currentName?.trim() && currentType > 0)
   const credentialsComplete = Boolean(
@@ -1268,6 +1280,13 @@ export function ChannelMutateDrawer({
       }
     }
 
+    if (currentType === CHANNEL_TYPE_CODING_PLAN) {
+      const currentBaseUrlValue = form.getValues('base_url')
+      if (!currentBaseUrlValue || currentBaseUrlValue === '') {
+        form.setValue('base_url', getDefaultCodingPlanProvider())
+      }
+    }
+
     // Type 18 (Xunfei) - set default other (version)
     if (currentType === 18) {
       const currentOther = form.getValues('other')
@@ -1446,15 +1465,18 @@ export function ChannelMutateDrawer({
       throw new Error(t("You don't have necessary permission"))
     }
     const type = form.getValues('type')
-    const editingAdvancedCustom =
-      isEditing && type === CHANNEL_TYPE_ADVANCED_CUSTOM
-    if (editingAdvancedCustom && channelId === null) {
+    const editingAdvancedCustomLike =
+      isEditing &&
+      [CHANNEL_TYPE_ADVANCED_CUSTOM, CHANNEL_TYPE_CODING_PLAN].includes(type)
+    if (editingAdvancedCustomLike && channelId === null) {
       throw new Error(t('No channel selected'))
     }
     const response = await fetchModels({
       type,
       key: isEditing ? undefined : form.getValues('key'),
-      channel_id: editingAdvancedCustom ? channelId || undefined : undefined,
+      channel_id: editingAdvancedCustomLike
+        ? channelId || undefined
+        : undefined,
       base_url: form.getValues('base_url') || '',
       advanced_custom: form.getValues('advanced_custom'),
       header_override: form.getValues('header_override'),
@@ -2756,25 +2778,57 @@ export function ChannelMutateDrawer({
                               />
                             )}
 
-                            {/* General base_url for other types */}
-                            {![3, 8, 22, 36, 45].includes(currentType) && (
+                            {currentType === CHANNEL_TYPE_CODING_PLAN && (
                               <FormField
                                 control={form.control}
                                 name='base_url'
                                 render={({ field }) => (
                                   <FormItem>
-                                    <FormLabel>{t('Base URL')}</FormLabel>
-                                    <FormControl>
-                                      <Input
-                                        placeholder={t(
-                                          FIELD_PLACEHOLDERS.BASE_URL
-                                        )}
-                                        {...field}
-                                      />
-                                    </FormControl>
+                                    <FormLabel>
+                                      {t('Coding Plan Provider')}
+                                    </FormLabel>
+                                    <Select
+                                      items={CODING_PLAN_PROVIDER_OPTIONS.map(
+                                        (option) => ({
+                                          value: option.value,
+                                          label: option.label,
+                                        })
+                                      )}
+                                      onValueChange={field.onChange}
+                                      value={
+                                        field.value ||
+                                        getDefaultCodingPlanProvider()
+                                      }
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue
+                                            placeholder={t(
+                                              'Select a coding plan provider'
+                                            )}
+                                          />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent
+                                        alignItemWithTrigger={false}
+                                      >
+                                        <SelectGroup>
+                                          {CODING_PLAN_PROVIDER_OPTIONS.map(
+                                            (option) => (
+                                              <SelectItem
+                                                key={option.value}
+                                                value={option.value}
+                                              >
+                                                {option.label}
+                                              </SelectItem>
+                                            )
+                                          )}
+                                        </SelectGroup>
+                                      </SelectContent>
+                                    </Select>
                                     <FormDescription>
                                       {t(
-                                        'Custom API base URL. For official channels, New API has built-in addresses. Only fill this for third-party proxy sites or special endpoints. Do not add /v1 or trailing slash.'
+                                        'Base URLs and conversions are generated automatically from the selected provider preset.'
                                       )}
                                     </FormDescription>
                                     <FormMessage />
@@ -2782,6 +2836,34 @@ export function ChannelMutateDrawer({
                                 )}
                               />
                             )}
+
+                            {/* General base_url for other types */}
+                            {![3, 8, 22, 36, 45].includes(currentType) &&
+                              currentType !== CHANNEL_TYPE_CODING_PLAN && (
+                                <FormField
+                                  control={form.control}
+                                  name='base_url'
+                                  render={({ field }) => (
+                                    <FormItem>
+                                      <FormLabel>{t('Base URL')}</FormLabel>
+                                      <FormControl>
+                                        <Input
+                                          placeholder={t(
+                                            FIELD_PLACEHOLDERS.BASE_URL
+                                          )}
+                                          {...field}
+                                        />
+                                      </FormControl>
+                                      <FormDescription>
+                                        {t(
+                                          'Custom API base URL. For official channels, New API has built-in addresses. Only fill this for third-party proxy sites or special endpoints. Do not add /v1 or trailing slash.'
+                                        )}
+                                      </FormDescription>
+                                      <FormMessage />
+                                    </FormItem>
+                                  )}
+                                />
+                              )}
 
                             {currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && (
                               <FormField

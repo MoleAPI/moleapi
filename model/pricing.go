@@ -109,15 +109,17 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 }
 
 func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig) []constant.EndpointType {
-	if _, ok := constant.ChannelSpecialBases[strings.TrimSpace(ability.ChannelBaseUrl)]; ok {
-		return []constant.EndpointType{
-			constant.EndpointTypeOpenAI,
-			constant.EndpointTypeAnthropic,
-			constant.EndpointTypeOpenAIResponse,
-			constant.EndpointTypeGemini,
+	if ability.ChannelType != constant.ChannelTypeCodingPlan {
+		if _, ok := constant.ChannelSpecialBases[strings.TrimSpace(ability.ChannelBaseUrl)]; ok {
+			return []constant.EndpointType{
+				constant.EndpointTypeOpenAI,
+				constant.EndpointTypeAnthropic,
+				constant.EndpointTypeOpenAIResponse,
+				constant.EndpointTypeGemini,
+			}
 		}
 	}
-	if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
+	if !constant.IsAdvancedCustomLikeChannelType(ability.ChannelType) {
 		return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
 	}
 	if config := advancedCustomConfigs[ability.ChannelId]; config != nil {
@@ -138,7 +140,7 @@ func loadPricingAdvancedCustomConfigs(enableAbilities []AbilityWithChannel) map[
 	channelIDs := make([]int, 0)
 	seen := make(map[int]struct{})
 	for _, ability := range enableAbilities {
-		if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
+		if !constant.IsAdvancedCustomLikeChannelType(ability.ChannelType) {
 			continue
 		}
 		if _, exists := seen[ability.ChannelId]; exists {
@@ -169,7 +171,7 @@ func loadPricingAdvancedCustomConfigs(enableAbilities []AbilityWithChannel) map[
 			common.SysLog(fmt.Sprintf("load advanced custom channel settings error: channel_id=%d, error=%v", channelID, err))
 			continue
 		}
-		if channel.Type != constant.ChannelTypeAdvancedCustom {
+		if !constant.IsAdvancedCustomLikeChannelType(channel.Type) {
 			continue
 		}
 		if config := channel.GetOtherSettings().AdvancedCustom; config != nil {

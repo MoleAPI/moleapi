@@ -56,6 +56,7 @@ const (
 	ChannelTypeReplicate      = 56
 	ChannelTypeCodex          = 57
 	ChannelTypeAdvancedCustom = 58
+	ChannelTypeCodingPlan     = 59
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -120,6 +121,7 @@ var ChannelBaseURLs = []string{
 	"https://api.replicate.com",                 //56
 	"https://chatgpt.com",                       //57
 	"",                                          //58
+	"",                                          //59
 }
 
 var ChannelTypeNames = map[int]string{
@@ -178,6 +180,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeReplicate:      "Replicate",
 	ChannelTypeCodex:          "ChatGPT Subscription (Codex)",
 	ChannelTypeAdvancedCustom: "Advanced Custom",
+	ChannelTypeCodingPlan:     "Coding Plan",
 }
 
 func GetChannelTypeName(channelType int) string {
@@ -185,6 +188,10 @@ func GetChannelTypeName(channelType int) string {
 		return name
 	}
 	return "Unknown"
+}
+
+func IsAdvancedCustomLikeChannelType(channelType int) bool {
+	return channelType == ChannelTypeAdvancedCustom || channelType == ChannelTypeCodingPlan
 }
 
 type ChannelSpecialBase struct {

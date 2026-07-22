@@ -66,3 +66,20 @@ func TestAdvancedCustomChannelRequiresModelListRouteOnlyWhenUpdateChecksEnabled(
 		})
 	}
 }
+
+func TestCodingPlanChannelBuildsAdvancedCustomSettingsFromProvider(t *testing.T) {
+	baseURL := dto.CodingPlanProviderGLMChina
+	channel := &Channel{
+		Type:    constant.ChannelTypeCodingPlan,
+		BaseURL: &baseURL,
+	}
+
+	require.NoError(t, channel.ValidateSettings())
+
+	settings := channel.GetOtherSettings()
+	require.NotNil(t, settings.AdvancedCustom)
+	assert.Equal(t, dto.CodingPlanProviderGLMChina, settings.CodingPlanProvider)
+	assert.True(t, settings.AdvancedCustom.SupportsPathForModel("/v1/responses", "glm-5-turbo"))
+	assert.True(t, settings.AdvancedCustom.SupportsPathForModel("/v1/messages", "glm-5-turbo"))
+	assert.True(t, settings.AdvancedCustom.SupportsPathForModel("/v1/chat/completions", "glm-5-turbo"))
+}
