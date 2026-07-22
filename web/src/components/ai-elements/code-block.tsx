@@ -133,6 +133,7 @@ const codeMirrorTheme = EditorView.theme({
   },
   '.cm-content': {
     caretColor: 'var(--foreground)',
+    direction: 'ltr',
     fontFamily: 'var(--font-mono)',
     lineHeight: '1.5rem',
     minHeight: 'var(--code-editor-min-height)',
@@ -381,6 +382,7 @@ function CodeMirrorCodeView({
       aria-label={ariaLabel}
       aria-readonly={readOnly}
       className='min-h-(--code-editor-min-height)'
+      dir='ltr'
       ref={editorHostRef}
       role='textbox'
       style={
