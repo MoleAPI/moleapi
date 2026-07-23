@@ -144,6 +144,16 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'Models exposed by this channel',
     },
   },
+  59: {
+    id: 59,
+    name: CHANNEL_TYPES[59],
+    icon: 'newapi',
+    hints: {
+      baseUrl: 'Provider preset',
+      key: 'Coding or token plan API key',
+      models: 'Models exposed by this plan',
+    },
+  },
 }
 
 /**

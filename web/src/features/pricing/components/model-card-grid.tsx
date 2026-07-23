@@ -16,13 +16,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
+import type { PerfModelSummary } from '@/features/performance-metrics/types'
 
 import { DEFAULT_PRICING_PAGE_SIZE, DEFAULT_TOKEN_UNIT } from '../constants'
 import type { PricingModel, TokenUnit } from '../types'
@@ -37,6 +36,7 @@ export interface ModelCardGridProps {
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
   selectedGroup?: string
+  perfModels?: PerfModelSummary[]
 }
 
 export function ModelCardGrid(props: ModelCardGridProps) {
@@ -47,13 +47,6 @@ export function ModelCardGrid(props: ModelCardGridProps) {
   const totalPages = Math.max(1, Math.ceil(props.models.length / pageSize))
   const currentPage = Math.min(page, totalPages)
 
-  const perfQuery = useQuery({
-    queryKey: ['perf-metrics-summary', 24],
-    queryFn: () => getPerfMetricsSummary(24),
-    staleTime: 60 * 1000,
-    retry: false,
-  })
-
   const pagedModels = useMemo(() => {
     const start = (currentPage - 1) * pageSize
     return props.models.slice(start, start + pageSize)
@@ -61,11 +54,11 @@ export function ModelCardGrid(props: ModelCardGridProps) {
 
   const perfMap = useMemo(() => {
     const map = new Map<string, ModelPerfBadgeData>()
-    for (const model of perfQuery.data?.data?.models ?? []) {
+    for (const model of props.perfModels ?? []) {
       map.set(model.model_name, model)
     }
     return map
-  }, [perfQuery.data])
+  }, [props.perfModels])
 
   if (props.models.length === 0) {
     return null

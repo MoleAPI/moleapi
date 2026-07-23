@@ -389,6 +389,7 @@ func TestListModelsUsesAdvancedCustomEndpointTypesFromPricingCache(t *testing.T)
 	require.Equal(t, []constant.EndpointType{
 		constant.EndpointTypeOpenAI,
 		constant.EndpointTypeOpenAIResponse,
+		constant.EndpointTypeAnthropic,
 	}, payload.Data[0].SupportedEndpointTypes)
 }
 

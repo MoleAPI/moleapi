@@ -22,11 +22,13 @@ import { DEFAULT_CONFIG, DEFAULT_PARAMETER_ENABLED } from '../constants'
 import {
   saveConfig,
   saveParameterEnabled,
-  saveMessages,
+  createConversationSession,
+  getConversationTitle,
+  saveConversationState,
   applyMessageStateUpdate,
   getInitialParameterEnabled,
   getInitialPlaygroundConfig,
-  loadMessages,
+  loadConversationState,
   type MessageStateUpdater,
 } from '../lib'
 import type {
@@ -35,6 +37,7 @@ import type {
   ParameterEnabled,
   ModelOption,
   GroupOption,
+  PlaygroundConversationSession,
 } from '../types'
 
 const MESSAGE_SAVE_DEBOUNCE_MS = 500
@@ -53,42 +56,90 @@ export function usePlaygroundState() {
   )
 
   const [messages, setMessages] = useState<Message[]>([])
+  const [sessions, setSessions] = useState<PlaygroundConversationSession[]>([])
+  const [activeSessionId, setActiveSessionId] = useState('')
   const [isLoadingMessages, setIsLoadingMessages] = useState(true)
   const messagesSaveTimerRef = useRef<number | null>(null)
   const latestMessagesRef = useRef<Message[]>(messages)
+  const latestSessionsRef = useRef<PlaygroundConversationSession[]>(sessions)
+  const activeSessionIdRef = useRef(activeSessionId)
   const hasLoadedMessagesRef = useRef(false)
 
   const [models, setModels] = useState<ModelOption[]>([])
   const [groups, setGroups] = useState<GroupOption[]>([])
 
-  const persistMessages = useCallback((messagesToSave: Message[]) => {
-    latestMessagesRef.current = messagesToSave
+  const persistSessions = useCallback(
+    (sessionsToSave: PlaygroundConversationSession[], activeId: string) => {
+      if (!hasLoadedMessagesRef.current) {
+        return
+      }
 
-    if (!hasLoadedMessagesRef.current) {
-      return
-    }
+      if (messagesSaveTimerRef.current !== null) {
+        window.clearTimeout(messagesSaveTimerRef.current)
+      }
 
-    if (messagesSaveTimerRef.current !== null) {
-      window.clearTimeout(messagesSaveTimerRef.current)
-    }
+      messagesSaveTimerRef.current = window.setTimeout(() => {
+        messagesSaveTimerRef.current = null
+        latestSessionsRef.current = saveConversationState(
+          sessionsToSave,
+          activeId
+        )
+      }, MESSAGE_SAVE_DEBOUNCE_MS)
+    },
+    []
+  )
 
-    messagesSaveTimerRef.current = window.setTimeout(() => {
-      messagesSaveTimerRef.current = null
-      saveMessages(latestMessagesRef.current)
-    }, MESSAGE_SAVE_DEBOUNCE_MS)
-  }, [])
+  const setActiveMessages = useCallback(
+    (messagesToSave: Message[]) => {
+      latestMessagesRef.current = messagesToSave
+      setMessages(messagesToSave)
+
+      const activeId = activeSessionIdRef.current
+      if (!activeId) {
+        return
+      }
+
+      setSessions((previousSessions) => {
+        const now = Date.now()
+        const nextSessions = previousSessions.map((session) =>
+          session.id === activeId
+            ? {
+                ...session,
+                messages: messagesToSave,
+                title: getConversationTitle(messagesToSave),
+                updatedAt: now,
+              }
+            : session
+        )
+
+        latestSessionsRef.current = nextSessions
+        persistSessions(nextSessions, activeId)
+        return nextSessions
+      })
+    },
+    [persistSessions]
+  )
 
   useEffect(() => {
     let cancelled = false
 
     window.setTimeout(() => {
-      const loadedMessages = loadMessages() ?? []
+      const loadedState = loadConversationState()
+      const activeSession =
+        loadedState.sessions.find(
+          (session) => session.id === loadedState.activeSessionId
+        ) ?? loadedState.sessions[0]
+      const loadedMessages = activeSession?.messages ?? []
       if (cancelled) {
         return
       }
 
       latestMessagesRef.current = loadedMessages
+      latestSessionsRef.current = loadedState.sessions
+      activeSessionIdRef.current = loadedState.activeSessionId
       hasLoadedMessagesRef.current = true
+      setSessions(loadedState.sessions)
+      setActiveSessionId(loadedState.activeSessionId)
       setMessages(loadedMessages)
       setIsLoadingMessages(false)
     }, 0)
@@ -102,7 +153,10 @@ export function usePlaygroundState() {
     () => () => {
       if (messagesSaveTimerRef.current !== null) {
         window.clearTimeout(messagesSaveTimerRef.current)
-        saveMessages(latestMessagesRef.current)
+        saveConversationState(
+          latestSessionsRef.current,
+          activeSessionIdRef.current
+        )
       }
     },
     []
@@ -135,19 +189,58 @@ export function usePlaygroundState() {
   // Update messages with automatic save
   const updateMessages = useCallback(
     (updater: MessageStateUpdater) => {
-      setMessages((prev) => {
-        const newMessages = applyMessageStateUpdate(prev, updater)
-        persistMessages(newMessages)
-        return newMessages
-      })
+      setActiveMessages(
+        applyMessageStateUpdate(latestMessagesRef.current, updater)
+      )
     },
-    [persistMessages]
+    [setActiveMessages]
   )
 
   // Clear all messages
   const clearMessages = useCallback(() => {
     updateMessages([])
   }, [updateMessages])
+
+  const selectConversation = useCallback((sessionId: string) => {
+    if (sessionId === activeSessionIdRef.current) {
+      return
+    }
+
+    const nextSession = latestSessionsRef.current.find(
+      (session) => session.id === sessionId
+    )
+    if (!nextSession) {
+      return
+    }
+
+    if (messagesSaveTimerRef.current !== null) {
+      window.clearTimeout(messagesSaveTimerRef.current)
+      messagesSaveTimerRef.current = null
+      latestSessionsRef.current = saveConversationState(
+        latestSessionsRef.current,
+        activeSessionIdRef.current
+      )
+    }
+
+    activeSessionIdRef.current = nextSession.id
+    latestMessagesRef.current = nextSession.messages
+    setActiveSessionId(nextSession.id)
+    setMessages(nextSession.messages)
+    saveConversationState(latestSessionsRef.current, nextSession.id)
+  }, [])
+
+  const createConversation = useCallback(() => {
+    const nextSession = createConversationSession()
+    const nextSessions = [nextSession, ...latestSessionsRef.current]
+
+    latestSessionsRef.current = nextSessions
+    activeSessionIdRef.current = nextSession.id
+    latestMessagesRef.current = []
+    setSessions(nextSessions)
+    setActiveSessionId(nextSession.id)
+    setMessages([])
+    saveConversationState(nextSessions, nextSession.id)
+  }, [])
 
   // Reset config to defaults
   const resetConfig = useCallback(() => {
@@ -162,6 +255,8 @@ export function usePlaygroundState() {
     config,
     parameterEnabled,
     messages,
+    sessions,
+    activeSessionId,
     isLoadingMessages,
     models,
     groups,
@@ -175,6 +270,8 @@ export function usePlaygroundState() {
     updateParameterEnabled,
     updateMessages,
     clearMessages,
+    createConversation,
+    selectConversation,
     resetConfig,
   }
 }

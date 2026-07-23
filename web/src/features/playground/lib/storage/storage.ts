@@ -17,20 +17,28 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { MESSAGE_STATUS, STORAGE_KEYS } from '../../constants'
-import type { PlaygroundConfig, ParameterEnabled, Message } from '../../types'
+import type {
+  PlaygroundConfig,
+  ParameterEnabled,
+  Message,
+  PlaygroundConversationSession,
+} from '../../types'
 import {
   finalizeMessage,
   isAssistantMessagePending,
   sanitizeMessagesOnLoad,
 } from '../message/message-streaming-utils'
 import { completeAssistantTiming } from '../message/message-timing-utils'
-import { hasMessageContent } from '../message/message-utils'
+import { getMessageContent, hasMessageContent } from '../message/message-utils'
 import {
   MAX_LOADED_MESSAGE_CHARS,
   MAX_LOADED_MESSAGES_CHARS,
+  MAX_STORED_CONVERSATIONS,
+  MAX_STORED_CONVERSATIONS_BYTES,
   MAX_STORED_MESSAGES,
   MAX_STORED_MESSAGES_BYTES,
   STORAGE_VERSION,
+  conversationSessionsSchema,
   messagesSchema,
   parameterEnabledSchema,
   playgroundConfigSchema,
@@ -44,6 +52,8 @@ type StoredEnvelope<T> = {
 const TRUNCATED_CONTENT_SUFFIX = '\n\n[...]'
 const MIN_PREFIX_COLLAPSE_LENGTH = 2000
 const MIN_REPEATED_SECTION_COUNT = 3
+const DEFAULT_CONVERSATION_ID = 'default'
+const MAX_CONVERSATION_TITLE_LENGTH = 60
 const SECTION_HEADING_LINE_PATTERN = /^#{2,6}\s+\d+\.\s+.+$/gm
 
 function readStoredValue(key: string): unknown | null {
@@ -59,6 +69,18 @@ function readStoredMessagesValue(): unknown | null {
 
   if (saved.length > MAX_STORED_MESSAGES_BYTES) {
     localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+    return null
+  }
+
+  return JSON.parse(saved) as unknown
+}
+
+function readStoredConversationsValue(): unknown | null {
+  const saved = localStorage.getItem(STORAGE_KEYS.CONVERSATIONS)
+  if (!saved) return null
+
+  if (saved.length > MAX_STORED_CONVERSATIONS_BYTES) {
+    localStorage.removeItem(STORAGE_KEYS.CONVERSATIONS)
     return null
   }
 
@@ -92,6 +114,29 @@ function trimMessages(messages: Message[]): Message[] {
   }
 
   return messages.slice(-MAX_STORED_MESSAGES)
+}
+
+function createConversationId(): string {
+  if (globalThis.crypto?.randomUUID) {
+    return globalThis.crypto.randomUUID()
+  }
+
+  return `conversation-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
+export function getConversationTitle(messages: Message[]): string {
+  const firstUserMessage = messages.find(
+    (message) => message.from === 'user' && hasMessageContent(message)
+  )
+  const content = firstUserMessage
+    ? getMessageContent(firstUserMessage).replaceAll(/\s+/g, ' ').trim()
+    : ''
+
+  if (content.length <= MAX_CONVERSATION_TITLE_LENGTH) {
+    return content
+  }
+
+  return `${content.slice(0, MAX_CONVERSATION_TITLE_LENGTH - 1)}...`
 }
 
 function getMessageSize(message: Message): number {
@@ -275,6 +320,79 @@ function trimMessagesByContentSize(messages: Message[]): Message[] {
   return result.reverse()
 }
 
+function normalizeLoadedMessages(messages: Message[]): Message[] {
+  const normalized = messages.map(normalizeStoredMessageForLoad)
+  const trimmed = trimMessages(normalized)
+  const sizeTrimmed = trimMessagesByContentSize(trimmed)
+
+  return sanitizeMessagesOnLoad(sizeTrimmed)
+}
+
+function normalizeConversationSession(
+  session: PlaygroundConversationSession
+): PlaygroundConversationSession {
+  const messages = normalizeLoadedMessages(session.messages)
+
+  return {
+    ...session,
+    messages,
+    title: getConversationTitle(messages) || session.title,
+    updatedAt: Number.isFinite(session.updatedAt)
+      ? session.updatedAt
+      : Date.now(),
+  }
+}
+
+function trimConversations(
+  sessions: PlaygroundConversationSession[],
+  activeSessionId: string
+): PlaygroundConversationSession[] {
+  const seen = new Set<string>()
+  const uniqueSessions = sessions.filter((session) => {
+    if (seen.has(session.id)) {
+      return false
+    }
+
+    seen.add(session.id)
+    return true
+  })
+  const sorted = [...uniqueSessions].sort((a, b) => b.updatedAt - a.updatedAt)
+  const limited = sorted.slice(0, MAX_STORED_CONVERSATIONS)
+
+  if (limited.some((session) => session.id === activeSessionId)) {
+    return limited
+  }
+
+  const activeSession = uniqueSessions.find(
+    (session) => session.id === activeSessionId
+  )
+  if (!activeSession) {
+    return limited
+  }
+
+  return [activeSession, ...limited.slice(0, MAX_STORED_CONVERSATIONS - 1)]
+}
+
+function createDefaultConversation(
+  messages: Message[] = []
+): PlaygroundConversationSession {
+  return {
+    id: DEFAULT_CONVERSATION_ID,
+    title: getConversationTitle(messages),
+    updatedAt: Date.now(),
+    messages: trimMessages(messages),
+  }
+}
+
+export function createConversationSession(): PlaygroundConversationSession {
+  return {
+    id: createConversationId(),
+    title: '',
+    updatedAt: Date.now(),
+    messages: [],
+  }
+}
+
 /**
  * Load playground config from localStorage
  */
@@ -344,20 +462,9 @@ export function loadMessages(): Message[] | null {
     if (!saved) return null
 
     const parsed = messagesSchema.parse(unwrapStoredValue(saved)) as Message[]
-    const normalized = parsed.map(normalizeStoredMessageForLoad)
-    const normalizedChanged = normalized.some(
-      (message, index) => message !== parsed[index]
-    )
-    const trimmed = trimMessages(normalized)
-    const sizeTrimmed = trimMessagesByContentSize(trimmed)
-    const sanitized = sanitizeMessagesOnLoad(sizeTrimmed)
+    const sanitized = normalizeLoadedMessages(parsed)
 
-    if (
-      normalizedChanged ||
-      trimmed !== normalized ||
-      sizeTrimmed !== trimmed ||
-      sanitized !== sizeTrimmed
-    ) {
+    if (sanitized !== parsed) {
       saveMessages(sanitized)
     }
 
@@ -383,12 +490,90 @@ export function saveMessages(messages: Message[]): void {
   }
 }
 
+export function loadConversationState(): {
+  activeSessionId: string
+  sessions: PlaygroundConversationSession[]
+} {
+  try {
+    const saved = readStoredConversationsValue()
+    const savedActiveSessionId = readStoredValue(
+      STORAGE_KEYS.ACTIVE_CONVERSATION_ID
+    )
+    const activeSessionId =
+      typeof unwrapStoredValue(savedActiveSessionId) === 'string'
+        ? (unwrapStoredValue(savedActiveSessionId) as string)
+        : ''
+
+    if (saved) {
+      const parsed = conversationSessionsSchema.parse(
+        unwrapStoredValue(saved)
+      ) as PlaygroundConversationSession[]
+      const normalized = parsed.map(normalizeConversationSession)
+      const fallbackSession = normalized[0] ?? createDefaultConversation()
+      const resolvedActiveSessionId =
+        normalized.find((session) => session.id === activeSessionId)?.id ??
+        fallbackSession.id
+      const sessions = trimConversations(normalized, resolvedActiveSessionId)
+
+      return {
+        activeSessionId: resolvedActiveSessionId,
+        sessions,
+      }
+    }
+
+    const legacyMessages = loadMessages() ?? []
+    const session = createDefaultConversation(legacyMessages)
+
+    return {
+      activeSessionId: session.id,
+      sessions: [session],
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to load playground conversations:', error)
+  }
+
+  const session = createDefaultConversation()
+  return {
+    activeSessionId: session.id,
+    sessions: [session],
+  }
+}
+
+export function saveConversationState(
+  sessions: PlaygroundConversationSession[],
+  activeSessionId: string
+): PlaygroundConversationSession[] {
+  try {
+    const normalized = sessions.map((session) => ({
+      ...session,
+      messages: trimMessages(session.messages),
+      title: getConversationTitle(session.messages),
+    }))
+    const trimmed = trimConversations(normalized, activeSessionId)
+    const parsed = conversationSessionsSchema.parse(
+      trimmed
+    ) as PlaygroundConversationSession[]
+    writeStoredValue(STORAGE_KEYS.CONVERSATIONS, parsed)
+    writeStoredValue(STORAGE_KEYS.ACTIVE_CONVERSATION_ID, activeSessionId)
+
+    return parsed
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('Failed to save playground conversations:', error)
+  }
+
+  return sessions
+}
+
 /**
  * Clear all playground data
  */
 export function clearPlaygroundData(): void {
   try {
+    localStorage.removeItem(STORAGE_KEYS.ACTIVE_CONVERSATION_ID)
     localStorage.removeItem(STORAGE_KEYS.CONFIG)
+    localStorage.removeItem(STORAGE_KEYS.CONVERSATIONS)
     localStorage.removeItem(STORAGE_KEYS.PARAMETER_ENABLED)
     localStorage.removeItem(STORAGE_KEYS.MESSAGES)
   } catch (error) {

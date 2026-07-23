@@ -31,6 +31,7 @@ export type PricingModel = {
   id: number
   model_name: string
   description?: string
+  description_i18n?: Record<string, string> | string
   icon?: string
   vendor_id?: number
   vendor_name?: string

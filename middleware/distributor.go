@@ -100,12 +100,13 @@ func Distribute() func(c *gin.Context) {
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
+				requestPath := requestPathForChannelSelection(c.Request.URL.Path, modelRequest.Model)
 
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled &&
-						channelSupportsRequestPath(preferred, c.Request.URL.Path, modelRequest.Model) {
+						channelSupportsRequestPath(preferred, requestPath, modelRequest.Model) {
 						if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetUserAutoGroup(userGroup)
@@ -136,7 +137,7 @@ func Distribute() func(c *gin.Context) {
 						Ctx:         c,
 						ModelName:   modelRequest.Model,
 						TokenGroup:  usingGroup,
-						RequestPath: c.Request.URL.Path,
+						RequestPath: requestPath,
 						Retry:       common.GetPointer(0),
 					})
 					if err != nil {
@@ -170,17 +171,30 @@ func Distribute() func(c *gin.Context) {
 }
 
 // channelSupportsRequestPath reports whether a channel can serve the request path.
-// Only Advanced Custom (type 58) channels are path-checked; all other channel types
-// always pass. A type-58 channel is usable only when one of its routes matches.
+// Advanced Custom-like channels are path-checked; all other channel types always
+// pass. A routed channel is usable only when one of its routes matches.
 func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string) bool {
 	if channel == nil {
 		return false
 	}
-	if channel.Type != constant.ChannelTypeAdvancedCustom {
+	if !constant.IsAdvancedCustomLikeChannelType(channel.Type) {
 		return true
 	}
 	config := channel.GetOtherSettings().AdvancedCustom
 	return config != nil && config.SupportsPathForModel(requestPath, requestModel)
+}
+
+func requestPathForChannelSelection(path string, model string) string {
+	if common.IsImageGenerationModel(model) &&
+		(strings.HasPrefix(path, "/v1/chat/completions") ||
+			strings.HasPrefix(path, "/pg/chat/completions") ||
+			strings.HasPrefix(path, "/v1/responses")) {
+		return "/v1/images/generations"
+	}
+	if strings.HasPrefix(path, "/pg/chat/completions") {
+		return "/v1/chat/completions"
+	}
+	return path
 }
 
 // getModelFromRequest 从请求中读取模型信息

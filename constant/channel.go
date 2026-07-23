@@ -56,6 +56,7 @@ const (
 	ChannelTypeReplicate      = 56
 	ChannelTypeCodex          = 57
 	ChannelTypeAdvancedCustom = 58
+	ChannelTypeCodingPlan     = 59
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -120,6 +121,7 @@ var ChannelBaseURLs = []string{
 	"https://api.replicate.com",                 //56
 	"https://chatgpt.com",                       //57
 	"",                                          //58
+	"",                                          //59
 }
 
 var ChannelTypeNames = map[int]string{
@@ -178,6 +180,7 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeReplicate:      "Replicate",
 	ChannelTypeCodex:          "ChatGPT Subscription (Codex)",
 	ChannelTypeAdvancedCustom: "Advanced Custom",
+	ChannelTypeCodingPlan:     "Coding Plan",
 }
 
 func GetChannelTypeName(channelType int) string {
@@ -187,9 +190,14 @@ func GetChannelTypeName(channelType int) string {
 	return "Unknown"
 }
 
+func IsAdvancedCustomLikeChannelType(channelType int) bool {
+	return channelType == ChannelTypeAdvancedCustom || channelType == ChannelTypeCodingPlan
+}
+
 type ChannelSpecialBase struct {
-	ClaudeBaseURL string
-	OpenAIBaseURL string
+	ClaudeBaseURL    string
+	OpenAIBaseURL    string
+	ResponsesBaseURL string
 }
 
 var ChannelSpecialBases = map[string]ChannelSpecialBase{
@@ -202,11 +210,13 @@ var ChannelSpecialBases = map[string]ChannelSpecialBase{
 		OpenAIBaseURL: "https://api.z.ai/api/coding/paas/v4",
 	},
 	"kimi-coding-plan": {
-		ClaudeBaseURL: "https://api.kimi.com/coding",
-		OpenAIBaseURL: "https://api.kimi.com/coding/v1",
+		ClaudeBaseURL:    "https://api.kimi.com/coding",
+		OpenAIBaseURL:    "https://api.kimi.com/coding/v1",
+		ResponsesBaseURL: "https://api.kimi.com/coding/v1",
 	},
 	"doubao-coding-plan": {
-		ClaudeBaseURL: "https://ark.cn-beijing.volces.com/api/coding",
-		OpenAIBaseURL: "https://ark.cn-beijing.volces.com/api/coding/v3",
+		ClaudeBaseURL:    "https://ark.cn-beijing.volces.com/api/coding",
+		OpenAIBaseURL:    "https://ark.cn-beijing.volces.com/api/coding/v3",
+		ResponsesBaseURL: "https://ark.cn-beijing.volces.com/api/coding/v3",
 	},
 }

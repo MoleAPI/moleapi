@@ -40,20 +40,22 @@ func TestRequestConverterRegistryListsSupportedTextConverters(t *testing.T) {
 			},
 		},
 		{
-			converter: requestConverterClaudeToResponses,
-			from:      types.RelayFormatClaude,
-			to:        types.RelayFormatOpenAIResponses,
-			quality:   RequestConverterQualityFair,
+			converter:      ConverterClaudeMessagesToOpenAIResponses,
+			from:           types.RelayFormatClaude,
+			to:             types.RelayFormatOpenAIResponses,
+			quality:        RequestConverterQualityFair,
+			advancedCustom: true,
 			stepConverters: []string{
 				ConverterClaudeMessagesToOpenAIChat,
 				ConverterOpenAIChatToOpenAIResponses,
 			},
 		},
 		{
-			converter: requestConverterGeminiToClaude,
-			from:      types.RelayFormatGemini,
-			to:        types.RelayFormatClaude,
-			quality:   RequestConverterQualityDiscouraged,
+			converter:      requestConverterGeminiToClaude,
+			from:           types.RelayFormatGemini,
+			to:             types.RelayFormatClaude,
+			quality:        RequestConverterQualityDiscouraged,
+			advancedCustom: true,
 			stepConverters: []string{
 				ConverterGeminiContentToOpenAIChat,
 				ConverterOpenAIChatToClaudeMessages,
@@ -70,10 +72,11 @@ func TestRequestConverterRegistryListsSupportedTextConverters(t *testing.T) {
 			},
 		},
 		{
-			converter: requestConverterResponsesToClaude,
-			from:      types.RelayFormatOpenAIResponses,
-			to:        types.RelayFormatClaude,
-			quality:   RequestConverterQualityFair,
+			converter:      requestConverterResponsesToClaude,
+			from:           types.RelayFormatOpenAIResponses,
+			to:             types.RelayFormatClaude,
+			quality:        RequestConverterQualityFair,
+			advancedCustom: true,
 		},
 		{
 			converter:      ConverterOpenAIResponsesToGemini,
@@ -676,11 +679,11 @@ func TestConvertRequestByIDExecutesMultiHopConverter(t *testing.T) {
 		},
 	}
 
-	result, err := ConvertRequestByID(nil, info, requestConverterClaudeToResponses, req)
+	result, err := ConvertRequestByID(nil, info, ConverterClaudeMessagesToOpenAIResponses, req)
 
 	require.NoError(t, err)
 	require.IsType(t, &dto.OpenAIResponsesRequest{}, result.Value)
-	assert.Equal(t, requestConverterClaudeToResponses, result.Converter)
+	assert.Equal(t, ConverterClaudeMessagesToOpenAIResponses, result.Converter)
 	assert.Equal(t, RequestConverterQualityFair, result.Quality)
 	assert.Equal(t, []RequestStep{
 		{

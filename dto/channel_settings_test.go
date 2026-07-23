@@ -32,6 +32,17 @@ func TestAdvancedCustomValidateResponsesToChatConverterPath(t *testing.T) {
 	}
 	require.NoError(t, validGemini.Validate())
 
+	validClaude := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/responses",
+				UpstreamPath: "/v1/messages",
+				Converter:    advancedCustomConverterOpenAIResponsesToClaude,
+			},
+		},
+	}
+	require.NoError(t, validClaude.Validate())
+
 	tests := []struct {
 		name         string
 		incomingPath string
@@ -56,6 +67,58 @@ func TestAdvancedCustomValidateResponsesToChatConverterPath(t *testing.T) {
 			assert.Contains(t, err.Error(), "converter does not match incoming_path")
 		})
 	}
+}
+
+func TestAdvancedCustomValidateGeminiToClaudeConverterPath(t *testing.T) {
+	valid := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1beta/models/{model}:generateContent",
+				UpstreamPath: "/v1/messages",
+				Converter:    advancedCustomConverterGeminiContentToClaude,
+			},
+		},
+	}
+	require.NoError(t, valid.Validate())
+
+	invalid := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/chat/completions",
+				UpstreamPath: "/v1/messages",
+				Converter:    advancedCustomConverterGeminiContentToClaude,
+			},
+		},
+	}
+	err := invalid.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "converter does not match incoming_path")
+}
+
+func TestAdvancedCustomValidateClaudeToResponsesConverterPath(t *testing.T) {
+	valid := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/messages",
+				UpstreamPath: "/v1/responses",
+				Converter:    advancedCustomConverterClaudeMessagesToResponses,
+			},
+		},
+	}
+	require.NoError(t, valid.Validate())
+
+	invalid := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/responses",
+				UpstreamPath: "/v1/responses",
+				Converter:    advancedCustomConverterClaudeMessagesToResponses,
+			},
+		},
+	}
+	err := invalid.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "converter does not match incoming_path")
 }
 
 func TestAdvancedCustomValidateModelListRouteConstraints(t *testing.T) {
@@ -270,6 +333,94 @@ func TestAdvancedCustomMatchPathForModel(t *testing.T) {
 	assert.Equal(t, advancedCustomConverterNone, fallbackRoute.Converter)
 }
 
+func TestAdvancedCustomMatchPathForModelInfersTextEndpointsFromOpenAIChatRoute(t *testing.T) {
+	config := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/chat/completions",
+				UpstreamPath: "/v1/chat/completions",
+				Models:       []string{"glm-5-turbo"},
+			},
+		},
+	}
+	require.NoError(t, config.Validate())
+
+	responsesRoute, ok := config.MatchPathForModel("/v1/responses", "glm-5-turbo")
+	require.True(t, ok)
+	assert.Equal(t, "/v1/responses", responsesRoute.IncomingPath)
+	assert.Equal(t, "/v1/chat/completions", responsesRoute.UpstreamPath)
+	assert.Equal(t, advancedCustomConverterOpenAIResponsesToOpenAIChat, responsesRoute.Converter)
+
+	messagesRoute, ok := config.MatchPathForModel("/v1/messages", "glm-5-turbo")
+	require.True(t, ok)
+	assert.Equal(t, "/v1/messages", messagesRoute.IncomingPath)
+	assert.Equal(t, "/v1/chat/completions", messagesRoute.UpstreamPath)
+	assert.Equal(t, advancedCustomConverterClaudeMessagesToOpenAIChat, messagesRoute.Converter)
+
+	_, ok = config.MatchPathForModel("/v1/responses", "other-model")
+	assert.False(t, ok)
+}
+
+func TestAdvancedCustomAllowsOpenAICompletionsToChatConverter(t *testing.T) {
+	config := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/completions",
+				UpstreamPath: "/v1/chat/completions",
+				Converter:    advancedCustomConverterOpenAICompletionsToChat,
+			},
+		},
+	}
+
+	require.NoError(t, config.Validate())
+
+	route, ok := config.MatchPathForModel("/v1/completions", "glm-5-turbo")
+	require.True(t, ok)
+	assert.Equal(t, advancedCustomConverterOpenAICompletionsToChat, route.Converter)
+}
+
+func TestAdvancedCustomMatchPathForModelInfersTextEndpointsFromClaudeRoute(t *testing.T) {
+	config := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/messages",
+				UpstreamPath: "/v1/messages",
+			},
+		},
+	}
+	require.NoError(t, config.Validate())
+
+	chatRoute, ok := config.MatchPathForModel("/v1/chat/completions", "glm-5-turbo")
+	require.True(t, ok)
+	assert.Equal(t, advancedCustomConverterOpenAIChatToClaudeMessages, chatRoute.Converter)
+
+	responsesRoute, ok := config.MatchPathForModel("/v1/responses", "glm-5-turbo")
+	require.True(t, ok)
+	assert.Equal(t, advancedCustomConverterOpenAIResponsesToClaude, responsesRoute.Converter)
+}
+
+func TestAdvancedCustomMatchPathForModelPrefersExplicitRouteOverInferredRoute(t *testing.T) {
+	config := &AdvancedCustomConfig{
+		Routes: []AdvancedCustomRoute{
+			{
+				IncomingPath: "/v1/chat/completions",
+				UpstreamPath: "/v1/chat/completions",
+			},
+			{
+				IncomingPath: "/v1/responses",
+				UpstreamPath: "/v1beta/models/{model}:generateContent",
+				Converter:    advancedCustomConverterOpenAIResponsesToGemini,
+				Models:       []string{"glm-5-turbo"},
+			},
+		},
+	}
+	require.NoError(t, config.Validate())
+
+	route, ok := config.MatchPathForModel("/v1/responses", "glm-5-turbo")
+	require.True(t, ok)
+	assert.Equal(t, advancedCustomConverterOpenAIResponsesToGemini, route.Converter)
+}
+
 func TestAdvancedCustomMatchPathForModelRegexRules(t *testing.T) {
 	config := &AdvancedCustomConfig{
 		Routes: []AdvancedCustomRoute{
@@ -468,12 +619,16 @@ func TestAdvancedCustomSupportedEndpointTypesForModel(t *testing.T) {
 		constant.EndpointTypeOpenAIResponse,
 		constant.EndpointTypeGemini,
 		constant.EndpointTypeAnthropic,
+		constant.EndpointTypeOpenAI,
 	}, config.SupportedEndpointTypesForModel("gemini-2.5-flash"))
 	assert.Equal(t, []constant.EndpointType{
 		constant.EndpointTypeOpenAI,
+		constant.EndpointTypeOpenAIResponse,
 		constant.EndpointTypeAnthropic,
 	}, config.SupportedEndpointTypesForModel("gpt-4o"))
 	assert.Equal(t, []constant.EndpointType{
 		constant.EndpointTypeAnthropic,
+		constant.EndpointTypeOpenAI,
+		constant.EndpointTypeOpenAIResponse,
 	}, config.SupportedEndpointTypesForModel("other-model"))
 }

@@ -52,6 +52,7 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastDetectedModels []string              `json:"upstream_model_update_last_detected_models,omitempty"` // 上次检测到的可加入模型
 	UpstreamModelUpdateLastRemovedModels  []string              `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string              `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
+	CodingPlanProvider                    string                `json:"coding_plan_provider,omitempty"`
 	AdvancedCustom                        *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
 }
 
@@ -65,8 +66,12 @@ func (s *ChannelOtherSettings) IsOpenRouterEnterprise() bool {
 const (
 	advancedCustomConverterNone                        = "none"
 	advancedCustomConverterClaudeMessagesToOpenAIChat  = "anthropic_messages_to_openai_chat_completions"
+	advancedCustomConverterClaudeMessagesToResponses   = "claude_messages_to_openai_responses"
+	advancedCustomConverterGeminiContentToClaude       = "gemini_generate_content_to_claude_messages"
+	advancedCustomConverterOpenAICompletionsToChat     = "openai_completions_to_openai_chat_completions"
 	advancedCustomConverterOpenAIChatToClaudeMessages  = "openai_chat_completions_to_anthropic_messages"
 	advancedCustomConverterOpenAIChatToOpenAIResponses = "openai_chat_completions_to_openai_responses"
+	advancedCustomConverterOpenAIResponsesToClaude     = "openai_responses_to_claude_messages"
 	advancedCustomConverterOpenAIResponsesToOpenAIChat = "openai_responses_to_openai_chat_completions"
 	advancedCustomConverterOpenAIResponsesToGemini     = "openai_responses_to_gemini_generate_content"
 	advancedCustomConverterGeminiContentToOpenAIChat   = "gemini_generate_content_to_openai_chat_completions"
@@ -104,6 +109,7 @@ const (
 
 const (
 	advancedCustomEndpointPathOpenAIChat             = "/v1/chat/completions"
+	advancedCustomEndpointPathOpenAICompletions      = "/v1/completions"
 	advancedCustomEndpointPathOpenAIResponses        = "/v1/responses"
 	advancedCustomEndpointPathOpenAIResponsesCompact = "/v1/responses/compact"
 	advancedCustomEndpointPathClaudeMessages         = "/v1/messages"
@@ -143,6 +149,14 @@ func (c *AdvancedCustomConfig) MatchPathForModel(requestPath string, model strin
 			return route, true
 		}
 	}
+	for _, route := range c.Routes {
+		if !matchAdvancedCustomRouteModel(route.Models, model) {
+			continue
+		}
+		if inferred, ok := inferAdvancedCustomTextRoute(route, requestPath); ok {
+			return inferred, true
+		}
+	}
 	return AdvancedCustomRoute{}, false
 }
 
@@ -177,8 +191,15 @@ func (c *AdvancedCustomConfig) SupportedEndpointTypesForModel(model string) []co
 		return nil
 	}
 	model = strings.TrimSpace(model)
-	endpoints := make([]constant.EndpointType, 0, len(c.Routes))
+	endpoints := make([]constant.EndpointType, 0, len(c.Routes)+2)
 	seen := make(map[constant.EndpointType]struct{}, len(c.Routes))
+	addEndpoint := func(endpointType constant.EndpointType) {
+		if _, exists := seen[endpointType]; exists {
+			return
+		}
+		seen[endpointType] = struct{}{}
+		endpoints = append(endpoints, endpointType)
+	}
 	for _, route := range c.Routes {
 		if !matchAdvancedCustomRouteModel(route.Models, model) {
 			continue
@@ -187,18 +208,121 @@ func (c *AdvancedCustomConfig) SupportedEndpointTypesForModel(model string) []co
 		if !ok {
 			continue
 		}
-		if _, exists := seen[endpointType]; exists {
-			continue
+		addEndpoint(endpointType)
+		for _, inferredEndpointType := range inferredAdvancedCustomTextEndpointTypes(route) {
+			addEndpoint(inferredEndpointType)
 		}
-		seen[endpointType] = struct{}{}
-		endpoints = append(endpoints, endpointType)
 	}
 	return endpoints
+}
+
+func inferAdvancedCustomTextRoute(route AdvancedCustomRoute, requestPath string) (AdvancedCustomRoute, bool) {
+	incomingEndpoint, ok := advancedCustomEndpointTypeFromIncomingPath(requestPath)
+	if !ok {
+		return AdvancedCustomRoute{}, false
+	}
+	upstreamEndpoint, ok := advancedCustomRouteUpstreamTextEndpointType(route)
+	if !ok {
+		return AdvancedCustomRoute{}, false
+	}
+	converter, ok := advancedCustomTextConverter(incomingEndpoint, upstreamEndpoint)
+	if !ok {
+		return AdvancedCustomRoute{}, false
+	}
+	route.IncomingPath = requestPath
+	route.Converter = converter
+	return route, true
+}
+
+func inferredAdvancedCustomTextEndpointTypes(route AdvancedCustomRoute) []constant.EndpointType {
+	upstreamEndpoint, ok := advancedCustomRouteUpstreamTextEndpointType(route)
+	if !ok {
+		return nil
+	}
+	endpoints := make([]constant.EndpointType, 0, 3)
+	for _, incomingEndpoint := range []constant.EndpointType{
+		constant.EndpointTypeOpenAI,
+		constant.EndpointTypeOpenAIResponse,
+		constant.EndpointTypeAnthropic,
+	} {
+		if _, ok := advancedCustomTextConverter(incomingEndpoint, upstreamEndpoint); ok {
+			endpoints = append(endpoints, incomingEndpoint)
+		}
+	}
+	return endpoints
+}
+
+func advancedCustomRouteUpstreamTextEndpointType(route AdvancedCustomRoute) (constant.EndpointType, bool) {
+	switch strings.TrimSpace(route.Converter) {
+	case "", advancedCustomConverterNone:
+		endpointType, ok := advancedCustomEndpointTypeFromIncomingPath(strings.TrimSpace(route.IncomingPath))
+		if !ok {
+			return "", false
+		}
+		return advancedCustomTextEndpointType(endpointType)
+	case advancedCustomConverterClaudeMessagesToOpenAIChat,
+		advancedCustomConverterOpenAICompletionsToChat,
+		advancedCustomConverterOpenAIResponsesToOpenAIChat,
+		advancedCustomConverterGeminiContentToOpenAIChat:
+		return constant.EndpointTypeOpenAI, true
+	case advancedCustomConverterClaudeMessagesToResponses,
+		advancedCustomConverterOpenAIChatToOpenAIResponses:
+		return constant.EndpointTypeOpenAIResponse, true
+	case advancedCustomConverterOpenAIChatToClaudeMessages,
+		advancedCustomConverterOpenAIResponsesToClaude,
+		advancedCustomConverterGeminiContentToClaude:
+		return constant.EndpointTypeAnthropic, true
+	default:
+		return "", false
+	}
+}
+
+func advancedCustomTextEndpointType(endpointType constant.EndpointType) (constant.EndpointType, bool) {
+	switch endpointType {
+	case constant.EndpointTypeOpenAI,
+		constant.EndpointTypeOpenAIResponse,
+		constant.EndpointTypeAnthropic:
+		return endpointType, true
+	default:
+		return "", false
+	}
+}
+
+func advancedCustomTextConverter(incomingEndpoint constant.EndpointType, upstreamEndpoint constant.EndpointType) (string, bool) {
+	if incomingEndpoint == upstreamEndpoint {
+		return advancedCustomConverterNone, true
+	}
+	switch upstreamEndpoint {
+	case constant.EndpointTypeOpenAI:
+		switch incomingEndpoint {
+		case constant.EndpointTypeOpenAIResponse:
+			return advancedCustomConverterOpenAIResponsesToOpenAIChat, true
+		case constant.EndpointTypeAnthropic:
+			return advancedCustomConverterClaudeMessagesToOpenAIChat, true
+		}
+	case constant.EndpointTypeOpenAIResponse:
+		switch incomingEndpoint {
+		case constant.EndpointTypeOpenAI:
+			return advancedCustomConverterOpenAIChatToOpenAIResponses, true
+		case constant.EndpointTypeAnthropic:
+			return advancedCustomConverterClaudeMessagesToResponses, true
+		}
+	case constant.EndpointTypeAnthropic:
+		switch incomingEndpoint {
+		case constant.EndpointTypeOpenAI:
+			return advancedCustomConverterOpenAIChatToClaudeMessages, true
+		case constant.EndpointTypeOpenAIResponse:
+			return advancedCustomConverterOpenAIResponsesToClaude, true
+		}
+	}
+	return "", false
 }
 
 func advancedCustomEndpointTypeFromIncomingPath(incomingPath string) (constant.EndpointType, bool) {
 	switch incomingPath {
 	case advancedCustomEndpointPathOpenAIChat:
+		return constant.EndpointTypeOpenAI, true
+	case advancedCustomEndpointPathOpenAICompletions:
 		return constant.EndpointTypeOpenAI, true
 	case advancedCustomEndpointPathOpenAIResponses:
 		return constant.EndpointTypeOpenAIResponse, true
@@ -303,8 +427,12 @@ func IsAdvancedCustomConverterAllowed(converter string) bool {
 	switch converter {
 	case advancedCustomConverterNone,
 		advancedCustomConverterClaudeMessagesToOpenAIChat,
+		advancedCustomConverterClaudeMessagesToResponses,
+		advancedCustomConverterGeminiContentToClaude,
+		advancedCustomConverterOpenAICompletionsToChat,
 		advancedCustomConverterOpenAIChatToClaudeMessages,
 		advancedCustomConverterOpenAIChatToOpenAIResponses,
+		advancedCustomConverterOpenAIResponsesToClaude,
 		advancedCustomConverterOpenAIResponsesToOpenAIChat,
 		advancedCustomConverterOpenAIResponsesToGemini,
 		advancedCustomConverterGeminiContentToOpenAIChat,
@@ -478,7 +606,8 @@ func validateAdvancedCustomConverterPath(index int, incomingPath string, convert
 	switch converter {
 	case advancedCustomConverterNone:
 		return nil
-	case advancedCustomConverterClaudeMessagesToOpenAIChat:
+	case advancedCustomConverterClaudeMessagesToOpenAIChat,
+		advancedCustomConverterClaudeMessagesToResponses:
 		if incomingPath == "/v1/messages" {
 			return nil
 		}
@@ -488,15 +617,18 @@ func validateAdvancedCustomConverterPath(index int, incomingPath string, convert
 		if incomingPath == "/v1/chat/completions" {
 			return nil
 		}
-	case advancedCustomConverterOpenAIResponsesToOpenAIChat:
+	case advancedCustomConverterOpenAICompletionsToChat:
+		if incomingPath == "/v1/completions" {
+			return nil
+		}
+	case advancedCustomConverterOpenAIResponsesToClaude,
+		advancedCustomConverterOpenAIResponsesToOpenAIChat,
+		advancedCustomConverterOpenAIResponsesToGemini:
 		if incomingPath == "/v1/responses" {
 			return nil
 		}
-	case advancedCustomConverterOpenAIResponsesToGemini:
-		if incomingPath == "/v1/responses" {
-			return nil
-		}
-	case advancedCustomConverterGeminiContentToOpenAIChat:
+	case advancedCustomConverterGeminiContentToClaude,
+		advancedCustomConverterGeminiContentToOpenAIChat:
 		if strings.Contains(incomingPath, ":generateContent") || strings.Contains(incomingPath, ":streamGenerateContent") {
 			return nil
 		}

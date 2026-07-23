@@ -24,6 +24,12 @@ import {
   ENDPOINT_TYPES,
 } from '../constants'
 import type { PricingModel } from '../types'
+import { getModelDescriptionSearchText } from './model-helpers'
+
+type ModelPopularity = {
+  model_name: string
+  request_count?: number
+}
 
 // ----------------------------------------------------------------------------
 // Filter Utilities
@@ -42,7 +48,7 @@ export function filterBySearch(
   return models.filter(
     (m) =>
       m.model_name?.toLowerCase().includes(lowerQuery) ||
-      m.description?.toLowerCase().includes(lowerQuery) ||
+      getModelDescriptionSearchText(m).toLowerCase().includes(lowerQuery) ||
       m.tags?.toLowerCase().includes(lowerQuery) ||
       m.vendor_name?.toLowerCase().includes(lowerQuery)
   )
@@ -110,11 +116,24 @@ function getModelPrice(model: PricingModel): number {
  */
 export function sortModels(
   models: PricingModel[],
-  sortBy: string
+  sortBy: string,
+  popularModels?: ModelPopularity[]
 ): PricingModel[] {
   const sorted = [...models]
+  const usage = new Map(
+    (popularModels || []).map((m) => [m.model_name, m.request_count || 0])
+  )
 
   switch (sortBy) {
+    case SORT_OPTIONS.POPULAR:
+      sorted.sort((a, b) => {
+        const usageDiff =
+          (usage.get(b.model_name) || 0) - (usage.get(a.model_name) || 0)
+        return (
+          usageDiff || (a.model_name || '').localeCompare(b.model_name || '')
+        )
+      })
+      break
     case SORT_OPTIONS.NAME:
       sorted.sort((a, b) =>
         (a.model_name || '').localeCompare(b.model_name || '')
@@ -144,6 +163,7 @@ export function filterAndSortModels(
     endpointType: string
     tag: string
     sortBy: string
+    popularModels?: ModelPopularity[]
   }
 ): PricingModel[] {
   let result = filterBySearch(models, filters.search)
@@ -152,7 +172,7 @@ export function filterAndSortModels(
   result = filterByQuotaType(result, filters.quotaType)
   result = filterByEndpointType(result, filters.endpointType)
   result = filterByTag(result, filters.tag)
-  result = sortModels(result, filters.sortBy)
+  result = sortModels(result, filters.sortBy, filters.popularModels)
 
   return result
 }
@@ -183,7 +203,7 @@ export function extractAllTags(models: PricingModel[]): string[] {
     }
   })
 
-  return Array.from(tagSet).sort((a, b) => a.localeCompare(b))
+  return [...tagSet].sort((a, b) => a.localeCompare(b))
 }
 
 /**

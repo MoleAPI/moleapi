@@ -17,12 +17,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
 
-const styles = readFileSync(new URL('../index.css', import.meta.url), 'utf8')
+import i18next from 'i18next'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { I18nextProvider, initReactI18next } from 'react-i18next'
 
-test('the interface uses the requested 110 percent base text scale', () => {
-  assert.match(styles, /html\s*{[^}]*font-size:\s*110%;/s)
-  assert.match(styles, /font-size:\s*1rem\s*!important;/)
+import { Response } from './response'
+
+test('renders large generated image markdown as an image', async () => {
+  const i18n = i18next.createInstance()
+  await i18n.use(initReactI18next).init({ lng: 'en' })
+  const base64 = 'A'.repeat(20_100)
+  const markup = renderToStaticMarkup(
+    <I18nextProvider i18n={i18n}>
+      <Response>{`![generated image](data:image/png;base64,${base64})`}</Response>
+    </I18nextProvider>
+  )
+
+  assert.match(markup, /<img /)
+  assert.match(markup, /src="data:image\/png;base64,/)
+  assert.doesNotMatch(markup, /!\[generated image\]/)
 })

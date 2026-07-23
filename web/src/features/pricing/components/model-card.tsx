@@ -30,7 +30,11 @@ import {
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { getModelPriceDisplay, isTokenBasedModel } from '../lib/model-helpers'
+import {
+  getLocalizedModelDescription,
+  getModelPriceDisplay,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
 import { formatPrice, formatRequestPrice } from '../lib/price'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
@@ -48,7 +52,7 @@ export interface ModelCardProps {
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
   const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT
   const priceRate = props.priceRate ?? 1
@@ -79,6 +83,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       })
     : null
   const priceDisplay = getModelPriceDisplay(props.model, props.selectedGroup)
+  const description = getLocalizedModelDescription(props.model, i18n.language)
 
   const primaryGroup = groups[0]
   const bottomTags = [...endpoints.slice(0, 2), ...tags.slice(0, 2)]
@@ -267,7 +272,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
 
       {/* Description */}
       <p className='text-muted-foreground mt-2 line-clamp-1 flex-1 text-[13px] leading-relaxed sm:mt-4 sm:line-clamp-2 sm:min-h-[2.5rem]'>
-        {props.model.description || t('No description available.')}
+        {description || t('No description available.')}
       </p>
 
       {/* Footer: left metadata and right performance summary share row alignment */}

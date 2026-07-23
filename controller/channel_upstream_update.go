@@ -362,7 +362,7 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		return normalizeModelNames(models), nil
 	}
 
-	if channel.Type == constant.ChannelTypeAdvancedCustom {
+	if constant.IsAdvancedCustomLikeChannelType(channel.Type) {
 		return fetchAdvancedCustomUpstreamModelIDs(channel, baseURL)
 	}
 
@@ -437,7 +437,7 @@ func fetchAdvancedCustomUpstreamModelIDs(channel *model.Channel, baseURL string)
 		RelayMode:      relayconstant.RelayModeUnknown,
 		RequestURLPath: dto.AdvancedCustomModelListPath,
 		ChannelMeta: &relaycommon.ChannelMeta{
-			ChannelType:          constant.ChannelTypeAdvancedCustom,
+			ChannelType:          channel.Type,
 			ChannelBaseUrl:       baseURL,
 			ApiKey:               key,
 			ChannelOtherSettings: channel.GetOtherSettings(),

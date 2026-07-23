@@ -18,6 +18,7 @@ import (
 type Pricing struct {
 	ModelName              string                  `json:"model_name"`
 	Description            string                  `json:"description,omitempty"`
+	DescriptionI18N        JSONValue               `json:"description_i18n,omitempty"`
 	Icon                   string                  `json:"icon,omitempty"`
 	Tags                   string                  `json:"tags,omitempty"`
 	VendorID               int                     `json:"vendor_id,omitempty"`
@@ -108,7 +109,17 @@ func GetModelSupportEndpointTypes(model string) []constant.EndpointType {
 }
 
 func getPricingEndpointTypesForAbility(ability AbilityWithChannel, advancedCustomConfigs map[int]*dto.AdvancedCustomConfig) []constant.EndpointType {
-	if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
+	if ability.ChannelType != constant.ChannelTypeCodingPlan {
+		if _, ok := constant.ChannelSpecialBases[strings.TrimSpace(ability.ChannelBaseUrl)]; ok {
+			return []constant.EndpointType{
+				constant.EndpointTypeOpenAI,
+				constant.EndpointTypeAnthropic,
+				constant.EndpointTypeOpenAIResponse,
+				constant.EndpointTypeGemini,
+			}
+		}
+	}
+	if !constant.IsAdvancedCustomLikeChannelType(ability.ChannelType) {
 		return common.GetEndpointTypesByChannelType(ability.ChannelType, ability.Model)
 	}
 	if config := advancedCustomConfigs[ability.ChannelId]; config != nil {
@@ -129,7 +140,7 @@ func loadPricingAdvancedCustomConfigs(enableAbilities []AbilityWithChannel) map[
 	channelIDs := make([]int, 0)
 	seen := make(map[int]struct{})
 	for _, ability := range enableAbilities {
-		if ability.ChannelType != constant.ChannelTypeAdvancedCustom {
+		if !constant.IsAdvancedCustomLikeChannelType(ability.ChannelType) {
 			continue
 		}
 		if _, exists := seen[ability.ChannelId]; exists {
@@ -160,7 +171,7 @@ func loadPricingAdvancedCustomConfigs(enableAbilities []AbilityWithChannel) map[
 			common.SysLog(fmt.Sprintf("load advanced custom channel settings error: channel_id=%d, error=%v", channelID, err))
 			continue
 		}
-		if channel.Type != constant.ChannelTypeAdvancedCustom {
+		if !constant.IsAdvancedCustomLikeChannelType(channel.Type) {
 			continue
 		}
 		if config := channel.GetOtherSettings().AdvancedCustom; config != nil {
@@ -369,6 +380,7 @@ func updatePricing() {
 				continue
 			}
 			pricing.Description = meta.Description
+			pricing.DescriptionI18N = meta.DescriptionI18N
 			pricing.Icon = meta.Icon
 			pricing.Tags = meta.Tags
 			pricing.VendorID = meta.VendorID

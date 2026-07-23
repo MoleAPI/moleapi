@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 
+import { topNavLayoutClasses } from '../lib/top-nav-layout'
 import type { TopNavLink } from '../types'
 import { TopNavLinkContent } from './top-nav-link-content'
 
@@ -56,7 +57,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
   return (
     <>
       {/* 移动端下拉菜单 */}
-      <div className='2xl:hidden'>
+      <div className={topNavLayoutClasses.mobileMenu}>
         <DropdownMenu modal={false}>
           <DropdownMenuTrigger
             render={<Button size='icon' variant='outline' className='size-7' />}
@@ -105,13 +106,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
       </div>
 
       {/* 桌面端水平导航 */}
-      <nav
-        className={cn(
-          'hidden flex-nowrap items-center gap-1 2xl:flex 2xl:gap-1.5',
-          className
-        )}
-        {...props}
-      >
+      <nav className={cn(topNavLayoutClasses.desktopNav, className)} {...props}>
         {normalizedLinks.map((link) => {
           const { title, href, isActive, disabled, external } = link
           return external ? (
@@ -121,7 +116,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
               target='_blank'
               rel='noopener noreferrer'
               className={cn(
-                'hover:bg-accent/70 hover:text-primary focus-visible:bg-accent/70 shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium whitespace-nowrap motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px 2xl:px-3',
+                topNavLayoutClasses.link,
                 !isActive && 'text-muted-foreground'
               )}
             >
@@ -137,7 +132,7 @@ export function TopNav({ className, links, ...props }: TopNavProps) {
               to={href}
               disabled={disabled}
               className={cn(
-                'hover:bg-accent/70 hover:text-primary focus-visible:bg-accent/70 shrink-0 rounded-lg px-2.5 py-1.5 text-sm font-medium whitespace-nowrap motion-safe:transition-[color,background-color,transform] motion-safe:duration-200 motion-safe:ease-[cubic-bezier(0.25,1,0.5,1)] motion-safe:hover:-translate-y-px 2xl:px-3',
+                topNavLayoutClasses.link,
                 !isActive && 'text-muted-foreground'
               )}
             >

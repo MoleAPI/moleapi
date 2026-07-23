@@ -129,6 +129,7 @@ func TestGetTopUpInvoiceShowsCompletedOrderInlineForOwner(t *testing.T) {
 	assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
 	body := recorder.Body.String()
 	assert.Contains(t, body, "Top-up Invoice")
+	assert.Contains(t, body, "Print / Save PDF")
 	assert.Contains(t, body, topUp.TradeNo)
 	assert.Contains(t, body, topUp.GatewayTradeNo)
 	assert.Contains(t, body, "10000000")
@@ -145,6 +146,9 @@ func TestGetTopUpInvoiceDownloadsCompletedOrderWhenRequested(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "attachment")
+	assert.Contains(t, recorder.Header().Get("Content-Disposition"), ".pdf")
+	assert.Contains(t, recorder.Header().Get("Content-Type"), "application/pdf")
+	assert.True(t, strings.HasPrefix(recorder.Body.String(), "%PDF-"))
 }
 
 func TestGetTopUpInvoiceAllowsAuditedAdminViewOfAnotherUsersOrder(t *testing.T) {
