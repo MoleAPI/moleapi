@@ -27,3 +27,7 @@ func TestGetSystemRedirectedModelName(t *testing.T) {
 		})
 	}
 }
+
+func TestIsImageGenerationModelIncludesGPTImage2(t *testing.T) {
+	assert.True(t, IsImageGenerationModel("gpt-image-2"))
+}

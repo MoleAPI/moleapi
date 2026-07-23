@@ -36,6 +36,8 @@ import type {
   SyncOverwritePayload,
   DeploymentSettingsResponse,
   ListDeploymentsResponse,
+  ModelDescriptionExport,
+  ModelDescriptionImportResponse,
 } from './types'
 
 // ============================================================================
@@ -108,6 +110,20 @@ export async function deleteModel(
   id: number
 ): Promise<{ success: boolean; message?: string }> {
   const res = await api.delete(`/api/models/${id}`)
+  return res.data
+}
+
+export async function exportModelDescriptions(): Promise<ModelDescriptionExport> {
+  const res = await api.get('/api/models/descriptions/export')
+  return res.data
+}
+
+export async function importModelDescriptions(
+  data: ModelDescriptionExport
+): Promise<ModelDescriptionImportResponse> {
+  const res = await api.post('/api/models/descriptions/import', data, {
+    skipBusinessError: true,
+  })
   return res.data
 }
 

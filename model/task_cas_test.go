@@ -288,12 +288,16 @@ func TestGetUnrefundedFailedTasks_FiltersAndLimits(t *testing.T) {
 		{TaskID: "failed_refundable_1", Status: TaskStatusFailure, Quota: 100, SubmitTime: TaskRefundLegacyCutoff, Data: json.RawMessage(`{}`)},
 		{TaskID: "failed_refundable_2", Status: TaskStatusFailure, Quota: 200, SubmitTime: TaskRefundLegacyCutoff + 1, Data: json.RawMessage(`{}`)},
 		{TaskID: "legacy_failed", Status: TaskStatusFailure, Quota: 400, SubmitTime: TaskRefundLegacyCutoff - 1, Data: json.RawMessage(`{}`)},
+		{TaskID: "pre_reconciliation_failed", Status: TaskStatusFailure, Quota: 500, SubmitTime: TaskRefundLegacyCutoff, Data: json.RawMessage(`{}`)},
 		{TaskID: "failed_without_quota", Status: TaskStatusFailure, Quota: 0, Data: json.RawMessage(`{}`)},
 		{TaskID: "successful_with_quota", Status: TaskStatusSuccess, Quota: 300, Data: json.RawMessage(`{}`)},
 	}
 	for _, task := range tasks {
 		insertTask(t, task)
 	}
+	require.NoError(t, DB.Model(&Task{}).
+		Where("id = ?", tasks[3].ID).
+		UpdateColumn("updated_at", TaskRefundReconciliationCutoff-1).Error)
 
 	updatedBefore := time.Now().Unix() + 1
 	found := GetUnrefundedFailedTasks(updatedBefore, 1)
@@ -348,6 +352,20 @@ func TestHasTaskPollingWork_IncludesOnlyRefundableFailedTasks(t *testing.T) {
 		Data:       json.RawMessage(`{}`),
 	}
 	insertTask(t, legacy)
+	assert.False(t, HasTaskPollingWork())
+
+	preReconciliation := &Task{
+		TaskID:     "pre_reconciliation_failed_work",
+		Status:     TaskStatusFailure,
+		Progress:   "100%",
+		Quota:      500,
+		SubmitTime: TaskRefundLegacyCutoff,
+		Data:       json.RawMessage(`{}`),
+	}
+	insertTask(t, preReconciliation)
+	require.NoError(t, DB.Model(&Task{}).
+		Where("id = ?", preReconciliation.ID).
+		UpdateColumn("updated_at", TaskRefundReconciliationCutoff-1).Error)
 	assert.False(t, HasTaskPollingWork())
 
 	refundable := &Task{

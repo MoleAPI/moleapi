@@ -19,7 +19,9 @@ For commercial licensing, please contact support@quantumnous.com
 import { z } from 'zod'
 
 export const STORAGE_VERSION = 1
+export const MAX_STORED_CONVERSATIONS = 12
 export const MAX_STORED_MESSAGES = 100
+export const MAX_STORED_CONVERSATIONS_BYTES = 3 * 1024 * 1024
 export const MAX_STORED_MESSAGES_BYTES = 1024 * 1024
 export const MAX_LOADED_MESSAGES_CHARS = 120_000
 export const MAX_LOADED_MESSAGE_CHARS = 40_000
@@ -71,7 +73,7 @@ const reasoningSchema = z.object({
   durationMs: z.number().optional(),
 })
 
-const messageSchema = z.object({
+export const messageSchema = z.object({
   key: z.string(),
   from: messageRoleSchema,
   versions: z.array(messageVersionSchema).min(1),
@@ -89,3 +91,12 @@ const messageSchema = z.object({
 })
 
 export const messagesSchema = z.array(messageSchema)
+
+const conversationSessionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  updatedAt: z.number(),
+  messages: messagesSchema,
+})
+
+export const conversationSessionsSchema = z.array(conversationSessionSchema)

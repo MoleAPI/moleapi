@@ -129,18 +129,22 @@ const codeMirrorTheme = EditorView.theme({
   '&': {
     background: 'transparent',
     color: 'var(--foreground)',
+    direction: 'ltr',
     fontSize: '13px',
   },
   '.cm-content': {
     caretColor: 'var(--foreground)',
+    direction: 'ltr',
     fontFamily: 'var(--font-mono)',
     lineHeight: '1.5rem',
     minHeight: 'var(--code-editor-min-height)',
     minWidth: 'max-content',
     padding: '1rem 1rem 1rem 0',
+    textAlign: 'left',
   },
   '.cm-editor': {
     background: 'transparent',
+    direction: 'ltr',
     width: '100%',
   },
   '.cm-focused': {
@@ -164,9 +168,12 @@ const codeMirrorTheme = EditorView.theme({
     textAlign: 'right',
   },
   '.cm-line': {
+    direction: 'ltr',
     padding: '0',
+    textAlign: 'left',
   },
   '.cm-scroller': {
+    direction: 'ltr',
     fontFamily: 'var(--font-mono)',
     lineHeight: '1.5rem',
     minHeight: 'var(--code-editor-min-height)',
@@ -276,6 +283,8 @@ function getCodeMirrorExtensions(options: {
     EditorState.tabSize.of(2),
     EditorState.readOnly.of(options.readOnly),
     EditorView.editable.of(!options.readOnly),
+    EditorView.editorAttributes.of({ dir: 'ltr' }),
+    EditorView.contentAttributes.of({ dir: 'ltr' }),
   ]
 
   if (options.showLineNumbers) {
@@ -311,21 +320,26 @@ function CodeMirrorCodeView({
   const editorViewRef = useRef<EditorView | null>(null)
   const initialValueRef = useRef(value)
   const onChangeRef = useRef(onChange)
+  const onKeyDownRef = useRef(onKeyDown)
   const editorMinHeight = `${Math.max(4, rows) * 1.5 + 2}rem`
   const editorExtensions = useMemo(
     () =>
       getCodeMirrorExtensions({
         language,
-        onKeyDown,
+        onKeyDown: (event) => onKeyDownRef.current?.(event),
         readOnly,
         showLineNumbers,
       }),
-    [language, onKeyDown, readOnly, showLineNumbers]
+    [language, readOnly, showLineNumbers]
   )
 
   useEffect(() => {
     onChangeRef.current = onChange
   }, [onChange])
+
+  useEffect(() => {
+    onKeyDownRef.current = onKeyDown
+  }, [onKeyDown])
 
   useEffect(() => {
     const editorHost = editorHostRef.current
@@ -381,6 +395,7 @@ function CodeMirrorCodeView({
       aria-label={ariaLabel}
       aria-readonly={readOnly}
       className='min-h-(--code-editor-min-height)'
+      dir='ltr'
       ref={editorHostRef}
       role='textbox'
       style={

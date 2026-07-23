@@ -106,6 +106,7 @@ export interface ChannelOtherSettings {
   upstream_model_update_ignored_models?: string[]
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
+  coding_plan_provider?: string
   advanced_custom?: AdvancedCustomConfig
 }
 
@@ -130,8 +131,12 @@ export interface AdvancedCustomRouteAuth {
 export type AdvancedCustomConverter =
   | 'none'
   | 'anthropic_messages_to_openai_chat_completions'
+  | 'claude_messages_to_openai_responses'
+  | 'gemini_generate_content_to_claude_messages'
+  | 'openai_completions_to_openai_chat_completions'
   | 'openai_chat_completions_to_anthropic_messages'
   | 'openai_chat_completions_to_openai_responses'
+  | 'openai_responses_to_claude_messages'
   | 'openai_responses_to_openai_chat_completions'
   | 'openai_responses_to_gemini_generate_content'
   | 'gemini_generate_content_to_openai_chat_completions'

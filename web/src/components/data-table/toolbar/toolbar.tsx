@@ -48,6 +48,8 @@ type SearchDraft = {
   value: string
 }
 
+const DEFAULT_SEARCH_DEBOUNCE_MS = 500
+
 export type DataTableToolbarProps<TData> = {
   table: Table<TData>
   /**
@@ -55,7 +57,7 @@ export type DataTableToolbarProps<TData> = {
    */
   searchPlaceholder?: string
   /**
-   * Delay committing the default search input. Defaults to immediate updates.
+   * Delay committing the default search input.
    */
   searchDebounceMs?: number
   /**
@@ -178,7 +180,10 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
       ? searchDraft
       : null
   const searchValue = activeSearchDraft?.value ?? currentSearchValue
-  const searchDebounceMs = Math.max(0, props.searchDebounceMs ?? 0)
+  const searchDebounceMs = Math.max(
+    0,
+    props.searchDebounceMs ?? DEFAULT_SEARCH_DEBOUNCE_MS
+  )
   const debouncedSearchValue = useDebounce(searchValue, searchDebounceMs)
 
   const commitSearchValue = React.useCallback(

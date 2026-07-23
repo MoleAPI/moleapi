@@ -60,6 +60,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
+import { useDebounce } from '@/hooks/use-debounce'
 
 import {
   checkClusterNameAvailability,
@@ -139,6 +140,8 @@ export function CreateDeploymentDrawer({
   const trafficPort = toNumber(form.watch('traffic_port'), DEFAULT_TRAFFIC_PORT)
   const currency = form.watch('currency')
   const resourceName = form.watch('resource_private_name')
+  const trimmedResourceName = (resourceName || '').trim()
+  const debouncedResourceName = useDebounce(trimmedResourceName, 500)
 
   const { data: hardwareTypesData, isLoading: isLoadingHardware } = useQuery({
     queryKey: ['deployment-hardware-types'],
@@ -196,7 +199,7 @@ export function CreateDeploymentDrawer({
         map.set(key, { label: String(name), value: key })
       }
     })
-    return Array.from(map.values())
+    return [...map.values()]
   }, [replicasData])
 
   const { data: priceData, isLoading: _isLoadingPrice } = useQuery({
@@ -228,18 +231,33 @@ export function CreateDeploymentDrawer({
   })
 
   const { data: nameCheckData, isFetching: isCheckingName } = useQuery({
-    queryKey: ['deployment-name-check', resourceName],
+    queryKey: ['deployment-name-check', debouncedResourceName],
     queryFn: async () => {
-      const name = (resourceName || '').trim()
-      if (!name) return null
-      return await checkClusterNameAvailability(name)
+      if (!debouncedResourceName) return null
+      return await checkClusterNameAvailability(debouncedResourceName)
     },
-    enabled: open && Boolean(resourceName && resourceName.trim().length > 0),
+    enabled: open && Boolean(debouncedResourceName),
     staleTime: 10_000,
   })
 
+  const isWaitingForNameCheck = trimmedResourceName !== debouncedResourceName
   const nameAvailable =
-    nameCheckData?.success === true ? nameCheckData?.data?.available : undefined
+    !isWaitingForNameCheck && nameCheckData?.success === true
+      ? nameCheckData?.data?.available
+      : undefined
+  const nameAvailabilityMessage = useMemo(() => {
+    if (!trimmedResourceName) return ''
+    if (isWaitingForNameCheck || isCheckingName) return t('Checking name...')
+    if (nameAvailable === true) return t('Name is available')
+    if (nameAvailable === false) return t('Name is not available')
+    return ''
+  }, [
+    isCheckingName,
+    isWaitingForNameCheck,
+    nameAvailable,
+    t,
+    trimmedResourceName,
+  ])
 
   const createMutation = useMutation({
     mutationFn: async (values: FormValues) => {
@@ -417,13 +435,7 @@ export function CreateDeploymentDrawer({
                     </FormControl>
                     {open && field.value?.trim() ? (
                       <div className='text-muted-foreground text-xs'>
-                        {isCheckingName
-                          ? t('Checking name...')
-                          : nameAvailable === true
-                            ? t('Name is available')
-                            : nameAvailable === false
-                              ? t('Name is not available')
-                              : ''}
+                        {nameAvailabilityMessage}
                       </div>
                     ) : null}
                     <FormMessage />
@@ -460,12 +472,10 @@ export function CreateDeploymentDrawer({
                     <FormItem>
                       <FormLabel>{t('Hardware type')}</FormLabel>
                       <Select
-                        items={[
-                          ...hardwareOptions.map((opt) => ({
-                            value: opt.value,
-                            label: opt.label,
-                          })),
-                        ]}
+                        items={hardwareOptions.map((opt) => ({
+                          value: opt.value,
+                          label: opt.label,
+                        }))}
                         value={field.value}
                         onValueChange={(v) => field.onChange(v)}
                         disabled={isLoadingHardware}

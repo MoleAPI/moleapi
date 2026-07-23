@@ -18,17 +18,69 @@ For commercial licensing, please contact support@quantumnous.com
 */
 'use client'
 
-import { memo, useMemo } from 'react'
-import { getMarkdown, parseMarkdownToStructure } from 'stream-markdown-parser'
+import { memo, useMemo, type ReactNode } from 'react'
+import {
+  getMarkdown,
+  parseMarkdownToStructure,
+  type ImageNode,
+} from 'stream-markdown-parser'
 
 import { cn } from '@/lib/utils'
 
 import { getMarkdownContent, parseResponseContent } from './response-content'
 import { renderChildren, renderFootnotes } from './response-renderer'
+import { ResponseImage } from './response-renderer-image'
 import type { ResponseProps } from './response-types'
 
 const markdown = getMarkdown('new-api-response')
 const MAX_PARSED_MARKDOWN_CHARS = 20_000
+const generatedImageMarkdownPattern =
+  /!\[([^\]\n]*)\]\((data:image\/(?:png|gif|jpe?g|webp|avif|bmp);base64,[A-Za-z0-9+/=]+)\)/gi
+
+function renderLargeGeneratedImages(content: string): ReactNode[] | null {
+  if (!content.includes('](data:image/')) {
+    return null
+  }
+
+  const nodes: ReactNode[] = []
+  let lastIndex = 0
+
+  for (const match of content.matchAll(generatedImageMarkdownPattern)) {
+    const matchIndex = match.index
+
+    if (matchIndex === undefined) {
+      continue
+    }
+
+    if (matchIndex > lastIndex) {
+      nodes.push(content.slice(lastIndex, matchIndex))
+    }
+
+    const alt = match[1] ?? ''
+    const src = match[2] ?? ''
+    const imageNode: ImageNode = {
+      alt,
+      loading: false,
+      raw: match[0],
+      src,
+      title: null,
+      type: 'image',
+    }
+
+    nodes.push(<ResponseImage key={`image-${matchIndex}`} node={imageNode} />)
+    lastIndex = matchIndex + match[0].length
+  }
+
+  if (lastIndex === 0) {
+    return null
+  }
+
+  if (lastIndex < content.length) {
+    nodes.push(content.slice(lastIndex))
+  }
+
+  return nodes
+}
 
 export const Response = memo((props: ResponseProps) => {
   const content = getMarkdownContent(props.children)
@@ -44,10 +96,15 @@ export const Response = memo((props: ResponseProps) => {
     })
   }, [content, props.final, shouldParseMarkdown])
   const parsedContent = useMemo(() => parseResponseContent(nodes), [nodes])
+  const largeGeneratedImages = useMemo(
+    () => (shouldParseMarkdown ? null : renderLargeGeneratedImages(content)),
+    [content, shouldParseMarkdown]
+  )
   const renderedContent =
-    parsedContent.bodyNodes.length > 0
+    largeGeneratedImages ??
+    (parsedContent.bodyNodes.length > 0
       ? renderChildren(parsedContent.bodyNodes)
-      : content
+      : content)
   const footnotes = renderFootnotes(parsedContent.footnotes)
 
   return (

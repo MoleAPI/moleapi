@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-pdf/fpdf"
 )
 
 type topUpInvoiceView struct {
@@ -47,6 +48,9 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
     .brand, .label, footer { color: #667085; font-size: 12px; }
     .brand, .label { font-weight: 600; text-transform: uppercase; }
     .label { margin-bottom: 4px; }
+    .actions { display: flex; justify-content: flex-end; margin-bottom: 24px; }
+    button { height: 34px; padding: 0 14px; border: 1px solid #d0d5dd; border-radius: 6px; background: #fff; color: #344054; cursor: pointer; font-size: 14px; }
+    button:hover { background: #f8fafc; }
     .status { align-self: flex-start; padding: 6px 10px; border-radius: 999px; background: #ecfdf3; color: #067647; font-size: 13px; font-weight: 600; }
     .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 32px; margin: 28px 0; }
     .value { color: #101828; font-size: 15px; overflow-wrap: anywhere; }
@@ -57,11 +61,14 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
     .paid { color: #101828; font-size: 20px; font-weight: 700; }
     footer { margin-top: 28px; }
     @media (max-width: 640px) { main { margin: 0; padding: 24px; border: 0; } header, .grid { grid-template-columns: 1fr; display: grid; } }
-    @media print { body { background: #fff; } main { max-width: none; margin: 0; padding: 0; border: 0; } @page { margin: 18mm; } }
+    @media print { body { background: #fff; } main { max-width: none; margin: 0; padding: 0; border: 0; } .actions { display: none; } @page { margin: 18mm; } }
   </style>
 </head>
 <body>
   <main>
+    <div class="actions">
+      <button type="button" onclick="window.print()">Print / Save PDF</button>
+    </div>
     <header>
       <div>
         <div class="brand">{{.SystemName}}</div>
@@ -122,7 +129,17 @@ func GetTopUpInvoice(c *gin.Context) {
 	}
 
 	user, _ := model.GetUserById(topUp.UserId, false)
-	htmlBytes, err := renderTopUpInvoice(topUp, user)
+	isDownload := c.Query("download") == "1"
+	var invoiceBytes []byte
+	contentType := "text/html; charset=utf-8"
+	filename := fmt.Sprintf("invoice-%s.html", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
+	if isDownload {
+		invoiceBytes, err = renderTopUpInvoicePDF(topUp, user)
+		contentType = "application/pdf"
+		filename = fmt.Sprintf("invoice-%s.pdf", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
+	} else {
+		invoiceBytes, err = renderTopUpInvoice(topUp, user)
+	}
 	if err != nil {
 		common.ApiErrorMsg(c, "生成充值凭证失败")
 		return
@@ -134,17 +151,16 @@ func GetTopUpInvoice(c *gin.Context) {
 		})
 	}
 
-	filename := fmt.Sprintf("invoice-%s.html", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
 	c.Header("Cache-Control", "private, no-store")
 	disposition := "inline"
-	if c.Query("download") == "1" {
+	if isDownload {
 		disposition = "attachment"
 	}
 	c.Header("Content-Disposition", fmt.Sprintf(`%s; filename="%s"`, disposition, filename))
-	c.Header("Content-Security-Policy", "sandbox")
+	c.Header("Content-Security-Policy", "sandbox allow-scripts allow-modals")
 	c.Header("Referrer-Policy", "no-referrer")
 	c.Header("X-Content-Type-Options", "nosniff")
-	c.Data(http.StatusOK, "text/html; charset=utf-8", htmlBytes)
+	c.Data(http.StatusOK, contentType, invoiceBytes)
 }
 
 func renderTopUpInvoice(topUp *model.TopUp, user *model.User) ([]byte, error) {
@@ -152,7 +168,68 @@ func renderTopUpInvoice(topUp *model.TopUp, user *model.User) ([]byte, error) {
 		return nil, fmt.Errorf("topup is nil")
 	}
 
-	view := topUpInvoiceView{
+	var buf bytes.Buffer
+	if err := topUpInvoiceTemplate.Execute(&buf, newTopUpInvoiceView(topUp, user)); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error) {
+	if topUp == nil {
+		return nil, fmt.Errorf("topup is nil")
+	}
+
+	view := newTopUpInvoiceView(topUp, user)
+	pdf := fpdf.New("P", "mm", "A4", "")
+	pdf.SetTitle(view.SystemName+" Invoice "+view.InvoiceNo, true)
+	pdf.SetAuthor(view.SystemName, true)
+	pdf.SetMargins(18, 18, 18)
+	pdf.AddPage()
+	pdf.SetFont("Helvetica", "B", 20)
+	pdf.CellFormat(0, 10, pdfSafeText("Top-up Invoice"), "", 1, "L", false, 0, "")
+	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetTextColor(102, 112, 133)
+	pdf.CellFormat(0, 7, pdfSafeText(view.SystemName), "", 1, "L", false, 0, "")
+	pdf.Ln(4)
+
+	pdf.SetTextColor(16, 24, 40)
+	rows := [][2]string{
+		{"Invoice No.", view.InvoiceNo},
+		{"Issued At", view.IssuedAt},
+		{"Customer", view.CustomerName},
+		{"Email", view.CustomerEmail},
+		{"Created At", view.CreatedAt},
+		{"Completed At", view.CompletedAt},
+		{"Order No.", view.TradeNo},
+		{"Gateway Order No.", view.GatewayTradeNo},
+		{"Provider", view.PaymentProvider},
+		{"Method", view.PaymentMethod},
+		{"Credited Quota", view.CreditedQuota},
+		{"Paid Amount", view.PaidAmount},
+	}
+
+	for _, row := range rows {
+		pdf.SetFont("Helvetica", "B", 10)
+		pdf.CellFormat(42, 7, pdfSafeText(row[0]), "B", 0, "L", false, 0, "")
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.MultiCell(0, 7, pdfSafeText(row[1]), "B", "L", false)
+	}
+
+	pdf.Ln(8)
+	pdf.SetTextColor(102, 112, 133)
+	pdf.SetFont("Helvetica", "", 9)
+	pdf.MultiCell(0, 5, pdfSafeText("This invoice was generated from the completed top-up record stored by "+view.SystemName+"."), "", "L", false)
+
+	var buf bytes.Buffer
+	if err := pdf.Output(&buf); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func newTopUpInvoiceView(topUp *model.TopUp, user *model.User) topUpInvoiceView {
+	return topUpInvoiceView{
 		SystemName:      common.SystemName,
 		InvoiceNo:       fmt.Sprintf("INV-%d", topUp.Id),
 		CustomerName:    formatTopUpInvoiceCustomer(user, topUp.UserId),
@@ -167,12 +244,29 @@ func renderTopUpInvoice(topUp *model.TopUp, user *model.User) ([]byte, error) {
 		CompletedAt:     formatTopUpInvoiceTime(topUp.CompleteTime),
 		IssuedAt:        time.Now().Format("2006-01-02 15:04:05 MST"),
 	}
+}
 
-	var buf bytes.Buffer
-	if err := topUpInvoiceTemplate.Execute(&buf, view); err != nil {
-		return nil, err
+func pdfSafeText(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "-"
 	}
-	return buf.Bytes(), nil
+
+	var builder strings.Builder
+	for _, r := range value {
+		switch {
+		case r == '\n', r == '\r', r == '\t':
+			builder.WriteByte(' ')
+		case r >= 32 && r <= 126:
+			builder.WriteRune(r)
+		default:
+			builder.WriteByte('?')
+		}
+	}
+	if builder.Len() == 0 {
+		return "-"
+	}
+	return builder.String()
 }
 
 func formatTopUpInvoiceCustomer(user *model.User, userID int) string {
