@@ -16,6 +16,30 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import {
+  AiAudioIcon,
+  AiBrain01Icon,
+  AiChat01Icon,
+  AiImageIcon,
+  AiSearchIcon,
+  AiVideoIcon,
+  BracesIcon,
+  CodeIcon,
+  DatabaseSearchIcon,
+  DatabaseSyncIcon,
+  EyeIcon,
+  File02Icon,
+  FileCodeIcon,
+  FunctionIcon,
+  HeadphonesIcon,
+  MagicWand01Icon,
+  Pdf01Icon,
+  RankingIcon,
+  SecurityCheckIcon,
+  ToolsIcon,
+  Wrench01Icon,
+} from '@hugeicons/core-free-icons'
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react'
 import { ChevronRight, Copy } from 'lucide-react'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -77,6 +101,51 @@ const CAPABILITY_LABEL_KEYS: Record<ModelCapability, string> = {
   code_interpreter: 'Code interpreter',
   caching: 'Prompt caching',
   embeddings: 'Embeddings',
+}
+
+const CHIP_ICONS: Partial<Record<string, IconSvgElement>> = {
+  对话: AiChat01Icon,
+  图片生成: AiImageIcon,
+  视频生成: AiVideoIcon,
+  嵌入: DatabaseSearchIcon,
+  重排序: RankingIcon,
+  音频: AiAudioIcon,
+  安全审核: SecurityCheckIcon,
+  代码: CodeIcon,
+  推理: AiBrain01Icon,
+  工具调用: ToolsIcon,
+  缓存: DatabaseSyncIcon,
+  视觉: EyeIcon,
+  文生图: AiImageIcon,
+  图生图: AiImageIcon,
+  高质量: MagicWand01Icon,
+  文生视频: AiVideoIcon,
+  多模态: BracesIcon,
+  向量检索: DatabaseSearchIcon,
+  语义搜索: AiSearchIcon,
+  检索增强: AiSearchIcon,
+  排序优化: RankingIcon,
+  语音: AiAudioIcon,
+  实时: HeadphonesIcon,
+  内容安全: SecurityCheckIcon,
+  策略审核: SecurityCheckIcon,
+  代码生成: CodeIcon,
+  仓库理解: FileCodeIcon,
+  开源权重: BracesIcon,
+  长上下文: File02Icon,
+  'Function calling': FunctionIcon,
+  Streaming: HeadphonesIcon,
+  Vision: EyeIcon,
+  'JSON mode': BracesIcon,
+  'Structured output': BracesIcon,
+  Reasoning: AiBrain01Icon,
+  Tools: Wrench01Icon,
+  'System prompt': File02Icon,
+  'Web search': AiSearchIcon,
+  'Code interpreter': CodeIcon,
+  'Prompt caching': DatabaseSyncIcon,
+  Embeddings: DatabaseSearchIcon,
+  PDF: Pdf01Icon,
 }
 
 function formatRatio(ratio: number): string {
@@ -154,6 +223,39 @@ function getDynamicMetricTone(field: string): Metric['tone'] {
   if (field.includes('cache')) return 'success'
   if (field.includes('image') || field.includes('audio')) return 'accent'
   return undefined
+}
+
+function tagChipClassName(chip: string, index: number): string {
+  if (index === 0) {
+    return 'border-sky-300/60 bg-sky-50 text-sky-600 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-300'
+  }
+  if (chip.includes('缓存') || chip === 'Prompt caching') {
+    return 'border-emerald-300/70 bg-emerald-50 text-emerald-600 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-300'
+  }
+  return 'border-border bg-muted/35 text-muted-foreground'
+}
+
+function TagChip(props: { chip: string; index: number }) {
+  const icon = CHIP_ICONS[props.chip]
+
+  return (
+    <span
+      className={cn(
+        'inline-flex h-[22px] max-w-full min-w-0 items-center gap-1 rounded-full border px-2 text-[13px] leading-none font-medium whitespace-nowrap',
+        tagChipClassName(props.chip, props.index)
+      )}
+    >
+      {icon && (
+        <HugeiconsIcon
+          icon={icon}
+          size={13}
+          strokeWidth={2}
+          aria-hidden='true'
+        />
+      )}
+      <span className='min-w-0 truncate'>{props.chip}</span>
+    </span>
+  )
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
@@ -488,20 +590,14 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         <div className='flex min-w-0 flex-wrap items-center gap-1.5'>
           <ModelBillingModeBadge
             model={props.model}
-            className='-ml-1.5 shrink-0'
+            className='shrink-0'
           />
           {chips.map((chip, index) => (
-            <span
+            <TagChip
               key={`tag-${chip}`}
-              className={cn(
-                'inline-flex max-w-full min-w-0 items-center truncate rounded-md border px-1.5 py-0.5 text-[11px] leading-4',
-                index === 0
-                  ? 'bg-primary/10 text-primary border-primary/20'
-                  : 'bg-muted/60 text-muted-foreground'
-              )}
-            >
-              {chip}
-            </span>
+              chip={chip}
+              index={index}
+            />
           ))}
           {hiddenChipCount > 0 && (
             <span className='text-muted-foreground/40 text-xs'>
