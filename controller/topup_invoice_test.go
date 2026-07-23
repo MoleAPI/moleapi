@@ -132,6 +132,7 @@ func TestGetTopUpInvoiceShowsCompletedOrderInlineForOwner(t *testing.T) {
 	assert.Contains(t, body, "Print / Save PDF")
 	assert.Contains(t, body, topUp.TradeNo)
 	assert.Contains(t, body, topUp.GatewayTradeNo)
+	assert.Contains(t, body, "Top-up Amount")
 	assert.Contains(t, body, "10000000")
 	assert.Contains(t, body, "USD 6.90")
 	assert.Contains(t, body, user.Email)

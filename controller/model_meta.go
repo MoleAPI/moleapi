@@ -1,6 +1,8 @@
 package controller
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strconv"
@@ -174,22 +176,45 @@ type modelDescriptionExportItem struct {
 	ModelName       string            `json:"model_name"`
 	Description     string            `json:"description"`
 	DescriptionI18N map[string]string `json:"description_i18n,omitempty"`
+	Icon            string            `json:"icon,omitempty"`
+	Tags            string            `json:"tags,omitempty"`
+	VendorName      string            `json:"vendor_name,omitempty"`
+	Endpoints       string            `json:"endpoints,omitempty"`
+	Status          int               `json:"status"`
+	SyncOfficial    int               `json:"sync_official"`
+	NameRule        int               `json:"name_rule"`
+}
+
+type modelDescriptionVendorExport struct {
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Icon        string `json:"icon,omitempty"`
+	Status      int    `json:"status"`
 }
 
 type modelDescriptionExport struct {
-	Version    int                          `json:"version"`
-	ExportedAt int64                        `json:"exported_at"`
-	Models     []modelDescriptionExportItem `json:"models"`
+	Version    int                            `json:"version"`
+	ExportedAt int64                          `json:"exported_at"`
+	Vendors    []modelDescriptionVendorExport `json:"vendors,omitempty"`
+	Models     []modelDescriptionExportItem   `json:"models"`
 }
 
 type modelDescriptionImportItem struct {
 	ModelName       string            `json:"model_name"`
 	Description     *string           `json:"description,omitempty"`
 	DescriptionI18N map[string]string `json:"description_i18n,omitempty"`
+	Icon            *string           `json:"icon,omitempty"`
+	Tags            *string           `json:"tags,omitempty"`
+	VendorName      *string           `json:"vendor_name,omitempty"`
+	Endpoints       *string           `json:"endpoints,omitempty"`
+	Status          *int              `json:"status,omitempty"`
+	SyncOfficial    *int              `json:"sync_official,omitempty"`
+	NameRule        *int              `json:"name_rule,omitempty"`
 }
 
 type modelDescriptionImport struct {
-	Models []modelDescriptionImportItem `json:"models"`
+	Vendors []modelDescriptionVendorExport `json:"vendors,omitempty"`
+	Models  []modelDescriptionImportItem   `json:"models"`
 }
 
 func cleanModelDescriptionTranslations(in map[string]string) map[string]string {
@@ -241,18 +266,47 @@ func ExportModelDescriptions(c *gin.Context) {
 		return
 	}
 
+	var vendors []model.Vendor
+	if err := model.DB.Order("name ASC").Find(&vendors).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	vendorByID := make(map[int]model.Vendor, len(vendors))
+	vendorItems := make([]modelDescriptionVendorExport, 0, len(vendors))
+	for _, v := range vendors {
+		vendorByID[v.Id] = v
+		vendorItems = append(vendorItems, modelDescriptionVendorExport{
+			Name:        v.Name,
+			Description: v.Description,
+			Icon:        v.Icon,
+			Status:      v.Status,
+		})
+	}
+
 	items := make([]modelDescriptionExportItem, 0, len(modelsMeta))
 	for _, m := range modelsMeta {
+		vendorName := ""
+		if vendor, ok := vendorByID[m.VendorID]; ok {
+			vendorName = vendor.Name
+		}
 		items = append(items, modelDescriptionExportItem{
 			ModelName:       m.ModelName,
 			Description:     m.Description,
 			DescriptionI18N: modelDescriptionTranslations(m.DescriptionI18N),
+			Icon:            m.Icon,
+			Tags:            m.Tags,
+			VendorName:      vendorName,
+			Endpoints:       m.Endpoints,
+			Status:          m.Status,
+			SyncOfficial:    m.SyncOfficial,
+			NameRule:        m.NameRule,
 		})
 	}
 
 	body, err := common.Marshal(modelDescriptionExport{
-		Version:    1,
+		Version:    2,
 		ExportedAt: common.GetTimestamp(),
+		Vendors:    vendorItems,
 		Models:     items,
 	})
 	if err != nil {
@@ -277,7 +331,27 @@ func ImportModelDescriptions(c *gin.Context) {
 	}
 
 	now := common.GetTimestamp()
+	var vendors []model.Vendor
+	if err := model.DB.Find(&vendors).Error; err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	vendorByName := make(map[string]*model.Vendor, len(vendors))
+	for i := range vendors {
+		vendorByName[vendors[i].Name] = &vendors[i]
+	}
+	vendorDetailsByName := make(map[string]modelDescriptionVendorExport, len(req.Vendors))
+	for _, vendor := range req.Vendors {
+		name := strings.TrimSpace(vendor.Name)
+		if name != "" {
+			vendorDetailsByName[name] = vendor
+		}
+	}
+
 	updated := 0
+	created := 0
+	createdVendors := 0
+	processedVendors := make(map[string]struct{})
 	skipped := make([]string, 0)
 	err := model.DB.Transaction(func(tx *gorm.DB) error {
 		for _, item := range req.Models {
@@ -285,6 +359,113 @@ func ImportModelDescriptions(c *gin.Context) {
 			if name == "" {
 				continue
 			}
+
+			vendorID := 0
+			if item.VendorName != nil {
+				vendorName := strings.TrimSpace(*item.VendorName)
+				if vendorName != "" {
+					if _, done := processedVendors[vendorName]; !done {
+						detail, hasDetail := vendorDetailsByName[vendorName]
+						if hasDetail && detail.Status != 0 && detail.Status != 1 {
+							return fmt.Errorf("invalid vendor status for %s", vendorName)
+						}
+						if vendor, ok := vendorByName[vendorName]; ok {
+							if hasDetail {
+								if err := tx.Model(vendor).Updates(map[string]interface{}{
+									"description":  strings.TrimSpace(detail.Description),
+									"icon":         strings.TrimSpace(detail.Icon),
+									"status":       detail.Status,
+									"updated_time": now,
+								}).Error; err != nil {
+									return err
+								}
+							}
+						} else {
+							status := 1
+							if hasDetail {
+								status = detail.Status
+							}
+							vendor := model.Vendor{
+								Name:        vendorName,
+								Description: strings.TrimSpace(detail.Description),
+								Icon:        strings.TrimSpace(detail.Icon),
+								Status:      status,
+								CreatedTime: now,
+								UpdatedTime: now,
+							}
+							if err := tx.Create(&vendor).Error; err != nil {
+								return err
+							}
+							vendorByName[vendorName] = &vendor
+							createdVendors++
+						}
+						processedVendors[vendorName] = struct{}{}
+					}
+					if vendor, ok := vendorByName[vendorName]; ok {
+						vendorID = vendor.Id
+					}
+				}
+			}
+
+			var existing model.Model
+			if err := tx.Where("model_name = ?", name).First(&existing).Error; err != nil {
+				if !errors.Is(err, gorm.ErrRecordNotFound) {
+					return err
+				}
+				newModel := model.Model{
+					ModelName:    name,
+					Status:       1,
+					SyncOfficial: 1,
+					CreatedTime:  now,
+					UpdatedTime:  now,
+				}
+				if item.Description != nil {
+					newModel.Description = strings.TrimSpace(*item.Description)
+				}
+				if item.DescriptionI18N != nil {
+					raw, err := marshalModelDescriptionTranslations(item.DescriptionI18N)
+					if err != nil {
+						return err
+					}
+					newModel.DescriptionI18N = raw
+				}
+				if item.Icon != nil {
+					newModel.Icon = strings.TrimSpace(*item.Icon)
+				}
+				if item.Tags != nil {
+					newModel.Tags = strings.TrimSpace(*item.Tags)
+				}
+				if item.Endpoints != nil {
+					newModel.Endpoints = strings.TrimSpace(*item.Endpoints)
+				}
+				if item.Status != nil {
+					if *item.Status != 0 && *item.Status != 1 {
+						return fmt.Errorf("invalid status for model %s", name)
+					}
+					newModel.Status = *item.Status
+				}
+				if item.SyncOfficial != nil {
+					if *item.SyncOfficial != 0 && *item.SyncOfficial != 1 {
+						return fmt.Errorf("invalid sync_official for model %s", name)
+					}
+					newModel.SyncOfficial = *item.SyncOfficial
+				}
+				if item.NameRule != nil {
+					if *item.NameRule < model.NameRuleExact || *item.NameRule > model.NameRuleSuffix {
+						return fmt.Errorf("invalid name_rule for model %s", name)
+					}
+					newModel.NameRule = *item.NameRule
+				}
+				if item.VendorName != nil {
+					newModel.VendorID = vendorID
+				}
+				if err := tx.Create(&newModel).Error; err != nil {
+					return err
+				}
+				created++
+				continue
+			}
+
 			updates := map[string]interface{}{
 				"updated_time": now,
 			}
@@ -292,22 +473,54 @@ func ImportModelDescriptions(c *gin.Context) {
 				updates["description"] = strings.TrimSpace(*item.Description)
 			}
 			if item.DescriptionI18N != nil {
-				raw, err := marshalModelDescriptionTranslations(item.DescriptionI18N)
+				translations := modelDescriptionTranslations(existing.DescriptionI18N)
+				if translations == nil {
+					translations = map[string]string{}
+				}
+				for locale, description := range cleanModelDescriptionTranslations(item.DescriptionI18N) {
+					translations[locale] = description
+				}
+				raw, err := marshalModelDescriptionTranslations(translations)
 				if err != nil {
 					return err
 				}
 				updates["description_i18n"] = raw
 			}
+			if item.Icon != nil {
+				updates["icon"] = strings.TrimSpace(*item.Icon)
+			}
+			if item.Tags != nil {
+				updates["tags"] = strings.TrimSpace(*item.Tags)
+			}
+			if item.Endpoints != nil {
+				updates["endpoints"] = strings.TrimSpace(*item.Endpoints)
+			}
+			if item.Status != nil {
+				if *item.Status != 0 && *item.Status != 1 {
+					return fmt.Errorf("invalid status for model %s", name)
+				}
+				updates["status"] = *item.Status
+			}
+			if item.SyncOfficial != nil {
+				if *item.SyncOfficial != 0 && *item.SyncOfficial != 1 {
+					return fmt.Errorf("invalid sync_official for model %s", name)
+				}
+				updates["sync_official"] = *item.SyncOfficial
+			}
+			if item.NameRule != nil {
+				if *item.NameRule < model.NameRuleExact || *item.NameRule > model.NameRuleSuffix {
+					return fmt.Errorf("invalid name_rule for model %s", name)
+				}
+				updates["name_rule"] = *item.NameRule
+			}
+			if item.VendorName != nil {
+				updates["vendor_id"] = vendorID
+			}
 			if len(updates) == 1 {
 				continue
 			}
-			result := tx.Model(&model.Model{}).Where("model_name = ?", name).Updates(updates)
-			if result.Error != nil {
-				return result.Error
-			}
-			if result.RowsAffected == 0 {
-				skipped = append(skipped, name)
-				continue
+			if err := tx.Model(&existing).Updates(updates).Error; err != nil {
+				return err
 			}
 			updated++
 		}
@@ -322,8 +535,10 @@ func ImportModelDescriptions(c *gin.Context) {
 	}
 
 	common.ApiSuccess(c, gin.H{
-		"updated_models": updated,
-		"skipped_models": skipped,
+		"updated_models":  updated,
+		"created_models":  created,
+		"created_vendors": createdVendors,
+		"skipped_models":  skipped,
 	})
 }
 

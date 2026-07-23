@@ -53,9 +53,12 @@ export function PlaygroundHistorySidebar(props: PlaygroundHistorySidebarProps) {
             <h2 className='truncate text-sm font-semibold'>
               {t('Playground history')}
             </h2>
-            <p className='text-muted-foreground truncate text-xs'>
-              {t('Saved in this browser')}
-            </p>
+            <div className='text-muted-foreground space-y-0.5 text-xs'>
+              <p className='truncate'>{t('Only available in this browser')}</p>
+              <p className='truncate'>
+                {t('Local history has a storage limit')}
+              </p>
+            </div>
           </div>
           <Button
             aria-label={t('New chat')}

@@ -22,8 +22,9 @@ import { describe, test } from 'node:test'
 import { formatQuota } from '@/lib/format'
 
 import {
+  formatHistoricalCreditedAmount,
   formatHistoricalPaymentAmount,
-  formatHistoricalTopUpCredit,
+  formatHistoricalTopUpAmount,
 } from '../format'
 
 describe('historical payment amount', () => {
@@ -45,26 +46,26 @@ describe('historical payment amount', () => {
   })
 
   test('keeps legacy Creem quota amounts in quota units', () => {
-    const display = formatHistoricalTopUpCredit({
+    const display = formatHistoricalTopUpAmount({
       amount: 500_000,
-      credited_quota: 0,
       payment_method: 'creem',
       payment_provider: null,
     })
 
-    assert.equal(display.value, formatQuota(500_000))
-    assert.equal(display.hasCreditedFact, false)
+    assert.equal(display, formatQuota(500_000))
   })
 
-  test('prefers immutable credited quota for new records', () => {
-    const display = formatHistoricalTopUpCredit({
+  test('keeps top-up amount separate from credited quota', () => {
+    const amount = formatHistoricalTopUpAmount({
       amount: 10,
-      credited_quota: 500_000,
       payment_method: 'stripe',
       payment_provider: 'stripe',
     })
+    const credited = formatHistoricalCreditedAmount({
+      credited_quota: 500_000,
+    })
 
-    assert.equal(display.value, formatQuota(500_000))
-    assert.equal(display.hasCreditedFact, true)
+    assert.match(amount, /10/)
+    assert.equal(credited, formatQuota(500_000))
   })
 })

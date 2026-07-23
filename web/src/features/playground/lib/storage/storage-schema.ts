@@ -21,7 +21,8 @@ import { z } from 'zod'
 export const STORAGE_VERSION = 1
 export const MAX_STORED_CONVERSATIONS = 12
 export const MAX_STORED_MESSAGES = 100
-export const MAX_STORED_CONVERSATIONS_BYTES = 3 * 1024 * 1024
+// ponytail: localStorage cap; switch conversations to IndexedDB if this needs to grow much more.
+export const MAX_STORED_CONVERSATIONS_BYTES = 4 * 1024 * 1024
 export const MAX_STORED_MESSAGES_BYTES = 1024 * 1024
 export const MAX_LOADED_MESSAGES_CHARS = 120_000
 export const MAX_LOADED_MESSAGE_CHARS = 40_000

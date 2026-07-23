@@ -96,38 +96,33 @@ export function formatHistoricalPaymentAmount(
   }
 }
 
-/** Keep new settlement facts and legacy Creem quota records comparable. */
-export function formatHistoricalTopUpCredit(
+export function formatHistoricalTopUpAmount(
   record: Pick<
     TopupRecord,
-    'amount' | 'credited_quota' | 'payment_method' | 'payment_provider'
+    'amount' | 'payment_method' | 'payment_provider'
   >
-): { value: string; hasCreditedFact: boolean } {
+): string {
+  const provider = record.payment_provider?.trim().toLowerCase()
+  const method = record.payment_method.trim().toLowerCase()
+  if (provider === 'creem' || method === 'creem') {
+    return formatQuota(record.amount)
+  }
+
+  return formatCurrencyFromUSD(record.amount, {
+    digitsLarge: 2,
+    digitsSmall: 2,
+    abbreviate: false,
+  })
+}
+
+export function formatHistoricalCreditedAmount(
+  record: Pick<TopupRecord, 'credited_quota'>
+): string | null {
   const hasCreditedFact =
     typeof record.credited_quota === 'number' &&
     Number.isFinite(record.credited_quota) &&
     record.credited_quota > 0
-  if (hasCreditedFact) {
-    return {
-      value: formatQuota(record.credited_quota as number),
-      hasCreditedFact: true,
-    }
-  }
-
-  const provider = record.payment_provider?.trim().toLowerCase()
-  const method = record.payment_method.trim().toLowerCase()
-  if (provider === 'creem' || method === 'creem') {
-    return { value: formatQuota(record.amount), hasCreditedFact: false }
-  }
-
-  return {
-    value: formatCurrencyFromUSD(record.amount, {
-      digitsLarge: 2,
-      digitsSmall: 2,
-      abbreviate: false,
-    }),
-    hasCreditedFact: false,
-  }
+  return hasCreditedFact ? formatQuota(record.credited_quota as number) : null
 }
 
 /**

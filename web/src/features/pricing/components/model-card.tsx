@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ChevronRight, Copy } from 'lucide-react'
+import { BadgePercent, ChevronRight, Copy } from 'lucide-react'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -24,7 +24,7 @@ import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
-import { DEFAULT_TOKEN_UNIT, FILTER_ALL } from '../constants'
+import { DEFAULT_TOKEN_UNIT } from '../constants'
 import {
   getDynamicDisplayGroupRatio,
   getDynamicPriceEntries,
@@ -32,7 +32,7 @@ import {
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
 import {
-  getConfiguredGroupRatio,
+  getDisplayedPriceGroups,
   getDiscountPercent,
   getLocalizedModelDescription,
   isTokenBasedModel,
@@ -123,13 +123,12 @@ function PriceGroupColumn(props: {
     condition: string
     lines: Metric[]
   }>
-  hiddenTierCount?: number
   t: (key: string) => string
 }) {
   const discount = getDiscountPercent(props.ratio)
 
   return (
-    <div className='min-w-0 px-3 py-2 sm:grid sm:grid-cols-[5.5rem_minmax(0,1fr)] sm:gap-3'>
+    <div className='min-w-0 px-3 py-2 sm:grid sm:grid-cols-[7.5rem_minmax(0,1fr)] sm:gap-3'>
       <div className='mb-2 flex min-w-0 items-center gap-1.5 sm:mb-0'>
         <span className='text-foreground min-w-0 truncate text-xs font-semibold'>
           {props.group}
@@ -174,11 +173,6 @@ function PriceGroupColumn(props: {
               </div>
             </div>
           ))}
-          {props.hiddenTierCount ? (
-            <div className='text-muted-foreground text-xs'>
-              +{props.hiddenTierCount}
-            </div>
-          ) : null}
         </div>
       ) : (
         <div className='flex min-w-0 flex-wrap gap-x-4 gap-y-1'>
@@ -239,7 +233,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const isTokenBased = isTokenBasedModel(props.model)
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
   const tokenPriceUnit = `/ ${tokenUnitLabel}`
-  const groups = props.model.enable_groups || []
   const capabilities = props.model.capabilities || []
   const tags = parseTags(props.model.tags)
   const modelIconKey = props.model.icon || props.model.vendor_icon
@@ -268,27 +261,19 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   )
   const allChips = [...new Set([...tags, ...capabilityTags])]
   const chips = allChips.slice(0, 5)
-  const hiddenChipCount = Math.max(allChips.length - chips.length, 0)
   const groupRatio = props.model.group_ratio || {}
-  const selectedGroup =
-    props.selectedGroup &&
-    props.selectedGroup !== FILTER_ALL &&
-    groups.includes(props.selectedGroup)
-      ? props.selectedGroup
-      : ''
-  const sortedGroups = (groups.length > 0 ? groups : ['default'])
-    .map((group, index) => ({
-      group,
-      index,
-      ratio: getConfiguredGroupRatio(groupRatio, group),
-      isCurrent: group === selectedGroup,
-    }))
-    .sort((a, b) => {
-      if (a.isCurrent !== b.isCurrent) return a.isCurrent ? -1 : 1
-      return a.ratio - b.ratio || a.index - b.index
-    })
-  const visibleGroups = sortedGroups.slice(0, 3)
-  const hiddenGroupCount = Math.max(sortedGroups.length - visibleGroups.length, 0)
+  const visibleGroups = getDisplayedPriceGroups(
+    props.model,
+    props.selectedGroup
+  )
+  const bestDiscountPercent = visibleGroups.reduce<number | null>(
+    (best, item) => {
+      if (item.group === 'default') return best
+      const discount = getDiscountPercent(item.ratio)
+      return discount && (best == null || discount > best) ? discount : best
+    },
+    null
+  )
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -308,13 +293,14 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   }
   const priceGroups = visibleGroups.map((item) => {
     let lines: Metric[] = []
-    let tierRows: Array<{
-      id: string
-      label: string
-      condition: string
-      lines: Metric[]
-    }> | undefined
-    let hiddenTierCount = 0
+    let tierRows:
+      | Array<{
+          id: string
+          label: string
+          condition: string
+          lines: Metric[]
+        }>
+      | undefined
 
     if (isDynamicPricing) {
       const summary = getDynamicPricingSummary(props.model, {
@@ -344,7 +330,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             tone: getDynamicMetricTone(entry.field),
           })),
       }))
-      hiddenTierCount = Math.max((summary?.tiers.length || 0) - 2, 0)
     } else if (isTokenBased) {
       lines = [
         {
@@ -485,7 +470,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       ]
     }
 
-    return { ...item, lines, tierRows, hiddenTierCount }
+    return { ...item, lines, tierRows }
   })
 
   return (
@@ -527,6 +512,17 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             >
               <Copy className='size-3' />
             </button>
+            {bestDiscountPercent != null && (
+              <button
+                type='button'
+                onClick={handleDetailsClick}
+                className='relative z-20 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 text-[11px] font-semibold text-emerald-600 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300'
+                title={`${t('Discount')}: -${bestDiscountPercent}%`}
+                aria-label={`${t('Discount')}: -${bestDiscountPercent}%`}
+              >
+                <BadgePercent className='size-3' />-{bestDiscountPercent}%
+              </button>
+            )}
           </div>
           <p className='text-muted-foreground mt-1 line-clamp-1 text-[12px] leading-relaxed'>
             {description || t('No description available.')}
@@ -546,7 +542,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         </div>
       </div>
 
-      <div className='mt-3 overflow-hidden rounded-lg border bg-muted/10'>
+      <div className='bg-muted/10 mt-3 overflow-hidden rounded-lg border'>
         {specialPriceSummary ? (
           <div className='min-w-0 px-3 py-2'>
             <span className='text-amber-700 dark:text-amber-300'>
@@ -566,37 +562,19 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
                 isCurrent={item.isCurrent}
                 lines={item.lines}
                 tierRows={item.tierRows}
-                hiddenTierCount={item.hiddenTierCount}
                 t={t}
               />
             ))}
-            {hiddenGroupCount > 0 && (
-              <div className='text-muted-foreground flex items-center px-3 py-2 text-xs'>
-                +{hiddenGroupCount}
-              </div>
-            )}
           </div>
         )}
       </div>
 
       <div className='mt-3 flex min-w-0 items-center justify-between gap-3'>
         <div className='flex min-w-0 flex-wrap items-center gap-1.5'>
-          <ModelBillingModeBadge
-            model={props.model}
-            className='shrink-0'
-          />
+          <ModelBillingModeBadge model={props.model} className='shrink-0' />
           {chips.map((chip, index) => (
-            <ModelTagChip
-              key={`tag-${chip}`}
-              tag={chip}
-              index={index}
-            />
+            <ModelTagChip key={`tag-${chip}`} tag={chip} index={index} />
           ))}
-          {hiddenChipCount > 0 && (
-            <span className='text-muted-foreground/40 text-xs'>
-              +{hiddenChipCount}
-            </span>
-          )}
         </div>
       </div>
     </div>

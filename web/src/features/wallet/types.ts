@@ -291,7 +291,7 @@ export interface TopupRecord {
   id: number
   /** User ID */
   user_id: number
-  /** Topup amount (quota) */
+  /** Selected top-up amount */
   amount: number
   /** Payment amount recorded for the order */
   money: number
