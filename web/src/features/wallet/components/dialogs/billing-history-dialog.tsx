@@ -66,8 +66,9 @@ import {
   fetchTopUpInvoiceFile,
 } from '../../lib/billing'
 import {
+  formatHistoricalCreditedAmount,
   formatHistoricalPaymentAmount,
-  formatHistoricalTopUpCredit,
+  formatHistoricalTopUpAmount,
 } from '../../lib/format'
 import type { TopupRecord } from '../../types'
 
@@ -127,8 +128,11 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
 
   const totalPages = Math.ceil(total / pageSize)
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const detailAmount = detailRecord
+    ? formatHistoricalTopUpAmount(detailRecord)
+    : null
   const detailCredit = detailRecord
-    ? formatHistoricalTopUpCredit(detailRecord)
+    ? formatHistoricalCreditedAmount(detailRecord)
     : null
   const detailStatus = detailRecord
     ? getStatusConfig(detailRecord.status)
@@ -316,7 +320,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                 <TableBody className='[&>tr]:h-11'>
                   {records.map((record) => {
                     const statusConfig = getStatusConfig(record.status)
-                    const creditDisplay = formatHistoricalTopUpCredit(record)
+                    const topUpAmount = formatHistoricalTopUpAmount(record)
                     const invoiceViewUrl = getTopUpInvoiceUrl(
                       record,
                       currentUserId,
@@ -368,7 +372,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                           {getPaymentMethodName(record.payment_method, t)}
                         </TableCell>
                         <TableCell className='font-medium'>
-                          {creditDisplay.value}
+                          {topUpAmount}
                         </TableCell>
                         <TableCell className='font-medium text-red-600'>
                           {formatHistoricalPaymentAmount(
@@ -543,7 +547,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
           ) : null
         }
       >
-        {detailRecord && detailCredit && detailStatus && (
+        {detailRecord && detailAmount && detailStatus && (
           <div className='space-y-2.5'>
             {isAdmin && (
               <BillingDetailRow
@@ -598,11 +602,15 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
               />
             )}
             <BillingDetailRow
-              label={t(
-                detailCredit.hasCreditedFact ? 'Credited amount' : 'Amount'
-              )}
-              value={<span className='font-medium'>{detailCredit.value}</span>}
+              label={t('Amount')}
+              value={<span className='font-medium'>{detailAmount}</span>}
             />
+            {detailCredit && (
+              <BillingDetailRow
+                label={t('Credited amount')}
+                value={<span className='font-medium'>{detailCredit}</span>}
+              />
+            )}
             <BillingDetailRow
               label={t('Payment')}
               value={

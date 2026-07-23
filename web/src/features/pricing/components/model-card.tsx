@@ -512,6 +512,17 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             >
               <Copy className='size-3' />
             </button>
+            {bestDiscountPercent != null && (
+              <button
+                type='button'
+                onClick={handleDetailsClick}
+                className='relative z-20 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-1.5 text-[11px] font-semibold text-emerald-600 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300'
+                title={`${t('Discount')}: -${bestDiscountPercent}%`}
+                aria-label={`${t('Discount')}: -${bestDiscountPercent}%`}
+              >
+                <BadgePercent className='size-3' />-{bestDiscountPercent}%
+              </button>
+            )}
           </div>
           <p className='text-muted-foreground mt-1 line-clamp-1 text-[12px] leading-relaxed'>
             {description || t('No description available.')}
@@ -520,17 +531,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
 
         <div className='relative z-20 hidden shrink-0 items-center gap-1 sm:flex'>
           <ModelPerfBadge perf={props.perf} className='mr-1' />
-          {bestDiscountPercent != null && (
-            <button
-              type='button'
-              onClick={handleDetailsClick}
-              className='inline-flex h-7 items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 text-xs font-semibold text-emerald-600 transition-colors hover:bg-emerald-500/15 dark:text-emerald-300'
-              title={`${t('Discount')}: -${bestDiscountPercent}%`}
-              aria-label={`${t('Discount')}: -${bestDiscountPercent}%`}
-            >
-              <BadgePercent className='size-3.5' />-{bestDiscountPercent}%
-            </button>
-          )}
           <button
             type='button'
             onClick={handleDetailsClick}
