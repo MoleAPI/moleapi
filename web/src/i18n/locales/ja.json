@@ -156,6 +156,7 @@
     "Active Tasks": "進行中のタスク",
     "active users": "アクティブユーザー",
     "Actual Amount": "実際の金額",
+    "Actual available models depend on API endpoint availability.": "実際に利用できるモデルは API エンドポイントの可用性に依存します。",
     "Actual Model": "実際のモデル",
     "Actual Model:": "実際のモデル：",
     "Adapt `-thinking` suffix requests to Anthropic native thinking behavior while keeping billing predictable.": "`-thinking` サフィックス付きリクエストを Anthropic ネイティブの思考動作に適配し、課金を予測可能に保ちます。",

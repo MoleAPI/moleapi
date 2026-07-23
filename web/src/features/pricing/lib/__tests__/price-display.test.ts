@@ -20,7 +20,7 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import type { PricingModel } from '../../types'
-import { getModelPriceDisplay } from '../model-helpers'
+import { getDisplayedPriceGroups, getModelPriceDisplay } from '../model-helpers'
 
 const model = {
   id: 1,
@@ -45,5 +45,30 @@ describe('model card price display', () => {
       isStartingAt: false,
       discountPercent: null,
     })
+  })
+
+  test('shows every distinct price group and hides default-priced duplicates', () => {
+    const groups = getDisplayedPriceGroups({
+      ...model,
+      enable_groups: ['default', 'svip', 'vip', 'discount', 'relay', 'temp'],
+      group_ratio: {
+        default: 1,
+        svip: 1,
+        vip: 1,
+        discount: 0.8,
+        relay: 0.3,
+        temp: 0.1,
+      },
+    })
+
+    assert.deepEqual(
+      groups.map((group) => [group.group, group.ratio]),
+      [
+        ['default', 1],
+        ['discount', 0.8],
+        ['relay', 0.3],
+        ['temp', 0.1],
+      ]
+    )
   })
 })

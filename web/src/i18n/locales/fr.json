@@ -156,6 +156,7 @@
     "Active Tasks": "Tâches actives",
     "active users": "utilisateurs actifs",
     "Actual Amount": "Montant réel",
+    "Actual available models depend on API endpoint availability.": "Les modèles réellement disponibles dépendent de la disponibilité des points d'API.",
     "Actual Model": "Modèle réel",
     "Actual Model:": "Modèle réel :",
     "Adapt `-thinking` suffix requests to Anthropic native thinking behavior while keeping billing predictable.": "Adapter les requêtes avec le suffixe `-thinking` au comportement de pensée natif d’Anthropic tout en gardant une facturation prévisible.",
