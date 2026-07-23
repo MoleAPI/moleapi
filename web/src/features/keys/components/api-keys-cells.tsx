@@ -156,7 +156,7 @@ export function UnlimitedQuotaBadge(props: UnlimitedQuotaBadgeProps) {
         render={
           <button
             type='button'
-            className='focus-visible:ring-ring/50 -ml-1.5 cursor-help rounded-4xl focus-visible:ring-[3px] focus-visible:outline-none'
+            className='focus-visible:ring-ring/50 -ml-1.5 inline-flex cursor-help items-center gap-2 rounded-md focus-visible:ring-[3px] focus-visible:outline-none'
             aria-label={`${t('Unlimited')}; ${t('Used:')} ${formattedUsed}`}
           />
         }
@@ -166,6 +166,9 @@ export function UnlimitedQuotaBadge(props: UnlimitedQuotaBadgeProps) {
           variant='neutral'
           copyable={false}
         />
+        <span className='text-muted-foreground font-mono text-xs tabular-nums'>
+          {formattedUsed}
+        </span>
       </PopoverTrigger>
       <PopoverContent className='w-auto p-2' side='top'>
         <span className='text-xs'>

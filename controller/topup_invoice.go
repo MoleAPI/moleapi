@@ -26,6 +26,7 @@ type topUpInvoiceView struct {
 	GatewayTradeNo  string
 	PaymentMethod   string
 	PaymentProvider string
+	TopUpAmount     string
 	CreditedQuota   string
 	PaidAmount      string
 	CreatedAt       string
@@ -98,6 +99,7 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
           <div class="label">Method</div><div class="value">{{.PaymentMethod}}</div>
         </td>
         <td>
+          <div class="label">Top-up Amount</div><div class="value">{{.TopUpAmount}}</div>
           <div class="label">Credited Quota</div><div class="value">{{.CreditedQuota}}</div>
           <div class="label">Paid Amount</div><div class="paid">{{.PaidAmount}}</div>
         </td>
@@ -130,9 +132,9 @@ func GetTopUpInvoice(c *gin.Context) {
 
 	user, _ := model.GetUserById(topUp.UserId, false)
 	isDownload := c.Query("download") == "1"
-	var invoiceBytes []byte
-	contentType := "text/html; charset=utf-8"
 	filename := fmt.Sprintf("invoice-%s.html", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
+	contentType := "text/html; charset=utf-8"
+	var invoiceBytes []byte
 	if isDownload {
 		invoiceBytes, err = renderTopUpInvoicePDF(topUp, user)
 		contentType = "application/pdf"
@@ -185,38 +187,71 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 	pdf.SetTitle(view.SystemName+" Invoice "+view.InvoiceNo, true)
 	pdf.SetAuthor(view.SystemName, true)
 	pdf.SetMargins(18, 18, 18)
+	pdf.SetAutoPageBreak(true, 18)
 	pdf.AddPage()
-	pdf.SetFont("Helvetica", "B", 20)
-	pdf.CellFormat(0, 10, pdfSafeText("Top-up Invoice"), "", 1, "L", false, 0, "")
-	pdf.SetFont("Helvetica", "", 10)
-	pdf.SetTextColor(102, 112, 133)
-	pdf.CellFormat(0, 7, pdfSafeText(view.SystemName), "", 1, "L", false, 0, "")
-	pdf.Ln(4)
+	pdf.SetDrawColor(229, 232, 239)
+	pdf.SetLineWidth(0.2)
 
+	pdf.SetTextColor(102, 112, 133)
+	pdf.SetFont("Helvetica", "B", 9)
+	pdf.CellFormat(0, 6, pdfSafeText(view.SystemName), "", 1, "L", false, 0, "")
 	pdf.SetTextColor(16, 24, 40)
-	rows := [][2]string{
+	pdf.SetFont("Helvetica", "B", 24)
+	pdf.CellFormat(0, 12, "Top-up Invoice", "", 0, "L", false, 0, "")
+	pdf.SetXY(170, 22)
+	pdf.SetFillColor(236, 253, 243)
+	pdf.SetTextColor(6, 118, 71)
+	pdf.SetFont("Helvetica", "B", 10)
+	pdf.CellFormat(22, 8, "Paid", "", 1, "C", true, 0, "")
+	pdf.Line(18, 42, 192, 42)
+
+	fields := [][2]string{
 		{"Invoice No.", view.InvoiceNo},
 		{"Issued At", view.IssuedAt},
 		{"Customer", view.CustomerName},
 		{"Email", view.CustomerEmail},
 		{"Created At", view.CreatedAt},
 		{"Completed At", view.CompletedAt},
+	}
+	x0, y0 := 18.0, 52.0
+	colW, rowH := 78.0, 17.0
+	for i, field := range fields {
+		x := x0
+		if i%2 == 1 {
+			x = 114
+		}
+		y := y0 + float64(i/2)*rowH
+		drawTopUpInvoicePDFField(pdf, x, y, colW, field[0], field[1])
+	}
+
+	tableY := y0 + 3*rowH + 10
+	widths := []float64{62, 54, 58}
+	headers := []string{"Order", "Payment", "Amount"}
+	pdf.SetXY(18, tableY)
+	pdf.SetFillColor(248, 250, 252)
+	pdf.SetTextColor(71, 84, 103)
+	pdf.SetFont("Helvetica", "B", 9)
+	for i, header := range headers {
+		pdf.CellFormat(widths[i], 8, header, "B", 0, "L", true, 0, "")
+	}
+
+	rowY := tableY + 10
+	drawTopUpInvoicePDFStack(pdf, 18, rowY, widths[0]-4, [][2]string{
 		{"Order No.", view.TradeNo},
 		{"Gateway Order No.", view.GatewayTradeNo},
+	})
+	drawTopUpInvoicePDFStack(pdf, 80, rowY, widths[1]-4, [][2]string{
 		{"Provider", view.PaymentProvider},
 		{"Method", view.PaymentMethod},
+	})
+	drawTopUpInvoicePDFStack(pdf, 134, rowY, widths[2]-4, [][2]string{
+		{"Top-up Amount", view.TopUpAmount},
 		{"Credited Quota", view.CreditedQuota},
 		{"Paid Amount", view.PaidAmount},
-	}
+	})
+	pdf.Line(18, rowY+39, 192, rowY+39)
 
-	for _, row := range rows {
-		pdf.SetFont("Helvetica", "B", 10)
-		pdf.CellFormat(42, 7, pdfSafeText(row[0]), "B", 0, "L", false, 0, "")
-		pdf.SetFont("Helvetica", "", 10)
-		pdf.MultiCell(0, 7, pdfSafeText(row[1]), "B", "L", false)
-	}
-
-	pdf.Ln(8)
+	pdf.SetXY(18, rowY+48)
 	pdf.SetTextColor(102, 112, 133)
 	pdf.SetFont("Helvetica", "", 9)
 	pdf.MultiCell(0, 5, pdfSafeText("This invoice was generated from the completed top-up record stored by "+view.SystemName+"."), "", "L", false)
@@ -226,6 +261,24 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func drawTopUpInvoicePDFField(pdf *fpdf.Fpdf, x, y, w float64, label string, value string) {
+	pdf.SetXY(x, y)
+	pdf.SetTextColor(102, 112, 133)
+	pdf.SetFont("Helvetica", "B", 8)
+	pdf.CellFormat(w, 4, pdfSafeText(label), "", 1, "L", false, 0, "")
+	pdf.SetXY(x, y+5)
+	pdf.SetTextColor(16, 24, 40)
+	pdf.SetFont("Helvetica", "", 10)
+	pdf.MultiCell(w, 5, pdfSafeText(value), "", "L", false)
+}
+
+func drawTopUpInvoicePDFStack(pdf *fpdf.Fpdf, x, y, w float64, fields [][2]string) {
+	for _, field := range fields {
+		drawTopUpInvoicePDFField(pdf, x, y, w, field[0], field[1])
+		y += 13
+	}
 }
 
 func newTopUpInvoiceView(topUp *model.TopUp, user *model.User) topUpInvoiceView {
@@ -238,6 +291,7 @@ func newTopUpInvoiceView(topUp *model.TopUp, user *model.User) topUpInvoiceView 
 		GatewayTradeNo:  valueOrDash(topUp.GatewayTradeNo),
 		PaymentMethod:   formatTopUpInvoicePaymentLabel(topUp.PaymentMethod),
 		PaymentProvider: formatTopUpInvoicePaymentLabel(topUp.PaymentProvider),
+		TopUpAmount:     strconv.FormatInt(topUp.Amount, 10),
 		CreditedQuota:   formatTopUpInvoiceCredit(topUp),
 		PaidAmount:      formatTopUpInvoiceMoney(topUp),
 		CreatedAt:       formatTopUpInvoiceTime(topUp.CreateTime),
