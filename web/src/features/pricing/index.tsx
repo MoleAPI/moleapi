@@ -151,7 +151,7 @@ export function Pricing() {
     <PublicLayout showMainContainer={false}>
       <div className='bg-muted/20 min-h-dvh'>
         <PageTransition className='mx-auto box-border w-[100dvw] max-w-[1280px] overflow-x-hidden px-3 pt-24 pb-8 sm:px-6 sm:pt-28 sm:pb-10 xl:px-8'>
-          <header className='mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between'>
+          <header className='mb-4 grid min-w-0 gap-4 xl:grid-cols-[320px_minmax(0,1fr)] xl:items-end'>
             <div className='min-w-0'>
               <h1 className='text-foreground text-2xl leading-tight font-bold tracking-tight'>
                 {t('Model Square')}
@@ -161,7 +161,22 @@ export function Pricing() {
                   count: models?.length || 0,
                 })}
               </p>
+              <p className='text-muted-foreground/80 mt-1 text-xs'>
+                {t(
+                  'Actual available models depend on API endpoint availability.'
+                )}
+              </p>
             </div>
+
+            <SearchBar
+              value={searchInput}
+              onChange={setSearchInput}
+              onClear={clearSearch}
+              placeholder={t(
+                'Search model name, provider, endpoint, or tag...'
+              )}
+              className='bg-background max-w-full min-w-0 rounded-xl p-2 shadow-sm'
+            />
           </header>
 
           <div className='grid min-w-0 gap-4 xl:grid-cols-[320px_minmax(0,1fr)]'>
@@ -183,18 +198,10 @@ export function Pricing() {
               models={models || []}
               hasActiveFilters={hasActiveFilters}
               onClearFilters={clearFilters}
-              className='hover-scrollbar sticky top-24 hidden max-h-[calc(100dvh-7rem)] self-start overflow-y-auto bg-background shadow-sm xl:block'
+              className='hover-scrollbar bg-background sticky top-24 hidden max-h-[calc(100dvh-7rem)] self-start overflow-y-auto shadow-sm xl:block'
             />
 
-            <main className='min-w-0 max-w-full space-y-4 max-sm:pr-3'>
-              <SearchBar
-                value={searchInput}
-                onChange={setSearchInput}
-                onClear={clearSearch}
-                placeholder={t('Search model name, provider, endpoint, or tag...')}
-                className='min-w-0 max-w-full rounded-xl border bg-background p-3 shadow-sm'
-              />
-
+            <main className='max-w-full min-w-0 space-y-4 max-sm:pr-3'>
               <PricingToolbar
                 filteredCount={filteredModels.length}
                 totalCount={models?.length}

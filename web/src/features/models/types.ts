@@ -198,11 +198,26 @@ export interface ModelDescriptionExportItem {
   model_name: string
   description?: string
   description_i18n?: Record<string, string>
+  icon?: string
+  tags?: string
+  vendor_name?: string
+  endpoints?: string
+  status?: number
+  sync_official?: number
+  name_rule?: number
+}
+
+export interface ModelDescriptionVendorExport {
+  name: string
+  description?: string
+  icon?: string
+  status?: number
 }
 
 export interface ModelDescriptionExport {
   version: number
   exported_at: number
+  vendors?: ModelDescriptionVendorExport[]
   models: ModelDescriptionExportItem[]
 }
 
@@ -211,6 +226,8 @@ export interface ModelDescriptionImportResponse {
   message?: string
   data?: {
     updated_models?: number
+    created_models?: number
+    created_vendors?: number
     skipped_models?: string[]
   }
 }

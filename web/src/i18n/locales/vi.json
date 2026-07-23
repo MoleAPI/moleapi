@@ -156,6 +156,7 @@
     "Active Tasks": "Tác vụ đang hoạt động",
     "active users": "Người dùng tích cực",
     "Actual Amount": "Số tiền thực tế",
+    "Actual available models depend on API endpoint availability.": "Các mô hình thực sự dùng được phụ thuộc vào tình trạng khả dụng của API endpoint.",
     "Actual Model": "Mô hình thực tế",
     "Actual Model:": "Mô hình thực tế:",
     "Adapt `-thinking` suffix requests to Anthropic native thinking behavior while keeping billing predictable.": "Điều chỉnh các yêu cầu có hậu tố `-thinking` sang hành vi suy luận gốc của Anthropic trong khi vẫn giữ tính phí dễ dự đoán.",

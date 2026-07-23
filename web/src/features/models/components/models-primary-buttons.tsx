@@ -42,7 +42,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 
 import { exportModelDescriptions, importModelDescriptions } from '../api'
-import { modelsQueryKeys } from '../lib'
+import { modelsQueryKeys, vendorsQueryKeys } from '../lib'
 import type { ModelDescriptionExport } from '../types'
 import { useModels } from './models-provider'
 
@@ -111,10 +111,13 @@ export function ModelsPrimaryButtons() {
       }
       toast.success(
         t('Imported {{count}} model descriptions', {
-          count: response.data?.updated_models || 0,
+          count:
+            (response.data?.updated_models || 0) +
+            (response.data?.created_models || 0),
         })
       )
       queryClient.invalidateQueries({ queryKey: modelsQueryKeys.lists() })
+      queryClient.invalidateQueries({ queryKey: vendorsQueryKeys.lists() })
       queryClient.invalidateQueries({ queryKey: ['pricing'] })
     } catch (error) {
       toast.error(

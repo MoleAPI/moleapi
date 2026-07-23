@@ -156,6 +156,7 @@
     "Active Tasks": "Active Tasks",
     "active users": "active users",
     "Actual Amount": "Actual Amount",
+    "Actual available models depend on API endpoint availability.": "Actual available models depend on API endpoint availability.",
     "Actual Model": "Actual Model",
     "Actual Model:": "Actual Model:",
     "Adapt `-thinking` suffix requests to Anthropic native thinking behavior while keeping billing predictable.": "Adapt `-thinking` suffix requests to Anthropic native thinking behavior while keeping billing predictable.",

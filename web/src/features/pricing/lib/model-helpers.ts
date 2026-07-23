@@ -123,6 +123,46 @@ export function getModelPriceDisplay(
   }
 }
 
+export function getDisplayedPriceGroups(
+  model: PricingModel,
+  selectedGroup?: string
+): Array<{ group: string; index: number; ratio: number; isCurrent: boolean }> {
+  const groups =
+    Array.isArray(model.enable_groups) && model.enable_groups.length > 0
+      ? model.enable_groups
+      : ['default']
+  const selected =
+    selectedGroup &&
+    selectedGroup !== FILTER_ALL &&
+    groups.includes(selectedGroup)
+      ? selectedGroup
+      : ''
+  const items = groups.map((group, index) => ({
+    group,
+    index,
+    ratio: getConfiguredGroupRatio(model.group_ratio || {}, group),
+    isCurrent: group === selected,
+  }))
+  const defaultGroup = items.find((item) => item.group === 'default')
+  const seenRatios = new Set<string>()
+
+  return items.filter((item) => {
+    if (
+      defaultGroup &&
+      item.group !== 'default' &&
+      item.ratio === defaultGroup.ratio
+    ) {
+      return false
+    }
+    const ratioKey = String(item.ratio)
+    if (seenRatios.has(ratioKey)) {
+      return false
+    }
+    seenRatios.add(ratioKey)
+    return true
+  })
+}
+
 function getDescriptionTranslations(
   model: PricingModel
 ): Record<string, string> {
