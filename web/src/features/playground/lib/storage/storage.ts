@@ -79,11 +79,6 @@ function readStoredConversationsValue(): unknown | null {
   const saved = localStorage.getItem(STORAGE_KEYS.CONVERSATIONS)
   if (!saved) return null
 
-  if (saved.length > MAX_STORED_CONVERSATIONS_BYTES) {
-    localStorage.removeItem(STORAGE_KEYS.CONVERSATIONS)
-    return null
-  }
-
   return JSON.parse(saved) as unknown
 }
 
@@ -377,6 +372,42 @@ function trimConversations(
   return [activeSession, ...limited.slice(0, MAX_STORED_CONVERSATIONS - 1)]
 }
 
+function getStoredConversationsSize(
+  sessions: PlaygroundConversationSession[]
+): number {
+  return JSON.stringify({
+    version: STORAGE_VERSION,
+    data: sessions,
+  }).length
+}
+
+function trimConversationsByStorageSize(
+  sessions: PlaygroundConversationSession[],
+  activeSessionId: string
+): PlaygroundConversationSession[] {
+  let result = sessions
+
+  while (
+    result.length > 1 &&
+    getStoredConversationsSize(result) > MAX_STORED_CONVERSATIONS_BYTES
+  ) {
+    let oldestIndex = -1
+    for (let index = 0; index < result.length; index += 1) {
+      if (result[index].id === activeSessionId) continue
+      if (
+        oldestIndex === -1 ||
+        result[index].updatedAt < result[oldestIndex].updatedAt
+      ) {
+        oldestIndex = index
+      }
+    }
+    if (oldestIndex === -1) break
+    result = result.filter((_, index) => index !== oldestIndex)
+  }
+
+  return result
+}
+
 function createDefaultConversation(
   messages: Message[] = []
 ): PlaygroundConversationSession {
@@ -554,7 +585,10 @@ export function saveConversationState(
       messages: trimMessages(session.messages),
       title: getConversationTitle(session.messages),
     }))
-    const trimmed = trimConversations(normalized, activeSessionId)
+    const trimmed = trimConversationsByStorageSize(
+      trimConversations(normalized, activeSessionId),
+      activeSessionId
+    )
     const parsed = conversationSessionsSchema.parse(
       trimmed
     ) as PlaygroundConversationSession[]

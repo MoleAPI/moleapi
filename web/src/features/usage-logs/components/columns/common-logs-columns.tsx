@@ -72,7 +72,7 @@ const logPillClassName = 'ring-1 ring-inset ring-current/15'
 function formatRatioCompact(ratio: number | undefined): string {
   if (ratio == null || !Number.isFinite(ratio)) return '-'
   return ratio % 1 === 0
-    ? String(ratio)
+    ? ratio.toFixed(1)
     : ratio.toFixed(4).replace(/\.?0+$/, '')
 }
 
@@ -87,7 +87,7 @@ function getEffectiveGroupRatio(other: LogOtherData | null): number | null {
   }
 
   const groupRatio = other?.group_ratio
-  if (groupRatio != null && groupRatio !== 1 && Number.isFinite(groupRatio)) {
+  if (groupRatio != null && Number.isFinite(groupRatio)) {
     return groupRatio
   }
 
@@ -96,7 +96,7 @@ function getEffectiveGroupRatio(other: LogOtherData | null): number | null {
 
 function getPriceRatioSuffix(other: LogOtherData): string {
   const ratio = getEffectiveGroupRatio(other)
-  return ratio == null || ratio === 1 ? '' : ` · ${formatRatioCompact(ratio)}`
+  return ratio == null ? '' : ` · ${formatRatioCompact(ratio)}`
 }
 
 function buildDetailSegments(
@@ -189,7 +189,7 @@ function buildTypeDetailSegments(
         })
       if (cacheEntries.length > 0) {
         segments.push({
-          text: `${t('Cache')} ${formatPriceList(cacheEntries, false)}`,
+          text: `${t('Cache')} ${formatPriceList(cacheEntries, false)}${getPriceRatioSuffix(other)}`,
           muted: true,
         })
       }
@@ -206,7 +206,7 @@ function buildTypeDetailSegments(
             ].includes(entry.field)
         )
         .map((entry) => ({
-          text: `${t(entry.shortLabel)} ${formatPrice(entry.price)}`,
+          text: `${t(entry.shortLabel)} ${formatPrice(entry.price)}${getPriceRatioSuffix(other)}`,
           muted: true,
         }))
       for (const entry of otherEntries) {
@@ -256,7 +256,7 @@ function buildTypeDetailSegments(
 
         if (cacheEntries.length > 0) {
           segments.push({
-            text: `${t('Cache')} ${formatPriceList(cacheEntries, false)}`,
+            text: `${t('Cache')} ${formatPriceList(cacheEntries, false)}${getPriceRatioSuffix(other)}`,
             muted: true,
           })
         }
@@ -267,13 +267,13 @@ function buildTypeDetailSegments(
         const imagePrice = formatPrice(inputPriceUSD * (other.image_ratio ?? 1))
         if (imageBreakdown.input > 0) {
           segments.push({
-            text: `${t('Image input')} ${imagePrice}`,
+            text: `${t('Image input')} ${imagePrice}${getPriceRatioSuffix(other)}`,
             muted: true,
           })
         }
         if (imageBreakdown.output > 0) {
           segments.push({
-            text: `${t('Image Out')} ${imagePrice}`,
+            text: `${t('Image Out')} ${imagePrice}${getPriceRatioSuffix(other)}`,
             muted: true,
           })
         }

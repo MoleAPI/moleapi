@@ -21,6 +21,7 @@ import { afterEach, beforeEach, describe, test } from 'node:test'
 
 import { STORAGE_KEYS } from '../../constants'
 import type { Message, PlaygroundConversationSession } from '../../types'
+import { MAX_STORED_CONVERSATIONS_BYTES } from './storage-schema'
 import { loadConversationState, saveConversationState } from './storage'
 
 const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
@@ -64,6 +65,25 @@ function createSession(
     title: id,
     updatedAt,
     messages: [createUserMessage(id)],
+  }
+}
+
+function createLargeSession(
+  id: string,
+  updatedAt: number,
+  size: number
+): PlaygroundConversationSession {
+  return {
+    id,
+    title: id,
+    updatedAt,
+    messages: [
+      {
+        key: `message-${id}`,
+        from: 'user',
+        versions: [{ id: `version-${id}`, content: 'x'.repeat(size) }],
+      },
+    ],
   }
 }
 
@@ -149,5 +169,56 @@ describe('playground conversation storage', () => {
       state.sessions[0]?.messages[0]?.versions[0]?.content,
       imageMarkdown
     )
+  })
+
+  test('does not delete oversized saved conversations on load', () => {
+    const largeContent = `![generated image](data:image/png;base64,${'A'.repeat(MAX_STORED_CONVERSATIONS_BYTES)})`
+    localStorage.setItem(
+      STORAGE_KEYS.CONVERSATIONS,
+      JSON.stringify({
+        version: 1,
+        data: [
+          {
+            id: 'large-image-session',
+            title: 'large image',
+            updatedAt: 1,
+            messages: [
+              {
+                key: 'assistant-large-image',
+                from: 'assistant',
+                versions: [{ id: 'v1', content: largeContent }],
+              },
+            ],
+          },
+        ],
+      })
+    )
+
+    const state = loadConversationState()
+
+    assert.equal(state.sessions[0]?.id, 'large-image-session')
+    assert.ok(localStorage.getItem(STORAGE_KEYS.CONVERSATIONS))
+  })
+
+  test('trims old conversations before saving oversized history', () => {
+    const activeSession = createLargeSession('active', 1, 1000)
+    const oldSessions = Array.from({ length: 12 }, (_, index) =>
+      createLargeSession(
+        `old-${index}`,
+        index + 2,
+        Math.ceil(MAX_STORED_CONVERSATIONS_BYTES / 4)
+      )
+    )
+
+    const saved = saveConversationState(
+      [activeSession, ...oldSessions],
+      activeSession.id
+    )
+    const raw = localStorage.getItem(STORAGE_KEYS.CONVERSATIONS)
+
+    assert.ok(raw)
+    assert.ok(raw.length <= MAX_STORED_CONVERSATIONS_BYTES)
+    assert.ok(saved.some((session) => session.id === activeSession.id))
+    assert.ok(saved.length < 13)
   })
 })

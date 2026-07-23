@@ -209,9 +209,9 @@ test('timing and stream render as separate pill columns', async () => {
 test('details preview keeps pricing first and omits neutral multiplier', async () => {
   const detailsHtml = await renderCell('content')
 
-  assert.match(detailsHtml, /\$0\.14 \/ \$0\.56\/M/)
+  assert.match(detailsHtml, /\$0\.14 \/ \$0\.56\/M · 1\.0/)
   assert.match(detailsHtml, /flex-col/)
-  assert.match(detailsHtml, /Cache \$0\.014 \/ \$0\.175/)
+  assert.match(detailsHtml, /Cache \$0\.014 \/ \$0\.175 · 1\.0/)
   assert.match(detailsHtml, /line-clamp-1/)
   assert.doesNotMatch(detailsHtml, /1\.0x/)
   assert.doesNotMatch(detailsHtml, /whitespace-nowrap/)
@@ -381,8 +381,8 @@ test('dynamic billing details use compact ratio formatting for media pricing log
   assert.match(detailsHtml, /0\.3x/)
   assert.doesNotMatch(detailsHtml, /1\.0000x/)
   assert.match(previewHtml, /standard · \$2 \/ \$8\/M · 0\.3/)
-  assert.match(previewHtml, /Image In \$3\/M/)
-  assert.match(previewHtml, /Audio In \$10\/M/)
+  assert.match(previewHtml, /Image In \$3\/M · 0\.3/)
+  assert.match(previewHtml, /Audio In \$10\/M · 0\.3/)
   assert.match(previewHtml, /flex-col/)
   assert.doesNotMatch(previewHtml, /1\.0x/)
 })
