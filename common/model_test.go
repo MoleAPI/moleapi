@@ -3,6 +3,7 @@ package common
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -30,4 +31,18 @@ func TestGetSystemRedirectedModelName(t *testing.T) {
 
 func TestIsImageGenerationModelIncludesGPTImage2(t *testing.T) {
 	assert.True(t, IsImageGenerationModel("gpt-image-2"))
+}
+
+func TestGetEndpointTypesByChannelTypeIncludesResponsesForOpenAITextModels(t *testing.T) {
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeOpenAI,
+		constant.EndpointTypeOpenAIResponse,
+	}, GetEndpointTypesByChannelType(constant.ChannelTypeOpenAI, "gpt-5.4"))
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeOpenAIResponse,
+	}, GetEndpointTypesByChannelType(constant.ChannelTypeOpenAI, "o3-pro"))
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeImageGeneration,
+		constant.EndpointTypeOpenAI,
+	}, GetEndpointTypesByChannelType(constant.ChannelTypeOpenAI, "gpt-image-2"))
 }

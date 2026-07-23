@@ -180,7 +180,10 @@ func TestPricingAdvancedCustomMissingConfigFallsBackToChannelType(t *testing.T) 
 
 	byModel := pricingEndpointTypesByModel(t)
 
-	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, byModel["gpt-4o"])
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeOpenAI,
+		constant.EndpointTypeOpenAIResponse,
+	}, byModel["gpt-4o"])
 }
 
 func TestPricingNativeChannelEndpointTypesUnchanged(t *testing.T) {
@@ -197,7 +200,10 @@ func TestPricingNativeChannelEndpointTypesUnchanged(t *testing.T) {
 
 	byModel := pricingEndpointTypesByModel(t)
 
-	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, byModel["gpt-4o"])
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeOpenAI,
+		constant.EndpointTypeOpenAIResponse,
+	}, byModel["gpt-4o"])
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeGemini, constant.EndpointTypeOpenAI}, byModel["gemini-2.5-flash"])
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeAnthropic, constant.EndpointTypeOpenAI}, byModel["claude-3-5-sonnet"])
 	assert.Equal(t, []constant.EndpointType{
@@ -333,4 +339,33 @@ func TestCacheUpdateChannelSyncsAdvancedCustomConfig(t *testing.T) {
 	CacheUpdateChannel(channel)
 
 	assert.Nil(t, channel2advancedCustomConfig[401])
+}
+
+func TestPricingDefaultVendorMappingFillsMetadataWithoutVendor(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+
+	insertPricingEndpointChannel(t, 501, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
+	insertPricingEndpointAbility(t, 501, "gpt-5.4")
+	require.NoError(t, DB.Create(&Model{
+		ModelName:   "gpt-5.4",
+		Description: "OpenAI text model",
+		Status:      1,
+		NameRule:    NameRuleExact,
+	}).Error)
+
+	pricings := GetPricing()
+	var modelPricing Pricing
+	for _, item := range pricings {
+		if item.ModelName == "gpt-5.4" {
+			modelPricing = item
+			break
+		}
+	}
+	require.NotEmpty(t, modelPricing.ModelName)
+	require.NotZero(t, modelPricing.VendorID)
+
+	vendor, err := GetVendorByID(modelPricing.VendorID)
+	require.NoError(t, err)
+	assert.Equal(t, "OpenAI", vendor.Name)
+	assert.Equal(t, "OpenAI", vendor.Icon)
 }

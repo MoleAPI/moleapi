@@ -38,7 +38,9 @@ import {
   getQuotaTypeLabels,
 } from '../constants'
 import { parseTags } from '../lib/filters'
+import { getModelTagLabelKey } from '../lib/model-tags'
 import type { PricingModel, PricingVendor } from '../types'
+import { ModelTagIcon } from './model-tag-chip'
 
 type FilterOption = {
   value: string
@@ -218,12 +220,13 @@ export function PricingSidebar(props: PricingSidebarProps) {
     },
     ...props.tags.map((tag) => ({
       value: tag,
-      label: tag,
+      label: t(getModelTagLabelKey(tag)),
       count: countBy(props.models, (model) =>
         parseTags(model.tags)
           .map((item) => item.toLowerCase())
           .includes(tag.toLowerCase())
       ),
+      icon: <ModelTagIcon tag={tag} />,
     })),
   ]
 

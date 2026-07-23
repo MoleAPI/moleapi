@@ -37,8 +37,9 @@ export function ModelBillingModeBadge(props: ModelBillingModeBadgeProps) {
 
   return (
     <span
+      title={label}
       className={cn(
-        'inline-flex h-[22px] max-w-full min-w-0 items-center gap-1 rounded-full border border-orange-300/60 bg-orange-50 px-2 text-[13px] leading-none font-medium whitespace-nowrap text-orange-600 dark:border-orange-400/30 dark:bg-orange-400/10 dark:text-orange-300',
+        'inline-flex h-[22px] max-w-36 min-w-0 items-center gap-1 overflow-hidden rounded-full border border-orange-300/60 bg-orange-50 px-2 text-[13px] leading-none font-medium whitespace-nowrap text-orange-600 dark:border-orange-400/30 dark:bg-orange-400/10 dark:text-orange-300',
         props.className
       )}
     >
@@ -47,6 +48,7 @@ export function ModelBillingModeBadge(props: ModelBillingModeBadgeProps) {
         size={13}
         strokeWidth={2}
         aria-hidden='true'
+        className='shrink-0'
       />
       <span className='min-w-0 truncate'>{label}</span>
     </span>
