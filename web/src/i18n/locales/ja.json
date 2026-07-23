@@ -3366,6 +3366,8 @@
     "Path Regex (one per line)": "パス正規表現（1行に1つ）",
     "Path:": "パス：",
     "Pay": "Pay",
+    "Pay as you go": "従量課金",
+    "Pay per call": "呼び出し課金",
     "Pay with Balance": "残高で支払う",
     "Pay-as-you-go with real-time usage monitoring": "リアルタイム使用量監視付き従量課金制",
     "Payment": "支払い",

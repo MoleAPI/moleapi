@@ -3366,6 +3366,8 @@
     "Path Regex (one per line)": "路徑正則（每行一個）",
     "Path:": "路徑：",
     "Pay": "支付",
+    "Pay as you go": "按量付費",
+    "Pay per call": "按次付費",
     "Pay with Balance": "使用餘額支付",
     "Pay-as-you-go with real-time usage monitoring": "按量付費，實時監控使用情況",
     "Payment": "支付",

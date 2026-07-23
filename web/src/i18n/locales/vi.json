@@ -3366,6 +3366,8 @@
     "Path Regex (one per line)": "Regex đường dẫn (mỗi dòng một mục)",
     "Path:": "Đường dẫn:",
     "Pay": "Pay",
+    "Pay as you go": "Theo mức dùng",
+    "Pay per call": "Theo lượt gọi",
     "Pay with Balance": "Thanh toán bằng số dư",
     "Pay-as-you-go with real-time usage monitoring": "Thanh toán theo mức sử dụng với theo dõi mức sử dụng theo thời gian thực",
     "Payment": "Thanh toán",

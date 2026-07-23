@@ -16,22 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import {
-  Brain,
-  Braces,
-  ChevronRight,
-  Code2,
-  Copy,
-  Database,
-  Eye,
-  FileCode2,
-  MessageSquareText,
-  Radio,
-  Search,
-  Sparkles,
-  Wrench,
-  type LucideIcon,
-} from 'lucide-react'
+import { ChevronRight, Copy } from 'lucide-react'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -44,6 +29,7 @@ import {
   getDynamicDisplayGroupRatio,
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
+import { parseTags } from '../lib/filters'
 import {
   getConfiguredGroupRatio,
   getDiscountPercent,
@@ -91,21 +77,6 @@ const CAPABILITY_LABEL_KEYS: Record<ModelCapability, string> = {
   code_interpreter: 'Code interpreter',
   caching: 'Prompt caching',
   embeddings: 'Embeddings',
-}
-
-const CAPABILITY_ICONS: Record<ModelCapability, LucideIcon> = {
-  function_calling: Braces,
-  streaming: Radio,
-  vision: Eye,
-  json_mode: FileCode2,
-  structured_output: Braces,
-  reasoning: Brain,
-  tools: Wrench,
-  system_prompt: MessageSquareText,
-  web_search: Search,
-  code_interpreter: Code2,
-  caching: Sparkles,
-  embeddings: Database,
 }
 
 function formatRatio(ratio: number): string {
@@ -179,23 +150,6 @@ function PriceGroupColumn(props: {
   )
 }
 
-function CapabilityChip(props: {
-  capability: ModelCapability
-  t: (key: string) => string
-}) {
-  const Icon = CAPABILITY_ICONS[props.capability]
-  const label = props.t(
-    CAPABILITY_LABEL_KEYS[props.capability] ?? props.capability
-  )
-
-  return (
-    <span className='bg-muted/60 text-muted-foreground inline-flex min-w-0 items-center gap-1 rounded-md border px-1.5 py-0.5 text-[11px] leading-4'>
-      <Icon className='size-3 shrink-0' />
-      <span className='truncate'>{label}</span>
-    </span>
-  )
-}
-
 function getDynamicMetricTone(field: string): Metric['tone'] {
   if (field.includes('cache')) return 'success'
   if (field.includes('image') || field.includes('audio')) return 'accent'
@@ -214,6 +168,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const tokenPriceUnit = `/ ${tokenUnitLabel}`
   const groups = props.model.enable_groups || []
   const capabilities = props.model.capabilities || []
+  const tags = parseTags(props.model.tags)
   const modelIconKey = props.model.icon || props.model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 28) : null
   const initial = props.model.model_name?.charAt(0).toUpperCase() || '?'
@@ -235,11 +190,12 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     : null
   const description = getLocalizedModelDescription(props.model, i18n.language)
 
-  const visibleCapabilities = capabilities.slice(0, 3)
-  const hiddenCapabilityCount = Math.max(
-    capabilities.length - visibleCapabilities.length,
-    0
+  const capabilityTags = capabilities.map(
+    (capability) => CAPABILITY_LABEL_KEYS[capability] ?? capability
   )
+  const allChips = [...new Set([...tags, ...capabilityTags])]
+  const chips = allChips.slice(0, 5)
+  const hiddenChipCount = Math.max(allChips.length - chips.length, 0)
   const groupRatio = props.model.group_ratio || {}
   const selectedGroup =
     props.selectedGroup &&
@@ -534,16 +490,22 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             model={props.model}
             className='-ml-1.5 shrink-0'
           />
-          {visibleCapabilities.map((capability) => (
-            <CapabilityChip
-              key={`capability-${capability}`}
-              capability={capability}
-              t={t}
-            />
+          {chips.map((chip, index) => (
+            <span
+              key={`tag-${chip}`}
+              className={cn(
+                'inline-flex max-w-full min-w-0 items-center truncate rounded-md border px-1.5 py-0.5 text-[11px] leading-4',
+                index === 0
+                  ? 'bg-primary/10 text-primary border-primary/20'
+                  : 'bg-muted/60 text-muted-foreground'
+              )}
+            >
+              {chip}
+            </span>
           ))}
-          {hiddenCapabilityCount > 0 && (
+          {hiddenChipCount > 0 && (
             <span className='text-muted-foreground/40 text-xs'>
-              +{hiddenCapabilityCount}
+              +{hiddenChipCount}
             </span>
           )}
         </div>
