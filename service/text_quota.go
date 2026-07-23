@@ -235,6 +235,7 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 	dPromptTokens := decimal.NewFromInt(int64(summary.PromptTokens))
 	dCacheTokens := decimal.NewFromInt(int64(summary.CacheTokens))
 	dImageInputTokens := decimal.NewFromInt(int64(summary.ImageInputTokens))
+	dImageOutputTokens := decimal.NewFromInt(int64(summary.ImageOutputTokens))
 	dAudioTokens := decimal.NewFromInt(int64(summary.AudioTokens))
 	dCompletionTokens := decimal.NewFromInt(int64(summary.CompletionTokens))
 	dCachedCreationTokens := decimal.NewFromInt(int64(summary.CacheCreationTokens))
@@ -286,6 +287,10 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 			baseTokens = baseTokens.Sub(dImageInputTokens)
 			imageTokensWithRatio = dImageInputTokens.Mul(dImageRatio)
 		}
+		if !dImageOutputTokens.IsZero() {
+			dCompletionTokens = dCompletionTokens.Sub(dImageOutputTokens)
+			imageTokensWithRatio = imageTokensWithRatio.Add(dImageOutputTokens.Mul(dImageRatio))
+		}
 
 		if !dAudioTokens.IsZero() {
 			summary.AudioInputPrice = operation_setting.GetGeminiInputAudioPricePerMillionTokens(summary.ModelName)
@@ -302,6 +307,9 @@ func calculateTextQuotaSummary(ctx *gin.Context, relayInfo *relaycommon.RelayInf
 		// a negative base charge.
 		if baseTokens.IsNegative() {
 			baseTokens = decimal.Zero
+		}
+		if dCompletionTokens.IsNegative() {
+			dCompletionTokens = decimal.Zero
 		}
 
 		promptQuota := baseTokens.Add(cachedTokensWithRatio).Add(imageTokensWithRatio).Add(cachedCreationTokensWithRatio)

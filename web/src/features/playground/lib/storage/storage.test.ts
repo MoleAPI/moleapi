@@ -119,4 +119,35 @@ describe('playground conversation storage', () => {
     assert.equal(saved.length, 12)
     assert.ok(saved.some((session) => session.id === oldActiveSession.id))
   })
+
+  test('keeps stored base64 image markdown intact when reloading', () => {
+    const imageMarkdown = `![generated image](data:image/png;base64,${'A'.repeat(45_000)})`
+    localStorage.setItem(
+      STORAGE_KEYS.CONVERSATIONS,
+      JSON.stringify({
+        version: 1,
+        data: [
+          {
+            id: 'image-session',
+            title: 'image',
+            updatedAt: 1,
+            messages: [
+              {
+                key: 'assistant-image',
+                from: 'assistant',
+                versions: [{ id: 'v1', content: imageMarkdown }],
+              },
+            ],
+          },
+        ],
+      })
+    )
+
+    const state = loadConversationState()
+
+    assert.equal(
+      state.sessions[0]?.messages[0]?.versions[0]?.content,
+      imageMarkdown
+    )
+  })
 })

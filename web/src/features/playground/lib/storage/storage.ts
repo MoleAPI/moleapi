@@ -150,6 +150,10 @@ function getMessageSize(message: Message): number {
 }
 
 function truncateText(text: string, maxLength: number): string {
+  if (text.includes('](data:image/')) {
+    return text
+  }
+
   if (text.length <= maxLength) {
     return text
   }

@@ -45,6 +45,7 @@ import {
   formatModelName,
   getTieredBillingSummary,
   hasAnyCacheTokens,
+  getImageTokenBreakdown,
   parseLogOther,
   isViolationFeeLog,
   renderAuditContent,
@@ -75,7 +76,7 @@ function formatRatioCompact(ratio: number | undefined): string {
     : ratio.toFixed(4).replace(/\.?0+$/, '')
 }
 
-function getGroupRatio(other: LogOtherData | null): number | null {
+function getEffectiveGroupRatio(other: LogOtherData | null): number | null {
   const userGroupRatio = other?.user_group_ratio
   if (
     userGroupRatio != null &&
@@ -91,6 +92,11 @@ function getGroupRatio(other: LogOtherData | null): number | null {
   }
 
   return null
+}
+
+function getPriceRatioSuffix(other: LogOtherData): string {
+  const ratio = getEffectiveGroupRatio(other)
+  return ratio == null || ratio === 1 ? '' : ` · ${formatRatioCompact(ratio)}`
 }
 
 function buildDetailSegments(
@@ -168,7 +174,7 @@ function buildTypeDetailSegments(
       if (baseEntries.length > 0) {
         const tierLabel = tieredSummary.tier.label || t('Default')
         segments.push({
-          text: `${tierLabel} · ${formatPriceList(baseEntries, true)}`,
+          text: `${tierLabel} · ${formatPriceList(baseEntries, true)}${getPriceRatioSuffix(other)}`,
         })
       }
 
@@ -199,11 +205,14 @@ function buildTypeDetailSegments(
               'cacheCreate1hPrice',
             ].includes(entry.field)
         )
-        .map((entry) => `${t(entry.shortLabel)} ${formatPrice(entry.price)}`)
-      if (otherEntries.length > 0) {
-        segments.push({
-          text: otherEntries.join(' · '),
+        .map((entry) => ({
+          text: `${t(entry.shortLabel)} ${formatPrice(entry.price)}`,
           muted: true,
+        }))
+      for (const entry of otherEntries) {
+        segments.push({
+          text: entry.text,
+          muted: entry.muted,
         })
       }
     } else {
@@ -217,7 +226,7 @@ function buildTypeDetailSegments(
     const isPerCall = isPerCallBilling(modelPrice)
     if (isPerCall && modelPrice != null) {
       segments.push({
-        text: `${t('Per-call')} · ${formatBillingCurrencyFromUSD(modelPrice, priceOpts)}`,
+        text: `${t('Per-call')} · ${formatBillingCurrencyFromUSD(modelPrice, priceOpts)}${getPriceRatioSuffix(other)}`,
       })
     } else if (other.model_ratio != null) {
       const inputPriceUSD = other.model_ratio * 2.0
@@ -227,22 +236,8 @@ function buildTypeDetailSegments(
           formatPriceCompact(inputPriceUSD * other.completion_ratio)
         )
       }
-      const userGroupRatio = other.user_group_ratio
-      const previewRatio =
-        userGroupRatio != null &&
-        userGroupRatio !== -1 &&
-        Number.isFinite(userGroupRatio)
-          ? userGroupRatio
-          : other.group_ratio
-      let previewRatioLabel = '1.0'
-      if (previewRatio != null && Number.isFinite(previewRatio)) {
-        previewRatioLabel =
-          previewRatio % 1 === 0
-            ? previewRatio.toFixed(1)
-            : formatRatioCompact(previewRatio)
-      }
       segments.push({
-        text: `${previewRatioLabel} · ${formatPriceList(baseEntries, true)}`,
+        text: `${formatPriceList(baseEntries, true)}${getPriceRatioSuffix(other)}`,
       })
 
       if (hasAnyCacheTokens(other)) {
@@ -262,6 +257,23 @@ function buildTypeDetailSegments(
         if (cacheEntries.length > 0) {
           segments.push({
             text: `${t('Cache')} ${formatPriceList(cacheEntries, false)}`,
+            muted: true,
+          })
+        }
+      }
+
+      const imageBreakdown = getImageTokenBreakdown(other)
+      if (other.image_ratio != null && other.image_ratio !== 1) {
+        const imagePrice = formatPrice(inputPriceUSD * other.image_ratio)
+        if (imageBreakdown.input > 0) {
+          segments.push({
+            text: `${t('Image input')} ${imagePrice}`,
+            muted: true,
+          })
+        }
+        if (imageBreakdown.output > 0) {
+          segments.push({
+            text: `${t('Image Out')} ${imagePrice}`,
             muted: true,
           })
         }
@@ -615,28 +627,19 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
 
         const other = parseLogOther(log.other)
         const group = log.group || other?.group || ''
-        const groupRatio = getGroupRatio(other)
-        if (!group && groupRatio == null) return null
+        if (!group) return null
 
         return (
           <span className='inline-flex items-center text-xs leading-none whitespace-nowrap'>
-            {group ? (
-              <GroupBadge
-                group={group}
-                label={sensitiveVisible ? undefined : '••••'}
-                size='sm'
-                className={cn(
-                  logPillClassName,
-                  'max-w-full align-baseline !text-[11px] leading-none font-normal [&>span]:!text-[11px] [&>span]:leading-none [&>span]:font-normal'
-                )}
-              />
-            ) : null}
-            {group && groupRatio != null ? ' ' : null}
-            {groupRatio != null ? (
-              <span className='text-muted-foreground/60 relative top-px align-baseline tabular-nums'>
-                {formatRatioCompact(groupRatio)}x
-              </span>
-            ) : null}
+            <GroupBadge
+              group={group}
+              label={sensitiveVisible ? undefined : '••••'}
+              size='sm'
+              className={cn(
+                logPillClassName,
+                'max-w-full align-baseline !text-[11px] leading-none font-normal [&>span]:!text-[11px] [&>span]:leading-none [&>span]:font-normal'
+              )}
+            />
           </span>
         )
       },
@@ -826,18 +829,17 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
         let detailPreview = <span className='text-muted-foreground/40'>—</span>
         if (segments.length > 0) {
           detailPreview = (
-            <span className='block max-w-full min-w-0 leading-snug break-words whitespace-normal'>
-              {segments.map((segment, index) => (
+            <span className='flex max-w-full min-w-0 flex-col gap-0.5 leading-snug'>
+              {segments.map((segment) => (
                 <span
                   key={`${segment.text}-${segment.muted ? 'muted' : ''}-${segment.danger ? 'danger' : ''}`}
                   className={cn(
+                    'min-w-0 break-all sm:wrap-break-word',
+                    segments.length > 1 ? 'line-clamp-1' : 'line-clamp-2',
                     segment.muted && 'text-muted-foreground/60',
                     segment.danger && 'text-red-600 dark:text-red-400'
                   )}
                 >
-                  {index > 0 && (
-                    <span className='text-muted-foreground/40 mx-1'>·</span>
-                  )}
                   {segment.text}
                 </span>
               ))}
@@ -845,7 +847,7 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           )
         } else if (log.content) {
           detailPreview = (
-            <span className='text-muted-foreground break-all whitespace-normal sm:wrap-break-word'>
+            <span className='text-muted-foreground line-clamp-2 break-all whitespace-normal sm:wrap-break-word'>
               {log.content}
             </span>
           )

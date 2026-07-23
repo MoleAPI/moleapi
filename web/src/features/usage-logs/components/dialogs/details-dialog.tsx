@@ -17,24 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { TFunction } from 'i18next'
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import {
   Copy,
   Check,
@@ -470,6 +452,8 @@ function BillingBreakdown(props: {
   }
 
   if (!isTieredExpr) {
+    const imageBreakdown = getImageTokenBreakdown(other)
+
     if (other.audio_ratio != null && other.audio_ratio !== 1) {
       rows.push({
         label: t('Audio input'),
@@ -488,10 +472,18 @@ function BillingBreakdown(props: {
     }
 
     if (other.image_ratio != null && other.image_ratio !== 1) {
-      rows.push({
-        label: t('Image input'),
-        value: `${fmtPrice(baseInputUSD * other.image_ratio)}/M`,
-      })
+      if (imageBreakdown.input > 0) {
+        rows.push({
+          label: t('Image input'),
+          value: `${fmtPrice(baseInputUSD * other.image_ratio)}/M`,
+        })
+      }
+      if (imageBreakdown.output > 0) {
+        rows.push({
+          label: t('Image Out'),
+          value: `${fmtPrice(baseInputUSD * other.image_ratio)}/M`,
+        })
+      }
     }
   }
 
@@ -560,7 +552,9 @@ function BillingBreakdown(props: {
   } else if (isPerCall && other.model_price != null) {
     calculationParts.push(`${t('Per-call')} ${fmtPrice(other.model_price)}`)
   } else if (other.model_ratio != null) {
-    const imageTokens = getImageTokenBreakdown(other).input
+    const imageBreakdown = getImageTokenBreakdown(other)
+    const imageTokens = imageBreakdown.input
+    const imageOutputTokens = imageBreakdown.output
     const audioTokens = other.audio_input_token_count || 0
     const baseInputTokens = other.claude
       ? promptTokens
@@ -577,7 +571,7 @@ function BillingBreakdown(props: {
     if (other.completion_ratio != null) {
       addTokenTerm(
         t('Output'),
-        completionTokens,
+        Math.max(completionTokens - imageOutputTokens, 0),
         baseInputUSD * other.completion_ratio
       )
     }
@@ -620,6 +614,11 @@ function BillingBreakdown(props: {
     addTokenTerm(
       t('Image input'),
       imageTokens,
+      baseInputUSD * (other.image_ratio || 0)
+    )
+    addTokenTerm(
+      t('Image Out'),
+      imageOutputTokens,
       baseInputUSD * (other.image_ratio || 0)
     )
     addTokenTerm(t('Audio input'), audioTokens, other.audio_input_price)
@@ -670,11 +669,16 @@ function TokenBreakdown(props: { log: UsageLog; inline?: boolean }) {
   const completionTokens = log.completion_tokens || 0
   const cacheReadTokens = other?.cache_tokens || 0
   const cacheWriteTokens = getCacheWriteTokens(other)
+  const imageBreakdown = other
+    ? getImageTokenBreakdown(other)
+    : { input: 0, output: 0 }
   const hasTextTokens =
     promptTokens > 0 ||
     completionTokens > 0 ||
     cacheReadTokens > 0 ||
-    cacheWriteTokens > 0
+    cacheWriteTokens > 0 ||
+    imageBreakdown.input > 0 ||
+    imageBreakdown.output > 0
 
   if (!hasTextTokens) return null
 
@@ -698,6 +702,18 @@ function TokenBreakdown(props: { log: UsageLog; inline?: boolean }) {
     rows.push({
       label: t('Cache Write'),
       value: tokenCountText(cacheWriteTokens, t),
+    })
+  }
+  if (imageBreakdown.input > 0) {
+    rows.push({
+      label: t('Image Input Tokens'),
+      value: tokenCountText(imageBreakdown.input, t),
+    })
+  }
+  if (imageBreakdown.output > 0) {
+    rows.push({
+      label: t('Image Output Tokens'),
+      value: tokenCountText(imageBreakdown.output, t),
     })
   }
   if ((other?.cache_creation_tokens_5m || 0) > 0) {

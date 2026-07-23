@@ -54,24 +54,27 @@ function runFilter(
 }
 
 describe('pricing filters', () => {
-  test('popular sort puts recent 24h usage first and falls back to name', () => {
+  test('popular sort puts 24h usage first, then model family, then request count', () => {
     const result = runFilter(
       [
-        { ...baseModel, id: 1, model_name: 'charlie' },
-        { ...baseModel, id: 2, model_name: 'alpha' },
-        { ...baseModel, id: 3, model_name: 'bravo' },
+        { ...baseModel, id: 1, model_name: 'zeta' },
+        { ...baseModel, id: 2, model_name: 'glm-4.5' },
+        { ...baseModel, id: 3, model_name: 'claude-sonnet-4' },
+        { ...baseModel, id: 4, model_name: 'gpt-5.1' },
+        { ...baseModel, id: 5, model_name: 'alpha' },
       ],
       {
         popularModels: [
-          { model_name: 'bravo', request_count: 4 },
-          { model_name: 'charlie', request_count: 9 },
+          { model_name: 'glm-4.5', request_count: 40 },
+          { model_name: 'claude-sonnet-4', request_count: 4 },
+          { model_name: 'gpt-5.1', request_count: 9 },
         ],
       }
     )
 
     assert.deepEqual(
       result.map((model) => model.model_name),
-      ['charlie', 'bravo', 'alpha']
+      ['gpt-5.1', 'claude-sonnet-4', 'glm-4.5', 'alpha', 'zeta']
     )
   })
 

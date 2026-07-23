@@ -181,6 +181,20 @@ test('cache uses explicit words and numeric cost stays unboxed', async () => {
   assert.doesNotMatch(costHtml, /\b(?:border|rounded|bg-)/)
 })
 
+test('group cell hides the multiplier', async () => {
+  const groupRatioLog = usageLogSchema.parse({
+    ...log,
+    group: 'relay',
+    other: JSON.stringify({
+      group_ratio: 0.3,
+    }),
+  })
+  const groupHtml = await renderCell('group', false, groupRatioLog)
+
+  assert.match(groupHtml, /relay/)
+  assert.doesNotMatch(groupHtml, /0\.3x/)
+})
+
 test('timing and stream render as separate pill columns', async () => {
   const timingHtml = await renderCell('use_time')
   const streamHtml = await renderCell('is_stream')
@@ -192,13 +206,43 @@ test('timing and stream render as separate pill columns', async () => {
   assert.match(streamHtml, /300 t\/s/)
 })
 
-test('details preview uses the effective multiplier instead of standard', async () => {
+test('details preview keeps pricing first and omits neutral multiplier', async () => {
   const detailsHtml = await renderCell('content')
 
-  assert.match(detailsHtml, /1\.0 · \$0\.14 \/ \$0\.56\/M/)
-  assert.match(detailsHtml, /whitespace-normal/)
-  assert.doesNotMatch(detailsHtml, /Standard/)
+  assert.match(detailsHtml, /\$0\.14 \/ \$0\.56\/M/)
+  assert.match(detailsHtml, /flex-col/)
+  assert.match(detailsHtml, /Cache \$0\.014 \/ \$0\.175/)
+  assert.match(detailsHtml, /line-clamp-1/)
+  assert.doesNotMatch(detailsHtml, /1\.0x/)
   assert.doesNotMatch(detailsHtml, /whitespace-nowrap/)
+})
+
+test('details preview appends group multiplier to price summary', async () => {
+  const discountLog = usageLogSchema.parse({
+    ...log,
+    other: JSON.stringify({
+      model_ratio: 0.07,
+      completion_ratio: 4,
+      group_ratio: 0.3,
+    }),
+  })
+  const detailsHtml = await renderCell('content', false, discountLog)
+
+  assert.match(detailsHtml, /\$0\.14 \/ \$0\.56\/M · 0\.3/)
+  assert.doesNotMatch(detailsHtml, /0\.3x ·/)
+})
+
+test('per-call details append group multiplier after the price', async () => {
+  const perCallLog = usageLogSchema.parse({
+    ...log,
+    other: JSON.stringify({
+      model_price: 0.02,
+      group_ratio: 0.3,
+    }),
+  })
+  const detailsHtml = await renderCell('content', false, perCallLog)
+
+  assert.match(detailsHtml, /Per-call · \$0\.02 · 0\.3/)
 })
 
 test('details column wraps long raw content', async () => {
@@ -212,6 +256,7 @@ test('details column wraps long raw content', async () => {
 
   assert.match(detailsHtml, /provider_error_/)
   assert.match(detailsHtml, /break-all/)
+  assert.match(detailsHtml, /line-clamp-2/)
   assert.match(detailsHtml, /whitespace-normal/)
 })
 
@@ -240,6 +285,35 @@ test('expanded details show request summary, cache tokens, and billing calculati
   assert.match(detailsHtml, /Total Cost/)
 })
 
+test('ratio billing details separate image output from text output', async () => {
+  const imageLog = usageLogSchema.parse({
+    ...log,
+    quota: 11_196,
+    prompt_tokens: 9,
+    completion_tokens: 186,
+    other: JSON.stringify({
+      model_ratio: 4,
+      completion_ratio: 3.75,
+      image_ratio: 15,
+      group_ratio: 1,
+      image: true,
+      image_output_tokens: 186,
+      request_path: '/pg/chat/completions',
+      request_conversion: ['OpenAI Compatible', 'openai_image'],
+      admin_info: {
+        use_channel: [74],
+      },
+    }),
+  })
+
+  const detailsHtml = await renderInlineDetails(imageLog)
+
+  assert.match(detailsHtml, /Image Out/)
+  assert.match(detailsHtml, /Image Output Tokens/)
+  assert.match(detailsHtml, /Image Out 186/)
+  assert.doesNotMatch(detailsHtml, /Output 186/)
+})
+
 test('dynamic billing details use compact ratio formatting for media pricing logs', async () => {
   const tieredLog = usageLogSchema.parse({
     ...log,
@@ -249,7 +323,7 @@ test('dynamic billing details use compact ratio formatting for media pricing log
         'tier("standard", p * 2 + c * 8 + img * 3 + ai * 10 + ao * 40)'
       ).toString('base64'),
       matched_tier: 'standard',
-      group_ratio: 1,
+      group_ratio: 0.3,
       request_path: '/v1/chat/completions',
       request_conversion: ['OpenAI Compatible'],
       image_input_tokens: 20,
@@ -261,13 +335,19 @@ test('dynamic billing details use compact ratio formatting for media pricing log
   })
 
   const detailsHtml = await renderInlineDetails(tieredLog)
+  const previewHtml = await renderCell('content', true, tieredLog)
 
   assert.match(detailsHtml, /Dynamic Pricing/)
   assert.match(detailsHtml, /Image In/)
   assert.match(detailsHtml, /Audio In/)
   assert.match(detailsHtml, /Audio Out/)
-  assert.match(detailsHtml, /1\.0x/)
+  assert.match(detailsHtml, /0\.3x/)
   assert.doesNotMatch(detailsHtml, /1\.0000x/)
+  assert.match(previewHtml, /standard · \$2 \/ \$8\/M · 0\.3/)
+  assert.match(previewHtml, /Image In \$3\/M/)
+  assert.match(previewHtml, /Audio In \$10\/M/)
+  assert.match(previewHtml, /flex-col/)
+  assert.doesNotMatch(previewHtml, /1\.0x/)
 })
 
 test('desktop common logs keep full values on one horizontally scrollable row', async () => {

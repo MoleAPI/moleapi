@@ -31,6 +31,14 @@ type ModelPopularity = {
   request_count?: number
 }
 
+function modelFamilyRank(modelName: string): number {
+  const name = modelName.toLowerCase()
+  if (name.includes('gpt')) return 0
+  if (name.includes('claude')) return 1
+  if (name.includes('glm')) return 2
+  return 3
+}
+
 // ----------------------------------------------------------------------------
 // Filter Utilities
 // ----------------------------------------------------------------------------
@@ -127,10 +135,18 @@ export function sortModels(
   switch (sortBy) {
     case SORT_OPTIONS.POPULAR:
       sorted.sort((a, b) => {
-        const usageDiff =
-          (usage.get(b.model_name) || 0) - (usage.get(a.model_name) || 0)
+        const aUsage = usage.get(a.model_name) || 0
+        const bUsage = usage.get(b.model_name) || 0
+        const usageDataDiff = Number(bUsage > 0) - Number(aUsage > 0)
+        const familyDiff =
+          modelFamilyRank(a.model_name || '') -
+          modelFamilyRank(b.model_name || '')
+        const usageDiff = bUsage - aUsage
         return (
-          usageDiff || (a.model_name || '').localeCompare(b.model_name || '')
+          usageDataDiff ||
+          familyDiff ||
+          usageDiff ||
+          (a.model_name || '').localeCompare(b.model_name || '')
         )
       })
       break

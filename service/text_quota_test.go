@@ -117,6 +117,35 @@ func TestPostTextConsumeQuotaLogsExplicitImageTokenDirections(t *testing.T) {
 	require.Equal(t, true, other["image"])
 }
 
+func TestCalculateTextQuotaSummaryBillsImageOutputSeparately(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-image-1",
+		PriceData: types.PriceData{
+			ModelRatio:      4,
+			CompletionRatio: 3.75,
+			ImageRatio:      15,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens:     9,
+		CompletionTokens: 186,
+		TotalTokens:      195,
+		CompletionTokenDetails: dto.OutputTokenDetails{
+			ImageTokens: 186,
+		},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, 11196, summary.Quota)
+	require.Equal(t, 186, summary.ImageOutputTokens)
+}
+
 func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
