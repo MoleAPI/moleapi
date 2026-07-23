@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -32,10 +33,15 @@ var completionRatioMetaOptionKeys = []string{
 	"AudioCompletionRatio",
 }
 
+var modelPricingStringOptionKeys = []string{
+	"billing_setting." + billing_setting.BillingModeField,
+	"billing_setting." + billing_setting.BillingExprField,
+}
+
 type modelPricingExportPayload struct {
-	Version    int                           `json:"version"`
-	ExportedAt int64                         `json:"exported_at"`
-	Pricing    map[string]map[string]float64 `json:"pricing"`
+	Version    int                    `json:"version"`
+	ExportedAt int64                  `json:"exported_at"`
+	Pricing    map[string]interface{} `json:"pricing"`
 }
 
 type modelPricingImportRequest struct {
@@ -94,6 +100,20 @@ func isModelPricingOptionKey(key string) bool {
 			return true
 		}
 	}
+	for _, optionKey := range modelPricingStringOptionKeys {
+		if optionKey == key {
+			return true
+		}
+	}
+	return false
+}
+
+func isModelPricingStringOptionKey(key string) bool {
+	for _, optionKey := range modelPricingStringOptionKeys {
+		if optionKey == key {
+			return true
+		}
+	}
 	return false
 }
 
@@ -108,7 +128,38 @@ func parseModelPricingMap(key string, raw string) (map[string]float64, error) {
 	return values, nil
 }
 
+func parseModelPricingStringMap(key string, raw string) (map[string]string, error) {
+	values := make(map[string]string)
+	if strings.TrimSpace(raw) == "" {
+		return values, nil
+	}
+	if err := common.UnmarshalJsonStr(raw, &values); err != nil {
+		return nil, fmt.Errorf("%s is invalid: %w", key, err)
+	}
+	return values, nil
+}
+
 func parseModelPricingImportValue(key string, raw json.RawMessage) (string, error) {
+	if isModelPricingStringOptionKey(key) {
+		var exportedString string
+		if err := common.Unmarshal(raw, &exportedString); err == nil {
+			if _, err = parseModelPricingStringMap(key, exportedString); err != nil {
+				return "", err
+			}
+			return exportedString, nil
+		}
+
+		values := make(map[string]string)
+		if err := common.Unmarshal(raw, &values); err != nil {
+			return "", fmt.Errorf("%s must be a JSON object", key)
+		}
+		jsonBytes, err := common.Marshal(values)
+		if err != nil {
+			return "", err
+		}
+		return string(jsonBytes), nil
+	}
+
 	var exportedString string
 	if err := common.Unmarshal(raw, &exportedString); err == nil {
 		if _, err = parseModelPricingMap(key, exportedString); err != nil {
@@ -129,12 +180,22 @@ func parseModelPricingImportValue(key string, raw json.RawMessage) (string, erro
 }
 
 func ExportModelPricing(c *gin.Context) {
-	pricing := make(map[string]map[string]float64, len(completionRatioMetaOptionKeys))
+	pricing := make(map[string]interface{}, len(completionRatioMetaOptionKeys)+len(modelPricingStringOptionKeys))
 
 	common.OptionMapRWMutex.RLock()
 	for _, key := range completionRatioMetaOptionKeys {
 		raw := common.Interface2String(common.OptionMap[key])
 		values, err := parseModelPricingMap(key, raw)
+		if err != nil {
+			common.OptionMapRWMutex.RUnlock()
+			common.ApiError(c, err)
+			return
+		}
+		pricing[key] = values
+	}
+	for _, key := range modelPricingStringOptionKeys {
+		raw := common.Interface2String(common.OptionMap[key])
+		values, err := parseModelPricingStringMap(key, raw)
 		if err != nil {
 			common.OptionMapRWMutex.RUnlock()
 			common.ApiError(c, err)

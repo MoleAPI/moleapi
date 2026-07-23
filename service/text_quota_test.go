@@ -117,6 +117,96 @@ func TestPostTextConsumeQuotaLogsExplicitImageTokenDirections(t *testing.T) {
 	require.Equal(t, true, other["image"])
 }
 
+func TestPostTextConsumeQuotaLogsImageRatioForOutputOnly(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	const userID = 9002
+	const channelID = 9002
+	seedUser(t, userID, 1000)
+	seedChannel(t, channelID)
+
+	now := time.Now()
+	relayInfo := &relaycommon.RelayInfo{
+		UserId:            userID,
+		OriginModelName:   "gpt-image-1",
+		StartTime:         now,
+		FirstResponseTime: now,
+		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: channelID},
+		PriceData: types.PriceData{
+			ModelRatio:      4,
+			CompletionRatio: 3.75,
+			ImageRatio:      1,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+	}
+	usage := &dto.Usage{
+		PromptTokens:     21,
+		CompletionTokens: 1372,
+		TotalTokens:      1393,
+		CompletionTokenDetails: dto.OutputTokenDetails{
+			ImageTokens: 1372,
+		},
+	}
+
+	PostTextConsumeQuota(ctx, relayInfo, usage, nil)
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	var other map[string]interface{}
+	require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
+	require.Equal(t, float64(1372), other["image_output_tokens"])
+	require.Equal(t, float64(1), other["image_ratio"])
+}
+
+func TestPostTextConsumeQuotaLogsUsageSemantic(t *testing.T) {
+	truncate(t)
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	const userID = 9003
+	const channelID = 9003
+	seedUser(t, userID, 1000)
+	seedChannel(t, channelID)
+
+	now := time.Now()
+	relayInfo := &relaycommon.RelayInfo{
+		UserId:                  userID,
+		OriginModelName:         "gpt-4o",
+		StartTime:               now,
+		FirstResponseTime:       now,
+		FinalRequestRelayFormat: types.RelayFormatClaude,
+		ChannelMeta:             &relaycommon.ChannelMeta{ChannelId: channelID},
+		PriceData: types.PriceData{
+			ModelRatio:      1,
+			CompletionRatio: 2,
+			CacheRatio:      0.1,
+			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+		},
+	}
+	usage := &dto.Usage{
+		BillingUsage: dto.NewOpenAIChatBillingUsage(&dto.Usage{
+			PromptTokens:     80,
+			CompletionTokens: 9,
+			TotalTokens:      89,
+			PromptTokensDetails: dto.InputTokenDetails{
+				CachedTokens: 30,
+			},
+		}),
+	}
+
+	PostTextConsumeQuota(ctx, relayInfo, usage, nil)
+
+	log := getLastLog(t)
+	require.NotNil(t, log)
+	var other map[string]interface{}
+	require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
+	require.Equal(t, "openai", other["usage_semantic"])
+	require.Equal(t, true, other["claude"])
+	require.Equal(t, float64(30), other["cache_tokens"])
+}
+
 func TestCalculateTextQuotaSummaryBillsImageOutputSeparately(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())

@@ -85,6 +85,11 @@ function timingTextColorClass(
   return 'text-rose-600'
 }
 
+function usesAnthropicUsageSemantic(other: LogOtherData): boolean {
+  if (other.usage_semantic) return other.usage_semantic === 'anthropic'
+  return other.claude === true
+}
+
 function DetailRow(props: {
   label: React.ReactNode
   value: React.ReactNode
@@ -344,7 +349,7 @@ function BillingBreakdown(props: {
   const { t } = useTranslation()
   const { log, other, isAdmin, inline } = props
   const isPerCall = isPerCallBilling(other.model_price)
-  const isClaude = other.claude === true
+  const isAnthropicUsage = usesAnthropicUsageSemantic(other)
   const isTieredExpr = other.billing_mode === 'tiered_expr'
   const tieredSummary = getTieredBillingSummary(other)
 
@@ -356,6 +361,12 @@ function BillingBreakdown(props: {
   const completionTokens = log.completion_tokens || 0
   const cacheReadTokens = other.cache_tokens || 0
   const cacheWriteTokens = getCacheWriteTokens(other)
+  const imageBreakdown = getImageTokenBreakdown(other)
+  const imageUnitPrice =
+    other.model_ratio != null ? baseInputUSD * (other.image_ratio ?? 1) : 0
+  const audioInputTokens =
+    other.audio_input_token_count || other.audio_input || 0
+  const audioOutputTokens = other.audio_output || 0
 
   if (isTieredExpr) {
     rows.push({
@@ -415,7 +426,7 @@ function BillingBreakdown(props: {
     })
   }
 
-  if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
+  if (!isTieredExpr && hasAnyCacheTokens(other)) {
     if (other.cache_ratio != null && other.cache_ratio !== 1) {
       rows.push({
         label: t('Cache Read'),
@@ -432,6 +443,7 @@ function BillingBreakdown(props: {
       })
     }
     if (
+      isAnthropicUsage &&
       other.cache_creation_ratio_5m != null &&
       other.cache_creation_ratio_5m !== 0
     ) {
@@ -441,6 +453,7 @@ function BillingBreakdown(props: {
       })
     }
     if (
+      isAnthropicUsage &&
       other.cache_creation_ratio_1h != null &&
       other.cache_creation_ratio_1h !== 0
     ) {
@@ -452,8 +465,6 @@ function BillingBreakdown(props: {
   }
 
   if (!isTieredExpr) {
-    const imageBreakdown = getImageTokenBreakdown(other)
-
     if (other.audio_ratio != null && other.audio_ratio !== 1) {
       rows.push({
         label: t('Audio input'),
@@ -471,17 +482,17 @@ function BillingBreakdown(props: {
       })
     }
 
-    if (other.image_ratio != null && other.image_ratio !== 1) {
+    if (imageUnitPrice > 0) {
       if (imageBreakdown.input > 0) {
         rows.push({
           label: t('Image input'),
-          value: `${fmtPrice(baseInputUSD * other.image_ratio)}/M`,
+          value: `${fmtPrice(imageUnitPrice)}/M`,
         })
       }
       if (imageBreakdown.output > 0) {
         rows.push({
           label: t('Image Out'),
-          value: `${fmtPrice(baseInputUSD * other.image_ratio)}/M`,
+          value: `${fmtPrice(imageUnitPrice)}/M`,
         })
       }
     }
@@ -528,35 +539,72 @@ function BillingBreakdown(props: {
   }
 
   if (isTieredExpr && tieredSummary) {
+    const tieredPriceFields = new Set(
+      tieredSummary.priceEntries.map((entry) => entry.field)
+    )
+    const tieredCacheCreateTokens = isAnthropicUsage
+      ? other.cache_creation_tokens_5m ||
+        Math.max(cacheWriteTokens - (other.cache_creation_tokens_1h || 0), 0)
+      : cacheWriteTokens
+    const tieredCacheCreate1hTokens = isAnthropicUsage
+      ? other.cache_creation_tokens_1h || 0
+      : 0
+    const tieredInputTokens = isAnthropicUsage
+      ? promptTokens
+      : Math.max(
+          promptTokens -
+            (tieredPriceFields.has('cacheReadPrice') ? cacheReadTokens : 0) -
+            (tieredPriceFields.has('cacheCreatePrice')
+              ? tieredCacheCreateTokens
+              : 0) -
+            (tieredPriceFields.has('cacheCreate1hPrice')
+              ? tieredCacheCreate1hTokens
+              : 0) -
+            (tieredPriceFields.has('imagePrice') ? imageBreakdown.input : 0) -
+            (tieredPriceFields.has('audioInputPrice') ? audioInputTokens : 0),
+          0
+        )
+    const tieredOutputTokens = Math.max(
+      completionTokens -
+        (tieredPriceFields.has('imageOutputPrice')
+          ? imageBreakdown.output
+          : 0) -
+        (tieredPriceFields.has('audioOutputPrice') ? audioOutputTokens : 0),
+      0
+    )
+
     for (const entry of tieredSummary.priceEntries) {
       if (entry.field === 'inputPrice') {
-        addTokenTerm(t('Input'), promptTokens, entry.price)
+        addTokenTerm(t('Input'), tieredInputTokens, entry.price)
       } else if (entry.field === 'outputPrice') {
-        addTokenTerm(t('Output'), completionTokens, entry.price)
+        addTokenTerm(t('Output'), tieredOutputTokens, entry.price)
       } else if (entry.field === 'cacheReadPrice') {
         addTokenTerm(t('Cache Read'), cacheReadTokens, entry.price)
       } else if (entry.field === 'cacheCreatePrice') {
-        addTokenTerm(
-          t('Cache Write'),
-          Math.max(cacheWriteTokens - (other.cache_creation_tokens_1h || 0), 0),
-          entry.price
-        )
+        addTokenTerm(t('Cache Write'), tieredCacheCreateTokens, entry.price)
       } else if (entry.field === 'cacheCreate1hPrice') {
         addTokenTerm(
           t('Cache Creation (1h)'),
-          other.cache_creation_tokens_1h || 0,
+          tieredCacheCreate1hTokens,
           entry.price
         )
+      } else if (entry.field === 'imagePrice') {
+        addTokenTerm(t('Image input'), imageBreakdown.input, entry.price)
+      } else if (entry.field === 'imageOutputPrice') {
+        addTokenTerm(t('Image Out'), imageBreakdown.output, entry.price)
+      } else if (entry.field === 'audioInputPrice') {
+        addTokenTerm(t('Audio input'), audioInputTokens, entry.price)
+      } else if (entry.field === 'audioOutputPrice') {
+        addTokenTerm(t('Audio output'), audioOutputTokens, entry.price)
       }
     }
   } else if (isPerCall && other.model_price != null) {
     calculationParts.push(`${t('Per-call')} ${fmtPrice(other.model_price)}`)
   } else if (other.model_ratio != null) {
-    const imageBreakdown = getImageTokenBreakdown(other)
     const imageTokens = imageBreakdown.input
     const imageOutputTokens = imageBreakdown.output
     const audioTokens = other.audio_input_token_count || 0
-    const baseInputTokens = other.claude
+    const baseInputTokens = isAnthropicUsage
       ? promptTokens
       : Math.max(
           promptTokens -
@@ -580,10 +628,11 @@ function BillingBreakdown(props: {
       cacheReadTokens,
       baseInputUSD * (other.cache_ratio || 0)
     )
-    if (
-      (other.cache_creation_tokens_5m || 0) > 0 ||
-      (other.cache_creation_tokens_1h || 0) > 0
-    ) {
+    const hasSplitCacheCreation =
+      isAnthropicUsage &&
+      ((other.cache_creation_tokens_5m || 0) > 0 ||
+        (other.cache_creation_tokens_1h || 0) > 0)
+    if (hasSplitCacheCreation) {
       addTokenTerm(
         t('Cache Write'),
         Math.max(
@@ -614,21 +663,25 @@ function BillingBreakdown(props: {
     addTokenTerm(
       t('Image input'),
       imageTokens,
-      baseInputUSD * (other.image_ratio || 0)
+      imageUnitPrice
     )
     addTokenTerm(
       t('Image Out'),
       imageOutputTokens,
-      baseInputUSD * (other.image_ratio || 0)
+      imageUnitPrice
     )
     addTokenTerm(t('Audio input'), audioTokens, other.audio_input_price)
   }
 
   if (calculationParts.length > 0) {
-    const ratioText =
-      effectiveGR != null && Number.isFinite(effectiveGR)
-        ? ` × ${formatRatio(effectiveGR)}x`
-        : ''
+    let ratioText = ''
+    if (effectiveGR != null && Number.isFinite(effectiveGR)) {
+      const groupName = other.group || log.group
+      const ratioLabel = groupName
+        ? `${groupName} ${t('Group')}`
+        : t('Group Ratio')
+      ratioText = ` × ${formatRatio(effectiveGR)} ${ratioLabel}`
+    }
     rows.push({
       label: t('Calculation'),
       value: `${calculationParts.join(' + ')}${ratioText} = ${formatLogQuota(log.quota)}`,

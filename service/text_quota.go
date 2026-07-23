@@ -434,6 +434,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	} else {
 		other = GenerateTextOtherInfo(ctx, relayInfo, summary.ModelRatio, summary.GroupRatio, summary.CompletionRatio, summary.CacheTokens, summary.CacheRatio, summary.ModelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	}
+	if summary.UsageSemantic != "" {
+		other["usage_semantic"] = summary.UsageSemantic
+	}
 	appendUsageBillingPathForLog(other, common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens), originUsage)
 	if adminRejectReason != "" {
 		other["reject_reason"] = adminRejectReason
@@ -448,6 +451,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	}
 	if summary.ImageOutputTokens != 0 {
 		other["image"] = true
+		other["image_ratio"] = summary.ImageRatio
 		other["image_output_tokens"] = summary.ImageOutputTokens
 	}
 	if summary.WebSearchCallCount > 0 {

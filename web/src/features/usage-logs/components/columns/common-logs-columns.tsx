@@ -263,8 +263,8 @@ function buildTypeDetailSegments(
       }
 
       const imageBreakdown = getImageTokenBreakdown(other)
-      if (other.image_ratio != null && other.image_ratio !== 1) {
-        const imagePrice = formatPrice(inputPriceUSD * other.image_ratio)
+      if (imageBreakdown.input > 0 || imageBreakdown.output > 0) {
+        const imagePrice = formatPrice(inputPriceUSD * (other.image_ratio ?? 1))
         if (imageBreakdown.input > 0) {
           segments.push({
             text: `${t('Image input')} ${imagePrice}`,

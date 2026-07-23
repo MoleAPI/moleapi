@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils'
 import { DEFAULT_TOKEN_UNIT, FILTER_ALL } from '../constants'
 import {
   getDynamicDisplayGroupRatio,
+  getDynamicPriceEntries,
   getDynamicPricingSummary,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
@@ -116,6 +117,13 @@ function PriceGroupColumn(props: {
   ratio: number
   isCurrent: boolean
   lines: Metric[]
+  tierRows?: Array<{
+    id: string
+    label: string
+    condition: string
+    lines: Metric[]
+  }>
+  hiddenTierCount?: number
   t: (key: string) => string
 }) {
   const discount = getDiscountPercent(props.ratio)
@@ -142,11 +150,43 @@ function PriceGroupColumn(props: {
           </span>
         )}
       </div>
-      <div className='flex min-w-0 flex-wrap gap-x-4 gap-y-1'>
-        {props.lines.map((line) => (
-          <PriceLine key={`${props.group}-${line.id}`} {...line} />
-        ))}
-      </div>
+      {props.tierRows?.length ? (
+        <div className='min-w-0 space-y-1.5'>
+          {props.tierRows.map((row) => (
+            <div
+              key={`${props.group}-${row.id}`}
+              className='grid min-w-0 gap-1.5 sm:grid-cols-[8rem_minmax(0,1fr)]'
+            >
+              <div className='min-w-0'>
+                <div className='text-foreground truncate text-[11px] leading-4 font-semibold'>
+                  {row.label}
+                </div>
+                {row.condition && (
+                  <div className='text-muted-foreground truncate text-[10px] leading-3'>
+                    {row.condition}
+                  </div>
+                )}
+              </div>
+              <div className='flex min-w-0 flex-wrap gap-x-4 gap-y-1'>
+                {row.lines.map((line) => (
+                  <PriceLine key={`${row.id}-${line.id}`} {...line} />
+                ))}
+              </div>
+            </div>
+          ))}
+          {props.hiddenTierCount ? (
+            <div className='text-muted-foreground text-xs'>
+              +{props.hiddenTierCount}
+            </div>
+          ) : null}
+        </div>
+      ) : (
+        <div className='flex min-w-0 flex-wrap gap-x-4 gap-y-1'>
+          {props.lines.map((line) => (
+            <PriceLine key={`${props.group}-${line.id}`} {...line} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -155,6 +195,38 @@ function getDynamicMetricTone(field: string): Metric['tone'] {
   if (field.includes('cache')) return 'success'
   if (field.includes('image') || field.includes('audio')) return 'accent'
   return undefined
+}
+
+function formatDynamicTokenHint(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`
+  }
+  if (value >= 1000) {
+    return `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}K`
+  }
+  return String(value)
+}
+
+function formatDynamicTierCondition(
+  conditions: Array<{ var: string; op: string; value: number }>,
+  t: (key: string) => string
+): string {
+  const varLabels: Record<string, string> = {
+    len: t('Length'),
+    p: t('Input'),
+    c: t('Output'),
+  }
+  const opLabels: Record<string, string> = {
+    '<=': '≤',
+    '>=': '≥',
+  }
+  return conditions
+    .map((condition) => {
+      const variable = varLabels[condition.var] || condition.var
+      const operator = opLabels[condition.op] || condition.op
+      return `${variable} ${operator} ${formatDynamicTokenHint(condition.value)}`
+    })
+    .join(' && ')
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
@@ -236,6 +308,13 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   }
   const priceGroups = visibleGroups.map((item) => {
     let lines: Metric[] = []
+    let tierRows: Array<{
+      id: string
+      label: string
+      condition: string
+      lines: Metric[]
+    }> | undefined
+    let hiddenTierCount = 0
 
     if (isDynamicPricing) {
       const summary = getDynamicPricingSummary(props.model, {
@@ -245,14 +324,27 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         usdExchangeRate,
         groupRatioMultiplier: item.ratio,
       })
-      lines =
-        summary?.entries.slice(0, 4).map((entry) => ({
-          id: entry.key,
-          label: t(entry.shortLabel),
-          value: stripTrailingZeros(entry.formatted),
-          unit: tokenPriceUnit,
-          tone: getDynamicMetricTone(entry.field),
-        })) || []
+      tierRows = summary?.tiers.slice(0, 2).map((tier, index) => ({
+        id: `${tier.label || index}`,
+        label: tier.label || t('Default'),
+        condition: formatDynamicTierCondition(tier.conditions, t),
+        lines: getDynamicPriceEntries(tier, {
+          tokenUnit,
+          showRechargePrice,
+          priceRate,
+          usdExchangeRate,
+          groupRatioMultiplier: item.ratio,
+        })
+          .slice(0, 6)
+          .map((entry) => ({
+            id: entry.key,
+            label: t(entry.shortLabel),
+            value: stripTrailingZeros(entry.formatted),
+            unit: tokenPriceUnit,
+            tone: getDynamicMetricTone(entry.field),
+          })),
+      }))
+      hiddenTierCount = Math.max((summary?.tiers.length || 0) - 2, 0)
     } else if (isTokenBased) {
       lines = [
         {
@@ -393,7 +485,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       ]
     }
 
-    return { ...item, lines }
+    return { ...item, lines, tierRows, hiddenTierCount }
   })
 
   return (
@@ -473,6 +565,8 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
                 ratio={item.ratio}
                 isCurrent={item.isCurrent}
                 lines={item.lines}
+                tierRows={item.tierRows}
+                hiddenTierCount={item.hiddenTierCount}
                 t={t}
               />
             ))}

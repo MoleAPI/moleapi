@@ -24,7 +24,7 @@ export type UpdateOptionResponse = {
 export type ModelPricingExport = {
   version: number
   exported_at: number
-  pricing: Record<string, Record<string, number>>
+  pricing: Record<string, Record<string, number | string>>
 }
 
 export type ModelPricingImportResponse = {

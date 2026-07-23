@@ -32,8 +32,16 @@ interface ModelBillingModeBadgeProps {
 
 export function ModelBillingModeBadge(props: ModelBillingModeBadgeProps) {
   const { t } = useTranslation()
+  const isDynamic =
+    props.model.billing_mode === 'tiered_expr' &&
+    Boolean(props.model.billing_expr)
   const isTokenBased = isTokenBasedModel(props.model)
-  const label = isTokenBased ? t('Pay as you go') : t('Pay per call')
+  let label = t('Pay per call')
+  if (isDynamic) {
+    label = t('Dynamic Pricing')
+  } else if (isTokenBased) {
+    label = t('Pay as you go')
+  }
 
   return (
     <span

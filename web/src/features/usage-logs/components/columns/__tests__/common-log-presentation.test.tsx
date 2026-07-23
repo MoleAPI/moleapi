@@ -285,6 +285,43 @@ test('expanded details show request summary, cache tokens, and billing calculati
   assert.match(detailsHtml, /Total Cost/)
 })
 
+test('cache calculation follows OpenAI and Anthropic token semantics', async () => {
+  const openAILog = usageLogSchema.parse({
+    ...log,
+    quota: 1188,
+    prompt_tokens: 4_392,
+    completion_tokens: 42,
+    other: JSON.stringify({
+      model_ratio: 0.5,
+      completion_ratio: 6,
+      cache_tokens: 3_840,
+      cache_ratio: 0.1,
+      group_ratio: 1,
+      usage_semantic: 'openai',
+    }),
+  })
+  const anthropicLog = usageLogSchema.parse({
+    ...openAILog,
+    other: JSON.stringify({
+      model_ratio: 0.5,
+      completion_ratio: 6,
+      cache_tokens: 3_840,
+      cache_ratio: 0.1,
+      group_ratio: 1,
+      usage_semantic: 'anthropic',
+    }),
+  })
+
+  const openAIHtml = await renderInlineDetails(openAILog)
+  const anthropicHtml = await renderInlineDetails(anthropicLog)
+
+  assert.match(openAIHtml, /Input 552 × \$1\/M/)
+  assert.match(openAIHtml, /Cache Read 3,840 × \$0\.1\/M/)
+  assert.doesNotMatch(openAIHtml, /Input 4,392 × \$1\/M/)
+  assert.match(anthropicHtml, /Input 4,392 × \$1\/M/)
+  assert.match(anthropicHtml, /Cache Read 3,840 × \$0\.1\/M/)
+})
+
 test('ratio billing details separate image output from text output', async () => {
   const imageLog = usageLogSchema.parse({
     ...log,
