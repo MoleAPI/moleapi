@@ -20,7 +20,11 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
 import type { PricingModel } from '../../types'
-import { getDisplayedPriceGroups, getModelPriceDisplay } from '../model-helpers'
+import {
+  getAvailableGroups,
+  getDisplayedPriceGroups,
+  getModelPriceDisplay,
+} from '../model-helpers'
 
 const model = {
   id: 1,
@@ -47,7 +51,7 @@ describe('model card price display', () => {
     })
   })
 
-  test('shows every distinct price group and hides default-priced duplicates', () => {
+  test('shows every distinct price group from lowest to highest price', () => {
     const groups = getDisplayedPriceGroups({
       ...model,
       enable_groups: ['default', 'svip', 'vip', 'discount', 'relay', 'temp'],
@@ -64,11 +68,28 @@ describe('model card price display', () => {
     assert.deepEqual(
       groups.map((group) => [group.group, group.ratio]),
       [
-        ['default', 1],
-        ['discount', 0.8],
-        ['relay', 0.3],
         ['temp', 0.1],
+        ['relay', 0.3],
+        ['discount', 0.8],
+        ['default', 1],
       ]
     )
+  })
+
+  test('sorts available model groups from lowest to highest price', () => {
+    const groups = getAvailableGroups(
+      {
+        ...model,
+        enable_groups: ['default', 'vip', 'temp'],
+        group_ratio: { default: 1, vip: 0.7, temp: 0.2 },
+      },
+      {
+        default: { desc: 'Default', ratio: 1 },
+        vip: { desc: 'VIP', ratio: 0.7 },
+        temp: { desc: 'Temp', ratio: 0.2 },
+      }
+    )
+
+    assert.deepEqual(groups, ['temp', 'vip', 'default'])
   })
 })

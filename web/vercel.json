@@ -25,7 +25,7 @@
       "destination": "https://api.moleapi.com/pg/$1"
     },
     {
-      "source": "/((?!api/|v1/|v1beta/|mj/|pg/|assets/|favicon.ico|manifest.json).*)",
+      "source": "/((?!api/|v1/|v1beta/|mj/|pg/|assets/|favicon.ico|manifest.json|sitemap.xml).*)",
       "destination": "/index.html"
     }
   ]
