@@ -16,14 +16,77 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+type ApiEndpointRouteInput = {
+  url?: unknown
+  route?: unknown
+  description?: unknown
+}
+
+export type ApiEndpointOption = {
+  value: string
+  label: string
+  description: string
+}
+
+function normalizeApiEndpointUrl(rawUrl: string): string {
+  const baseUrl = rawUrl.trim().replace(/\/+$/, '')
+  const endpointBaseUrl =
+    /^https?:\/\/home\.moleapi\.com(?:\/v1)?$/i.test(baseUrl)
+      ? 'https://api.moleapi.com'
+      : baseUrl
+  if (!endpointBaseUrl || /\/v1$/i.test(endpointBaseUrl)) {
+    return endpointBaseUrl || '/v1'
+  }
+  return `${endpointBaseUrl}/v1`
+}
+
 export function buildApiBaseUrl(
   configuredAddress: string,
   fallbackOrigin: string
 ): string {
-  const baseUrl = (configuredAddress.trim() || fallbackOrigin.trim()).replace(
-    /\/+$/,
-    ''
+  return normalizeApiEndpointUrl(
+    configuredAddress.trim() || fallbackOrigin.trim()
   )
-  if (!baseUrl || /\/v1$/i.test(baseUrl)) return baseUrl || '/v1'
-  return `${baseUrl}/v1`
+}
+
+export function buildApiEndpointOptions(
+  configuredAddress: string,
+  fallbackOrigin: string,
+  routes: ApiEndpointRouteInput[] = []
+): ApiEndpointOption[] {
+  const seen = new Set<string>()
+  const options: ApiEndpointOption[] = []
+
+  for (const route of routes) {
+    if (typeof route.url !== 'string') continue
+    const value = normalizeApiEndpointUrl(route.url)
+    if (!value || value === '/v1' || seen.has(value)) continue
+    seen.add(value)
+    options.push({
+      value,
+      label:
+        typeof route.route === 'string' && route.route.trim()
+          ? route.route.trim()
+          : value,
+      description:
+        typeof route.description === 'string' ? route.description.trim() : '',
+    })
+  }
+
+  if (options.length === 0) {
+    const value = buildApiBaseUrl(configuredAddress, fallbackOrigin)
+    return [{ value, label: value, description: '' }]
+  }
+
+  const defaultIndex = options.findIndex(
+    (option) => option.value === 'https://api.moleapi.com/v1'
+  )
+  if (defaultIndex <= 0) return options
+
+  const defaultOption = options[defaultIndex]
+  return [
+    defaultOption,
+    ...options.slice(0, defaultIndex),
+    ...options.slice(defaultIndex + 1),
+  ]
 }
