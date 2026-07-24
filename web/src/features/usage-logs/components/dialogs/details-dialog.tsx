@@ -682,9 +682,13 @@ function BillingBreakdown(props: {
         : t('Group Ratio')
       ratioText = ` × ${formatRatio(effectiveGR)} ${ratioLabel}`
     }
+    const calculation =
+      ratioText && calculationParts.length > 1
+        ? `(${calculationParts.join(' + ')})`
+        : calculationParts.join(' + ')
     rows.push({
       label: t('Calculation'),
-      value: `${calculationParts.join(' + ')}${ratioText} = ${formatLogQuota(log.quota)}`,
+      value: `${calculation}${ratioText} = ${formatLogQuota(log.quota)}`,
     })
   }
 
