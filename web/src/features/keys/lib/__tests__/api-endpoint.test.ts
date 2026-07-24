@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { buildApiBaseUrl } from '../api-endpoint'
+import { buildApiBaseUrl, buildApiEndpointOptions } from '../api-endpoint'
 
 describe('API key endpoint guidance', () => {
   test('uses the configured address without duplicating the API version', () => {
@@ -37,6 +37,59 @@ describe('API key endpoint guidance', () => {
     assert.equal(
       buildApiBaseUrl('', 'https://console.example.com/'),
       'https://console.example.com/v1'
+    )
+  })
+
+  test('uses the MoleAPI API host when the console runs on the home host', () => {
+    assert.equal(
+      buildApiBaseUrl('', 'https://home.moleapi.com/'),
+      'https://api.moleapi.com/v1'
+    )
+    assert.equal(
+      buildApiBaseUrl(
+        'https://home.moleapi.com/v1/',
+        'https://fallback.test'
+      ),
+      'https://api.moleapi.com/v1'
+    )
+  })
+
+  test('builds selectable API routes from status API info', () => {
+    assert.deepEqual(
+      buildApiEndpointOptions('', 'https://home.moleapi.com/', [
+        {
+          url: 'https://jp.moleapi.com',
+          route: '日本专线',
+          description: '阿里云专线',
+        },
+        {
+          url: 'https://api.moleapi.com',
+          route: '默认线路',
+          description: '默认高速节点',
+        },
+        {
+          url: 'https://hk.moleapi.com/v1/',
+          route: '香港线路',
+          description: '海外线路连不上？试试这个',
+        },
+      ]),
+      [
+        {
+          value: 'https://api.moleapi.com/v1',
+          label: '默认线路',
+          description: '默认高速节点',
+        },
+        {
+          value: 'https://jp.moleapi.com/v1',
+          label: '日本专线',
+          description: '阿里云专线',
+        },
+        {
+          value: 'https://hk.moleapi.com/v1',
+          label: '香港线路',
+          description: '海外线路连不上？试试这个',
+        },
+      ]
     )
   })
 })

@@ -18,49 +18,88 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { ApiIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
 import { SectionPageLayout } from '@/components/layout'
+import {
+  NativeSelect,
+  NativeSelectOption,
+} from '@/components/ui/native-select'
 import { useStatus } from '@/hooks/use-status'
 
 import { ApiKeysDialogs } from './components/api-keys-dialogs'
 import { ApiKeysPrimaryButtons } from './components/api-keys-primary-buttons'
 import { ApiKeysProvider } from './components/api-keys-provider'
 import { ApiKeysTable } from './components/api-keys-table'
-import { buildApiBaseUrl } from './lib/api-endpoint'
+import { buildApiEndpointOptions } from './lib/api-endpoint'
 
 function ApiKeyEndpointGuidance() {
   const { t } = useTranslation()
   const { status } = useStatus()
-  const baseUrl = buildApiBaseUrl(
+  const [selectedBaseUrl, setSelectedBaseUrl] = useState('')
+  const apiInfoRoutes =
+    status?.api_info_enabled !== false && Array.isArray(status?.api_info)
+      ? status.api_info
+      : []
+  const endpointOptions = buildApiEndpointOptions(
     typeof status?.server_address === 'string' ? status.server_address : '',
-    typeof window === 'undefined' ? '' : window.location.origin
+    typeof window === 'undefined' ? '' : window.location.origin,
+    apiInfoRoutes
   )
+  const selectedOption =
+    endpointOptions.find((option) => option.value === selectedBaseUrl) ||
+    endpointOptions[0]
+  const baseUrl = selectedOption?.value || '/v1'
 
   return (
-    <div className='bg-card flex min-w-0 shrink-0 items-center gap-3 rounded-lg border px-3 py-2.5'>
-      <HugeiconsIcon
-        icon={ApiIcon}
-        className='text-muted-foreground size-4 shrink-0'
-        strokeWidth={2}
-        aria-hidden='true'
-      />
-      <div className='min-w-0 flex-1'>
-        <p className='text-sm font-medium'>{t('Base URL')}</p>
-        <code
-          className='text-muted-foreground block truncate text-xs'
-          title={baseUrl}
-        >
-          {baseUrl}
-        </code>
+    <div className='bg-card flex min-w-0 shrink-0 flex-col gap-2 rounded-lg border px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3'>
+      <div className='flex min-w-0 flex-1 items-center gap-3'>
+        <HugeiconsIcon
+          icon={ApiIcon}
+          className='text-muted-foreground size-4 shrink-0'
+          strokeWidth={2}
+          aria-hidden='true'
+        />
+        <div className='min-w-0 flex-1'>
+          <p className='text-sm font-medium'>{t('Base URL')}</p>
+          <code
+            className='text-muted-foreground block truncate text-xs'
+            title={baseUrl}
+          >
+            {baseUrl}
+          </code>
+          {selectedOption?.description && (
+            <p className='text-muted-foreground/70 truncate text-xs'>
+              {selectedOption.description}
+            </p>
+          )}
+        </div>
       </div>
-      <CopyButton
-        value={baseUrl}
-        size='icon'
-        className='size-8'
-        tooltip={t('Copy to clipboard')}
-      />
+      <div className='flex min-w-0 shrink-0 items-center gap-2'>
+        {endpointOptions.length > 1 && (
+          <NativeSelect
+            size='sm'
+            className='min-w-0 flex-1 sm:w-36'
+            value={baseUrl}
+            onChange={(event) => setSelectedBaseUrl(event.target.value)}
+            aria-label={t('Route')}
+          >
+            {endpointOptions.map((option) => (
+              <NativeSelectOption key={option.value} value={option.value}>
+                {option.label}
+              </NativeSelectOption>
+            ))}
+          </NativeSelect>
+        )}
+        <CopyButton
+          value={baseUrl}
+          size='icon'
+          className='size-8'
+          tooltip={t('Copy URL')}
+        />
+      </div>
     </div>
   )
 }
