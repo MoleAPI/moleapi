@@ -49,13 +49,12 @@ import {
 } from '../lib'
 import { rechargeFormLayoutClasses } from '../lib/layout'
 import type {
+  CreemProduct,
   PaymentMethod,
   PresetAmount,
   TopupInfo,
-  CreemProduct,
   WaffoPayMethod,
 } from '../types'
-import { CreemProductsSection } from './creem-products-section'
 
 interface RechargeFormCardProps {
   topupInfo: TopupInfo | null
@@ -79,7 +78,6 @@ interface RechargeFormCardProps {
   onOpenBilling?: () => void
   creemProducts?: CreemProduct[]
   enableCreemTopup?: boolean
-  onCreemProductSelect?: (product: CreemProduct) => void
   enableWaffoTopup?: boolean
   waffoPayMethods?: WaffoPayMethod[]
   waffoMinTopup?: number
@@ -109,7 +107,6 @@ export function RechargeFormCard({
   onOpenBilling,
   creemProducts,
   enableCreemTopup,
-  onCreemProductSelect,
   enableWaffoTopup,
   waffoPayMethods,
   waffoMinTopup,
@@ -131,17 +128,29 @@ export function RechargeFormCard({
     }
   }
 
+  const hasCreemPaymentMethod =
+    !!enableCreemTopup &&
+    Array.isArray(creemProducts) &&
+    creemProducts.length > 0
   const hasConfigurableTopup =
     topupInfo?.enable_online_topup ||
     topupInfo?.enable_stripe_topup ||
     enableWaffoTopup ||
     enableWaffoPancakeTopup ||
-    topupInfo?.enable_lantu_topup
-  const hasAnyTopup = hasConfigurableTopup || enableCreemTopup
+    topupInfo?.enable_lantu_topup ||
+    hasCreemPaymentMethod
   const standardPaymentMethods = getStandardPaymentMethods(
     topupInfo?.pay_methods
   )
-  const hasStandardPaymentMethods = standardPaymentMethods.length > 0
+  const paymentMethods =
+    hasCreemPaymentMethod &&
+    !standardPaymentMethods.some((method) => method.type === PAYMENT_TYPES.CREEM)
+    ? [
+        ...standardPaymentMethods,
+        { name: 'Creem', type: PAYMENT_TYPES.CREEM },
+      ]
+    : standardPaymentMethods
+  const hasStandardPaymentMethods = paymentMethods.length > 0
   const hasWaffoPaymentMethods =
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
   const minTopup = getMinTopupAmount(topupInfo)
@@ -221,7 +230,7 @@ export function RechargeFormCard({
       contentClassName='space-y-4 sm:space-y-6'
     >
       {/* Online Topup Section */}
-      {hasAnyTopup ? (
+      {hasConfigurableTopup ? (
         <div className='space-y-4 sm:space-y-6'>
           {hasConfigurableTopup && (
             <>
@@ -325,7 +334,7 @@ export function RechargeFormCard({
                 </Label>
                 {hasStandardPaymentMethods ? (
                   <div className={rechargeFormLayoutClasses.paymentMethods}>
-                    {standardPaymentMethods.map((method) => {
+                    {paymentMethods.map((method) => {
                       const methodName = t(method.name)
                       const minTopup = method.min_topup || 0
                       const disabled = minTopup > topupAmount
@@ -522,22 +531,6 @@ export function RechargeFormCard({
           </AlertDescription>
         </Alert>
       )}
-
-      {/* Creem Products Section */}
-      {enableCreemTopup &&
-        Array.isArray(creemProducts) &&
-        creemProducts.length > 0 &&
-        onCreemProductSelect && (
-          <div className='space-y-2.5 border-t pt-4 sm:space-y-3 sm:pt-6'>
-            <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
-              {t('Creem Payment')}
-            </Label>
-            <CreemProductsSection
-              products={creemProducts}
-              onProductSelect={onCreemProductSelect}
-            />
-          </div>
-        )}
 
       {/* Redemption Code Section */}
       {redemptionEnabled ? (

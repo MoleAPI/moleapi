@@ -22,6 +22,7 @@ import { describe, test } from 'node:test'
 import { PAYMENT_TYPES } from '../constants'
 import {
   dispatchSelectedPayment,
+  findNearestCreemProduct,
   getEpayPaymentMethods,
   getStandardPaymentMethods,
   isLanTuPayment,
@@ -79,6 +80,27 @@ describe('payment type classification', () => {
         { name: 'WeChat', type: 'wxpay' },
       ]
     )
+  })
+
+  test('selects the nearest Creem product by configured price', () => {
+    const products = [
+      { name: '$1', productId: 'prod_1', price: 1, quota: 1, currency: 'USD' },
+      { name: '$3', productId: 'prod_3', price: 3, quota: 3, currency: 'USD' },
+      { name: '$7', productId: 'prod_7', price: 7, quota: 7, currency: 'USD' },
+    ] as const
+
+    assert.deepEqual(findNearestCreemProduct([...products], 3), {
+      product: products[1],
+      adjusted: false,
+    })
+    assert.deepEqual(findNearestCreemProduct([...products], 4), {
+      product: products[1],
+      adjusted: true,
+    })
+    assert.deepEqual(findNearestCreemProduct([...products], 5), {
+      product: products[1],
+      adjusted: true,
+    })
   })
 })
 

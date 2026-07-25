@@ -45,23 +45,30 @@ func TestSearchAllTopUpsFiltersAdminBillingHistory(t *testing.T) {
 
 	pageInfo := &common.PageInfo{Page: 1, PageSize: 20}
 	tests := []struct {
-		name   string
-		params TopUpSearchParams
-		wantID int
+		name      string
+		params    TopUpSearchParams
+		wantID    int
+		wantTotal int64
 	}{
-		{name: "merchant order", params: TopUpSearchParams{Keyword: "MO1SST-ALICE"}, wantID: orders[0].Id},
-		{name: "gateway order", params: TopUpSearchParams{Keyword: "GW-BOB"}, wantID: orders[1].Id},
-		{name: "numeric user", params: TopUpSearchParams{UserKeyword: strconv.Itoa(bob.Id)}, wantID: orders[1].Id},
-		{name: "user text", params: TopUpSearchParams{UserKeyword: "Chen"}, wantID: orders[0].Id},
-		{name: "date range", params: TopUpSearchParams{StartTimestamp: 150, EndTimestamp: 250}, wantID: orders[1].Id},
+		{name: "merchant order", params: TopUpSearchParams{Keyword: "MO1SST-ALICE"}, wantID: orders[0].Id, wantTotal: 1},
+		{name: "gateway order", params: TopUpSearchParams{Keyword: "GW-BOB"}, wantID: orders[1].Id, wantTotal: 1},
+		{name: "numeric user", params: TopUpSearchParams{UserKeyword: strconv.Itoa(bob.Id)}, wantID: orders[1].Id, wantTotal: 1},
+		{name: "username", params: TopUpSearchParams{UserKeyword: "alice"}, wantID: orders[0].Id, wantTotal: 1},
+		{name: "user text", params: TopUpSearchParams{UserKeyword: "Chen"}, wantID: orders[0].Id, wantTotal: 1},
+		{name: "missing user", params: TopUpSearchParams{UserKeyword: "missing"}, wantTotal: 0},
+		{name: "date range", params: TopUpSearchParams{StartTimestamp: 150, EndTimestamp: 250}, wantID: orders[1].Id, wantTotal: 1},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			got, total, searchErr := SearchAllTopUpsWithParams(test.params, pageInfo)
 			require.NoError(t, searchErr)
-			assert.Equal(t, int64(1), total)
-			if assert.Len(t, got, 1) {
+			assert.Equal(t, test.wantTotal, total)
+			if test.wantTotal == 0 {
+				assert.Empty(t, got)
+				return
+			}
+			if assert.Len(t, got, int(test.wantTotal)) {
 				assert.Equal(t, test.wantID, got[0].Id)
 			}
 		})

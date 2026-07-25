@@ -663,7 +663,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
       aria-expanded={open}
       className={cn(
         'h-8 max-w-[15rem] justify-start gap-2 border px-2.5 font-medium shadow-none',
-        'bg-background/80 hover:bg-accent/70 text-foreground',
+        'border-border/70 bg-background/90 text-foreground hover:border-primary/35 hover:bg-accent/70',
         'focus:!ring-0 focus:!outline-none',
         className
       )}
@@ -690,7 +690,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
         !isMobile && modelGroupSelectorLayoutClasses.groupColumn
       )}
     >
-      <div className='text-muted-foreground px-1 text-[11px] leading-4 font-medium'>
+      <div className='text-muted-foreground px-1.5 text-[11px] leading-4 font-medium'>
         {t('Model Group')}
       </div>
       <div
@@ -706,10 +706,10 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
           return (
             <button
               className={cn(
-                'flex min-w-0 items-center justify-between gap-2 rounded-md px-2.5 py-2 text-left text-[12px] leading-4 transition-colors',
+                modelGroupSelectorLayoutClasses.groupItem,
                 isSelected
-                  ? 'bg-primary/10 text-foreground'
-                  : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  ? modelGroupSelectorLayoutClasses.selectedGroupItem
+                  : modelGroupSelectorLayoutClasses.unselectedGroupItem
               )}
               disabled={disabled}
               key={group.value}
@@ -717,8 +717,15 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
               ref={isSelected ? selectedGroupOptionRef : undefined}
               type='button'
             >
-              <span className='min-w-0 truncate font-medium'>
-                {group.label}
+              <span className='flex min-w-0 flex-col'>
+                <span className='min-w-0 truncate font-medium'>
+                  {group.label}
+                </span>
+                {(group.desc || group.description) && (
+                  <span className='text-muted-foreground min-w-0 truncate text-[10px] leading-3'>
+                    {group.desc || group.description}
+                  </span>
+                )}
               </span>
               <Check
                 className={cn(

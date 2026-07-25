@@ -16,15 +16,23 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Mail } from 'lucide-react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 
-import { Sidebar, SidebarContent, SidebarRail } from '@/components/ui/sidebar'
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarRail,
+} from '@/components/ui/sidebar'
 import { useLayout } from '@/context/layout-provider'
 import { useSidebarView } from '@/hooks/use-sidebar-view'
 import { MOTION_TRANSITION, MOTION_VARIANTS } from '@/lib/motion'
 
 import { NavGroup } from './nav-group'
 import { SidebarViewHeader } from './sidebar-view-header'
+
+const SUPPORT_EMAIL = 'support@moleapi.com'
 
 /**
  * Application sidebar.
@@ -70,6 +78,20 @@ export function AppSidebar() {
           </motion.div>
         </AnimatePresence>
       </SidebarContent>
+
+      <SidebarFooter className='border-sidebar-border/60 border-t'>
+        <a
+          href={`mailto:${SUPPORT_EMAIL}`}
+          aria-label={SUPPORT_EMAIL}
+          title={SUPPORT_EMAIL}
+          className='text-muted-foreground hover:text-foreground flex min-w-0 items-center gap-2 rounded-md px-2 py-1.5 text-xs transition-colors group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0'
+        >
+          <Mail className='size-3.5 shrink-0' />
+          <span className='truncate group-data-[collapsible=icon]:hidden'>
+            {SUPPORT_EMAIL}
+          </span>
+        </a>
+      </SidebarFooter>
 
       <SidebarRail />
     </Sidebar>

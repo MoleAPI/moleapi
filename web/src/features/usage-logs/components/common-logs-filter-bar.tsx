@@ -393,7 +393,7 @@ export function CommonLogsFilterBar<TData>(
       )}
       <LogsFilterField>
         <LogsFilterInput
-          placeholder={`${t('Request ID')} / ${t('Upstream Request ID')}`}
+          placeholder={t('Request ID')}
           value={filters.requestId || ''}
           onChange={(e) => handleChange('requestId', e.target.value)}
           onClear={() => handleChange('requestId', undefined)}

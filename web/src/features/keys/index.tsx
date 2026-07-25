@@ -24,9 +24,13 @@ import { useTranslation } from 'react-i18next'
 import { CopyButton } from '@/components/copy-button'
 import { SectionPageLayout } from '@/components/layout'
 import {
-  NativeSelect,
-  NativeSelectOption,
-} from '@/components/ui/native-select'
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { useStatus } from '@/hooks/use-status'
 
 import { ApiKeysDialogs } from './components/api-keys-dialogs'
@@ -79,19 +83,44 @@ function ApiKeyEndpointGuidance() {
       </div>
       <div className='flex min-w-0 shrink-0 items-center gap-2'>
         {endpointOptions.length > 1 && (
-          <NativeSelect
-            size='sm'
-            className='min-w-0 flex-1 sm:w-36'
+          <Select
+            items={endpointOptions.map((option) => ({
+              value: option.value,
+              label: option.label,
+            }))}
             value={baseUrl}
-            onChange={(event) => setSelectedBaseUrl(event.target.value)}
-            aria-label={t('Route')}
+            onValueChange={(value) => setSelectedBaseUrl(value || '')}
           >
-            {endpointOptions.map((option) => (
-              <NativeSelectOption key={option.value} value={option.value}>
-                {option.label}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
+            <SelectTrigger
+              aria-label={t('Route')}
+              className='min-w-0 flex-1 bg-background/80 sm:w-40'
+              size='sm'
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent
+              align='end'
+              alignItemWithTrigger={false}
+              className='w-56'
+            >
+              <SelectGroup>
+                {endpointOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    <span className='flex min-w-0 flex-col'>
+                      <span className='truncate font-medium'>
+                        {option.label}
+                      </span>
+                      {option.description && (
+                        <span className='text-muted-foreground truncate text-xs'>
+                          {option.description}
+                        </span>
+                      )}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         )}
         <CopyButton
           value={baseUrl}

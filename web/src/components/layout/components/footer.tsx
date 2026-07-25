@@ -49,6 +49,7 @@ const NEW_API_FOOTER_ATTRIBUTION_KEY = [
   'new' + 'api',
   'projectAttributionSuffix',
 ].join('.')
+const SUPPORT_EMAIL = 'support@moleapi.com'
 
 function formatFooterVersion(value: unknown, stripSuffix = false) {
   if (typeof value !== 'string' || value.trim() === '') {
@@ -128,6 +129,24 @@ function LegalLinks(props: { leadingSeparator?: boolean }) {
           </Link>
         </Fragment>
       ))}
+    </>
+  )
+}
+
+function SupportEmailLink(props: { leadingSeparator?: boolean }) {
+  return (
+    <>
+      {props.leadingSeparator && (
+        <span aria-hidden='true' className='text-muted-foreground/30'>
+          ·
+        </span>
+      )}
+      <a
+        href={`mailto:${SUPPORT_EMAIL}`}
+        className='hover:text-foreground transition-colors duration-200'
+      >
+        {SUPPORT_EMAIL}
+      </a>
     </>
   )
 }
@@ -248,6 +267,7 @@ export function Footer(props: FooterProps) {
             />
             <div className='border-border/60 text-muted-foreground/45 flex w-full flex-wrap items-center justify-center gap-x-3 gap-y-1 border-t pt-4 text-xs sm:w-auto sm:justify-end sm:border-t-0 sm:border-l sm:pt-0 sm:pl-5'>
               <LegalLinks />
+              <SupportEmailLink />
               <ProjectAttribution currentYear={currentYear} inline />
             </div>
           </div>
@@ -341,6 +361,7 @@ export function Footer(props: FooterProps) {
             </>
           )}
           <LegalLinks leadingSeparator />
+          <SupportEmailLink leadingSeparator />
         </div>
       </div>
     </footer>
