@@ -18,10 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { SectionPageLayout } from '@/components/layout'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
+import { formatCurrencyFromUSD } from '@/lib/currency'
 import { getSelf } from '@/lib/api'
 
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
@@ -48,6 +50,7 @@ import {
   getDefaultPaymentType,
   getMinTopupAmount,
   dispatchSelectedPayment,
+  findNearestCreemProduct,
   getTopupBonusRate,
   getTopupDiscountRate,
 } from './lib'
@@ -182,6 +185,38 @@ export function Wallet(props: WalletProps) {
 
   // Handle payment method selection
   const handlePaymentMethodSelect = async (method: PaymentMethod) => {
+    if (method.type === PAYMENT_TYPES.CREEM) {
+      setPaymentLoading(method.type)
+      try {
+        const match = findNearestCreemProduct(
+          topupInfo?.creem_products,
+          topupAmount
+        )
+        if (!match.product) {
+          toast.error(
+            t('No payment methods available. Please contact administrator.')
+          )
+          return
+        }
+        if (match.adjusted) {
+          setTopupAmount(match.product.price)
+          setSelectedPreset(match.product.price)
+          toast.warning(
+            t('Creem does not support custom amounts. Switched to {{amount}}.', {
+              amount: formatCurrencyFromUSD(match.product.price, {
+                abbreviate: false,
+              }),
+            })
+          )
+        }
+        setSelectedCreemProduct(match.product)
+        setCreemDialogOpen(true)
+      } finally {
+        setPaymentLoading(null)
+      }
+      return
+    }
+
     setSelectedPaymentMethod(method)
     setSelectedWaffoMethodIndex(null)
     setPaymentLoading(method.type)
@@ -243,12 +278,6 @@ export function Wallet(props: WalletProps) {
       await fetchUser()
     }
     return success
-  }
-
-  // Handle Creem product selection
-  const handleCreemProductSelect = (product: CreemProduct) => {
-    setSelectedCreemProduct(product)
-    setCreemDialogOpen(true)
   }
 
   // Handle Creem payment confirmation
@@ -328,7 +357,6 @@ export function Wallet(props: WalletProps) {
                   onOpenBilling={() => setBillingDialogOpen(true)}
                   creemProducts={topupInfo?.creem_products}
                   enableCreemTopup={topupInfo?.enable_creem_topup}
-                  onCreemProductSelect={handleCreemProductSelect}
                   enableWaffoTopup={topupInfo?.enable_waffo_topup}
                   waffoPayMethods={topupInfo?.waffo_pay_methods}
                   waffoMinTopup={topupInfo?.waffo_min_topup}

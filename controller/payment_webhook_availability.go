@@ -32,6 +32,9 @@ func isCreemTopUpEnabled() bool {
 	if !isPaymentComplianceConfirmed() {
 		return false
 	}
+	if !setting.CreemEnabled {
+		return false
+	}
 	products := strings.TrimSpace(setting.CreemProducts)
 	return strings.TrimSpace(setting.CreemApiKey) != "" &&
 		isCreemWebhookConfigured() &&

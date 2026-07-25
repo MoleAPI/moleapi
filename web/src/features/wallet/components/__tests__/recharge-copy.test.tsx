@@ -23,12 +23,13 @@ import i18next from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 
-import type { PaymentMethod } from '../../types'
+import type { PaymentMethod, TopupInfo } from '../../types'
 import { RechargeFormCard } from '../recharge-form-card'
 
 async function renderRechargeForm(
   payMethods: PaymentMethod[] = [],
-  showBillingButton = false
+  showBillingButton = false,
+  topupInfoOverrides: Partial<TopupInfo> = {}
 ) {
   const i18n = i18next.createInstance()
   await i18n.use(initReactI18next).init({ lng: 'en' })
@@ -48,7 +49,10 @@ async function renderRechargeForm(
           quota_for_inviter: 0,
           quota_for_invitee: 0,
           quota_for_inviter_on_first_topup: 0,
+          ...topupInfoOverrides,
         }}
+        creemProducts={topupInfoOverrides.creem_products}
+        enableCreemTopup={topupInfoOverrides.enable_creem_topup}
         presetAmounts={[]}
         selectedPreset={null}
         onSelectPreset={() => undefined}
@@ -97,4 +101,25 @@ test('recharge card title uses account recharge copy', async () => {
 
   assert.match(html, /Account Recharge/)
   assert.doesNotMatch(html, /Add Funds/)
+})
+
+test('Creem renders as a single payment button', async () => {
+  const html = await renderRechargeForm([], false, {
+    enable_online_topup: false,
+    enable_creem_topup: true,
+    creem_products: [
+      {
+        name: '$1',
+        productId: 'prod_1',
+        price: 1,
+        quota: 525000,
+        currency: 'USD',
+      },
+    ],
+  })
+
+  assert.match(html, /Payment Method/)
+  assert.match(html, /Creem/)
+  assert.doesNotMatch(html, /Creem Payment/)
+  assert.doesNotMatch(html, /525,000/)
 })

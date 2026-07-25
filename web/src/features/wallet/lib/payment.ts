@@ -22,7 +22,12 @@ import {
   DEFAULT_PAYMENT_TYPE,
   DEFAULT_MIN_TOPUP,
 } from '../constants'
-import type { PaymentMethod, PresetAmount, TopupInfo } from '../types'
+import type {
+  CreemProduct,
+  PaymentMethod,
+  PresetAmount,
+  TopupInfo,
+} from '../types'
 
 const DEDICATED_PAYMENT_TYPES = new Set<string>([
   PAYMENT_TYPES.STRIPE,
@@ -108,6 +113,39 @@ export function isWaffoPancakePayment(paymentType: string): boolean {
 
 export function isLanTuPayment(paymentType: string): boolean {
   return paymentType === PAYMENT_TYPES.LANTU
+}
+
+export function findNearestCreemProduct(
+  products: CreemProduct[] | undefined,
+  amount: number
+): { product: CreemProduct | null; adjusted: boolean } {
+  const validProducts = (products ?? []).filter(
+    (product) =>
+      product.productId &&
+      Number.isFinite(product.price) &&
+      product.price > 0
+  )
+  if (validProducts.length === 0 || !Number.isFinite(amount)) {
+    return { product: null, adjusted: false }
+  }
+
+  const amountCents = Math.round(amount * 100)
+  const product = validProducts.reduce((best, current) => {
+    const bestPriceCents = Math.round(best.price * 100)
+    const currentPriceCents = Math.round(current.price * 100)
+    const bestDistance = Math.abs(bestPriceCents - amountCents)
+    const currentDistance = Math.abs(currentPriceCents - amountCents)
+    if (currentDistance < bestDistance) return current
+    if (currentDistance === bestDistance && currentPriceCents < bestPriceCents) {
+      return current
+    }
+    return best
+  })
+
+  return {
+    product,
+    adjusted: Math.round(product.price * 100) !== amountCents,
+  }
 }
 
 export function isSafeHttpPaymentUrl(value: string): boolean {
