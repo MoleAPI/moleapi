@@ -91,22 +91,10 @@ function timestampToSeconds(ms: number): number {
   return Math.floor(ms / 1000)
 }
 
-/**
- * Build query parameters from filters
- */
-export function buildQueryParams(
-  params: Record<string, unknown>
-): URLSearchParams {
-  const queryParams = new URLSearchParams()
-
-  Object.entries(params).forEach(([key, value]) => {
-    // Keep 0 as a valid value, only filter out undefined, null, and empty string
-    if (value !== undefined && value !== null && value !== '') {
-      queryParams.append(key, String(value))
-    }
-  })
-
-  return queryParams
+function cleanSearchParam(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const nextValue = value.trim()
+  return nextValue ? nextValue : undefined
 }
 
 /**
@@ -154,15 +142,12 @@ export function buildBaseParams(config: {
   end_timestamp?: number
 } {
   const { page, pageSize, searchParams, useMilliseconds = false } = config
+  const channel = cleanSearchParam(searchParams.channel)
 
   return {
     p: page,
     page_size: pageSize,
-    ...(searchParams.channel
-      ? {
-          channel_id: String(searchParams.channel),
-        }
-      : {}),
+    ...(channel ? { channel_id: channel } : {}),
     ...buildTimeRangeParams(searchParams, useMilliseconds),
   }
 }
@@ -178,6 +163,13 @@ export function buildApiParams(config: {
   isAdmin: boolean
 }): GetLogsParams {
   const { page, pageSize, searchParams, columnFilters = [], isAdmin } = config
+  const model = cleanSearchParam(searchParams.model)
+  const token = cleanSearchParam(searchParams.token)
+  const group = cleanSearchParam(searchParams.group)
+  const username = cleanSearchParam(searchParams.username)
+  const requestId =
+    cleanSearchParam(searchParams.requestId) ??
+    cleanSearchParam(searchParams.upstreamRequestId)
 
   // Helper to process type parameter (single value from array)
   const processType = (value: unknown): number | undefined => {
@@ -200,21 +192,14 @@ export function buildApiParams(config: {
     p: page,
     page_size: pageSize,
     ...(searchParams.type ? { type: processType(searchParams.type) } : {}),
-    ...(searchParams.model ? { model_name: String(searchParams.model) } : {}),
-    ...(searchParams.token ? { token_name: String(searchParams.token) } : {}),
-    ...(searchParams.group ? { group: String(searchParams.group) } : {}),
+    ...(model ? { model_name: model } : {}),
+    ...(token ? { token_name: token } : {}),
+    ...(group ? { group } : {}),
     ...(isAdmin && searchParams.channel
       ? { channel: Number(searchParams.channel) || 0 }
       : {}),
-    ...(isAdmin && searchParams.username
-      ? { username: String(searchParams.username) }
-      : {}),
-    ...(searchParams.requestId
-      ? { request_id: String(searchParams.requestId) }
-      : {}),
-    ...(searchParams.upstreamRequestId
-      ? { upstream_request_id: String(searchParams.upstreamRequestId) }
-      : {}),
+    ...(isAdmin && username ? { username } : {}),
+    ...(requestId ? { request_id: requestId } : {}),
     ...buildTimeRangeParams(searchParams, false),
   }
 
@@ -228,19 +213,19 @@ export function buildApiParams(config: {
           params.type = processType(value)
           break
         case 'model_name':
-          params.model_name = String(value)
+          params.model_name = cleanSearchParam(value)
           break
         case 'token_name':
-          params.token_name = String(value)
+          params.token_name = cleanSearchParam(value)
           break
         case 'group':
-          params.group = String(value)
+          params.group = cleanSearchParam(value)
           break
         case 'channel':
           if (isAdmin) params.channel = Number(value) || 0
           break
         case 'username':
-          if (isAdmin) params.username = String(value)
+          if (isAdmin) params.username = cleanSearchParam(value)
           break
       }
     })
@@ -284,10 +269,10 @@ export async function fetchLogsByCategory(
   const paramsWithFilter = {
     ...baseParams,
     ...(logCategory === 'drawing'
-      ? { mj_id: searchParams.filter as string | undefined }
+      ? { mj_id: cleanSearchParam(searchParams.filter) }
       : {}),
     ...(logCategory === 'task'
-      ? { task_id: searchParams.filter as string | undefined }
+      ? { task_id: cleanSearchParam(searchParams.filter) }
       : {}),
   }
 

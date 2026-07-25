@@ -75,6 +75,29 @@ For commercial licensing, please contact support@quantumnous.com
     cursor: pointer;
   }
 
+  button,
+  [role='button'],
+  [data-slot='select-trigger'],
+  [data-slot='dropdown-menu-item'],
+  [data-slot='tabs-trigger'],
+  [data-slot='sidebar-menu-button'],
+  [data-slot='navigation-menu-link'],
+  [data-slot='command-item'] {
+    caret-color: transparent;
+    user-select: none;
+  }
+
+  a {
+    caret-color: transparent;
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'] {
+    caret-color: auto;
+    user-select: text;
+  }
+
   /* Prevent focus zoom on mobile devices */
   @media screen and (max-width: 767px) {
     input,
