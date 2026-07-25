@@ -164,7 +164,7 @@ export function MultiSelect(props: MultiSelectProps) {
     if (canCreate) {
       set.add(trimmedInput)
     }
-    return Array.from(set)
+    return [...set]
   }, [props.options, props.selected, canCreate, trimmedInput])
 
   const addValues = React.useCallback(
@@ -228,20 +228,12 @@ export function MultiSelect(props: MultiSelectProps) {
   )
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
-    // Enter without a highlighted option commits the typed value.
     if (event.key === 'Enter' && props.allowCreate && canCreate) {
-      // Only fire when Base UI has no highlighted item to select. We rely on
-      // the highlighted item's data attribute on the popup. If the popup is
-      // closed or empty, manually commit the typed value.
-      const popup = document.querySelector<HTMLElement>(
-        '[data-slot="combobox-content"][data-open]'
-      )
-      const hasHighlight = popup?.querySelector('[data-highlighted]') != null
-      if (!hasHighlight) {
-        event.preventDefault()
-        addValues([trimmedInput])
-        setInputValue('')
-      }
+      event.preventDefault()
+      event.stopPropagation()
+      addValues([trimmedInput])
+      setInputValue('')
+      setOpen(false)
     }
   }
 

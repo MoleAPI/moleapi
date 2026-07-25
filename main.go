@@ -6,8 +6,10 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strconv"
@@ -233,17 +235,19 @@ func main() {
 
 func InjectUmamiAnalytics() {
 	analyticsInjectBuilder := &strings.Builder{}
-	if os.Getenv("UMAMI_WEBSITE_ID") != "" {
-		umamiSiteID := os.Getenv("UMAMI_WEBSITE_ID")
-		umamiScriptURL := os.Getenv("UMAMI_SCRIPT_URL")
+	if strings.TrimSpace(os.Getenv("UMAMI_WEBSITE_ID")) != "" {
+		umamiSiteID := strings.TrimSpace(os.Getenv("UMAMI_WEBSITE_ID"))
+		umamiScriptURL := strings.TrimSpace(os.Getenv("UMAMI_SCRIPT_URL"))
 		if umamiScriptURL == "" {
 			umamiScriptURL = "https://analytics.umami.is/script.js"
 		}
-		analyticsInjectBuilder.WriteString("<script defer src=\"")
-		analyticsInjectBuilder.WriteString(umamiScriptURL)
-		analyticsInjectBuilder.WriteString("\" data-website-id=\"")
-		analyticsInjectBuilder.WriteString(umamiSiteID)
-		analyticsInjectBuilder.WriteString("\"></script>")
+		if parsedURL, err := url.Parse(umamiScriptURL); err == nil && parsedURL.Host != "" && (parsedURL.Scheme == "http" || parsedURL.Scheme == "https") {
+			analyticsInjectBuilder.WriteString("<script defer src=\"")
+			analyticsInjectBuilder.WriteString(html.EscapeString(parsedURL.String()))
+			analyticsInjectBuilder.WriteString("\" data-website-id=\"")
+			analyticsInjectBuilder.WriteString(html.EscapeString(umamiSiteID))
+			analyticsInjectBuilder.WriteString("\"></script>")
+		}
 	}
 	analyticsInjectBuilder.WriteString("<!--Umami QuantumNous-->\n")
 	analyticsInject := []byte(analyticsInjectBuilder.String())
