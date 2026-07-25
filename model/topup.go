@@ -547,11 +547,16 @@ func SearchAllTopUpsWithParams(params TopUpSearchParams, pageInfo *common.PageIn
 			query = query.Where("user_id = ?", userID)
 		} else {
 			pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(params.UserKeyword) + "%"
-			userIDs := tx.Unscoped().Model(&User{}).
-				Select("id").
+			var userIDs []int
+			if err = tx.Unscoped().Model(&User{}).
 				Where("(username LIKE ? ESCAPE '!' OR email LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!')", pattern, pattern, pattern).
-				Limit(1000)
-			query = query.Where("user_id IN (?)", userIDs)
+				Limit(1000).
+				Pluck("id", &userIDs).Error; err != nil {
+				tx.Rollback()
+				common.SysError("failed to search topup users: " + err.Error())
+				return nil, 0, errors.New("搜索充值记录失败")
+			}
+			query = query.Where("user_id IN ?", userIDs)
 		}
 	}
 	if params.StartTimestamp > 0 {
