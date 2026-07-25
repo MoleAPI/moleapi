@@ -17,13 +17,22 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 export const modelGroupSelectorLayoutClasses = {
-  desktopPanel: 'max-h-[min(50vh,28rem)] overflow-hidden',
+  desktopPanel:
+    'max-h-[min(50vh,28rem)] overflow-hidden border-border/70 bg-popover shadow-xl shadow-black/10 ring-1 ring-foreground/10',
   desktopContent:
-    'grid h-[min(50vh,28rem)] max-h-[min(50vh,28rem)] min-h-0 gap-3 p-2 md:grid-cols-[9.5rem_minmax(0,1fr)]',
-  groupColumn: 'flex h-full min-h-0 min-w-0 flex-col overflow-hidden',
+    'grid h-[min(50vh,28rem)] max-h-[min(50vh,28rem)] min-h-0 gap-2 p-2 md:grid-cols-[9.75rem_minmax(0,1fr)]',
+  groupColumn:
+    'bg-muted/30 flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-lg border border-border/60 p-1.5',
   groupScroll:
-    'mt-2 grid min-h-0 flex-1 auto-rows-[2rem] content-start gap-1 overflow-y-auto pr-1',
-  modelColumn: 'flex h-full min-h-0 min-w-0 overflow-hidden rounded-lg border',
+    'mt-1.5 grid min-h-0 flex-1 auto-rows-[2.25rem] content-start gap-1 overflow-y-auto pr-1',
+  groupItem:
+    'relative flex min-w-0 items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left text-[12px] leading-4 transition-colors before:absolute before:inset-y-2 before:left-1 before:w-1 before:rounded-full before:bg-transparent',
+  selectedGroupItem:
+    'border-primary/35 bg-primary/12 text-foreground shadow-sm ring-1 ring-primary/15 before:bg-primary',
+  unselectedGroupItem:
+    'border-transparent text-muted-foreground hover:bg-background/80 hover:text-foreground',
+  modelColumn:
+    'bg-background/60 flex h-full min-h-0 min-w-0 overflow-hidden rounded-lg border border-border/60',
   modelCommand: 'min-h-0 flex-1 rounded-lg border-0 bg-transparent p-1',
   modelList:
     'min-h-0 flex-1 max-h-none [scrollbar-color:var(--border)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:block [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent',

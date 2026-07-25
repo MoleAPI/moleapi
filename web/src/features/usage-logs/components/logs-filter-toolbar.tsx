@@ -91,7 +91,7 @@ export function LogsFilterInput(props: LogsFilterInputProps) {
     !inputProps.readOnly
 
   return (
-    <div className='relative'>
+    <div className='relative min-w-0 overflow-hidden rounded-lg'>
       <Input
         {...inputProps}
         className={cn(
@@ -304,15 +304,17 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
           props.className
         )}
       >
-        <div className='grid grid-cols-1 gap-2 sm:grid-cols-4 lg:grid-cols-8'>
-          {props.primaryFilters}
-          <div className='flex min-w-0 items-center sm:col-span-2 lg:col-span-3'>
-            {props.stats}
+        <div className='flex flex-col gap-2 lg:flex-row lg:items-start'>
+          <div className='grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8'>
+            {props.primaryFilters}
           </div>
-          <div className='flex min-w-0 items-center justify-end gap-1.5 sm:col-span-2 sm:gap-2 lg:col-span-3'>
+          <div className='flex shrink-0 items-center justify-end gap-1.5 sm:gap-2'>
             {desktopActions}
           </div>
         </div>
+        {props.stats && (
+          <div className='mt-2 flex min-w-0 items-center'>{props.stats}</div>
+        )}
       </div>
     )
   }
