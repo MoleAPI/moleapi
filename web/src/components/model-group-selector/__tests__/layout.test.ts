@@ -29,8 +29,14 @@ describe('model group selector layout', () => {
     const groupScrollClasses =
       modelGroupSelectorLayoutClasses.groupScroll.split(' ')
 
-    assert.ok(groupScrollClasses.includes('auto-rows-[2rem]'))
+    assert.ok(groupScrollClasses.includes('auto-rows-[2.25rem]'))
     assert.ok(groupScrollClasses.includes('content-start'))
+  })
+
+  test('styles the group rail and selected group option', () => {
+    assert.match(modelGroupSelectorLayoutClasses.groupColumn, /bg-muted\/30/)
+    assert.match(modelGroupSelectorLayoutClasses.groupItem, /border/)
+    assert.match(modelGroupSelectorLayoutClasses.selectedGroupItem, /ring/)
   })
 
   test('centers the selected group inside its own scroll container', () => {
