@@ -5,6 +5,10 @@
   },
   "rewrites": [
     {
+      "source": "/sitemap.xml",
+      "destination": "https://api.moleapi.com/sitemap.xml"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "https://api.moleapi.com/api/$1"
     },

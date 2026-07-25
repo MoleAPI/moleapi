@@ -10,6 +10,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(({ envMode }) => {
   const env = loadEnv({ mode: envMode, prefixes: ['VITE_'] })
+  const publicVars = {
+    ...env.publicVars,
+    'import.meta.env.VITE_UMAMI_SCRIPT_URL': JSON.stringify(
+      process.env.VITE_UMAMI_SCRIPT_URL ||
+        process.env.UMAMI_SCRIPT_URL ||
+        env.rawPublicVars.VITE_UMAMI_SCRIPT_URL ||
+        ''
+    ),
+    'import.meta.env.VITE_UMAMI_WEBSITE_ID': JSON.stringify(
+      process.env.VITE_UMAMI_WEBSITE_ID ||
+        process.env.UMAMI_WEBSITE_ID ||
+        env.rawPublicVars.VITE_UMAMI_WEBSITE_ID ||
+        ''
+    ),
+  }
   const serverUrl =
     process.env.VITE_REACT_APP_SERVER_URL ||
     env.rawPublicVars.VITE_REACT_APP_SERVER_URL ||
@@ -53,7 +68,7 @@ export default defineConfig(({ envMode }) => {
       },
     },
     source: {
-      define: env.publicVars,
+      define: publicVars,
       entry: {
         index: './src/main.tsx',
       },
