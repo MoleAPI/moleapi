@@ -44,6 +44,8 @@ import { subscribeAuthSessionEvents } from '@/lib/auth-session-sync'
 import { resolveLegacyRoute } from '@/lib/legacy-route'
 import { useAuthStore } from '@/stores/auth-store'
 
+const DEFAULT_UMAMI_SCRIPT_URL = 'https://analytics.umami.is/script.js'
+
 function RootComponent() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -91,6 +93,38 @@ function RootComponent() {
       }),
     [navigate, queryClient]
   )
+
+  useEffect(() => {
+    const websiteId = import.meta.env.VITE_UMAMI_WEBSITE_ID?.trim()
+    if (!websiteId) return
+
+    const managedScript = document.querySelector<HTMLScriptElement>(
+      'script[data-moleapi-analytics="umami"]'
+    )
+    const staticScript = document.querySelector<HTMLScriptElement>(
+      'script[src*="umami"][data-website-id]'
+    )
+    if (managedScript ?? staticScript) return
+
+    let src: string
+    try {
+      const parsedUrl = new URL(
+        import.meta.env.VITE_UMAMI_SCRIPT_URL?.trim() ||
+          DEFAULT_UMAMI_SCRIPT_URL
+      )
+      if (!['http:', 'https:'].includes(parsedUrl.protocol)) return
+      src = parsedUrl.href
+    } catch {
+      return
+    }
+
+    const script = document.createElement('script')
+    script.defer = true
+    script.src = src
+    script.dataset.websiteId = websiteId
+    script.dataset.moleapiAnalytics = 'umami'
+    document.head.append(script)
+  }, [])
 
   return (
     <ThemeCustomizationProvider>

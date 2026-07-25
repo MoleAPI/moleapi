@@ -86,7 +86,6 @@ function buildSearchSourceKey(values: {
   group?: unknown
   username?: unknown
   requestId?: unknown
-  upstreamRequestId?: unknown
   type?: unknown
 }) {
   return [
@@ -98,7 +97,6 @@ function buildSearchSourceKey(values: {
     values.group,
     values.username,
     values.requestId,
-    values.upstreamRequestId,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
   ]
     .map((value) => String(value ?? ''))
@@ -130,8 +128,7 @@ export function CommonLogsFilterBar<TData>(
       token: searchParams.token,
       group: searchParams.group,
       username: searchParams.username,
-      requestId: searchParams.requestId,
-      upstreamRequestId: searchParams.upstreamRequestId,
+      requestId: searchParams.requestId || searchParams.upstreamRequestId,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -144,8 +141,8 @@ export function CommonLogsFilterBar<TData>(
       token: searchParams.token || undefined,
       group: searchParams.group || undefined,
       username: searchParams.username || undefined,
-      requestId: searchParams.requestId || undefined,
-      upstreamRequestId: searchParams.upstreamRequestId || undefined,
+      requestId:
+        searchParams.requestId || searchParams.upstreamRequestId || undefined,
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -175,9 +172,10 @@ export function CommonLogsFilterBar<TData>(
       setDraft((current) => {
         const base =
           current.sourceKey === searchState.sourceKey ? current : searchState
+        const nextValue = value === '' ? undefined : value
         return {
           sourceKey: searchState.sourceKey,
-          filters: { ...base.filters, [field]: value },
+          filters: { ...base.filters, [field]: nextValue },
           logType: base.logType,
         }
       })
@@ -237,8 +235,7 @@ export function CommonLogsFilterBar<TData>(
     !!filters.token ||
     !!filters.username ||
     !!filters.channel ||
-    !!filters.requestId ||
-    !!filters.upstreamRequestId
+    !!filters.requestId
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
@@ -249,7 +246,6 @@ export function CommonLogsFilterBar<TData>(
     isAdmin ? filters.username : undefined,
     isAdmin ? filters.channel : undefined,
     filters.requestId,
-    filters.upstreamRequestId,
   ].filter(Boolean).length
   const sensitiveType = sensitiveVisible ? 'text' : 'password'
   const logTypeItems = useMemo(
@@ -307,6 +303,7 @@ export function CommonLogsFilterBar<TData>(
         placeholder={t('Model Name')}
         value={filters.model || ''}
         onChange={(e) => handleChange('model', e.target.value)}
+        onClear={() => handleChange('model', undefined)}
         onKeyDown={handleKeyDown}
       />
     </LogsFilterField>
@@ -318,6 +315,7 @@ export function CommonLogsFilterBar<TData>(
         type={sensitiveType}
         value={filters.group || ''}
         onChange={(e) => handleChange('group', e.target.value)}
+        onClear={() => handleChange('group', undefined)}
         onKeyDown={handleKeyDown}
       />
     </LogsFilterField>
@@ -366,16 +364,18 @@ export function CommonLogsFilterBar<TData>(
           type={sensitiveType}
           value={filters.token || ''}
           onChange={(e) => handleChange('token', e.target.value)}
+          onClear={() => handleChange('token', undefined)}
           onKeyDown={handleKeyDown}
         />
       </LogsFilterField>
       {isAdmin && (
         <LogsFilterField>
           <LogsFilterInput
-            placeholder={t('Username')}
+            placeholder={`${t('Username')} / ID`}
             type={sensitiveType}
             value={filters.username || ''}
             onChange={(e) => handleChange('username', e.target.value)}
+            onClear={() => handleChange('username', undefined)}
             onKeyDown={handleKeyDown}
           />
         </LogsFilterField>
@@ -386,23 +386,17 @@ export function CommonLogsFilterBar<TData>(
             placeholder={t('Channel ID')}
             value={filters.channel || ''}
             onChange={(e) => handleChange('channel', e.target.value)}
+            onClear={() => handleChange('channel', undefined)}
             onKeyDown={handleKeyDown}
           />
         </LogsFilterField>
       )}
       <LogsFilterField>
         <LogsFilterInput
-          placeholder={t('Request ID')}
+          placeholder={`${t('Request ID')} / ${t('Upstream Request ID')}`}
           value={filters.requestId || ''}
           onChange={(e) => handleChange('requestId', e.target.value)}
-          onKeyDown={handleKeyDown}
-        />
-      </LogsFilterField>
-      <LogsFilterField>
-        <LogsFilterInput
-          placeholder={t('Upstream Request ID')}
-          value={filters.upstreamRequestId || ''}
-          onChange={(e) => handleChange('upstreamRequestId', e.target.value)}
+          onClear={() => handleChange('requestId', undefined)}
           onKeyDown={handleKeyDown}
         />
       </LogsFilterField>

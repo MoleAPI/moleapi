@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQueryClient, useIsFetching } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
-import { type Table } from '@tanstack/react-table'
+import type { Table } from '@tanstack/react-table'
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -110,7 +110,10 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
 
   const handleChange = useCallback(
     (field: keyof TaskLogsFilters, value: Date | string | undefined) => {
-      setFilters((prev) => ({ ...prev, [field]: value }))
+      setFilters((prev) => ({
+        ...prev,
+        [field]: value === '' ? undefined : value,
+      }))
     },
     []
   )
@@ -154,7 +157,9 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
 
   const handleFilterChange = useCallback(
     (value: string) => {
-      setFilters((prev) => setFilterValue(prev, props.logCategory, value))
+      setFilters((prev) =>
+        setFilterValue(prev, props.logCategory, value.trim() ? value : '')
+      )
     },
     [props.logCategory]
   )
@@ -184,6 +189,7 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
         placeholder={placeholder}
         value={filterValue}
         onChange={(e) => handleFilterChange(e.target.value)}
+        onClear={() => handleFilterChange('')}
         onKeyDown={handleKeyDown}
       />
     </LogsFilterField>
@@ -194,6 +200,7 @@ export function TaskLogsFilterBar<TData>(props: TaskLogsFilterBarProps<TData>) {
         placeholder={t('Channel ID')}
         value={filters.channel || ''}
         onChange={(e) => handleChange('channel', e.target.value)}
+        onClear={() => handleChange('channel', undefined)}
         onKeyDown={handleKeyDown}
       />
     </LogsFilterField>

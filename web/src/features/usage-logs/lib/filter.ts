@@ -32,6 +32,11 @@ import type {
 // Filter Building Functions
 // ============================================================================
 
+function cleanTextFilter(value: string | undefined): string | undefined {
+  const nextValue = value?.trim()
+  return nextValue ? nextValue : undefined
+}
+
 /**
  * Build search params from filters based on log category
  */
@@ -39,39 +44,46 @@ export function buildSearchParams(
   filters: LogFilters,
   logCategory: LogCategory
 ): Record<string, unknown> {
+  const channel = cleanTextFilter(filters.channel)
   const baseParams: Record<string, unknown> = {
     ...(filters.startTime && { startTime: filters.startTime.getTime() }),
     ...(filters.endTime && { endTime: filters.endTime.getTime() }),
-    ...(filters.channel && { channel: filters.channel }),
+    ...(channel && { channel }),
   }
 
   switch (logCategory) {
     case 'common': {
       const commonFilters = filters as CommonLogFilters
+      const model = cleanTextFilter(commonFilters.model)
+      const token = cleanTextFilter(commonFilters.token)
+      const group = cleanTextFilter(commonFilters.group)
+      const username = cleanTextFilter(commonFilters.username)
+      const requestId =
+        cleanTextFilter(commonFilters.requestId) ??
+        cleanTextFilter(commonFilters.upstreamRequestId)
       return {
         ...baseParams,
-        ...(commonFilters.model && { model: commonFilters.model }),
-        ...(commonFilters.token && { token: commonFilters.token }),
-        ...(commonFilters.group && { group: commonFilters.group }),
-        ...(commonFilters.username && { username: commonFilters.username }),
-        ...(commonFilters.requestId && { requestId: commonFilters.requestId }),
-        ...(commonFilters.upstreamRequestId && {
-          upstreamRequestId: commonFilters.upstreamRequestId,
-        }),
+        ...(model && { model }),
+        ...(token && { token }),
+        ...(group && { group }),
+        ...(username && { username }),
+        ...(requestId && { requestId }),
       }
     }
     case 'drawing': {
       const drawingFilters = filters as DrawingLogFilters
+      const mjId = cleanTextFilter(drawingFilters.mjId)
       return {
         ...baseParams,
-        ...(drawingFilters.mjId && { filter: drawingFilters.mjId }),
+        ...(mjId && { filter: mjId }),
       }
     }
     case 'task': {
       const taskFilters = filters as TaskLogFilters
+      const taskId = cleanTextFilter(taskFilters.taskId)
       return {
         ...baseParams,
-        ...(taskFilters.taskId && { filter: taskFilters.taskId }),
+        ...(taskId && { filter: taskId }),
       }
     }
     default:

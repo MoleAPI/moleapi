@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { Table } from '@tanstack/react-table'
-import { ChevronDown, Loader2 } from 'lucide-react'
+import { ChevronDown, Loader2, X } from 'lucide-react'
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -76,12 +76,42 @@ export function LogsFilterField(props: LogsFilterFieldProps) {
   )
 }
 
-export function LogsFilterInput(props: ComponentProps<typeof Input>) {
+type LogsFilterInputProps = ComponentProps<typeof Input> & {
+  onClear?: () => void
+}
+
+export function LogsFilterInput(props: LogsFilterInputProps) {
+  const { t } = useTranslation()
+  const { onClear, ...inputProps } = props
+  const canClear =
+    typeof inputProps.value === 'string' &&
+    inputProps.value.length > 0 &&
+    onClear != null &&
+    !inputProps.disabled &&
+    !inputProps.readOnly
+
   return (
-    <Input
-      {...props}
-      className={cn('h-8 min-w-0 text-sm leading-5', props.className)}
-    />
+    <div className='relative'>
+      <Input
+        {...inputProps}
+        className={cn(
+          'h-8 min-w-0 text-sm leading-5',
+          canClear && 'pe-8',
+          inputProps.className
+        )}
+      />
+      {canClear && (
+        <button
+          type='button'
+          aria-label={t('Clear search')}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={onClear}
+          className='text-muted-foreground hover:text-foreground absolute end-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-sm transition-colors'
+        >
+          <X className='size-3.5' aria-hidden='true' />
+        </button>
+      )}
+    </div>
   )
 }
 

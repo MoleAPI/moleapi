@@ -50,6 +50,10 @@ type SearchDraft = {
 
 const DEFAULT_SEARCH_DEBOUNCE_MS = 500
 
+function cleanSearchValue(value: string): string {
+  return value.trim()
+}
+
 export type DataTableToolbarProps<TData> = {
   table: Table<TData>
   /**
@@ -188,16 +192,17 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
 
   const commitSearchValue = React.useCallback(
     (value: string) => {
-      if (value === currentSearchValue) {
+      const nextValue = cleanSearchValue(value)
+      if (nextValue === currentSearchValue) {
         return
       }
 
       if (props.searchKey) {
-        props.table.getColumn(props.searchKey)?.setFilterValue(value)
+        props.table.getColumn(props.searchKey)?.setFilterValue(nextValue)
         return
       }
 
-      props.table.setGlobalFilter(value)
+      props.table.setGlobalFilter(nextValue)
     },
     [currentSearchValue, props.searchKey, props.table]
   )
@@ -248,15 +253,34 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
     queueSearchValue(value)
   }
 
+  const handleClearSearch = () => {
+    setIsSearchComposing(false)
+    setSearchDraft(null)
+    commitSearchValue('')
+  }
+
   const searchInput = (
-    <Input
-      placeholder={placeholder}
-      value={searchValue}
-      onChange={handleSearchChange}
-      onCompositionStart={handleSearchCompositionStart}
-      onCompositionEnd={handleSearchCompositionEnd}
-      className='w-full sm:w-[200px] lg:w-[240px]'
-    />
+    <div className='relative w-full sm:w-[200px] lg:w-[240px]'>
+      <Input
+        placeholder={placeholder}
+        value={searchValue}
+        onChange={handleSearchChange}
+        onCompositionStart={handleSearchCompositionStart}
+        onCompositionEnd={handleSearchCompositionEnd}
+        className='w-full pe-8'
+      />
+      {searchValue.length > 0 && (
+        <button
+          type='button'
+          aria-label={t('Clear search')}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={handleClearSearch}
+          className='text-muted-foreground hover:text-foreground absolute end-1 top-1/2 flex size-6 -translate-y-1/2 items-center justify-center rounded-sm transition-colors'
+        >
+          <Cross2Icon className='size-3.5' aria-hidden='true' />
+        </button>
+      )}
+    </div>
   )
 
   const filterChips = React.useMemo(
@@ -310,7 +334,13 @@ export function DataTableToolbar<TData>(props: DataTableToolbarProps<TData>) {
   }
 
   const searchButton = hasSearch ? (
-    <Button onClick={props.onSearch} disabled={props.searchLoading}>
+    <Button
+      onClick={() => {
+        commitSearchValue(searchValue)
+        props.onSearch?.()
+      }}
+      disabled={props.searchLoading}
+    >
       {props.searchLoading && <Loader2 className='animate-spin' />}
       {t('Search')}
     </Button>

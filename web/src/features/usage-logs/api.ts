@@ -18,7 +18,6 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
 
-import { buildQueryParams } from './lib/utils'
 import type {
   GetLogsParams,
   GetLogsResponse,
@@ -32,6 +31,19 @@ import type {
 // ============================================================================
 // Generic API Helpers
 // ============================================================================
+
+function buildQueryParams(params: Record<string, unknown>): URLSearchParams {
+  const queryParams = new URLSearchParams()
+
+  Object.entries(params).forEach(([key, value]) => {
+    const nextValue = typeof value === 'string' ? value.trim() : value
+    if (nextValue !== undefined && nextValue !== null && nextValue !== '') {
+      queryParams.append(key, String(nextValue))
+    }
+  })
+
+  return queryParams
+}
 
 function buildApiPath(endpoint: string, isAdmin: boolean): string {
   return isAdmin ? endpoint : `${endpoint}/self`

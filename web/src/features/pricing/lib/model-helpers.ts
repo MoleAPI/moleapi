@@ -37,6 +37,11 @@ export function getAvailableGroups(
   return Object.keys(usableGroup)
     .filter((g) => !EXCLUDED_GROUPS.includes(g))
     .filter((g) => modelEnableGroups.includes(g))
+    .sort(
+      (a, b) =>
+        getConfiguredGroupRatio(model.group_ratio || {}, a) -
+        getConfiguredGroupRatio(model.group_ratio || {}, b)
+    )
 }
 
 /**
@@ -146,21 +151,23 @@ export function getDisplayedPriceGroups(
   const defaultGroup = items.find((item) => item.group === 'default')
   const seenRatios = new Set<string>()
 
-  return items.filter((item) => {
-    if (
-      defaultGroup &&
-      item.group !== 'default' &&
-      item.ratio === defaultGroup.ratio
-    ) {
-      return false
-    }
-    const ratioKey = String(item.ratio)
-    if (seenRatios.has(ratioKey)) {
-      return false
-    }
-    seenRatios.add(ratioKey)
-    return true
-  })
+  return items
+    .filter((item) => {
+      if (
+        defaultGroup &&
+        item.group !== 'default' &&
+        item.ratio === defaultGroup.ratio
+      ) {
+        return false
+      }
+      const ratioKey = String(item.ratio)
+      if (seenRatios.has(ratioKey)) {
+        return false
+      }
+      seenRatios.add(ratioKey)
+      return true
+    })
+    .sort((a, b) => a.ratio - b.ratio || a.index - b.index)
 }
 
 function getDescriptionTranslations(

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 )
 
 func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) (*gorm.DB, error) {
+	value = strings.TrimSpace(value)
 	if value == "" {
 		return tx, nil
 	}
@@ -28,6 +30,29 @@ func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) (*gorm
 		return tx.Where(condition, pattern), nil
 	}
 	return tx.Where(column+" = ?", value), nil
+}
+
+func applyLogUserSearchFilter(tx *gorm.DB, value string) (*gorm.DB, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return tx, nil
+	}
+	if userId, err := strconv.Atoi(value); err == nil && userId > 0 {
+		return tx.Where("(logs.username = ? OR logs.user_id = ?)", value, userId), nil
+	}
+	return applyExplicitLogTextFilter(tx, "logs.username", value)
+}
+
+func applyLogRequestSearchFilter(tx *gorm.DB, requestId string, upstreamRequestId string) *gorm.DB {
+	requestId = strings.TrimSpace(requestId)
+	upstreamRequestId = strings.TrimSpace(upstreamRequestId)
+	if requestId != "" {
+		tx = tx.Where("(logs.request_id = ? OR logs.upstream_request_id = ?)", requestId, requestId)
+	}
+	if upstreamRequestId != "" {
+		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
+	}
+	return tx
 }
 
 func buildLogLikeCondition(column string, value string) (string, string, error) {
@@ -467,6 +492,9 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 }
 
 func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, startIdx int, num int, channel int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+	tokenName = strings.TrimSpace(tokenName)
+	group = strings.TrimSpace(group)
+
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB
@@ -477,18 +505,13 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	if tx, err = applyExplicitLogTextFilter(tx, "logs.model_name", modelName); err != nil {
 		return nil, 0, err
 	}
-	if tx, err = applyExplicitLogTextFilter(tx, "logs.username", username); err != nil {
+	if tx, err = applyLogUserSearchFilter(tx, username); err != nil {
 		return nil, 0, err
 	}
 	if tokenName != "" {
 		tx = tx.Where("logs.token_name = ?", tokenName)
 	}
-	if requestId != "" {
-		tx = tx.Where("logs.request_id = ?", requestId)
-	}
-	if upstreamRequestId != "" {
-		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
-	}
+	tx = applyLogRequestSearchFilter(tx, requestId, upstreamRequestId)
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)
 	}
@@ -563,6 +586,9 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 const logSearchCountLimit = 10000
 
 func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int64, modelName string, tokenName string, startIdx int, num int, group string, requestId string, upstreamRequestId string) (logs []*Log, total int64, err error) {
+	tokenName = strings.TrimSpace(tokenName)
+	group = strings.TrimSpace(group)
+
 	var tx *gorm.DB
 	if logType == LogTypeUnknown {
 		tx = LOG_DB.Where("logs.user_id = ?", userId)
@@ -576,12 +602,7 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	if tokenName != "" {
 		tx = tx.Where("logs.token_name = ?", tokenName)
 	}
-	if requestId != "" {
-		tx = tx.Where("logs.request_id = ?", requestId)
-	}
-	if upstreamRequestId != "" {
-		tx = tx.Where("logs.upstream_request_id = ?", upstreamRequestId)
-	}
+	tx = applyLogRequestSearchFilter(tx, requestId, upstreamRequestId)
 	if startTimestamp != 0 {
 		tx = tx.Where("logs.created_at >= ?", startTimestamp)
 	}

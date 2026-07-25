@@ -280,6 +280,10 @@ test('expanded details show request summary, cache tokens, and billing calculati
   assert.match(detailsHtml, /Cache Write/)
   assert.match(detailsHtml, /80 Tokens/)
   assert.match(detailsHtml, /Calculation/)
+  assert.match(
+    detailsHtml,
+    /\(Input .* \+ Output .* \+ Cache Read .* \+ Cache Write .*\) × 1\.0 default Group/
+  )
   assert.match(detailsHtml, /1\.0x/)
   assert.doesNotMatch(detailsHtml, /1\.0000x/)
   assert.match(detailsHtml, /Total Cost/)
