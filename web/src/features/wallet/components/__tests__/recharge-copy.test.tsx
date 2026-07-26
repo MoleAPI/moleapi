@@ -123,3 +123,11 @@ test('Creem renders as a single payment button', async () => {
   assert.doesNotMatch(html, /Creem Payment/)
   assert.doesNotMatch(html, /525,000/)
 })
+
+test('NOWPayments button renders as Crypto Pay', async () => {
+  const html = await renderRechargeForm([
+    { name: 'NOWPayments', type: 'nowpayments' },
+  ])
+
+  assert.match(html, /Crypto Pay/)
+})

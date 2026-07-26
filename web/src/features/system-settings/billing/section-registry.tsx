@@ -159,6 +159,13 @@ const BILLING_SECTIONS = [
           LantuMchId: settings.LantuMchId ?? '',
           LantuSecretKey: settings.LantuSecretKey ?? '',
           LantuMinTopUp: settings.LantuMinTopUp ?? 1,
+          NowPaymentsEnabled: settings.NowPaymentsEnabled ?? false,
+          NowPaymentsApiKey: settings.NowPaymentsApiKey ?? '',
+          NowPaymentsIPNSecret: settings.NowPaymentsIPNSecret ?? '',
+          NowPaymentsSandbox: settings.NowPaymentsSandbox ?? false,
+          NowPaymentsCurrency: settings.NowPaymentsCurrency ?? 'USD',
+          NowPaymentsUnitPrice: settings.NowPaymentsUnitPrice ?? 1,
+          NowPaymentsMinTopUp: settings.NowPaymentsMinTopUp ?? 1,
         }}
         waffoDefaultValues={{
           WaffoEnabled: settings.WaffoEnabled ?? false,

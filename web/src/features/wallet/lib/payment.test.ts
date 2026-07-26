@@ -26,6 +26,7 @@ import {
   getEpayPaymentMethods,
   getStandardPaymentMethods,
   isLanTuPayment,
+  isNowPaymentsPayment,
   isSafeHttpPaymentUrl,
   isStripePayment,
   isWaffoPayment,
@@ -40,6 +41,7 @@ describe('payment type classification', () => {
     assert.equal(isWaffoPancakePayment(PAYMENT_TYPES.WAFFO), false)
     assert.equal(isStripePayment(PAYMENT_TYPES.STRIPE), true)
     assert.equal(isLanTuPayment(PAYMENT_TYPES.LANTU), true)
+    assert.equal(isNowPaymentsPayment(PAYMENT_TYPES.NOWPAYMENTS), true)
   })
 
   test('renders Waffo only in its dedicated method list', () => {
@@ -73,6 +75,7 @@ describe('payment type classification', () => {
         { name: 'Waffo', type: PAYMENT_TYPES.WAFFO },
         { name: 'Pancake', type: PAYMENT_TYPES.WAFFO_PANCAKE },
         { name: 'LanTu', type: 'lantu' },
+        { name: 'Crypto Pay', type: PAYMENT_TYPES.NOWPAYMENTS },
         { name: 'WeChat', type: 'wxpay' },
       ]),
       [
@@ -125,6 +128,7 @@ describe('payment dispatch', () => {
           return false
         },
         lantu: async () => false,
+        nowPayments: async () => false,
       }
     )
 
@@ -146,6 +150,7 @@ describe('payment dispatch', () => {
         },
         waffoPancake: async () => false,
         lantu: async () => false,
+        nowPayments: async () => false,
       }
     )
 
@@ -167,10 +172,33 @@ describe('payment dispatch', () => {
           calls.push(`lantu:${amount}`)
           return true
         },
+        nowPayments: async () => false,
       }
     )
 
     assert.equal(success, true)
     assert.deepEqual(calls, ['lantu:50'])
+  })
+
+  test('dispatches NOWPayments to its hosted checkout flow', async () => {
+    const calls: string[] = []
+    const success = await dispatchSelectedPayment(
+      { name: 'Crypto Pay', type: PAYMENT_TYPES.NOWPAYMENTS },
+      25,
+      null,
+      {
+        regular: async () => false,
+        waffo: async () => false,
+        waffoPancake: async () => false,
+        lantu: async () => false,
+        nowPayments: async (amount) => {
+          calls.push(`nowpayments:${amount}`)
+          return true
+        },
+      }
+    )
+
+    assert.equal(success, true)
+    assert.deepEqual(calls, ['nowpayments:25'])
   })
 })

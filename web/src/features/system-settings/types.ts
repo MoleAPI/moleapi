@@ -329,6 +329,13 @@ export type BillingSettings = {
   LantuMchId: string
   LantuSecretKey: string
   LantuMinTopUp: number
+  NowPaymentsEnabled: boolean
+  NowPaymentsApiKey: string
+  NowPaymentsIPNSecret: string
+  NowPaymentsSandbox: boolean
+  NowPaymentsCurrency: string
+  NowPaymentsUnitPrice: number
+  NowPaymentsMinTopUp: number
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number

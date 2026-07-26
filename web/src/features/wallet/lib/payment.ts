@@ -35,6 +35,7 @@ const DEDICATED_PAYMENT_TYPES = new Set<string>([
   PAYMENT_TYPES.WAFFO,
   PAYMENT_TYPES.WAFFO_PANCAKE,
   PAYMENT_TYPES.LANTU,
+  PAYMENT_TYPES.NOWPAYMENTS,
 ])
 
 // ============================================================================
@@ -115,15 +116,17 @@ export function isLanTuPayment(paymentType: string): boolean {
   return paymentType === PAYMENT_TYPES.LANTU
 }
 
+export function isNowPaymentsPayment(paymentType: string): boolean {
+  return paymentType === PAYMENT_TYPES.NOWPAYMENTS
+}
+
 export function findNearestCreemProduct(
   products: CreemProduct[] | undefined,
   amount: number
 ): { product: CreemProduct | null; adjusted: boolean } {
   const validProducts = (products ?? []).filter(
     (product) =>
-      product.productId &&
-      Number.isFinite(product.price) &&
-      product.price > 0
+      product.productId && Number.isFinite(product.price) && product.price > 0
   )
   if (validProducts.length === 0 || !Number.isFinite(amount)) {
     return { product: null, adjusted: false }
@@ -136,7 +139,10 @@ export function findNearestCreemProduct(
     const bestDistance = Math.abs(bestPriceCents - amountCents)
     const currentDistance = Math.abs(currentPriceCents - amountCents)
     if (currentDistance < bestDistance) return current
-    if (currentDistance === bestDistance && currentPriceCents < bestPriceCents) {
+    if (
+      currentDistance === bestDistance &&
+      currentPriceCents < bestPriceCents
+    ) {
       return current
     }
     return best
@@ -182,6 +188,7 @@ export interface PaymentProcessors {
   waffo: (topupAmount: number, payMethodIndex: number) => Promise<boolean>
   waffoPancake: (topupAmount: number) => Promise<boolean>
   lantu: (topupAmount: number) => Promise<boolean>
+  nowPayments: (topupAmount: number) => Promise<boolean>
 }
 
 export async function dispatchSelectedPayment(
@@ -203,6 +210,10 @@ export async function dispatchSelectedPayment(
 
   if (isLanTuPayment(paymentMethod.type)) {
     return processors.lantu(topupAmount)
+  }
+
+  if (isNowPaymentsPayment(paymentMethod.type)) {
+    return processors.nowPayments(topupAmount)
   }
 
   return processors.regular(topupAmount, paymentMethod.type)
@@ -231,6 +242,10 @@ export function getDefaultPaymentType(topupInfo: TopupInfo | null): string {
 
   if (topupInfo.enable_waffo_pancake_topup) {
     return PAYMENT_TYPES.WAFFO_PANCAKE
+  }
+
+  if (topupInfo.enable_nowpayments_topup) {
+    return PAYMENT_TYPES.NOWPAYMENTS
   }
 
   return DEFAULT_PAYMENT_TYPE
@@ -262,6 +277,10 @@ export function getMinTopupAmount(topupInfo: TopupInfo | null): number {
 
   if (topupInfo.enable_lantu_topup) {
     return topupInfo.lantu_min_topup || DEFAULT_MIN_TOPUP
+  }
+
+  if (topupInfo.enable_nowpayments_topup) {
+    return topupInfo.nowpayments_min_topup || DEFAULT_MIN_TOPUP
   }
 
   return DEFAULT_MIN_TOPUP

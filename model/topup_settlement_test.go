@@ -110,6 +110,36 @@ func TestManualCompleteTopUpPreservesLegacyLargeBalance(t *testing.T) {
 	assert.Equal(t, 100, topUp.CreditedQuota)
 }
 
+func TestManualCompleteTopUpSupportsProvidersWithLegacyLargeBalance(t *testing.T) {
+	useQuotaPerUnitForTopUpTest(t, 100)
+
+	for index, provider := range []string{
+		PaymentProviderEpay,
+		PaymentProviderLanTu,
+		PaymentProviderNowPayments,
+		PaymentProviderWaffo,
+		PaymentProviderWaffoPancake,
+		PaymentProviderCreem,
+		PaymentProviderStripe,
+	} {
+		t.Run(provider, func(t *testing.T) {
+			truncateTables(t)
+			userID := 540 + index
+			legacyBalance := common.MaxQuota + 1_000 + index
+			insertUserForPaymentGuardTest(t, userID, legacyBalance)
+			insertTopUpForSettlementTest(t, "manual-"+provider, userID, 1, 1, provider)
+
+			require.NoError(t, ManualCompleteTopUp("manual-"+provider, "203.0.113.14"))
+
+			topUp := GetTopUpByTradeNo("manual-" + provider)
+			require.NotNil(t, topUp)
+			assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+			assert.Positive(t, topUp.CreditedQuota)
+			assert.Equal(t, legacyBalance+topUp.CreditedQuota, getUserQuotaForPaymentGuardTest(t, userID))
+		})
+	}
+}
+
 func TestRechargeStripeSettlesPaymentDetailsAndCustomerOnce(t *testing.T) {
 	truncateTables(t)
 	useQuotaPerUnitForTopUpTest(t, 100)

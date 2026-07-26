@@ -73,6 +73,25 @@ func GetTopUpInfo(c *gin.Context) {
 		}
 	}
 
+	enableNowPayments := isNowPaymentsTopUpEnabled()
+	if enableNowPayments {
+		hasNowPayments := false
+		for _, method := range payMethods {
+			if method["type"] == model.PaymentMethodNowPayments {
+				hasNowPayments = true
+				break
+			}
+		}
+		if !hasNowPayments {
+			payMethods = append(payMethods, map[string]string{
+				"name":      "Crypto Pay",
+				"type":      model.PaymentMethodNowPayments,
+				"color":     "#F7931A",
+				"min_topup": strconv.FormatInt(getConfiguredMinTopUp(setting.NowPaymentsMinTopUp), 10),
+			})
+		}
+	}
+
 	// Waffo Pancake is displayed above the standard Waffo gateway.
 	enableWaffoPancake := isWaffoPancakeTopUpEnabled()
 	if enableWaffoPancake {
@@ -130,6 +149,7 @@ func GetTopUpInfo(c *gin.Context) {
 		"enable_stripe_topup":              isStripeTopUpEnabled(),
 		"enable_creem_topup":               isCreemTopUpEnabled(),
 		"enable_lantu_topup":               enableLanTu,
+		"enable_nowpayments_topup":         enableNowPayments,
 		"enable_waffo_topup":               enableWaffo,
 		"enable_waffo_pancake_topup":       enableWaffoPancake,
 		"enable_redemption":                complianceConfirmed,
@@ -146,6 +166,7 @@ func GetTopUpInfo(c *gin.Context) {
 		"min_topup":                        getConfiguredMinTopUp(operation_setting.MinTopUp),
 		"stripe_min_topup":                 getConfiguredMinTopUp(setting.StripeMinTopUp),
 		"lantu_min_topup":                  getLanTuMinTopUp(),
+		"nowpayments_min_topup":            getConfiguredMinTopUp(setting.NowPaymentsMinTopUp),
 		"waffo_min_topup":                  getConfiguredMinTopUp(setting.WaffoMinTopUp),
 		"waffo_pancake_min_topup":          getConfiguredMinTopUp(setting.WaffoPancakeMinTopUp),
 		"amount_options":                   operation_setting.GetPaymentSetting().AmountOptions,

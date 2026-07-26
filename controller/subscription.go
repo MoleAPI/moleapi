@@ -348,6 +348,28 @@ func AdminUpdateSubscriptionPlanStatus(c *gin.Context) {
 	common.ApiSuccess(c, nil)
 }
 
+func AdminDeleteSubscriptionPlan(c *gin.Context) {
+	if !requirePaymentCompliance(c) {
+		return
+	}
+
+	id, _ := strconv.Atoi(c.Param("id"))
+	if id <= 0 {
+		common.ApiErrorMsg(c, "无效的ID")
+		return
+	}
+	plan, err := model.AdminDeleteSubscriptionPlan(id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "subscription.plan_delete", map[string]interface{}{
+		"plan_id":    plan.Id,
+		"plan_title": plan.Title,
+	})
+	common.ApiSuccess(c, nil)
+}
+
 type AdminBindSubscriptionRequest struct {
 	UserId int `json:"user_id"`
 	PlanId int `json:"plan_id"`
