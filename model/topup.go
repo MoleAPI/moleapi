@@ -238,8 +238,8 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 			return err
 		}
 		balanceLimit := common.MaxQuota
-		if user.Quota > common.MaxQuota {
-			// ponytail: legacy BIGINT balances already exceed MaxQuota; keep them creditable up to native int until quota columns share one width.
+		if user.Quota > common.MaxQuota || (topUp.PromisedQuota > 0 && topUp.PromisedQuota <= common.MaxQuota) {
+			// ponytail: honor bounded paid-order snapshots near the legacy balance cap; native int stays the ceiling until quota columns share one width.
 			balanceLimit = math.MaxInt
 		}
 		if user.Quota < 0 || creditedQuota > balanceLimit-user.Quota {

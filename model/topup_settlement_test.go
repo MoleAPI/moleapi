@@ -110,6 +110,29 @@ func TestManualCompleteTopUpPreservesLegacyLargeBalance(t *testing.T) {
 	assert.Equal(t, 100, topUp.CreditedQuota)
 }
 
+func TestManualCompleteTopUpHonorsPromisedQuotaNearMaxBalance(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+
+	userQuota := common.MaxQuota - 50
+	insertUserForPaymentGuardTest(t, 528, userQuota)
+	record := &TopUp{
+		UserId:          528,
+		Amount:          1,
+		Money:           1,
+		TradeNo:         "manual-promised-near-max",
+		PaymentMethod:   PaymentProviderEpay,
+		PaymentProvider: PaymentProviderEpay,
+		PromisedQuota:   100,
+		Status:          common.TopUpStatusPending,
+		CreateTime:      time.Now().Unix(),
+	}
+	require.NoError(t, DB.Create(record).Error)
+
+	require.NoError(t, ManualCompleteTopUp("manual-promised-near-max", "203.0.113.15"))
+	assert.Equal(t, userQuota+100, getUserQuotaForPaymentGuardTest(t, 528))
+}
+
 func TestManualCompleteTopUpSupportsProvidersWithLegacyLargeBalance(t *testing.T) {
 	useQuotaPerUnitForTopUpTest(t, 100)
 
