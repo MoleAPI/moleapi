@@ -59,6 +59,9 @@ export type WaffoPancakePaymentResponse = ApiResponse<
     }
   | string
 >
+export type NowPaymentsPaymentResponse = ApiResponse<
+  { checkout_url?: string; order_id?: string } | string
+>
 export type LanTuPaymentLinkKind = 'qr_image' | 'qr_text' | 'url'
 export interface LanTuCheckout {
   pay_link: string
@@ -177,6 +180,10 @@ export interface TopupInfo {
   enable_lantu_topup?: boolean
   /** Minimum topup amount for LanTu */
   lantu_min_topup?: number
+  /** Whether NOWPayments crypto checkout is enabled */
+  enable_nowpayments_topup?: boolean
+  /** Minimum topup amount for NOWPayments */
+  nowpayments_min_topup?: number
   /** Whether redemption code usage is enabled */
   enable_redemption?: boolean
   /** Whether compliance confirmation has been completed */
@@ -229,6 +236,11 @@ export interface WaffoPaymentRequest {
  * Waffo Pancake payment request parameters
  */
 export interface WaffoPancakePaymentRequest {
+  /** Topup amount */
+  amount: number
+}
+
+export interface NowPaymentsPaymentRequest {
   /** Topup amount */
   amount: number
 }

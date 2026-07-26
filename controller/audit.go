@@ -49,6 +49,7 @@ var auditContentTemplates = map[string]string{
 	"topup.invoice_view": "Viewed invoice for top-up ${trade_no} (ID: ${topup_id})",
 
 	"subscription.plan_reset":      "Reset active subscriptions for plan ${plan_id}",
+	"subscription.plan_delete":     "Deleted subscription plan ${plan_title} (ID: ${plan_id})",
 	"subscription.user_plan_reset": "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
 }
 

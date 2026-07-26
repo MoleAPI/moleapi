@@ -45,6 +45,7 @@ const (
 	PaymentMethodStripe       = "stripe"
 	PaymentMethodCreem        = "creem"
 	PaymentMethodLanTu        = "lantu"
+	PaymentMethodNowPayments  = "nowpayments"
 	PaymentMethodWaffo        = "waffo"
 	PaymentMethodWaffoPancake = "waffo_pancake"
 	PaymentMethodBalance      = "balance"
@@ -55,6 +56,7 @@ const (
 	PaymentProviderStripe       = "stripe"
 	PaymentProviderCreem        = "creem"
 	PaymentProviderLanTu        = "lantu"
+	PaymentProviderNowPayments  = "nowpayments"
 	PaymentProviderWaffo        = "waffo"
 	PaymentProviderWaffoPancake = "waffo_pancake"
 	PaymentProviderBalance      = "balance"
@@ -703,6 +705,31 @@ func RechargeLanTuWithPaymentDetails(tradeNo string, gatewayTradeNo string, paym
 
 	if settled {
 		RecordTopupLog(topUp.UserId, fmt.Sprintf("蓝兔支付充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodLanTu)
+	}
+	return nil
+}
+
+func RechargeNowPaymentsWithPaymentDetails(tradeNo string, gatewayTradeNo string, paymentCurrency string, callerIp string) error {
+	if tradeNo == "" {
+		return errors.New("未提供支付单号")
+	}
+
+	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, PaymentProviderNowPayments, topUpQuotaFromAmount, func(topUp *TopUp, _ *User) map[string]interface{} {
+		if gatewayTradeNo != "" {
+			topUp.GatewayTradeNo = gatewayTradeNo
+		}
+		if paymentCurrency != "" {
+			topUp.PaymentCurrency = paymentCurrency
+		}
+		return nil
+	})
+	if err != nil {
+		common.SysError("nowpayments topup failed: " + err.Error())
+		return errors.New("充值失败，请稍后重试")
+	}
+
+	if settled {
+		RecordTopupLog(topUp.UserId, fmt.Sprintf("NOWPayments充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodNowPayments)
 	}
 	return nil
 }

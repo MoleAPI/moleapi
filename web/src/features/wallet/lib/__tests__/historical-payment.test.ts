@@ -21,6 +21,7 @@ import { describe, test } from 'node:test'
 
 import { formatQuota } from '@/lib/format'
 
+import { getPaymentMethodName } from '../billing'
 import {
   formatHistoricalCreditedAmount,
   formatHistoricalPaymentAmount,
@@ -67,5 +68,9 @@ describe('historical payment amount', () => {
 
     assert.match(amount, /10/)
     assert.equal(credited, formatQuota(500_000))
+  })
+
+  test('labels NOWPayments records as Crypto Pay', () => {
+    assert.equal(getPaymentMethodName('nowpayments'), 'Crypto Pay')
   })
 })

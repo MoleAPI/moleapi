@@ -152,4 +152,5 @@ export type SubscriptionsDialogType =
   | 'create'
   | 'update'
   | 'toggle-status'
+  | 'delete'
   | 'reset-subscriptions'

@@ -23,8 +23,8 @@ import { toast } from 'sonner'
 import { SectionPageLayout } from '@/components/layout'
 import { useStatus } from '@/hooks/use-status'
 import { useSystemConfig } from '@/hooks/use-system-config'
-import { formatCurrencyFromUSD } from '@/lib/currency'
 import { getSelf } from '@/lib/api'
+import { formatCurrencyFromUSD } from '@/lib/currency'
 
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
@@ -45,6 +45,7 @@ import {
   useWaffoPayment,
   useWaffoPancakePayment,
   useLanTuPayment,
+  useNowPaymentsPayment,
 } from './hooks'
 import {
   getDefaultPaymentType,
@@ -131,6 +132,8 @@ export function Wallet(props: WalletProps) {
   const { processing: waffoProcessing, processWaffoPayment } = useWaffoPayment()
   const { processing: pancakeProcessing, processWaffoPancakePayment } =
     useWaffoPancakePayment()
+  const { processing: nowPaymentsProcessing, processNowPaymentsPayment } =
+    useNowPaymentsPayment()
   const {
     processing: lantuProcessing,
     checking: lantuChecking,
@@ -202,11 +205,14 @@ export function Wallet(props: WalletProps) {
           setTopupAmount(match.product.price)
           setSelectedPreset(match.product.price)
           toast.warning(
-            t('Creem does not support custom amounts. Switched to {{amount}}.', {
-              amount: formatCurrencyFromUSD(match.product.price, {
-                abbreviate: false,
-              }),
-            })
+            t(
+              'Creem does not support custom amounts. Switched to {{amount}}.',
+              {
+                amount: formatCurrencyFromUSD(match.product.price, {
+                  abbreviate: false,
+                }),
+              }
+            )
           )
         }
         setSelectedCreemProduct(match.product)
@@ -249,6 +255,7 @@ export function Wallet(props: WalletProps) {
         waffo: processWaffoPayment,
         waffoPancake: processWaffoPancakePayment,
         lantu: processLanTuPayment,
+        nowPayments: processNowPaymentsPayment,
       }
     )
 
@@ -403,7 +410,11 @@ export function Wallet(props: WalletProps) {
         paymentMethod={selectedPaymentMethod}
         calculating={calculating}
         processing={
-          processing || waffoProcessing || pancakeProcessing || lantuProcessing
+          processing ||
+          waffoProcessing ||
+          pancakeProcessing ||
+          lantuProcessing ||
+          nowPaymentsProcessing
         }
         discountRate={getDiscountRate()}
         bonusRate={getBonusRate()}

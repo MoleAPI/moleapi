@@ -70,6 +70,7 @@ export const PAYMENT_METHOD_NAMES: Record<string, string> = {
   waffo: 'Waffo',
   waffo_pancake: 'Waffo Pancake',
   lantu: 'WeChat Pay',
+  nowpayments: 'Crypto Pay',
 }
 
 /**

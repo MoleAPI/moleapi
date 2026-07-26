@@ -62,6 +62,25 @@ func isLanTuWebhookEnabled() bool {
 	return isLanTuWebhookConfigured()
 }
 
+func isNowPaymentsTopUpEnabled() bool {
+	if !isPaymentComplianceConfirmed() {
+		return false
+	}
+	return setting.NowPaymentsEnabled &&
+		setting.NowPaymentsMinTopUp > 0 &&
+		strings.TrimSpace(setting.NowPaymentsApiKey) != "" &&
+		strings.TrimSpace(setting.NowPaymentsCurrency) != "" &&
+		isNowPaymentsWebhookConfigured()
+}
+
+func isNowPaymentsWebhookConfigured() bool {
+	return strings.TrimSpace(setting.NowPaymentsIPNSecret) != ""
+}
+
+func isNowPaymentsWebhookEnabled() bool {
+	return isNowPaymentsWebhookConfigured()
+}
+
 func isWaffoTopUpEnabled() bool {
 	if !isPaymentComplianceConfirmed() {
 		return false
