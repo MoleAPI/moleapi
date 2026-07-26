@@ -308,13 +308,11 @@ export function LogsFilterToolbar<TData>(props: LogsFilterToolbarProps<TData>) {
           <div className='grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-4 xl:grid-cols-6 2xl:grid-cols-8'>
             {props.primaryFilters}
           </div>
-          <div className='flex shrink-0 items-center justify-end gap-1.5 sm:gap-2'>
+          <div className='flex shrink-0 flex-wrap items-center justify-end gap-1.5 sm:gap-2 lg:w-[22rem] xl:w-[25rem]'>
+            {props.stats}
             {desktopActions}
           </div>
         </div>
-        {props.stats && (
-          <div className='mt-2 flex min-w-0 items-center'>{props.stats}</div>
-        )}
       </div>
     )
   }

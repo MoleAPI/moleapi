@@ -478,6 +478,43 @@ func GetSubscriptionPlanById(id int) (*SubscriptionPlan, error) {
 	return getSubscriptionPlanByIdTx(nil, id)
 }
 
+func AdminDeleteSubscriptionPlan(planId int) (*SubscriptionPlan, error) {
+	if planId <= 0 {
+		return nil, errors.New("invalid planId")
+	}
+	var deletedPlan *SubscriptionPlan
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		var plan SubscriptionPlan
+		if err := lockForUpdate(tx).Where("id = ?", planId).First(&plan).Error; err != nil {
+			return err
+		}
+
+		var count int64
+		if err := tx.Model(&UserSubscription{}).Where("plan_id = ?", planId).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("该套餐已有订阅记录，无法删除，请禁用该套餐")
+		}
+		if err := tx.Model(&SubscriptionOrder{}).Where("plan_id = ?", planId).Count(&count).Error; err != nil {
+			return err
+		}
+		if count > 0 {
+			return errors.New("该套餐已有支付订单，无法删除，请禁用该套餐")
+		}
+		if err := tx.Delete(&plan).Error; err != nil {
+			return err
+		}
+		deletedPlan = &plan
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	InvalidateSubscriptionPlanCache(planId)
+	return deletedPlan, nil
+}
+
 func getSubscriptionPlanByIdTx(tx *gorm.DB, id int) (*SubscriptionPlan, error) {
 	if id <= 0 {
 		return nil, errors.New("invalid plan id")

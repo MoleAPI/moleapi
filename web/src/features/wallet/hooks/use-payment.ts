@@ -25,6 +25,7 @@ import {
   calculateStripeAmount,
   calculateWaffoAmount,
   calculateWaffoPancakeAmount,
+  calculateNowPaymentsAmount,
   requestPayment,
   requestStripePayment,
   isApiSuccess,
@@ -33,6 +34,7 @@ import {
   isStripePayment,
   isWaffoPayment,
   isWaffoPancakePayment,
+  isNowPaymentsPayment,
   isSafeHttpPaymentUrl,
   submitPaymentForm,
 } from '../lib'
@@ -49,6 +51,7 @@ export interface PaymentAmountCalculators {
   stripe: AmountCalculator
   waffo: AmountCalculator
   waffoPancake: AmountCalculator
+  nowPayments: AmountCalculator
 }
 
 const defaultPaymentAmountCalculators: PaymentAmountCalculators = {
@@ -56,6 +59,7 @@ const defaultPaymentAmountCalculators: PaymentAmountCalculators = {
   stripe: calculateStripeAmount,
   waffo: calculateWaffoAmount,
   waffoPancake: calculateWaffoPancakeAmount,
+  nowPayments: calculateNowPaymentsAmount,
 }
 
 export async function requestPaymentAmount(
@@ -70,6 +74,8 @@ export async function requestPaymentAmount(
     calculator = calculators.waffo
   } else if (isWaffoPancakePayment(paymentType)) {
     calculator = calculators.waffoPancake
+  } else if (isNowPaymentsPayment(paymentType)) {
+    calculator = calculators.nowPayments
   }
 
   const response = await calculator({ amount: topupAmount })

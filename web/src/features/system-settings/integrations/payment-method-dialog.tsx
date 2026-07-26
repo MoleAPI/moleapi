@@ -69,6 +69,7 @@ type PaymentMethodDialogProps = {
 const PAYMENT_TYPE_ICON_NAMES: Record<string, string> = {
   alipay: 'SiAlipay',
   stripe: 'SiStripe',
+  nowpayments: 'LuBitcoin',
   waffo_pancake: 'LuCreditCard',
   wxpay: 'SiWechat',
 }
@@ -102,6 +103,12 @@ export function PaymentMethodDialog({
       label: `${t('Stripe')} (stripe)`,
       name: t('Stripe'),
       value: 'stripe',
+    },
+    {
+      iconName: 'LuBitcoin',
+      label: `${t('Crypto Pay')} (nowpayments)`,
+      name: t('Crypto Pay'),
+      value: 'nowpayments',
     },
     {
       iconName: 'LuCreditCard',
@@ -249,7 +256,7 @@ export function PaymentMethodDialog({
                 </FormControl>
                 <FormDescription className='leading-relaxed'>
                   {t(
-                    'Used to decide the payment flow. Built-in keys include stripe for Stripe and waffo_pancake for Waffo Pancake; other values are sent to Epay as the type parameter.'
+                    'Used to decide the payment flow. Built-in keys include stripe for Stripe, nowpayments for Crypto Pay, and waffo_pancake for Waffo Pancake; other values are sent to Epay as the type parameter.'
                   )}
                 </FormDescription>
                 <FormMessage />

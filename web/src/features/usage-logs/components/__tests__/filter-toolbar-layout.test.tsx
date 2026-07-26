@@ -70,5 +70,6 @@ test('compact toolbar keeps actions in a fixed right-side group', async () => {
   assert.match(html, /lg:flex-row/)
   assert.match(html, /shrink-0/)
   assert.match(html, /justify-end/)
+  assert.match(html, /lg:w-\[22rem\]/)
   assert.match(html, /data-stats="logs"/)
 })

@@ -177,6 +177,13 @@ const paymentSchema = z.object({
   LantuMchId: z.string(),
   LantuSecretKey: z.string(),
   LantuMinTopUp: z.coerce.number().min(1),
+  NowPaymentsEnabled: z.boolean(),
+  NowPaymentsApiKey: z.string(),
+  NowPaymentsIPNSecret: z.string(),
+  NowPaymentsSandbox: z.boolean(),
+  NowPaymentsCurrency: z.string(),
+  NowPaymentsUnitPrice: z.coerce.number().min(0),
+  NowPaymentsMinTopUp: z.coerce.number().min(1),
   WaffoEnabled: z.boolean(),
   WaffoApiKey: z.string(),
   WaffoPrivateKey: z.string(),
@@ -464,6 +471,13 @@ export function PaymentSettingsSection({
       LantuMchId: values.LantuMchId.trim(),
       LantuSecretKey: values.LantuSecretKey.trim(),
       LantuMinTopUp: values.LantuMinTopUp,
+      NowPaymentsEnabled: values.NowPaymentsEnabled,
+      NowPaymentsApiKey: values.NowPaymentsApiKey.trim(),
+      NowPaymentsIPNSecret: values.NowPaymentsIPNSecret.trim(),
+      NowPaymentsSandbox: values.NowPaymentsSandbox,
+      NowPaymentsCurrency: values.NowPaymentsCurrency.trim() || 'USD',
+      NowPaymentsUnitPrice: values.NowPaymentsUnitPrice,
+      NowPaymentsMinTopUp: values.NowPaymentsMinTopUp,
       WaffoEnabled: values.WaffoEnabled,
       WaffoSandbox: values.WaffoSandbox,
       WaffoMerchantId: values.WaffoMerchantId.trim(),
@@ -516,6 +530,14 @@ export function PaymentSettingsSection({
       LantuMchId: initialRef.current.LantuMchId.trim(),
       LantuSecretKey: initialRef.current.LantuSecretKey.trim(),
       LantuMinTopUp: initialRef.current.LantuMinTopUp,
+      NowPaymentsEnabled: initialRef.current.NowPaymentsEnabled,
+      NowPaymentsApiKey: initialRef.current.NowPaymentsApiKey.trim(),
+      NowPaymentsIPNSecret: initialRef.current.NowPaymentsIPNSecret.trim(),
+      NowPaymentsSandbox: initialRef.current.NowPaymentsSandbox,
+      NowPaymentsCurrency:
+        initialRef.current.NowPaymentsCurrency.trim() || 'USD',
+      NowPaymentsUnitPrice: initialRef.current.NowPaymentsUnitPrice,
+      NowPaymentsMinTopUp: initialRef.current.NowPaymentsMinTopUp,
       WaffoEnabled: initialRef.current.WaffoEnabled,
       WaffoSandbox: initialRef.current.WaffoSandbox,
       WaffoMerchantId: initialRef.current.WaffoMerchantId.trim(),
@@ -689,6 +711,55 @@ export function PaymentSettingsSection({
     }
     if (sanitized.LantuMinTopUp !== initial.LantuMinTopUp) {
       updates.push({ key: 'LantuMinTopUp', value: sanitized.LantuMinTopUp })
+    }
+
+    if (sanitized.NowPaymentsEnabled !== initial.NowPaymentsEnabled) {
+      updates.push({
+        key: 'NowPaymentsEnabled',
+        value: sanitized.NowPaymentsEnabled,
+      })
+    }
+    if (
+      sanitized.NowPaymentsApiKey &&
+      sanitized.NowPaymentsApiKey !== initial.NowPaymentsApiKey
+    ) {
+      updates.push({
+        key: 'NowPaymentsApiKey',
+        value: sanitized.NowPaymentsApiKey,
+      })
+    }
+    if (
+      sanitized.NowPaymentsIPNSecret &&
+      sanitized.NowPaymentsIPNSecret !== initial.NowPaymentsIPNSecret
+    ) {
+      updates.push({
+        key: 'NowPaymentsIPNSecret',
+        value: sanitized.NowPaymentsIPNSecret,
+      })
+    }
+    if (sanitized.NowPaymentsSandbox !== initial.NowPaymentsSandbox) {
+      updates.push({
+        key: 'NowPaymentsSandbox',
+        value: sanitized.NowPaymentsSandbox,
+      })
+    }
+    if (sanitized.NowPaymentsCurrency !== initial.NowPaymentsCurrency) {
+      updates.push({
+        key: 'NowPaymentsCurrency',
+        value: sanitized.NowPaymentsCurrency,
+      })
+    }
+    if (sanitized.NowPaymentsUnitPrice !== initial.NowPaymentsUnitPrice) {
+      updates.push({
+        key: 'NowPaymentsUnitPrice',
+        value: sanitized.NowPaymentsUnitPrice,
+      })
+    }
+    if (sanitized.NowPaymentsMinTopUp !== initial.NowPaymentsMinTopUp) {
+      updates.push({
+        key: 'NowPaymentsMinTopUp',
+        value: sanitized.NowPaymentsMinTopUp,
+      })
     }
 
     if (sanitized.WaffoEnabled !== initial.WaffoEnabled) {
@@ -942,12 +1013,13 @@ export function PaymentSettingsSection({
           />
           <Tabs defaultValue='general' className='min-w-0'>
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[50rem] grid-cols-7'>
+              <TabsList className='grid min-w-[58rem] grid-cols-8'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
                 <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
                 <TabsTrigger value='creem'>Creem</TabsTrigger>
                 <TabsTrigger value='lantu'>LanTu</TabsTrigger>
+                <TabsTrigger value='nowpayments'>NOWPayments</TabsTrigger>
                 <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
                 <TabsTrigger value='waffo'>Waffo</TabsTrigger>
               </TabsList>
@@ -1064,7 +1136,7 @@ export function PaymentSettingsSection({
                       </FormControl>
                       <FormDescription>
                         {t(
-                          'Configured as PayMethods JSON. The type value decides which payment flow is used: stripe for Stripe, waffo_pancake for Waffo Pancake, and other values are sent to Epay as the type parameter.'
+                          'Configured as PayMethods JSON. The type value decides which payment flow is used: stripe for Stripe, nowpayments for NOWPayments, waffo_pancake for Waffo Pancake, and other values are sent to Epay as the type parameter.'
                         )}
                       </FormDescription>
                       <FormMessage />
@@ -1313,6 +1385,208 @@ export function PaymentSettingsSection({
                         <FormDescription>
                           {t(
                             'Smallest amount users can recharge through LanTu'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            </TabsContent>
+
+            <TabsContent
+              value='nowpayments'
+              className={paymentTabContentClassName}
+            >
+              <div className='space-y-4'>
+                <div>
+                  <h3 className='text-lg font-medium'>
+                    {t('NOWPayments Gateway')}
+                  </h3>
+                  <p className='text-muted-foreground text-sm'>
+                    {t('Configuration for NOWPayments crypto checkout')}
+                  </p>
+                </div>
+
+                <Alert>
+                  <ShieldAlert className='h-4 w-4' />
+                  <AlertTitle>{t('Webhook Configuration:')}</AlertTitle>
+                  <AlertDescription className='space-y-1'>
+                    <code className='bg-muted block rounded px-2 py-1 text-xs'>
+                      {'<ServerAddress>/api/nowpayments/webhook'}
+                    </code>
+                    <p>
+                      {t(
+                        'Configure this IPN callback URL in your NOWPayments dashboard.'
+                      )}
+                    </p>
+                    <a
+                      href='https://documenter.getpostman.com/view/7907941/2s93JusNJt'
+                      target='_blank'
+                      rel='noreferrer'
+                      className='text-primary text-sm underline hover:no-underline'
+                    >
+                      {t('NOWPayments documentation')}
+                    </a>
+                  </AlertDescription>
+                </Alert>
+
+                <FormField
+                  control={form.control}
+                  name='NowPaymentsEnabled'
+                  render={({ field }) => (
+                    <SettingsSwitchItem>
+                      <SettingsSwitchContent>
+                        <FormLabel>
+                          {t('Enable NOWPayments payments')}
+                        </FormLabel>
+                        <FormDescription>
+                          {t('Hosted crypto checkout through NOWPayments')}
+                        </FormDescription>
+                      </SettingsSwitchContent>
+                      <FormControl>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
+                      </FormControl>
+                    </SettingsSwitchItem>
+                  )}
+                />
+
+                <div className='grid gap-6 md:grid-cols-3'>
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsApiKey'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('NOWPayments API key')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='password'
+                            autoComplete='new-password'
+                            placeholder={t('Enter new key to update')}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'NOWPayments API key (leave blank unless updating)'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsIPNSecret'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('IPN secret')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='password'
+                            autoComplete='new-password'
+                            placeholder={t('Enter new key to update')}
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'IPN signing secret (leave blank unless updating)'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsSandbox'
+                    render={({ field }) => (
+                      <SettingsSwitchItem>
+                        <SettingsSwitchContent>
+                          <FormLabel>{t('Sandbox mode')}</FormLabel>
+                          <FormDescription>
+                            {t('Use NOWPayments sandbox API')}
+                          </FormDescription>
+                        </SettingsSwitchContent>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </SettingsSwitchItem>
+                    )}
+                  />
+                </div>
+
+                <div className='grid gap-6 md:grid-cols-3'>
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsCurrency'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Price currency')}</FormLabel>
+                        <FormControl>
+                          <Input placeholder='USD' {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Invoice fiat currency, usually USD')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsUnitPrice'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {t('Unit price (invoice currency / USD)')}
+                        </FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            step='0.01'
+                            min={0}
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'How much NOWPayments invoice currency to charge for each USD of balance'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name='NowPaymentsMinTopUp'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min={1}
+                            step={1}
+                            {...safeNumberFieldProps(field)}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Smallest amount users can recharge through NOWPayments'
                           )}
                         </FormDescription>
                         <FormMessage />

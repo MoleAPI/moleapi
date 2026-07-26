@@ -138,18 +138,21 @@ export function RechargeFormCard({
     enableWaffoTopup ||
     enableWaffoPancakeTopup ||
     topupInfo?.enable_lantu_topup ||
+    topupInfo?.enable_nowpayments_topup ||
     hasCreemPaymentMethod
   const standardPaymentMethods = getStandardPaymentMethods(
     topupInfo?.pay_methods
   )
   const paymentMethods =
     hasCreemPaymentMethod &&
-    !standardPaymentMethods.some((method) => method.type === PAYMENT_TYPES.CREEM)
-    ? [
-        ...standardPaymentMethods,
-        { name: 'Creem', type: PAYMENT_TYPES.CREEM },
-      ]
-    : standardPaymentMethods
+    !standardPaymentMethods.some(
+      (method) => method.type === PAYMENT_TYPES.CREEM
+    )
+      ? [
+          ...standardPaymentMethods,
+          { name: 'Creem', type: PAYMENT_TYPES.CREEM },
+        ]
+      : standardPaymentMethods
   const hasStandardPaymentMethods = paymentMethods.length > 0
   const hasWaffoPaymentMethods =
     Array.isArray(waffoPayMethods) && waffoPayMethods.length > 0
@@ -335,7 +338,11 @@ export function RechargeFormCard({
                 {hasStandardPaymentMethods ? (
                   <div className={rechargeFormLayoutClasses.paymentMethods}>
                     {paymentMethods.map((method) => {
-                      const methodName = t(method.name)
+                      const methodName = t(
+                        method.type === PAYMENT_TYPES.NOWPAYMENTS
+                          ? 'Crypto Pay'
+                          : method.name
+                      )
                       const minTopup = method.min_topup || 0
                       const disabled = minTopup > topupAmount
                       const disabledReason = disabled

@@ -32,7 +32,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { formatLocalCurrencyAmount } from '@/lib/currency'
 
-import { DEFAULT_DISCOUNT_RATE } from '../../constants'
+import { DEFAULT_DISCOUNT_RATE, PAYMENT_TYPES } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
 import type { PaymentMethod } from '../../types'
 
@@ -67,6 +67,13 @@ export function PaymentConfirmDialog({
   const hasDiscount = discountRate > 0 && discountRate < 1 && paymentAmount > 0
   const originalAmount = hasDiscount ? paymentAmount / discountRate : 0
   const discountAmount = hasDiscount ? originalAmount - paymentAmount : 0
+  const paymentMethodName = paymentMethod?.name
+    ? t(
+        paymentMethod.type === PAYMENT_TYPES.NOWPAYMENTS
+          ? 'Crypto Pay'
+          : paymentMethod.name
+      )
+    : ''
 
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -150,11 +157,9 @@ export function PaymentConfirmDialog({
                   paymentMethod?.type,
                   'h-4 w-4',
                   paymentMethod?.icon,
-                  paymentMethod?.name
+                  paymentMethodName
                 )}
-                <span className='font-medium'>
-                  {paymentMethod?.name ? t(paymentMethod.name) : ''}
-                </span>
+                <span className='font-medium'>{paymentMethodName}</span>
               </div>
             </div>
           </div>

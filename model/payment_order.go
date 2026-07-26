@@ -15,6 +15,7 @@ var paymentProviderOrderCodes = map[string]string{
 	PaymentProviderStripe:       "ST",
 	PaymentProviderCreem:        "CR",
 	PaymentProviderLanTu:        "LT",
+	PaymentProviderNowPayments:  "NP",
 	PaymentProviderWaffo:        "WF",
 	PaymentProviderWaffoPancake: "WP",
 	PaymentProviderBalance:      "BL",
