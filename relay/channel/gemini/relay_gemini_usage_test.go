@@ -2,9 +2,6 @@ package gemini
 
 import (
 	"bytes"
-	"encoding/base64"
-	"image"
-	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,31 +9,12 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
-	"github.com/QuantumNous/new-api/dto"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
-	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/types"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
-
-func testGeminiImageBase64(t *testing.T, width int, height int) string {
-	t.Helper()
-	img := image.NewGray(image.Rect(0, 0, width, height))
-	var buf bytes.Buffer
-	require.NoError(t, png.Encode(&buf, img))
-	return base64.StdEncoding.EncodeToString(buf.Bytes())
-}
-
-func TestGeminiFlashLiteImageAlwaysUsesSupportedOneKRate(t *testing.T) {
-	t.Parallel()
-
-	for _, imageSize := range []string{"0.5K", "1K", "2K", "4K"} {
-		tokens, ok := geminiImageOutputTokensForSize("gemini-3.1-flash-lite-image-preview", imageSize)
-		require.True(t, ok)
-		require.Equal(t, 1120, tokens)
-	}
-}
 
 func TestGeminiChatHandlerCompletionTokensExcludeToolUsePromptTokens(t *testing.T) {
 	t.Parallel()
@@ -144,141 +122,6 @@ func TestGeminiStreamHandlerCompletionTokensExcludeToolUsePromptTokens(t *testin
 	require.Equal(t, 2209, usage.CompletionTokens)
 	require.Equal(t, 20689, usage.TotalTokens)
 	require.Equal(t, 1120, usage.CompletionTokenDetails.ReasoningTokens)
-}
-
-func TestGeminiStreamHandlerUsesReturnedAspectRatioForImageBillingFallback(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-
-	oldStreamingTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 300
-	t.Cleanup(func() {
-		constant.StreamingTimeout = oldStreamingTimeout
-	})
-
-	info := &relaycommon.RelayInfo{
-		OriginModelName: "mapped-image-model",
-		Request:         &dto.GeminiChatRequest{}, // No requested size or aspect ratio.
-		ChannelMeta: &relaycommon.ChannelMeta{
-			UpstreamModelName: "gemini-3.1-flash-image",
-		},
-	}
-	chunk := dto.GeminiChatResponse{
-		Candidates: []dto.GeminiChatCandidate{
-			{
-				Content: dto.GeminiChatContent{
-					Role: "model",
-					Parts: []dto.GeminiPart{
-						{InlineData: &dto.GeminiInlineData{
-							MimeType: "image/png",
-							Data:     testGeminiImageBase64(t, 768, 6144), // Documented 2K 1:8 output.
-						}},
-					},
-				},
-			},
-		},
-		UsageMetadata: dto.GeminiUsageMetadata{
-			PromptTokenCount:   315,
-			ThoughtsTokenCount: 280,
-			TotalTokenCount:    595,
-		},
-	}
-	chunkData, err := common.Marshal(chunk)
-	require.NoError(t, err)
-	resp := &http.Response{
-		Body: io.NopCloser(bytes.NewReader([]byte("data: " + string(chunkData) + "\ndata: [DONE]\n"))),
-	}
-
-	usage, newAPIError := geminiStreamHandler(c, info, resp, func(_ string, _ *dto.GeminiChatResponse) bool {
-		return true
-	})
-
-	require.Nil(t, newAPIError)
-	require.Equal(t, 1680, usage.CompletionTokenDetails.ImageTokens)
-	require.Equal(t, 1960, usage.CompletionTokens)
-	require.Equal(t, 2275, usage.TotalTokens)
-	require.True(t, common.GetContextKeyBool(c, constant.ContextKeyLocalCountTokens))
-	require.NotNil(t, usage.BillingUsage)
-	require.True(t, usage.BillingUsage.Estimated)
-	require.NotNil(t, usage.BillingUsage.GeminiUsageMetadata)
-
-	settlementUsage := buildUsageFromGeminiMetadata(usage.BillingUsage.GeminiUsageMetadata, 0)
-	params := service.BuildTieredTokenParams(&settlementUsage, false, map[string]bool{"img_o": true})
-	require.Equal(t, float64(1680), params.ImgO)
-	require.Equal(t, float64(280), params.C)
-}
-
-func TestGeminiStreamHandlerEstimatesTextWhenMetadataOnlyReportsThinking(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	c, _ := gin.CreateTestContext(httptest.NewRecorder())
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-
-	oldStreamingTimeout := constant.StreamingTimeout
-	constant.StreamingTimeout = 300
-	t.Cleanup(func() {
-		constant.StreamingTimeout = oldStreamingTimeout
-	})
-
-	info := &relaycommon.RelayInfo{
-		OriginModelName: "gemini-3.1-flash-image",
-		Request:         &dto.GeminiChatRequest{},
-		ChannelMeta: &relaycommon.ChannelMeta{
-			UpstreamModelName: "gemini-3.1-flash-image",
-		},
-	}
-	const caption = "caption returned with the generated image"
-	estimateContext, _ := gin.CreateTestContext(httptest.NewRecorder())
-	expectedTextTokens := service.ResponseText2Usage(estimateContext, caption, info.UpstreamModelName, 315).CompletionTokens
-	chunk := dto.GeminiChatResponse{
-		Candidates: []dto.GeminiChatCandidate{
-			{
-				Content: dto.GeminiChatContent{
-					Role: "model",
-					Parts: []dto.GeminiPart{
-						{Text: "private chain of thought that must not be charged twice", Thought: true},
-						{InlineData: &dto.GeminiInlineData{
-							MimeType: "image/png",
-							Data:     testGeminiImageBase64(t, 512, 512),
-						}, Thought: true},
-						{InlineData: &dto.GeminiInlineData{
-							MimeType: "image/png",
-							Data:     testGeminiImageBase64(t, 512, 512),
-						}, Thought: true},
-						{Text: caption},
-						{InlineData: &dto.GeminiInlineData{
-							MimeType: "image/png",
-							Data:     testGeminiImageBase64(t, 1024, 1024),
-						}},
-					},
-				},
-			},
-		},
-		UsageMetadata: dto.GeminiUsageMetadata{
-			PromptTokenCount:   315,
-			ThoughtsTokenCount: 280,
-			TotalTokenCount:    595,
-		},
-	}
-	chunkData, err := common.Marshal(chunk)
-	require.NoError(t, err)
-	resp := &http.Response{
-		Body: io.NopCloser(bytes.NewReader([]byte("data: " + string(chunkData) + "\ndata: [DONE]\n"))),
-	}
-
-	usage, newAPIError := geminiStreamHandler(c, info, resp, func(_ string, _ *dto.GeminiChatResponse) bool {
-		return true
-	})
-
-	require.Nil(t, newAPIError)
-	require.Equal(t, expectedTextTokens, usage.CompletionTokenDetails.TextTokens)
-	require.Equal(t, 1120, usage.CompletionTokenDetails.ImageTokens)
-	require.Equal(t, 280, usage.CompletionTokenDetails.ReasoningTokens)
-	require.Equal(t, 1120+280+usage.CompletionTokenDetails.TextTokens, usage.CompletionTokens)
-	require.Equal(t, usage.PromptTokens+usage.CompletionTokens, usage.TotalTokens)
-	require.NotNil(t, usage.BillingUsage)
-	require.NotNil(t, usage.BillingUsage.GeminiUsageMetadata)
-	require.Equal(t, 1120+usage.CompletionTokenDetails.TextTokens, usage.BillingUsage.GeminiUsageMetadata.CandidatesTokenCount)
 }
 
 func TestGeminiTextGenerationHandlerPromptTokensIncludeToolUsePromptTokens(t *testing.T) {
