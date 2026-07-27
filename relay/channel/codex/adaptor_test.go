@@ -8,10 +8,11 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
-	"github.com/QuantumNous/new-api/types"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -87,4 +88,18 @@ func TestCodexConvertsResponsesBackToClaude(t *testing.T) {
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &claudeResp))
 	require.Len(t, claudeResp.Content, 1)
 	assert.Equal(t, "OK", claudeResp.Content[0].GetText())
+}
+
+func TestGetRequestURLAlphaSearch(t *testing.T) {
+	info := &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{
+			ChannelType:    constant.ChannelTypeCodex,
+			ChannelBaseUrl: "https://chatgpt.com",
+		},
+		RelayMode: relayconstant.RelayModeAlphaSearch,
+	}
+
+	url, err := (&Adaptor{}).GetRequestURL(info)
+	require.NoError(t, err)
+	assert.Equal(t, "https://chatgpt.com/backend-api/codex/alpha/search", url)
 }

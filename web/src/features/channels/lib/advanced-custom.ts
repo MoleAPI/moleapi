@@ -128,6 +128,10 @@ export const ADVANCED_CUSTOM_INCOMING_PATH_OPTIONS: AdvancedCustomIncomingPathOp
       label: 'OpenAI Responses Compact',
     },
     {
+      value: '/v1/alpha/search',
+      label: 'OpenAI Alpha Search',
+    },
+    {
       value: ADVANCED_CUSTOM_MODEL_LIST_PATH,
       label: ADVANCED_CUSTOM_MODEL_LIST_LABEL,
     },
@@ -862,6 +866,7 @@ function isConverterPathAllowed(
   converter: AdvancedCustomConverter
 ): boolean {
   if (converter === 'none') return true
+  if (incomingPath === '/v1/alpha/search') return false
   if (converter === 'anthropic_messages_to_openai_chat_completions') {
     return incomingPath === '/v1/messages'
   }
