@@ -37,9 +37,12 @@ const domGlobals = [
   'requestAnimationFrame',
   'cancelAnimationFrame',
   'getComputedStyle',
+  'matchMedia',
 ] as const
 
+const previousGlobals = new Map<string, PropertyDescriptor | undefined>()
 for (const key of domGlobals) {
+  previousGlobals.set(key, Object.getOwnPropertyDescriptor(globalThis, key))
   Object.defineProperty(globalThis, key, {
     configurable: true,
     value: domWindow[key],
@@ -107,6 +110,13 @@ function normalizedText(value: string | null): string {
 describe('log cost display', () => {
   after(() => {
     domWindow.close()
+    for (const [key, descriptor] of previousGlobals) {
+      if (descriptor) {
+        Object.defineProperty(globalThis, key, descriptor)
+      } else {
+        Reflect.deleteProperty(globalThis, key)
+      }
+    }
   })
 
   test('keeps the regular cost visible and adds an accessible surcharge marker', async () => {
