@@ -219,6 +219,38 @@ func TestEpayNotifyAcknowledgesSuccessfulTradeOnlyAfterAtomicSettlement(t *testi
 	assert.Equal(t, common.TopUpStatusPending, wrongProvider.Status)
 }
 
+func TestEpayNotifySettlesPaidOrderForUserWithSmallNegativeQuota(t *testing.T) {
+	db := setupTopUpWebhookSettlementTest(t)
+	user := &model.User{
+		Id:       606,
+		Username: "epay_negative_quota_user",
+		Password: "password123",
+		Status:   common.UserStatusEnabled,
+		Quota:    -50,
+	}
+	require.NoError(t, db.Create(user).Error)
+	topUp := &model.TopUp{
+		UserId:          user.Id,
+		Amount:          1,
+		Money:           1,
+		TradeNo:         "epay-negative-quota",
+		PaymentMethod:   "alipay",
+		PaymentProvider: model.PaymentProviderEpay,
+		Status:          common.TopUpStatusPending,
+	}
+	require.NoError(t, db.Create(topUp).Error)
+
+	response := runSignedEpayNotify(t, topUp.TradeNo, epay.StatusTradeSuccess, "1.00")
+	assert.Equal(t, "success", response.Body.String())
+
+	require.NoError(t, db.First(topUp, topUp.Id).Error)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	assert.Equal(t, 100, topUp.CreditedQuota)
+	var storedUser model.User
+	require.NoError(t, db.Select("quota").First(&storedUser, user.Id).Error)
+	assert.Equal(t, 50, storedUser.Quota)
+}
+
 func TestEpayNotifyRejectsMismatchedPaymentAmount(t *testing.T) {
 	db := setupTopUpWebhookSettlementTest(t)
 	user := &model.User{
