@@ -38,12 +38,6 @@ interface LogCostDisplayProps {
   other: LogOtherData | null
 }
 
-function splitQuotaDisplay(value: string): { prefix: string; amount: string } {
-  const match = value.match(/^([^0-9+\-.,\s]+)(.+)$/)
-  if (!match) return { prefix: '', amount: value }
-  return { prefix: match[1], amount: match[2] }
-}
-
 function ToolSurchargeMarker() {
   const { t } = useTranslation()
   const label = t('Includes tool-call surcharge')
@@ -80,14 +74,9 @@ function ToolSurchargeMarker() {
 }
 
 function QuotaBadge(props: { quota: number }) {
-  const quotaDisplay = splitQuotaDisplay(formatLogQuota(props.quota))
-
   return (
-    <span className='border-border/80 bg-muted/60 inline-flex h-6 w-fit items-center rounded-md border px-2 [font-family:var(--font-body)] text-sm leading-none font-semibold tabular-nums'>
-      {quotaDisplay.prefix ? (
-        <span className='mr-1'>{quotaDisplay.prefix}</span>
-      ) : null}
-      <span>{quotaDisplay.amount}</span>
+    <span className='text-foreground font-medium tabular-nums'>
+      {formatLogQuota(props.quota)}
     </span>
   )
 }

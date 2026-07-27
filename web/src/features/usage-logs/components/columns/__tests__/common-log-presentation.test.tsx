@@ -94,10 +94,11 @@ function TestCell(props: {
 
 function TestDesktopLayout() {
   const columns = useCommonLogsColumns(true)
+  const columnOrder = columns.map((column) =>
+    'accessorKey' in column ? column.accessorKey : column.id
+  )
   const columnIds = new Set(
-    columns.map((column) =>
-      'accessorKey' in column ? column.accessorKey : column.id
-    )
+    columnOrder
   )
   const totalWidth = columns.reduce(
     (total, column) => total + (column.size ?? 0),
@@ -109,11 +110,8 @@ function TestDesktopLayout() {
       data-all-sized={columns.every((column) => column.size != null)}
       data-has-type-column={columnIds.has('type')}
       data-has-stream-column={columnIds.has('is_stream')}
-      data-column-order={columns
-        .map((column) =>
-          'accessorKey' in column ? column.accessorKey : column.id
-        )
-        .join('|')}
+      data-use-time-count={columnOrder.filter((id) => id === 'use_time').length}
+      data-column-order={columnOrder.join('|')}
     >
       {totalWidth}
     </output>
@@ -410,6 +408,7 @@ test('desktop common logs keep full values on one horizontally scrollable row', 
   assert.match(layoutHtml, /data-all-sized="true"/)
   assert.match(layoutHtml, /data-has-type-column="true"/)
   assert.match(layoutHtml, /data-has-stream-column="true"/)
+  assert.match(layoutHtml, /data-use-time-count="1"/)
   assert.match(layoutHtml, /prompt_tokens\|use_time\|is_stream\|quota/)
   assert.match(layoutHtml, />1447</)
   assert.match(timeHtml, /font-mono/)

@@ -11,6 +11,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/stretchr/testify/require"
 
 	"github.com/gin-gonic/gin"
 )
@@ -82,6 +83,39 @@ func TestConvertImageRequest(t *testing.T) {
 	if payload["response_format"] != "url" {
 		t.Fatalf("response_format = %#v, want %q", payload["response_format"], "url")
 	}
+}
+
+func TestConvertGeminiRequestToChat(t *testing.T) {
+	t.Parallel()
+
+	maxOutputTokens := uint(16)
+	converted, err := (&Adaptor{}).ConvertGeminiRequest(nil, &relaycommon.RelayInfo{
+		ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "abab6.5-chat"},
+	}, &dto.GeminiChatRequest{
+		Contents: []dto.GeminiChatContent{{
+			Role:  "user",
+			Parts: []dto.GeminiPart{{Text: "hello"}},
+		}},
+		GenerationConfig: dto.GeminiChatGenerationConfig{
+			MaxOutputTokens: &maxOutputTokens,
+		},
+	})
+	require.NoError(t, err)
+
+	chatReq, ok := converted.(*dto.GeneralOpenAIRequest)
+	require.True(t, ok)
+	require.Len(t, chatReq.Messages, 1)
+	require.Equal(t, "user", chatReq.Messages[0].Role)
+	require.Equal(t, "hello", chatReq.Messages[0].StringContent())
+}
+
+func TestConvertOpenAIResponsesRequestKeepsNativePayload(t *testing.T) {
+	t.Parallel()
+
+	request := dto.OpenAIResponsesRequest{Model: "abab6.5-chat"}
+	converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, &relaycommon.RelayInfo{}, request)
+	require.NoError(t, err)
+	require.Equal(t, request, converted)
 }
 
 func TestDoResponseForImageGeneration(t *testing.T) {
