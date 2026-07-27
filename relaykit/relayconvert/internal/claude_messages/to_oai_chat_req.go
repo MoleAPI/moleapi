@@ -169,7 +169,7 @@ func ClaudeMessagesRequestToOpenAIChat(claudeRequest dto.ClaudeRequest, info con
 					}
 				case "redacted_thinking":
 					if mediaMsg.Signature != "" {
-						openAIMessage.ReasoningContent = common.GetPointer(mediaMsg.Signature)
+						openAIMessage.ReasoningContent = kitutil.GetPointer(mediaMsg.Signature)
 					} else if mediaMsg.Thinking != nil {
 						openAIMessage.ReasoningContent = mediaMsg.Thinking
 					}

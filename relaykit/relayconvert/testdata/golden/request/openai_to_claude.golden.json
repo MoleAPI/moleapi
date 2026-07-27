@@ -28,10 +28,6 @@
       "role": "assistant",
       "content": [
         {
-          "type": "text",
-          "text": "..."
-        },
-        {
           "type": "tool_use",
           "id": "call_abc",
           "name": "get_weather",

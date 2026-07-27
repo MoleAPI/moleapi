@@ -9,7 +9,6 @@ import (
 
 func TestCodingPlanPresetBuildsGLMFallbackResponsesRoute(t *testing.T) {
 	settings := &ChannelOtherSettings{}
-
 	require.NoError(t, settings.ApplyCodingPlanPreset(CodingPlanProviderGLMChina))
 	require.Equal(t, CodingPlanProviderGLMChina, settings.CodingPlanProvider)
 	require.NotNil(t, settings.AdvancedCustom)
@@ -18,17 +17,14 @@ func TestCodingPlanPresetBuildsGLMFallbackResponsesRoute(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, advancedCustomConverterOpenAIResponsesToOpenAIChat, route.Converter)
 	assert.Equal(t, "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", route.UpstreamPath)
-
 	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathOpenAICompletions)
 	require.True(t, ok)
 	assert.Equal(t, advancedCustomConverterOpenAICompletionsToChat, route.Converter)
 	assert.Equal(t, "https://open.bigmodel.cn/api/coding/paas/v4/chat/completions", route.UpstreamPath)
-
 	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathImageGeneration)
 	require.True(t, ok)
 	assert.Equal(t, advancedCustomConverterNone, route.Converter)
 	assert.Equal(t, "https://open.bigmodel.cn/api/coding/paas/v4/images/generations", route.UpstreamPath)
-
 	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathClaudeMessages)
 	require.True(t, ok)
 	assert.Equal(t, advancedCustomConverterNone, route.Converter)
@@ -37,14 +33,11 @@ func TestCodingPlanPresetBuildsGLMFallbackResponsesRoute(t *testing.T) {
 
 func TestCodingPlanPresetBuildsNativeResponsesRoute(t *testing.T) {
 	settings := &ChannelOtherSettings{}
-
 	require.NoError(t, settings.ApplyCodingPlanPreset(CodingPlanProviderKimi))
-
 	route, ok := settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathOpenAIResponses)
 	require.True(t, ok)
 	assert.Equal(t, advancedCustomConverterNone, route.Converter)
 	assert.Equal(t, "https://api.kimi.com/coding/v1/responses", route.UpstreamPath)
-
 	modelListRoute, ok := settings.AdvancedCustom.ModelListRoute()
 	require.True(t, ok)
 	assert.Equal(t, "https://api.kimi.com/coding/v1/models", modelListRoute.UpstreamPath)
@@ -52,31 +45,21 @@ func TestCodingPlanPresetBuildsNativeResponsesRoute(t *testing.T) {
 
 func TestCodingPlanPresetBuildsCustomPlaceholderRoutes(t *testing.T) {
 	settings := &ChannelOtherSettings{}
-
 	require.NoError(t, settings.ApplyCodingPlanPreset(CodingPlanProviderCustom))
-
-	route, ok := settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathOpenAIChat)
-	require.True(t, ok)
-	assert.Equal(t, "https://your-openai-compatible-base-url.example/v1/chat/completions", route.UpstreamPath)
-
-	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathOpenAIResponses)
-	require.True(t, ok)
-	assert.Equal(t, "https://your-openai-compatible-base-url.example/v1/responses", route.UpstreamPath)
-
-	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathImageGeneration)
-	require.True(t, ok)
-	assert.Equal(t, "https://your-openai-compatible-base-url.example/v1/images/generations", route.UpstreamPath)
-
-	route, ok = settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathClaudeMessages)
-	require.True(t, ok)
-	assert.Equal(t, "https://your-anthropic-compatible-base-url.example/v1/messages", route.UpstreamPath)
+	for _, expected := range []struct{ path, url string }{
+		{advancedCustomEndpointPathOpenAIChat, "https://your-openai-compatible-base-url.example/v1/chat/completions"},
+		{advancedCustomEndpointPathOpenAIResponses, "https://your-openai-compatible-base-url.example/v1/responses"},
+		{advancedCustomEndpointPathImageGeneration, "https://your-openai-compatible-base-url.example/v1/images/generations"},
+		{advancedCustomEndpointPathClaudeMessages, "https://your-anthropic-compatible-base-url.example/v1/messages"},
+	} {
+		route, ok := settings.AdvancedCustom.MatchPath(expected.path)
+		require.True(t, ok)
+		assert.Equal(t, expected.url, route.UpstreamPath)
+	}
 }
 
 func TestCodingPlanPresetRejectsUnknownProvider(t *testing.T) {
-	settings := &ChannelOtherSettings{}
-
-	err := settings.ApplyCodingPlanPreset("missing-provider")
-
+	err := (&ChannelOtherSettings{}).ApplyCodingPlanPreset("missing-provider")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown coding plan provider")
 }

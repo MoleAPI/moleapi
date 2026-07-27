@@ -345,7 +345,7 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 			if reasoningContent := message.GetReasoningContent(); message.Role == "assistant" && reasoningContent != "" {
 				claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
 					Type:     "thinking",
-					Thinking: common.GetPointer(reasoningContent),
+					Thinking: kitutil.GetPointer(reasoningContent),
 				})
 			}
 			for _, mediaMessage := range message.ParseContent() {

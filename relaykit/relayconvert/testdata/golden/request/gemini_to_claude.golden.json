@@ -15,10 +15,6 @@
       "role": "assistant",
       "content": [
         {
-          "type": "text",
-          "text": "..."
-        },
-        {
           "type": "tool_use",
           "id": "call_1",
           "name": "get_weather",

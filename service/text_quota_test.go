@@ -92,10 +92,10 @@ func TestPostTextConsumeQuotaLogsExplicitImageTokenDirections(t *testing.T) {
 		StartTime:         now,
 		FirstResponseTime: now,
 		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: channelID},
-		PriceData: types.PriceData{
+		PriceData: hosttypes.PriceData{
 			CompletionRatio: 1,
 			ImageRatio:      2,
-			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+			GroupRatioInfo:  hosttypes.GroupRatioInfo{GroupRatio: 1},
 		},
 	}
 	usage := &dto.Usage{
@@ -139,11 +139,11 @@ func TestPostTextConsumeQuotaLogsImageRatioForOutputOnly(t *testing.T) {
 		StartTime:         now,
 		FirstResponseTime: now,
 		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: channelID},
-		PriceData: types.PriceData{
+		PriceData: hosttypes.PriceData{
 			ModelRatio:      4,
 			CompletionRatio: 3.75,
 			ImageRatio:      1,
-			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+			GroupRatioInfo:  hosttypes.GroupRatioInfo{GroupRatio: 1},
 		},
 	}
 	usage := &dto.Usage{
@@ -183,11 +183,11 @@ func TestPostTextConsumeQuotaLogsUsageSemantic(t *testing.T) {
 		FirstResponseTime:       now,
 		FinalRequestRelayFormat: types.RelayFormatClaude,
 		ChannelMeta:             &relaycommon.ChannelMeta{ChannelId: channelID},
-		PriceData: types.PriceData{
+		PriceData: hosttypes.PriceData{
 			ModelRatio:      1,
 			CompletionRatio: 2,
 			CacheRatio:      0.1,
-			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+			GroupRatioInfo:  hosttypes.GroupRatioInfo{GroupRatio: 1},
 		},
 	}
 	usage := &dto.Usage{
@@ -218,11 +218,11 @@ func TestCalculateTextQuotaSummaryBillsImageOutputSeparately(t *testing.T) {
 
 	relayInfo := &relaycommon.RelayInfo{
 		OriginModelName: "gpt-image-1",
-		PriceData: types.PriceData{
+		PriceData: hosttypes.PriceData{
 			ModelRatio:      4,
 			CompletionRatio: 3.75,
 			ImageRatio:      15,
-			GroupRatioInfo:  types.GroupRatioInfo{GroupRatio: 1},
+			GroupRatioInfo:  hosttypes.GroupRatioInfo{GroupRatio: 1},
 		},
 		StartTime: time.Now(),
 	}

@@ -471,6 +471,32 @@ func (t *Task) UpdateQuota() error {
 	return DB.Model(t).Update("quota", t.Quota).Error
 }
 
+// ClaimQuotaForRefund atomically clears an expected non-zero quota. A true
+// result grants the caller ownership of the corresponding refund attempt.
+func ClaimQuotaForRefund(id int64, expectedQuota int) (bool, error) {
+	if expectedQuota == 0 {
+		return false, nil
+	}
+	result := DB.Model(&Task{}).Where("id = ? AND quota = ?", id, expectedQuota).Update("quota", 0)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+// RestoreQuotaAfterFailedRefund restores a claimed quota marker only while it
+// is still zero, so the reconciliation sweep can retry a failed refund.
+func RestoreQuotaAfterFailedRefund(id int64, quota int) (bool, error) {
+	if quota == 0 {
+		return false, nil
+	}
+	result := DB.Model(&Task{}).Where("id = ? AND quota = ?", id, 0).Update("quota", quota)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
 // UpdateWithStatus performs a conditional UPDATE guarded by fromStatus (CAS).
 // Returns (true, nil) if this caller won the update, (false, nil) if
 // another process already moved the task out of fromStatus. MySQL commonly

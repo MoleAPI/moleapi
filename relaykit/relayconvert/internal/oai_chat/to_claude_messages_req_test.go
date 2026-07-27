@@ -1,14 +1,17 @@
 package oaichat
 
 import (
+	"context"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
 	"github.com/stretchr/testify/require"
 )
 
 func TestOpenAIChatRequestToClaudeMessagesPreservesReasoningWithToolCall(t *testing.T) {
 	reasoning := "I need the file contents before answering."
+	maxTokens := uint(1)
 	assistant := dto.Message{
 		Role:             "assistant",
 		ReasoningContent: &reasoning,
@@ -24,9 +27,10 @@ func TestOpenAIChatRequestToClaudeMessagesPreservesReasoningWithToolCall(t *test
 		},
 	})
 
-	converted, err := OpenAIChatRequestToClaudeMessages(nil, dto.GeneralOpenAIRequest{
-		Model:    "claude-sonnet-4-6",
-		Messages: []dto.Message{assistant},
+	converted, err := OpenAIChatRequestToClaudeMessages(context.Background(), &convmeta.Values{}, dto.GeneralOpenAIRequest{
+		Model:     "claude-sonnet-4-6",
+		MaxTokens: &maxTokens,
+		Messages:  []dto.Message{assistant},
 	})
 	require.NoError(t, err)
 	require.Len(t, converted.Messages, 2)
