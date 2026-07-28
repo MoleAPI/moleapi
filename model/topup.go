@@ -242,7 +242,7 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 			// ponytail: honor bounded paid-order snapshots near the legacy balance cap; native int stays the ceiling until quota columns share one width.
 			balanceLimit = math.MaxInt
 		}
-		if creditedQuota > balanceLimit-user.Quota {
+		if user.Quota > balanceLimit-creditedQuota {
 			return ErrTopUpQuotaInvalid
 		}
 		quotaAfterTopUp := user.Quota + creditedQuota
