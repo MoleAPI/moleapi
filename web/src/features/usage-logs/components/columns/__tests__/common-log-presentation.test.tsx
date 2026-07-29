@@ -25,9 +25,16 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
 
 import { usageLogSchema, type UsageLog } from '../../../data/schema'
-import { InlineLogDetails } from '../../dialogs/details-dialog'
-import { UsageLogsProvider } from '../../usage-logs-provider'
-import { useCommonLogsColumns } from '../common-logs-columns'
+
+globalThis.matchMedia ??= () => ({ matches: false }) as MediaQueryList
+globalThis.customElements ??= {
+  define: () => {},
+  get: () => undefined,
+} as unknown as CustomElementRegistry
+
+const { InlineLogDetails } = await import('../../dialogs/details-dialog')
+const { UsageLogsProvider } = await import('../../usage-logs-provider')
+const { useCommonLogsColumns } = await import('../common-logs-columns')
 
 const log = usageLogSchema.parse({
   id: 1,
@@ -97,9 +104,7 @@ function TestDesktopLayout() {
   const columnOrder = columns.map((column) =>
     'accessorKey' in column ? column.accessorKey : column.id
   )
-  const columnIds = new Set(
-    columnOrder
-  )
+  const columnIds = new Set(columnOrder)
   const totalWidth = columns.reduce(
     (total, column) => total + (column.size ?? 0),
     0
