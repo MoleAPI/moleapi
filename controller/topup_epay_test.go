@@ -236,6 +236,7 @@ func TestEpayNotifySettlesPaidOrderForUserWithSmallNegativeQuota(t *testing.T) {
 		TradeNo:         "epay-negative-quota",
 		PaymentMethod:   "alipay",
 		PaymentProvider: model.PaymentProviderEpay,
+		PromisedQuota:   100,
 		Status:          common.TopUpStatusPending,
 	}
 	require.NoError(t, db.Create(topUp).Error)
