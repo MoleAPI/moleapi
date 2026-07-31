@@ -383,9 +383,6 @@ export function Wallet(props: WalletProps) {
                   onTransfer={() => setTransferDialogOpen(true)}
                   inviterReward={topupInfo?.quota_for_inviter ?? 0}
                   inviteeReward={topupInfo?.quota_for_invitee ?? 0}
-                  firstTopupReward={
-                    topupInfo?.quota_for_inviter_on_first_topup ?? 0
-                  }
                   complianceConfirmed={
                     topupInfo?.payment_compliance_confirmed !== false
                   }

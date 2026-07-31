@@ -34,7 +34,6 @@ interface AffiliateRewardsCardProps {
   onTransfer: () => void
   inviterReward?: number
   inviteeReward?: number
-  firstTopupReward?: number
   complianceConfirmed?: boolean
   loading?: boolean
 }
@@ -45,7 +44,6 @@ export function AffiliateRewardsCard({
   onTransfer,
   inviterReward = 0,
   inviteeReward = 0,
-  firstTopupReward = 0,
   complianceConfirmed = true,
   loading,
 }: AffiliateRewardsCardProps) {
@@ -108,12 +106,6 @@ export function AffiliateRewardsCard({
             {t(
               'Friends who sign up with your referral code receive {{reward}} in account credit.',
               { reward: formatQuota(inviteeReward) }
-            )}
-          </li>
-          <li>
-            {t(
-              "Earn an additional {{reward}} in referral credit after a friend's first top-up.",
-              { reward: formatQuota(firstTopupReward) }
             )}
           </li>
           <li>

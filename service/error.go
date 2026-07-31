@@ -118,6 +118,7 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {
 			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
+			setPublicUpstreamErrorMessage(ctx, newApiErr)
 			if showBodyWhenFail {
 				newApiErr.Err = buildErrWithBody(newApiErr.Error())
 			}
@@ -131,10 +132,36 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		logger.LogError(ctx, fmt.Sprintf("bad response status code %d with empty error message, body: %s", resp.StatusCode, responseBodyPreview))
 	}
 	newApiErr = types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
+	setPublicUpstreamErrorMessage(ctx, newApiErr)
 	if showBodyWhenFail {
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
 	}
 	return
+}
+
+func setPublicUpstreamErrorMessage(ctx context.Context, err *types.NewAPIError) {
+	if err == nil {
+		return
+	}
+	message, ok := publicUpstreamErrorMessage(err.Error())
+	if !ok {
+		return
+	}
+	logger.LogWarn(ctx, fmt.Sprintf("masked upstream error from user response: %s", common.LocalLogPreview(err.Error())))
+	err.SetPublicMessage(message)
+}
+
+func publicUpstreamErrorMessage(message string) (string, bool) {
+	lower := strings.ToLower(message)
+	if strings.Contains(lower, "no available channel for model") &&
+		strings.Contains(lower, "under group") &&
+		strings.Contains(lower, "(distributor)") {
+		return "Upstream service is temporarily unavailable. Please try again later.", true
+	}
+	if strings.Contains(message, "GPT Image response did not contain a valid b64_json result") {
+		return "Upstream image service is temporarily unavailable. Please try again later.", true
+	}
+	return "", false
 }
 
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {

@@ -21,8 +21,8 @@ require (
 	github.com/glebarez/sqlite v1.9.0
 	github.com/go-audio/aiff v1.1.0
 	github.com/go-audio/wav v1.1.0
-	github.com/go-playground/validator/v10 v10.20.0
 	github.com/go-pdf/fpdf v0.9.0
+	github.com/go-playground/validator/v10 v10.20.0
 	github.com/go-redis/redis/v8 v8.11.5
 	github.com/go-webauthn/webauthn v0.14.0
 	github.com/golang-jwt/jwt/v5 v5.3.0
@@ -62,7 +62,7 @@ require (
 )
 
 require (
-	github.com/waffo-com/waffo-pancake-sdk-go v0.3.1
+	github.com/waffo-com/waffo-pancake-sdk-go v0.7.1
 	gorm.io/driver/clickhouse v0.6.0
 )
 

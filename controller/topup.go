@@ -105,9 +105,9 @@ func GetTopUpInfo(c *gin.Context) {
 
 		if !hasWaffoPancake {
 			payMethods = append(payMethods, map[string]string{
-				"name":      "Waffo Pancake",
+				"name":      "Global Pay",
 				"type":      model.PaymentMethodWaffoPancake,
-				"color":     "#F97316",
+				"color":     "#22C55E",
 				"min_topup": strconv.FormatInt(getConfiguredMinTopUp(setting.WaffoPancakeMinTopUp), 10),
 			})
 		}

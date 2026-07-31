@@ -11,30 +11,28 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func useTopupRewardSettingsForTest(t *testing.T, reward int, discount map[int]float64, bonus map[int]float64) {
+func useTopupRewardSettingsForTest(t *testing.T, _ int, discount map[int]float64, bonus map[int]float64) {
 	t.Helper()
-	originalReward := common.QuotaForInviterOnFirstTopup
 	originalDiscount := operation_setting.GetPaymentSetting().AmountDiscount
 	originalBonus := operation_setting.GetPaymentSetting().AmountBonus
-	common.QuotaForInviterOnFirstTopup = reward
 	operation_setting.GetPaymentSetting().AmountDiscount = discount
 	operation_setting.GetPaymentSetting().AmountBonus = bonus
 	t.Cleanup(func() {
-		common.QuotaForInviterOnFirstTopup = originalReward
 		operation_setting.GetPaymentSetting().AmountDiscount = originalDiscount
 		operation_setting.GetPaymentSetting().AmountBonus = originalBonus
 	})
 }
 
-func insertInviterPairForTopupTest(t *testing.T, inviterID int, inviteeID int) {
+func insertInviterPairForTopupTest(t *testing.T, inviterID int, inviteeID int, rebateRatio int) {
 	t.Helper()
 	require.NoError(t, DB.Create(&User{
-		Id:              inviterID,
-		Username:        fmt.Sprintf("inviter_%d", inviterID),
-		AffCode:         fmt.Sprintf("inviter-aff-%d", inviterID),
-		Status:          common.UserStatusEnabled,
-		AffQuota:        10,
-		AffHistoryQuota: 20,
+		Id:                inviterID,
+		Username:          fmt.Sprintf("inviter_%d", inviterID),
+		AffCode:           fmt.Sprintf("inviter-aff-%d", inviterID),
+		Status:            common.UserStatusEnabled,
+		AffQuota:          10,
+		AffHistoryQuota:   20,
+		InviteRebateRatio: rebateRatio,
 	}).Error)
 	require.NoError(t, DB.Create(&User{
 		Id:        inviteeID,
@@ -46,7 +44,7 @@ func insertInviterPairForTopupTest(t *testing.T, inviterID int, inviteeID int) {
 	}).Error)
 }
 
-func TestEveryRealTopupPathRewardsInviterExactlyOnce(t *testing.T) {
+func TestEveryRealTopupPathRebatesInviterExactlyOnce(t *testing.T) {
 	useQuotaPerUnitForTopUpTest(t, 100)
 	useTopupRewardSettingsForTest(t, 40, map[int]float64{}, map[int]float64{})
 
@@ -83,27 +81,48 @@ func TestEveryRealTopupPathRewardsInviterExactlyOnce(t *testing.T) {
 			truncateTables(t)
 			inviterID := 700 + index*2
 			inviteeID := inviterID + 1
-			insertInviterPairForTopupTest(t, inviterID, inviteeID)
+			insertInviterPairForTopupTest(t, inviterID, inviteeID, MaxInviteRebateRatio)
 			tradeNo := fmt.Sprintf("reward-%d", index)
 			insertTopUpForSettlementTest(t, tradeNo, inviteeID, 1, 1, testCase.provider)
 
 			require.NoError(t, testCase.settle(tradeNo))
 			require.NoError(t, testCase.settle(tradeNo))
 
+			topUp := GetTopUpByTradeNo(tradeNo)
+			require.NotNil(t, topUp)
+			expectedRebate := topUp.CreditedQuota
+
 			var inviter User
 			require.NoError(t, DB.Select("aff_quota", "aff_history").First(&inviter, inviterID).Error)
-			assert.Equal(t, 50, inviter.AffQuota)
-			assert.Equal(t, 60, inviter.AffHistoryQuota)
+			assert.Equal(t, 10+expectedRebate, inviter.AffQuota)
+			assert.Equal(t, 20+expectedRebate, inviter.AffHistoryQuota)
 
-			var invitee User
-			require.NoError(t, DB.Select("inviter_topup_rewarded").First(&invitee, inviteeID).Error)
-			assert.True(t, invitee.InviterTopupRewarded)
+			assert.Equal(t, inviterID, topUp.InviteRebateInviterId)
+			assert.Equal(t, MaxInviteRebateRatio, topUp.InviteRebateRatio)
+			assert.Equal(t, expectedRebate, topUp.InviteRebateQuota)
 
 			var rewardLogs int64
 			require.NoError(t, LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", inviterID, LogTypeSystem).Count(&rewardLogs).Error)
 			assert.EqualValues(t, 1, rewardLogs)
 		})
 	}
+}
+
+func TestInviteRebateAppliesToEveryPaidTopup(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+	useTopupRewardSettingsForTest(t, 0, map[int]float64{}, map[int]float64{})
+	insertInviterPairForTopupTest(t, 760, 761, 100)
+
+	for _, tradeNo := range []string{"rebate-every-topup-1", "rebate-every-topup-2"} {
+		insertTopUpForSettlementTest(t, tradeNo, 761, 1, 1, PaymentProviderWaffo)
+		require.NoError(t, RechargeWaffo(tradeNo, "203.0.113.7"))
+	}
+
+	var inviter User
+	require.NoError(t, DB.Select("aff_quota", "aff_history").First(&inviter, 760).Error)
+	assert.Equal(t, 12, inviter.AffQuota)
+	assert.Equal(t, 22, inviter.AffHistoryQuota)
 }
 
 func TestInvalidInviterNeverBlocksPaidTopup(t *testing.T) {
@@ -118,12 +137,13 @@ func TestInvalidInviterNeverBlocksPaidTopup(t *testing.T) {
 		{name: "missing", inviterID: 900, prepare: func(t *testing.T, inviterID int) {}},
 		{name: "overflow", inviterID: 901, prepare: func(t *testing.T, inviterID int) {
 			require.NoError(t, DB.Create(&User{
-				Id:              inviterID,
-				Username:        "overflow_inviter",
-				AffCode:         "overflow-inviter-aff",
-				Status:          common.UserStatusEnabled,
-				AffQuota:        common.MaxQuota - 10,
-				AffHistoryQuota: 20,
+				Id:                inviterID,
+				Username:          "overflow_inviter",
+				AffCode:           "overflow-inviter-aff",
+				Status:            common.UserStatusEnabled,
+				AffQuota:          common.MaxQuota - 10,
+				AffHistoryQuota:   20,
+				InviteRebateRatio: MaxInviteRebateRatio,
 			}).Error)
 		}},
 	}
@@ -147,9 +167,10 @@ func TestInvalidInviterNeverBlocksPaidTopup(t *testing.T) {
 			require.NoError(t, RechargeWaffo(tradeNo, "203.0.113.2"))
 			assert.Equal(t, 105, getUserQuotaForPaymentGuardTest(t, inviteeID))
 
-			var invitee User
-			require.NoError(t, DB.Select("inviter_topup_rewarded").First(&invitee, inviteeID).Error)
-			assert.True(t, invitee.InviterTopupRewarded)
+			topUp := GetTopUpByTradeNo(tradeNo)
+			require.NotNil(t, topUp)
+			assert.Equal(t, testCase.inviterID, topUp.InviteRebateInviterId)
+			assert.Zero(t, topUp.InviteRebateQuota)
 			if testCase.name == "overflow" {
 				var inviter User
 				require.NoError(t, DB.Select("aff_quota", "aff_history").First(&inviter, testCase.inviterID).Error)
@@ -165,7 +186,7 @@ func TestInviterCacheIsInvalidatedAfterReward(t *testing.T) {
 	server := useUserCacheMiniRedis(t)
 	useQuotaPerUnitForTopUpTest(t, 100)
 	useTopupRewardSettingsForTest(t, 40, map[int]float64{}, map[int]float64{})
-	insertInviterPairForTopupTest(t, 940, 941)
+	insertInviterPairForTopupTest(t, 940, 941, MaxInviteRebateRatio)
 
 	var inviter User
 	require.NoError(t, DB.First(&inviter, 940).Error)
@@ -344,7 +365,7 @@ func TestBalanceSubscriptionDoesNotTriggerTopupReward(t *testing.T) {
 	truncateTables(t)
 	useQuotaPerUnitForTopUpTest(t, 100)
 	useTopupRewardSettingsForTest(t, 40, map[int]float64{}, map[int]float64{})
-	insertInviterPairForTopupTest(t, 980, 981)
+	insertInviterPairForTopupTest(t, 980, 981, MaxInviteRebateRatio)
 	require.NoError(t, DB.Model(&User{}).Where("id = ?", 981).Update("quota", 1000).Error)
 	plan := insertSubscriptionPlanForPaymentGuardTest(t, 990)
 	plan.PriceAmount = 1
@@ -358,7 +379,4 @@ func TestBalanceSubscriptionDoesNotTriggerTopupReward(t *testing.T) {
 	require.NoError(t, DB.Select("aff_quota", "aff_history").First(&inviter, 980).Error)
 	assert.Equal(t, 10, inviter.AffQuota)
 	assert.Equal(t, 20, inviter.AffHistoryQuota)
-	var invitee User
-	require.NoError(t, DB.Select("inviter_topup_rewarded").First(&invitee, 981).Error)
-	assert.False(t, invitee.InviterTopupRewarded)
 }

@@ -4,6 +4,8 @@ import "strings"
 
 var CheckSensitiveEnabled = true
 var CheckSensitiveOnPromptEnabled = true
+var CheckSensitiveWaffoPancakeEnabled = false
+var CheckSensitiveModerationEnabled = false
 
 //var CheckSensitiveOnCompletionEnabled = true
 
@@ -36,6 +38,14 @@ func SensitiveWordsFromString(s string) {
 
 func ShouldCheckPromptSensitive() bool {
 	return CheckSensitiveEnabled && CheckSensitiveOnPromptEnabled
+}
+
+func ShouldCheckPromptWithWaffoPancake() bool {
+	return ShouldCheckPromptSensitive() && CheckSensitiveWaffoPancakeEnabled
+}
+
+func ShouldCheckPromptWithModeration() bool {
+	return ShouldCheckPromptSensitive() && CheckSensitiveModerationEnabled
 }
 
 //func ShouldCheckCompletionSensitive() bool {

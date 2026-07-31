@@ -96,6 +96,7 @@ type NewAPIError struct {
 	errorCode      ErrorCode
 	StatusCode     int
 	Metadata       json.RawMessage
+	publicMessage  string
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -149,10 +150,13 @@ func (e *NewAPIError) MaskSensitiveError() string {
 	if e == nil {
 		return ""
 	}
-	if e.Err == nil {
+	errStr := e.Error()
+	if e.publicMessage != "" {
+		errStr = e.publicMessage
+	}
+	if errStr == "" {
 		return string(e.errorCode)
 	}
-	errStr := e.Err.Error()
 	if e.errorCode == ErrorCodeCountTokenFailed {
 		return errStr
 	}
@@ -174,7 +178,21 @@ func (e *NewAPIError) MaskSensitiveErrorWithStatusCode() string {
 }
 
 func (e *NewAPIError) SetMessage(message string) {
+	if e.publicMessage != "" {
+		if original := e.Error(); original != "" {
+			e.publicMessage = strings.Replace(message, original, e.publicMessage, 1)
+		} else {
+			e.publicMessage = message
+		}
+	}
 	e.Err = errors.New(message)
+}
+
+func (e *NewAPIError) SetPublicMessage(message string) {
+	if e == nil {
+		return
+	}
+	e.publicMessage = message
 }
 
 func (e *NewAPIError) ToOpenAIError() OpenAIError {
@@ -200,6 +218,9 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 			Param:   "",
 			Code:    e.errorCode,
 		}
+	}
+	if e.publicMessage != "" {
+		result.Message = e.publicMessage
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)
@@ -229,6 +250,9 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 			Message: e.Error(),
 			Type:    string(e.errorType),
 		}
+	}
+	if e.publicMessage != "" {
+		result.Message = e.publicMessage
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)

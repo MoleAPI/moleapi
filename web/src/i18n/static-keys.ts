@@ -320,6 +320,7 @@ export const STATIC_I18N_KEYS = [
   'Received',
   'Payment initiated',
   'Payment page opened',
+  'Global Pay',
 
   // Upstream model updates
   'Upstream Model Updates',

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { API_KEY_STATUS } from '@/features/keys/constants'
+import { buildApiEndpointOptions } from '@/features/keys/lib/api-endpoint'
 
 export type ChatLinkType = 'web' | 'custom-protocol' | 'fluent'
 
@@ -46,6 +47,20 @@ export type ActiveApiKey = {
 }
 
 const HTTP_REGEX = /^https?:\/\//i
+const API_VERSION_SUFFIX_REGEX = /\/v1$/i
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+}
+
+function pickString(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value.trim()
+  }
+  return ''
+}
 
 function toBase64(value: string) {
   if (typeof window !== 'undefined' && typeof window.btoa === 'function') {
@@ -147,6 +162,29 @@ function normalizeApiKey(apiKey: string): string {
   const trimmed = apiKey.trim()
   if (!trimmed) return ''
   return trimmed.startsWith('sk-') ? trimmed : `sk-${trimmed}`
+}
+
+export function resolveChatServerAddress(
+  status: unknown,
+  fallbackOrigin: string
+): string {
+  const root = asRecord(status)
+  const data = asRecord(root?.data)
+  const configuredAddress = pickString(
+    root?.server_address,
+    root?.serverAddress,
+    data?.server_address,
+    data?.serverAddress
+  )
+  const apiInfoEnabled =
+    (root?.api_info_enabled ?? data?.api_info_enabled) !== false
+  const rawRoutes = apiInfoEnabled ? (root?.api_info ?? data?.api_info) : []
+  const routes = Array.isArray(rawRoutes) ? rawRoutes : []
+  const apiBaseUrl =
+    buildApiEndpointOptions(configuredAddress, fallbackOrigin, routes)[0]
+      ?.value || ''
+
+  return apiBaseUrl.replace(API_VERSION_SUFFIX_REGEX, '')
 }
 
 export function resolveChatUrl({

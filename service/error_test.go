@@ -122,6 +122,41 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 	require.Equal(t, message, newAPIError.Error())
 }
 
+func TestRelayErrorHandlerMasksUpstreamDistributorMessageForUsers(t *testing.T) {
+	message := "No available channel for model claude-opus-5 under group claude max满血号池 (distributor) (request id: upstream)"
+	body := `{"error":{"message":"` + message + `","type":"upstream_error","code":"bad_response_status_code"}}`
+	resp := &http.Response{
+		StatusCode: http.StatusServiceUnavailable,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+	require.NotNil(t, newAPIError)
+	require.Equal(t, message, newAPIError.Error())
+	require.Equal(t, "Upstream service is temporarily unavailable. Please try again later.", newAPIError.ToOpenAIError().Message)
+	require.Equal(t, "status_code=503, Upstream service is temporarily unavailable. Please try again later.", newAPIError.MaskSensitiveErrorWithStatusCode())
+
+	newAPIError.SetMessage(message + " (request id: local)")
+	require.Equal(t, "Upstream service is temporarily unavailable. Please try again later. (request id: local)", newAPIError.ToOpenAIError().Message)
+}
+
+func TestRelayErrorHandlerMasksUpstreamImageResultMessageForUsers(t *testing.T) {
+	message := "GPT Image response did not contain a valid b64_json result"
+	body := `{"message":"` + message + `"}`
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Body:       io.NopCloser(strings.NewReader(body)),
+	}
+
+	newAPIError := RelayErrorHandler(context.Background(), resp, false)
+
+	require.NotNil(t, newAPIError)
+	require.Equal(t, message, newAPIError.Error())
+	require.Equal(t, "Upstream image service is temporarily unavailable. Please try again later.", newAPIError.ToOpenAIError().Message)
+	require.Equal(t, "status_code=502, Upstream image service is temporarily unavailable. Please try again later.", newAPIError.MaskSensitiveErrorWithStatusCode())
+}
+
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
 	withDebugEnabled(t, true)
 

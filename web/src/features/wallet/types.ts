@@ -309,6 +309,12 @@ export interface TopupRecord {
   money: number
   /** Quota actually credited after settlement */
   credited_quota?: number | null
+  /** Inviter linked to this top-up rebate */
+  invite_rebate_inviter_id?: number | null
+  /** Rebate ratio snapshot in basis points */
+  invite_rebate_ratio?: number | null
+  /** Referral reward credited from this top-up */
+  invite_rebate_quota?: number | null
   /** Currency used for the historical payment */
   payment_currency?: string | null
   /** Trade/order number */
