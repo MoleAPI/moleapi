@@ -38,6 +38,7 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import {
   Select,
   SelectContent,
@@ -436,7 +437,7 @@ export function QuotaSettingsSection({
             <SettingsFormGridItem span='full'>
               <div className='border-border flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between'>
                 <div className='min-w-0 space-y-1'>
-                  <FormLabel>{t('Batch adjust top-up rebate')}</FormLabel>
+                  <Label>{t('Batch adjust top-up rebate')}</Label>
                   <FormDescription>
                     {isDirty
                       ? t(
@@ -527,7 +528,7 @@ export function QuotaSettingsSection({
       >
         <div className='grid gap-4'>
           <div className='space-y-2'>
-            <FormLabel>{t('User range')}</FormLabel>
+            <Label>{t('User range')}</Label>
             <Select
               items={batchScopeItems}
               value={batchScope}
@@ -560,7 +561,7 @@ export function QuotaSettingsSection({
 
           {batchScope === 'current_ratio' ? (
             <div className='space-y-2'>
-              <FormLabel>{t('Current rebate (%)')}</FormLabel>
+              <Label>{t('Current rebate (%)')}</Label>
               <Input
                 type='number'
                 min={0}
@@ -573,7 +574,7 @@ export function QuotaSettingsSection({
           ) : null}
 
           <div className='space-y-2'>
-            <FormLabel>{t('Target rebate (%)')}</FormLabel>
+            <Label>{t('Target rebate (%)')}</Label>
             <Input
               type='number'
               min={0}
