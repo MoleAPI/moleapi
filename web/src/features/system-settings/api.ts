@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 
 import type {
+  ApplyDefaultInviteRebateRatioResponse,
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
@@ -22,6 +23,13 @@ export async function getSystemOptions() {
 
 export async function updateSystemOption(request: UpdateOptionRequest) {
   const res = await api.put<UpdateOptionResponse>('/api/option/', request)
+  return res.data
+}
+
+export async function applyDefaultInviteRebateRatio() {
+  const res = await api.post<ApplyDefaultInviteRebateRatioResponse>(
+    '/api/user/invite_rebate/apply_default'
+  )
   return res.data
 }
 

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"strconv"
 	"strings"
 	"time"
@@ -223,6 +224,12 @@ func SyncOptions(frequency int) {
 func validateOptionValue(key string, value string) error {
 	if key == operation_setting.ToolPriceOptionKey {
 		return operation_setting.ValidateToolPricesJSON(value)
+	}
+	if key == "quota_setting.default_invite_rebate_ratio" {
+		ratio, err := strconv.Atoi(strings.TrimSpace(value))
+		if err != nil || ratio < 0 || ratio > MaxInviteRebateRatio {
+			return errors.New("default invite rebate ratio must be between 0 and 10000")
+		}
 	}
 	return nil
 }

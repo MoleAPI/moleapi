@@ -4,11 +4,13 @@ import "github.com/QuantumNous/new-api/setting/config"
 
 type QuotaSetting struct {
 	EnableFreeModelPreConsume bool `json:"enable_free_model_pre_consume"` // 是否对免费模型启用预消耗
+	DefaultInviteRebateRatio  int  `json:"default_invite_rebate_ratio"`   // 新用户默认充值返利比例，基点：100 = 1%
 }
 
 // 默认配置
 var quotaSetting = QuotaSetting{
 	EnableFreeModelPreConsume: true,
+	DefaultInviteRebateRatio:  100,
 }
 
 func init() {
