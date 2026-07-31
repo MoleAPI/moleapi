@@ -41,6 +41,10 @@ import { TruncatedText } from '@/components/truncated-text'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
+  formatUptimePct,
+  getSuccessRateLevel,
+} from '@/features/performance-metrics/lib/format'
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -58,7 +62,6 @@ import { truncateText } from '@/lib/utils'
 import { getCodexUsage } from '../api'
 import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
 import {
-  formatRelativeTime,
   formatResponseTime,
   getBalanceVariant,
   getChannelTypeIcon,
@@ -75,6 +78,11 @@ import {
   isTagAggregateRow,
   type TagRow,
 } from '../lib'
+import {
+  getChannelSuccessStats,
+  type ChannelSuccessMetric,
+  type ChannelSuccessStats,
+} from '../lib/channel-success'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
@@ -540,18 +548,70 @@ function BalanceCell({ channel }: { channel: Channel }) {
   )
 }
 
+function getSuccessRateVariant(
+  stats: ChannelSuccessStats
+): StatusBadgeProps['variant'] {
+  const level = getSuccessRateLevel(stats.success_rate)
+  if (level === 'warning') return 'warning'
+  if (level === 'critical') return 'danger'
+  if (level === 'unknown') return 'neutral'
+  return 'success'
+}
+
+function ChannelSuccessCell({
+  channel,
+  channelSuccessById,
+}: {
+  channel: Channel
+  channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
+}) {
+  const { t } = useTranslation()
+  const stats = getChannelSuccessStats(channel, channelSuccessById)
+
+  if (!stats) {
+    return <span className='text-muted-foreground text-xs'>-</span>
+  }
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <StatusBadge
+              label={formatUptimePct(stats.success_rate)}
+              variant={getSuccessRateVariant(stats)}
+              size='sm'
+              copyable={false}
+              className='-ml-1.5 font-mono tabular-nums'
+            />
+          }
+        />
+        <TooltipContent side='top'>
+          <div className='space-y-1 text-xs'>
+            <div>{t('Success rate')}</div>
+            <div className='text-muted-foreground font-mono'>
+              {stats.success_count.toLocaleString()} /{' '}
+              {stats.request_count.toLocaleString()} {t('Requests')}
+            </div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 /**
  * Generate channels columns configuration
  */
 export function useChannelsColumns(
   options: {
     enableSelection?: boolean
+    channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
   } = {}
 ): ColumnDef<Channel>[] {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const { sensitiveVisible } = useChannels()
   const enableSelection = options.enableSelection ?? true
-  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   // The column definitions only depend on the translation function, the active
   // locale, and sensitive-data visibility. Memoizing keeps the array (and every
   // cell renderer reference) stable across unrelated re-renders, so react-table
@@ -1096,6 +1156,21 @@ export function useChannelsColumns(
         size: 180,
       },
 
+      // Success Rate column
+      {
+        id: 'success_rate',
+        header: t('Success rate'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => (
+          <ChannelSuccessCell
+            channel={row.original}
+            channelSuccessById={options.channelSuccessById}
+          />
+        ),
+        size: 120,
+        enableSorting: false,
+      },
+
       // Response Time column
       {
         accessorKey: 'response_time',
@@ -1116,48 +1191,6 @@ export function useChannelsColumns(
           )
         },
         size: 110,
-      },
-
-      // Test Time column
-      {
-        accessorKey: 'test_time',
-        header: t('Last Tested'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => {
-          const testTime = row.getValue('test_time') as number
-
-          // For invalid timestamps, show "Never" badge
-          if (!testTime || testTime === 0) {
-            return <span className='text-muted-foreground text-xs'>-</span>
-          }
-
-          const timeText = formatRelativeTime(testTime, locale)
-          const fullDate = formatTimestampToDate(testTime)
-
-          // For valid timestamps, show tooltip with full date
-          return (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <StatusBadge
-                      label={timeText}
-                      variant='neutral'
-                      size='sm'
-                      copyable={false}
-                      className='-ml-1.5 cursor-pointer'
-                    />
-                  }
-                />
-                <TooltipContent side='top'>
-                  <p className='font-mono text-sm'>{fullDate}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )
-        },
-        size: 120,
-        enableSorting: false,
       },
 
       // Actions column
@@ -1184,6 +1217,6 @@ export function useChannelsColumns(
         meta: { pinned: 'right' as const },
       },
     ],
-    [enableSelection, t, locale, sensitiveVisible]
+    [enableSelection, t, sensitiveVisible, options.channelSuccessById]
   )
 }

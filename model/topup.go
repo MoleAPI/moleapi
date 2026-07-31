@@ -16,22 +16,40 @@ import (
 )
 
 type TopUp struct {
-	Id               int     `json:"id"`
-	UserId           int     `json:"user_id" gorm:"index"`
-	Amount           int64   `json:"amount"`
-	Money            float64 `json:"money"`
-	TradeNo          string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
-	GatewayTradeNo   string  `json:"gateway_trade_no" gorm:"type:varchar(255);index;default:''"`
-	PaymentProductId string  `json:"payment_product_id" gorm:"type:varchar(255);default:''"`
-	PaymentMode      string  `json:"payment_mode" gorm:"type:varchar(16);default:''"`
-	PromisedQuota    int     `json:"promised_quota" gorm:"type:int;default:0"`
-	CreditedQuota    int     `json:"credited_quota" gorm:"type:int;default:0"`
-	PaymentCurrency  string  `json:"payment_currency" gorm:"type:varchar(8);default:''"`
-	PaymentMethod    string  `json:"payment_method" gorm:"type:varchar(50)"`
-	PaymentProvider  string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
-	CreateTime       int64   `json:"create_time"`
-	CompleteTime     int64   `json:"complete_time"`
-	Status           string  `json:"status"`
+	Id                    int     `json:"id"`
+	UserId                int     `json:"user_id" gorm:"index"`
+	Amount                int64   `json:"amount"`
+	Money                 float64 `json:"money"`
+	TradeNo               string  `json:"trade_no" gorm:"unique;type:varchar(255);index"`
+	GatewayTradeNo        string  `json:"gateway_trade_no" gorm:"type:varchar(255);index;default:''"`
+	PaymentProductId      string  `json:"payment_product_id" gorm:"type:varchar(255);default:''"`
+	PaymentMode           string  `json:"payment_mode" gorm:"type:varchar(16);default:''"`
+	PromisedQuota         int     `json:"promised_quota" gorm:"type:int;default:0"`
+	CreditedQuota         int     `json:"credited_quota" gorm:"type:int;default:0"`
+	InviteRebateInviterId int     `json:"invite_rebate_inviter_id" gorm:"type:int;default:0;column:invite_rebate_inviter_id;index"`
+	InviteRebateRatio     int     `json:"invite_rebate_ratio" gorm:"type:int;default:0;column:invite_rebate_ratio"`
+	InviteRebateQuota     int     `json:"invite_rebate_quota" gorm:"type:int;default:0;column:invite_rebate_quota"`
+	PaymentCurrency       string  `json:"payment_currency" gorm:"type:varchar(8);default:''"`
+	PaymentMethod         string  `json:"payment_method" gorm:"type:varchar(50)"`
+	PaymentProvider       string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
+	CreateTime            int64   `json:"create_time"`
+	CompleteTime          int64   `json:"complete_time"`
+	Status                string  `json:"status"`
+}
+
+type InviteRebateTopUp struct {
+	Id                int    `json:"id"`
+	UserId            int    `json:"user_id"`
+	Amount            int64  `json:"amount"`
+	TradeNo           string `json:"trade_no"`
+	PaymentMethod     string `json:"payment_method"`
+	PaymentProvider   string `json:"payment_provider"`
+	CreditedQuota     int    `json:"credited_quota"`
+	InviteRebateRatio int    `json:"invite_rebate_ratio"`
+	InviteRebateQuota int    `json:"invite_rebate_quota"`
+	CreateTime        int64  `json:"create_time"`
+	CompleteTime      int64  `json:"complete_time"`
+	Status            string `json:"status"`
 }
 
 type TopUpSearchParams struct {
@@ -194,6 +212,61 @@ func BindPendingTopUpPaymentFacts(tradeNo string, expectedPaymentProvider string
 	})
 }
 
+// applyInviteRebateTx snapshots and credits the inviter's per-user top-up rebate.
+// Invalid inviter data is skipped so a paid order is never delayed by rewards.
+func applyInviteRebateTx(tx *gorm.DB, topUp *TopUp, invitee *User, creditedQuota int) (granted bool, err error) {
+	if tx == nil || topUp == nil || invitee == nil {
+		return false, errors.New("invalid invite rebate transaction")
+	}
+	if invitee.InviterId == 0 {
+		return false, nil
+	}
+
+	topUp.InviteRebateInviterId = invitee.InviterId
+	if invitee.InviterId == invitee.Id || creditedQuota <= 0 {
+		common.SysError(fmt.Sprintf("skipped invalid invite rebate: user_id=%d inviter_id=%d quota=%d", invitee.Id, invitee.InviterId, creditedQuota))
+		return false, nil
+	}
+
+	inviter := &User{}
+	if err = lockForUpdate(tx).Select("id", "aff_quota", "aff_history", "invite_rebate_ratio").Where("id = ?", invitee.InviterId).First(inviter).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.SysError(fmt.Sprintf("skipped invite rebate because inviter is missing: user_id=%d inviter_id=%d", invitee.Id, invitee.InviterId))
+			return false, nil
+		}
+		return false, err
+	}
+
+	topUp.InviteRebateRatio = inviter.InviteRebateRatio
+	if inviter.InviteRebateRatio <= 0 {
+		return false, nil
+	}
+	if inviter.InviteRebateRatio > MaxInviteRebateRatio {
+		common.SysError(fmt.Sprintf("skipped invalid invite rebate ratio: user_id=%d inviter_id=%d ratio=%d", invitee.Id, invitee.InviterId, inviter.InviteRebateRatio))
+		return false, nil
+	}
+
+	rebateQuota := int64(creditedQuota) * int64(inviter.InviteRebateRatio) / int64(MaxInviteRebateRatio)
+	if rebateQuota <= 0 {
+		return false, nil
+	}
+	affQuota := int64(inviter.AffQuota) + rebateQuota
+	affHistory := int64(inviter.AffHistoryQuota) + rebateQuota
+	if inviter.AffQuota < 0 || inviter.AffHistoryQuota < 0 || affQuota > int64(common.MaxQuota) || affHistory > int64(common.MaxQuota) {
+		common.SysError(fmt.Sprintf("skipped overflowing invite rebate: user_id=%d inviter_id=%d quota=%d", invitee.Id, invitee.InviterId, rebateQuota))
+		return false, nil
+	}
+
+	topUp.InviteRebateQuota = int(rebateQuota)
+	if err = tx.Model(inviter).Updates(map[string]interface{}{
+		"aff_quota":   int(affQuota),
+		"aff_history": int(affHistory),
+	}).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func(*TopUp) decimal.Decimal, applyDetails func(*TopUp, *User) map[string]interface{}) (topUp *TopUp, creditedQuota int, settled bool, err error) {
 	refCol := "`trade_no`"
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {
@@ -201,9 +274,7 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 	}
 
 	topUp = &TopUp{}
-	var inviterId int
-	var inviterRewardQuota int
-	var inviterRewardGranted bool
+	var inviteRebateGranted bool
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		if err := lockForUpdate(tx).Where(refCol+" = ?", tradeNo).First(topUp).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -254,12 +325,9 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 			}
 		}
 		userUpdates["quota"] = quotaAfterTopUp
-		inviterId, inviterRewardQuota, inviterRewardGranted, err = rewardInviterOnFirstTopupTx(tx, user)
+		inviteRebateGranted, err = applyInviteRebateTx(tx, topUp, user, creditedQuota)
 		if err != nil {
 			return err
-		}
-		if user.InviterTopupRewarded {
-			userUpdates["inviter_topup_rewarded"] = true
 		}
 
 		topUp.CreditedQuota = creditedQuota
@@ -279,9 +347,9 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 		if err := invalidateUserCache(topUp.UserId); err != nil {
 			common.SysError("failed to invalidate user cache after topup: " + err.Error())
 		}
-		if inviterRewardGranted {
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请好友首笔充值赠送 %s", logger.LogQuota(inviterRewardQuota)))
-			if err := invalidateUserCache(inviterId); err != nil {
+		if inviteRebateGranted {
+			RecordLog(topUp.InviteRebateInviterId, LogTypeSystem, fmt.Sprintf("邀请好友充值返利 %s，订单号 %s", logger.LogQuota(topUp.InviteRebateQuota), topUp.TradeNo))
+			if err := invalidateUserCache(topUp.InviteRebateInviterId); err != nil {
 				common.SysError("failed to invalidate inviter cache after topup: " + err.Error())
 			}
 		}
@@ -442,6 +510,38 @@ func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, tota
 		return nil, 0, err
 	}
 
+	return topups, total, nil
+}
+
+func GetInviteRebateTopUps(inviterId int, pageInfo *common.PageInfo) (topups []*InviteRebateTopUp, total int64, err error) {
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return nil, 0, tx.Error
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	query := tx.Model(&TopUp{}).Where("invite_rebate_inviter_id = ? AND invite_rebate_quota > 0 AND status = ?", inviterId, common.TopUpStatusSuccess)
+	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
+
+	if err = query.Select([]string{
+		"id", "user_id", "amount", "trade_no", "payment_method",
+		"payment_provider", "credited_quota", "invite_rebate_ratio",
+		"invite_rebate_quota", "create_time", "complete_time", "status",
+	}).Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
+
+	if err = tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
 	return topups, total, nil
 }
 

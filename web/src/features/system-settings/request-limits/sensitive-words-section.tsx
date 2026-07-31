@@ -46,6 +46,8 @@ import { useUpdateOption } from '../hooks/use-update-option'
 const sensitiveSchema = z.object({
   CheckSensitiveEnabled: z.boolean(),
   CheckSensitiveOnPromptEnabled: z.boolean(),
+  CheckSensitiveWaffoPancakeEnabled: z.boolean(),
+  CheckSensitiveModerationEnabled: z.boolean(),
   SensitiveWords: z.string().optional(),
 })
 
@@ -123,6 +125,52 @@ export function SensitiveWordsSection({
                     <FormDescription>
                       {t(
                         'When enabled, prompts are scanned before reaching upstream models.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='CheckSensitiveWaffoPancakeEnabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Waffo Pancake content safety')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Scans image prompts with Waffo before generation; review and block verdicts are rejected.'
+                      )}
+                    </FormDescription>
+                  </SettingsSwitchContent>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </SettingsSwitchItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name='CheckSensitiveModerationEnabled'
+              render={({ field }) => (
+                <SettingsSwitchItem>
+                  <SettingsSwitchContent>
+                    <FormLabel>{t('Moderations pre-screen')}</FormLabel>
+                    <FormDescription>
+                      {t(
+                        'Scans non-moderation requests with the moderation endpoint before upstream relay.'
                       )}
                     </FormDescription>
                   </SettingsSwitchContent>

@@ -102,6 +102,7 @@ type User struct {
 	AffHistoryQuota      int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
 	InviterId            int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
 	InviterTopupRewarded bool                       `json:"inviter_topup_rewarded" gorm:"type:bool;column:inviter_topup_rewarded"`
+	InviteRebateRatio    int                        `json:"invite_rebate_ratio" gorm:"type:int;default:0;column:invite_rebate_ratio"` // basis points, 100 = 1%
 	DeletedAt            gorm.DeletedAt             `gorm:"index"`
 	LinuxDOId            string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
 	Setting              string                     `json:"setting" gorm:"type:text;column:setting"`
@@ -490,6 +491,8 @@ func HardDeleteUserById(id int) error {
 	return user.HardDelete()
 }
 
+const MaxInviteRebateRatio = 10000
+
 func inviteUser(inviterId int) (err error) {
 	user, err := GetUserById(inviterId, true)
 	if err != nil {
@@ -499,50 +502,6 @@ func inviteUser(inviterId int) (err error) {
 	user.AffQuota += common.QuotaForInviter
 	user.AffHistoryQuota += common.QuotaForInviter
 	return DB.Save(user).Error
-}
-
-// rewardInviterOnFirstTopupTx grants the first paid top-up reward while the
-// invitee is already locked by the caller. Invalid inviter data is treated as
-// handled so it can never delay crediting a paid order.
-func rewardInviterOnFirstTopupTx(tx *gorm.DB, invitee *User) (inviterId int, rewardQuota int, granted bool, err error) {
-	if tx == nil || invitee == nil {
-		return 0, 0, false, errors.New("invalid inviter reward transaction")
-	}
-	rewardQuota = common.QuotaForInviterOnFirstTopup
-	if rewardQuota <= 0 || invitee.InviterId == 0 || invitee.InviterTopupRewarded {
-		return invitee.InviterId, rewardQuota, false, nil
-	}
-
-	inviterId = invitee.InviterId
-	invitee.InviterTopupRewarded = true
-	if inviterId == invitee.Id || rewardQuota > common.MaxQuota {
-		common.SysError(fmt.Sprintf("skipped invalid first topup inviter reward: user_id=%d inviter_id=%d reward=%d", invitee.Id, inviterId, rewardQuota))
-		return inviterId, rewardQuota, false, nil
-	}
-
-	inviter := &User{}
-	if err = lockForUpdate(tx).Select("id", "aff_quota", "aff_history").Where("id = ?", inviterId).First(inviter).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			common.SysError(fmt.Sprintf("skipped first topup inviter reward because inviter is missing: user_id=%d inviter_id=%d", invitee.Id, inviterId))
-			return inviterId, rewardQuota, false, nil
-		}
-		return 0, 0, false, err
-	}
-
-	affQuota := int64(inviter.AffQuota) + int64(rewardQuota)
-	affHistory := int64(inviter.AffHistoryQuota) + int64(rewardQuota)
-	if inviter.AffQuota < 0 || inviter.AffHistoryQuota < 0 || affQuota > int64(common.MaxQuota) || affHistory > int64(common.MaxQuota) {
-		common.SysError(fmt.Sprintf("skipped overflowing first topup inviter reward: user_id=%d inviter_id=%d reward=%d", invitee.Id, inviterId, rewardQuota))
-		return inviterId, rewardQuota, false, nil
-	}
-
-	if err = tx.Model(inviter).Updates(map[string]interface{}{
-		"aff_quota":   int(affQuota),
-		"aff_history": int(affHistory),
-	}).Error; err != nil {
-		return 0, 0, false, err
-	}
-	return inviterId, rewardQuota, true, nil
 }
 
 func (user *User) TransferAffQuotaToQuota(quota int) error {
@@ -830,10 +789,11 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 
 	newUser := *user
 	updates := map[string]interface{}{
-		"username":     newUser.Username,
-		"display_name": newUser.DisplayName,
-		"group":        newUser.Group,
-		"remark":       newUser.Remark,
+		"username":            newUser.Username,
+		"display_name":        newUser.DisplayName,
+		"group":               newUser.Group,
+		"remark":              newUser.Remark,
+		"invite_rebate_ratio": newUser.InviteRebateRatio,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password

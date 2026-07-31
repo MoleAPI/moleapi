@@ -435,6 +435,41 @@ export function UsersMutateDrawer({
 
                   <FormField
                     control={form.control}
+                    name='invite_rebate_percent'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Top-up rebate (%)')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min={0}
+                            max={100}
+                            step={0.01}
+                            value={field.value ?? 0}
+                            onChange={(event) =>
+                              field.onChange(
+                                Number.isNaN(event.currentTarget.valueAsNumber)
+                                  ? 0
+                                  : event.currentTarget.valueAsNumber
+                              )
+                            }
+                            name={field.name}
+                            onBlur={field.onBlur}
+                            ref={field.ref}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            "Percentage of each invited user's credited top-up added to this user's referral rewards."
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name='remark'
                     render={({ field }) => (
                       <FormItem>
@@ -457,9 +492,7 @@ export function UsersMutateDrawer({
 
               {isUpdate && currentRow && (
                 <SideDrawerSection>
-                  <h3 className='text-sm font-medium'>
-                    {t('Recharge Bills')}
-                  </h3>
+                  <h3 className='text-sm font-medium'>{t('Recharge Bills')}</h3>
                   <Button
                     type='button'
                     variant='outline'

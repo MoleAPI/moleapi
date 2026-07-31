@@ -35,9 +35,10 @@ test('referral card explains each reward and how to transfer it', async () => {
         user={null}
         affiliateLink='https://example.com/referral'
         onTransfer={() => undefined}
+        onOpenHistory={() => undefined}
         inviterReward={25_000}
         inviteeReward={25_000}
-        firstTopupReward={250_000}
+        inviteRebateRatio={100}
       />
     </I18nextProvider>
   )
@@ -45,8 +46,11 @@ test('referral card explains each reward and how to transfer it', async () => {
   assert.match(html, /Referral Rewards/)
   assert.match(html, /Invite friends to earn extra rewards/)
   assert.match(html, /Reward Details/)
+  assert.match(html, /Reward records/)
+  assert.match(html, /Top-up rebate/)
+  assert.match(html, /1%/)
   assert.match(html, /\$0\.05.*friend who signs up/)
   assert.match(html, /referral code.*\$0\.05.*account credit/)
-  assert.match(html, /\$0\.5(?:0)?.*first top-up/)
+  assert.match(html, /referred user&#x27;s credited top-up/)
   assert.match(html, /moved to your account balance using Transfer/)
 })

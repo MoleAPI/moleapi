@@ -38,14 +38,14 @@ func TestTopUpAutoMigrationExpandsExistingTableIdempotently(t *testing.T) {
 		Status:          common.TopUpStatusSuccess,
 	}).Error)
 
-	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "PaymentCurrency"} {
+	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "InviteRebateInviterId", "InviteRebateRatio", "InviteRebateQuota", "PaymentCurrency"} {
 		assert.False(t, db.Migrator().HasColumn(&TopUp{}, field))
 	}
 
 	require.NoError(t, db.AutoMigrate(&TopUp{}))
 	require.NoError(t, db.AutoMigrate(&TopUp{}))
 
-	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "PaymentCurrency"} {
+	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "InviteRebateInviterId", "InviteRebateRatio", "InviteRebateQuota", "PaymentCurrency"} {
 		assert.True(t, db.Migrator().HasColumn(&TopUp{}, field))
 	}
 	assert.True(t, db.Migrator().HasIndex(&TopUp{}, "GatewayTradeNo"))
@@ -57,24 +57,30 @@ func TestTopUpAutoMigrationExpandsExistingTableIdempotently(t *testing.T) {
 	assert.Empty(t, legacy.PaymentMode)
 	assert.Zero(t, legacy.PromisedQuota)
 	assert.Zero(t, legacy.CreditedQuota)
+	assert.Zero(t, legacy.InviteRebateInviterId)
+	assert.Zero(t, legacy.InviteRebateRatio)
+	assert.Zero(t, legacy.InviteRebateQuota)
 	assert.Empty(t, legacy.PaymentCurrency)
 
 	newRecord := &TopUp{
-		UserId:           8,
-		Amount:           20,
-		Money:            19.5,
-		TradeNo:          "snapshot-topup",
-		GatewayTradeNo:   "gateway-123",
-		PaymentProductId: "price-123",
-		PaymentMode:      "payment",
-		PromisedQuota:    10_000_000,
-		CreditedQuota:    10_000_000,
-		PaymentCurrency:  "USD",
-		PaymentMethod:    PaymentMethodStripe,
-		PaymentProvider:  PaymentProviderStripe,
-		CreateTime:       200,
-		CompleteTime:     300,
-		Status:           common.TopUpStatusSuccess,
+		UserId:                8,
+		Amount:                20,
+		Money:                 19.5,
+		TradeNo:               "snapshot-topup",
+		GatewayTradeNo:        "gateway-123",
+		PaymentProductId:      "price-123",
+		PaymentMode:           "payment",
+		PromisedQuota:         10_000_000,
+		CreditedQuota:         10_000_000,
+		InviteRebateInviterId: 9,
+		InviteRebateRatio:     100,
+		InviteRebateQuota:     100_000,
+		PaymentCurrency:       "USD",
+		PaymentMethod:         PaymentMethodStripe,
+		PaymentProvider:       PaymentProviderStripe,
+		CreateTime:            200,
+		CompleteTime:          300,
+		Status:                common.TopUpStatusSuccess,
 	}
 	require.NoError(t, db.Create(newRecord).Error)
 
@@ -85,5 +91,8 @@ func TestTopUpAutoMigrationExpandsExistingTableIdempotently(t *testing.T) {
 	assert.Equal(t, newRecord.PaymentMode, stored.PaymentMode)
 	assert.Equal(t, newRecord.PromisedQuota, stored.PromisedQuota)
 	assert.Equal(t, newRecord.CreditedQuota, stored.CreditedQuota)
+	assert.Equal(t, newRecord.InviteRebateInviterId, stored.InviteRebateInviterId)
+	assert.Equal(t, newRecord.InviteRebateRatio, stored.InviteRebateRatio)
+	assert.Equal(t, newRecord.InviteRebateQuota, stored.InviteRebateQuota)
 	assert.Equal(t, newRecord.PaymentCurrency, stored.PaymentCurrency)
 }

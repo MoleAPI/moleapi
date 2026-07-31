@@ -105,9 +105,9 @@ func GetTopUpInfo(c *gin.Context) {
 
 		if !hasWaffoPancake {
 			payMethods = append(payMethods, map[string]string{
-				"name":      "Waffo Pancake",
+				"name":      "Global Pay",
 				"type":      model.PaymentMethodWaffoPancake,
-				"color":     "#F97316",
+				"color":     "#22C55E",
 				"min_topup": strconv.FormatInt(getConfiguredMinTopUp(setting.WaffoPancakeMinTopUp), 10),
 			})
 		}
@@ -602,6 +602,20 @@ func GetUserTopUps(c *gin.Context) {
 	} else {
 		topups, total, err = model.GetUserTopUps(userId, pageInfo)
 	}
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	pageInfo.SetTotal(int(total))
+	pageInfo.SetItems(topups)
+	common.ApiSuccess(c, pageInfo)
+}
+
+func GetInviteRebateTopUps(c *gin.Context) {
+	userId := c.GetInt("id")
+	pageInfo := common.GetPageQuery(c)
+	topups, total, err := model.GetInviteRebateTopUps(userId, pageInfo)
 	if err != nil {
 		common.ApiError(c, err)
 		return
