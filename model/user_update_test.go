@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -151,6 +152,113 @@ func TestInsertKeepsBlankPasswordForPasswordlessUser(t *testing.T) {
 	var stored User
 	require.NoError(t, DB.Where("username = ?", user.Username).First(&stored).Error)
 	assert.Empty(t, stored.Password)
+}
+
+func TestInsertUsesDefaultInviteRebateRatio(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	quotaSetting := operation_setting.GetQuotaSetting()
+	originalRatio := quotaSetting.DefaultInviteRebateRatio
+	quotaSetting.DefaultInviteRebateRatio = 125
+	t.Cleanup(func() {
+		quotaSetting.DefaultInviteRebateRatio = originalRatio
+	})
+
+	user := &User{
+		Username: "default-rebate-user",
+		Role:     common.RoleCommonUser,
+		Status:   common.UserStatusEnabled,
+	}
+	require.NoError(t, user.Insert(0))
+
+	oauthUser := &User{
+		Username: "default-rebate-oauth-user",
+		Role:     common.RoleCommonUser,
+		Status:   common.UserStatusEnabled,
+	}
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		return oauthUser.InsertWithTx(tx, 0)
+	}))
+
+	var users []User
+	require.NoError(t, DB.Where("username IN ?", []string{user.Username, oauthUser.Username}).Find(&users).Error)
+	require.Len(t, users, 2)
+	for _, stored := range users {
+		assert.Equal(t, 125, stored.InviteRebateRatio)
+	}
+}
+
+func TestUpdateZeroInviteRebateRatioOnlyTouchesZeroUsers(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&[]User{
+		{Id: 10, Username: "zero-a", Status: common.UserStatusEnabled, AffCode: "zero-a", InviteRebateRatio: 0},
+		{Id: 11, Username: "custom", Status: common.UserStatusEnabled, AffCode: "custom", InviteRebateRatio: 250},
+		{Id: 12, Username: "zero-b", Status: common.UserStatusEnabled, AffCode: "zero-b", InviteRebateRatio: 0},
+	}).Error)
+
+	updated, err := UpdateZeroInviteRebateRatio(100)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), updated)
+
+	var users []User
+	require.NoError(t, DB.Order("id asc").Find(&users).Error)
+	assert.Equal(t, 100, users[0].InviteRebateRatio)
+	assert.Equal(t, 250, users[1].InviteRebateRatio)
+	assert.Equal(t, 100, users[2].InviteRebateRatio)
+}
+
+func TestBatchUpdateInviteRebateRatioByCurrentRatio(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&[]User{
+		{Id: 20, Username: "batch-zero", Status: common.UserStatusEnabled, AffCode: "batch-zero", InviteRebateRatio: 0},
+		{Id: 21, Username: "batch-standard", Status: common.UserStatusEnabled, AffCode: "batch-standard", InviteRebateRatio: 100},
+		{Id: 22, Username: "batch-custom-a", Status: common.UserStatusEnabled, AffCode: "batch-custom-a", InviteRebateRatio: 250},
+		{Id: 23, Username: "batch-custom-b", Status: common.UserStatusEnabled, AffCode: "batch-custom-b", InviteRebateRatio: 250},
+	}).Error)
+
+	result, err := BatchUpdateInviteRebateRatio(250, 500, true)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), result.Matched)
+	assert.Equal(t, int64(0), result.Updated)
+
+	var custom User
+	require.NoError(t, DB.First(&custom, 22).Error)
+	assert.Equal(t, 250, custom.InviteRebateRatio)
+
+	result, err = BatchUpdateInviteRebateRatio(250, 500, false)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), result.Matched)
+	assert.Equal(t, int64(2), result.Updated)
+
+	var users []User
+	require.NoError(t, DB.Order("id asc").Find(&users).Error)
+	assert.Equal(t, []int{0, 100, 500, 500}, []int{
+		users[0].InviteRebateRatio,
+		users[1].InviteRebateRatio,
+		users[2].InviteRebateRatio,
+		users[3].InviteRebateRatio,
+	})
+}
+
+func TestListInviteRebateRatioSummaries(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&[]User{
+		{Id: 20, Username: "ratio-zero", Status: common.UserStatusEnabled, AffCode: "ratio-zero", InviteRebateRatio: 0},
+		{Id: 21, Username: "ratio-one-a", Status: common.UserStatusEnabled, AffCode: "ratio-one-a", InviteRebateRatio: 100},
+		{Id: 22, Username: "ratio-one-b", Status: common.UserStatusEnabled, AffCode: "ratio-one-b", InviteRebateRatio: 100},
+		{Id: 23, Username: "ratio-two", Status: common.UserStatusEnabled, AffCode: "ratio-two", InviteRebateRatio: 250},
+	}).Error)
+
+	summaries, err := ListInviteRebateRatioSummaries()
+	require.NoError(t, err)
+	assert.Equal(t, []InviteRebateRatioSummary{
+		{Ratio: 0, Count: 1},
+		{Ratio: 100, Count: 2},
+		{Ratio: 250, Count: 1},
+	}, summaries)
 }
 
 func TestValidateAndFillRejectsPasswordlessUser(t *testing.T) {

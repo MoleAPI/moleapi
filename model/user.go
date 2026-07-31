@@ -493,6 +493,101 @@ func HardDeleteUserById(id int) error {
 
 const MaxInviteRebateRatio = 10000
 
+type InviteRebateBatchUpdateResult struct {
+	CurrentRatio int   `json:"current_ratio"`
+	TargetRatio  int   `json:"target_ratio"`
+	DefaultRatio int   `json:"default_ratio"`
+	Matched      int64 `json:"matched"`
+	Updated      int64 `json:"updated"`
+}
+
+type InviteRebateRatioSummary struct {
+	Ratio int   `json:"ratio"`
+	Count int64 `json:"count"`
+}
+
+func GetDefaultInviteRebateRatio() int {
+	ratio := operation_setting.GetQuotaSetting().DefaultInviteRebateRatio
+	if ratio < 0 {
+		return 0
+	}
+	if ratio > MaxInviteRebateRatio {
+		return MaxInviteRebateRatio
+	}
+	return ratio
+}
+
+func ListInviteRebateRatioSummaries() ([]InviteRebateRatioSummary, error) {
+	var summaries []InviteRebateRatioSummary
+	err := DB.Model(&User{}).
+		Select("invite_rebate_ratio AS ratio, COUNT(*) AS count").
+		Group("invite_rebate_ratio").
+		Order("invite_rebate_ratio ASC").
+		Scan(&summaries).Error
+	return summaries, err
+}
+
+func BatchUpdateInviteRebateRatio(currentRatio int, targetRatio int, dryRun bool) (*InviteRebateBatchUpdateResult, error) {
+	if currentRatio < 0 || currentRatio > MaxInviteRebateRatio {
+		return nil, fmt.Errorf("invalid current invite rebate ratio")
+	}
+	if targetRatio < 0 || targetRatio > MaxInviteRebateRatio {
+		return nil, fmt.Errorf("invalid invite rebate ratio")
+	}
+	defaultRatio := GetDefaultInviteRebateRatio()
+	result := &InviteRebateBatchUpdateResult{
+		CurrentRatio: currentRatio,
+		TargetRatio:  targetRatio,
+		DefaultRatio: defaultRatio,
+	}
+	var ids []int
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		query := tx.Model(&User{}).Where("invite_rebate_ratio = ?", currentRatio)
+		if err := query.Count(&result.Matched).Error; err != nil {
+			return err
+		}
+		if dryRun || result.Matched == 0 {
+			return nil
+		}
+
+		query = tx.Model(&User{}).Where("invite_rebate_ratio = ?", currentRatio)
+		if err := query.Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+
+		if len(ids) == 0 {
+			return nil
+		}
+
+		query = tx.Model(&User{}).Where("invite_rebate_ratio = ?", currentRatio)
+		update := query.Where("id IN ?", ids).Update("invite_rebate_ratio", targetRatio)
+		result.Updated = update.RowsAffected
+		return update.Error
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !dryRun {
+		for _, id := range ids {
+			if err := invalidateUserCache(id); err != nil {
+				common.SysError(fmt.Sprintf("failed to invalidate user cache after invite rebate batch update user_id=%d: %v", id, err))
+			}
+		}
+	}
+	return result, nil
+}
+
+func UpdateZeroInviteRebateRatio(ratio int) (int64, error) {
+	if ratio == 0 {
+		return 0, nil
+	}
+	result, err := BatchUpdateInviteRebateRatio(0, ratio, false)
+	if err != nil {
+		return 0, err
+	}
+	return result.Updated, nil
+}
+
 func inviteUser(inviterId int) (err error) {
 	user, err := GetUserById(inviterId, true)
 	if err != nil {
@@ -600,6 +695,7 @@ func (user *User) Insert(inviterId int) error {
 			}
 			user.Quota = common.QuotaForNewUser
 			user.AffCode = common.GetRandomString(4)
+			user.InviteRebateRatio = GetDefaultInviteRebateRatio()
 
 			// 初始化用户设置，包括默认的边栏配置
 			if user.Setting == "" {
@@ -664,6 +760,7 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 		}
 		user.Quota = common.QuotaForNewUser
 		user.AffCode = common.GetRandomString(4)
+		user.InviteRebateRatio = GetDefaultInviteRebateRatio()
 
 		// 初始化用户设置
 		if user.Setting == "" {

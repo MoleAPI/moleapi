@@ -21,6 +21,49 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+export type ApplyDefaultInviteRebateRatioResponse = {
+  success: boolean
+  message: string
+  data?: {
+    updated: number
+    invite_rebate_ratio: number
+  }
+}
+
+export type InviteRebateBatchUpdateRequest = {
+  current_ratio: number
+  target_ratio: number
+  dry_run?: boolean
+}
+
+export type InviteRebateBatchUpdateResult = {
+  current_ratio: number
+  target_ratio: number
+  default_ratio: number
+  matched: number
+  updated: number
+}
+
+export type InviteRebateBatchUpdateResponse = {
+  success: boolean
+  message: string
+  data?: InviteRebateBatchUpdateResult
+}
+
+export type InviteRebateRatioSummary = {
+  ratio: number
+  count: number
+}
+
+export type InviteRebateRatiosResponse = {
+  success: boolean
+  message: string
+  data?: {
+    default_ratio: number
+    ratios: InviteRebateRatioSummary[]
+  }
+}
+
 export type ModelPricingExport = {
   version: number
   exported_at: number
@@ -133,6 +176,7 @@ export type AuthSettings = {
   'discord.client_id': string
   'discord.client_secret': string
   'oidc.enabled': boolean
+  'oidc.display_name': string
   'oidc.client_id': string
   'oidc.client_secret': string
   'oidc.well_known': string
@@ -250,6 +294,7 @@ export type BillingSettings = {
   TopUpLink: string
   'general_setting.docs_link': string
   'quota_setting.enable_free_model_pre_consume': boolean
+  'quota_setting.default_invite_rebate_ratio': number
   QuotaPerUnit: number
   USDExchangeRate: number
   'general_setting.quota_display_type': string

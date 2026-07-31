@@ -765,6 +765,77 @@ func UpdateUser(c *gin.Context) {
 	return
 }
 
+func ApplyDefaultInviteRebateRatio(c *gin.Context) {
+	ratio := model.GetDefaultInviteRebateRatio()
+	if ratio > 0 && !operation_setting.IsPaymentComplianceConfirmed() {
+		common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+		return
+	}
+	updated, err := model.UpdateZeroInviteRebateRatio(ratio)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "user.invite_rebate_apply_default", map[string]interface{}{
+		"ratio":   ratio,
+		"updated": updated,
+	})
+	common.ApiSuccess(c, gin.H{
+		"updated":             updated,
+		"invite_rebate_ratio": ratio,
+	})
+}
+
+func ListInviteRebateRatios(c *gin.Context) {
+	summaries, err := model.ListInviteRebateRatioSummaries()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"default_ratio": model.GetDefaultInviteRebateRatio(),
+		"ratios":        summaries,
+	})
+}
+
+type InviteRebateBatchUpdateRequest struct {
+	CurrentRatio int  `json:"current_ratio"`
+	TargetRatio  int  `json:"target_ratio"`
+	DryRun       bool `json:"dry_run"`
+}
+
+func BatchUpdateInviteRebateRatio(c *gin.Context) {
+	var req InviteRebateBatchUpdateRequest
+	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+
+	if req.TargetRatio > 0 && !operation_setting.IsPaymentComplianceConfirmed() {
+		common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+		return
+	}
+
+	result, err := model.BatchUpdateInviteRebateRatio(req.CurrentRatio, req.TargetRatio, req.DryRun)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	if !req.DryRun {
+		recordManageAudit(c, "user.invite_rebate_batch_update", map[string]interface{}{
+			"current_ratio": result.CurrentRatio,
+			"target_ratio":  result.TargetRatio,
+			"default_ratio": result.DefaultRatio,
+			"matched":       result.Matched,
+			"updated":       result.Updated,
+		})
+	}
+
+	common.ApiSuccess(c, result)
+}
+
 func AdminClearUserBinding(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {

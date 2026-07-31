@@ -346,6 +346,16 @@ func UpdateOption(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
 			return
 		}
+	case "quota_setting.default_invite_rebate_ratio":
+		ratio, ratioErr := strconv.Atoi(strings.TrimSpace(option.Value.(string)))
+		if ratioErr != nil || ratio < 0 || ratio > model.MaxInviteRebateRatio {
+			common.ApiErrorMsg(c, "默认充值返利比例无效")
+			return
+		}
+		if ratio > 0 && !operation_setting.IsPaymentComplianceConfirmed() {
+			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+			return
+		}
 	default:
 		if isPaymentComplianceOptionKey(option.Key) {
 			common.ApiErrorMsg(c, "合规确认字段不允许通过通用设置接口修改")
