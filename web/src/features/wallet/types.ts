@@ -41,6 +41,7 @@ export type PaymentResponse = ApiResponse<Record<string, unknown>> & {
 export type StripePaymentResponse = ApiResponse<{ pay_link: string }>
 export type AffiliateCodeResponse = ApiResponse<string>
 export type AffiliateTransferResponse = ApiResponse
+export type AffiliateHistoryResponse = ApiResponse<AffiliateHistoryResponseData>
 export type CreemPaymentResponse = ApiResponse<{ checkout_url: string }>
 export type WaffoPaymentResponse = ApiResponse<
   { payment_url?: string } | string
@@ -284,10 +285,32 @@ export interface UserWalletData {
   aff_quota: number
   /** Total affiliate quota earned (historical) */
   aff_history_quota: number
+  /** Current top-up rebate ratio in basis points */
+  invite_rebate_ratio?: number
   /** Number of successful affiliate invites */
   aff_count: number
   /** User group */
   group: string
+}
+
+export interface AffiliateRewardRecord {
+  id: number
+  user_id: number
+  amount: number
+  trade_no: string
+  payment_method: string
+  payment_provider?: string | null
+  credited_quota?: number | null
+  invite_rebate_ratio?: number | null
+  invite_rebate_quota?: number | null
+  create_time: number
+  complete_time?: number
+  status: TopupStatus
+}
+
+export interface AffiliateHistoryResponseData {
+  items: AffiliateRewardRecord[]
+  total: number
 }
 
 /**

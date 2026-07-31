@@ -74,3 +74,40 @@ func TestSearchAllTopUpsFiltersAdminBillingHistory(t *testing.T) {
 		})
 	}
 }
+
+func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
+	originalDB := DB
+	originalDatabaseType := common.MainDatabaseType()
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.LogDatabaseType())
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	DB = db
+	require.NoError(t, db.AutoMigrate(&TopUp{}))
+	t.Cleanup(func() {
+		DB = originalDB
+		common.SetDatabaseTypes(originalDatabaseType, common.LogDatabaseType())
+		sqlDB, dbErr := db.DB()
+		if dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	orders := []*TopUp{
+		{UserId: 11, TradeNo: "reward-first", InviteRebateInviterId: 7, InviteRebateQuota: 30, CreateTime: 300, Status: common.TopUpStatusSuccess},
+		{UserId: 12, TradeNo: "reward-second", InviteRebateInviterId: 7, InviteRebateQuota: 20, CreateTime: 200, Status: common.TopUpStatusSuccess},
+		{UserId: 13, TradeNo: "different-inviter", InviteRebateInviterId: 8, InviteRebateQuota: 40, CreateTime: 100, Status: common.TopUpStatusSuccess},
+		{UserId: 14, TradeNo: "no-reward", InviteRebateInviterId: 7, InviteRebateQuota: 0, CreateTime: 400, Status: common.TopUpStatusSuccess},
+		{UserId: 15, TradeNo: "not-complete", InviteRebateInviterId: 7, InviteRebateQuota: 50, CreateTime: 500, Status: common.TopUpStatusPending},
+	}
+	for _, order := range orders {
+		require.NoError(t, db.Create(order).Error)
+	}
+
+	got, total, searchErr := GetInviteRebateTopUps(7, &common.PageInfo{Page: 1, PageSize: 10})
+	require.NoError(t, searchErr)
+	assert.Equal(t, int64(2), total)
+	if assert.Len(t, got, 2) {
+		assert.Equal(t, "reward-second", got[0].TradeNo)
+		assert.Equal(t, "reward-first", got[1].TradeNo)
+	}
+}

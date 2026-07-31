@@ -27,6 +27,7 @@ import { getSelf } from '@/lib/api'
 import { formatCurrencyFromUSD } from '@/lib/currency'
 
 import { AffiliateRewardsCard } from './components/affiliate-rewards-card'
+import { AffiliateHistoryDialog } from './components/dialogs/affiliate-history-dialog'
 import { BillingHistoryDialog } from './components/dialogs/billing-history-dialog'
 import { CreemConfirmDialog } from './components/dialogs/creem-confirm-dialog'
 import { LanTuPaymentDialog } from './components/dialogs/lantu-payment-dialog'
@@ -82,6 +83,7 @@ export function Wallet(props: WalletProps) {
   const [paymentLoading, setPaymentLoading] = useState<string | null>(null)
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false)
   const [transferDialogOpen, setTransferDialogOpen] = useState(false)
+  const [affiliateHistoryOpen, setAffiliateHistoryOpen] = useState(false)
   const [billingDialogOpen, setBillingDialogOpen] = useState(false)
   const [redemptionCode, setRedemptionCode] = useState('')
   const [creemDialogOpen, setCreemDialogOpen] = useState(false)
@@ -381,8 +383,10 @@ export function Wallet(props: WalletProps) {
                   user={user}
                   affiliateLink={affiliateLink}
                   onTransfer={() => setTransferDialogOpen(true)}
+                  onOpenHistory={() => setAffiliateHistoryOpen(true)}
                   inviterReward={topupInfo?.quota_for_inviter ?? 0}
                   inviteeReward={topupInfo?.quota_for_invitee ?? 0}
+                  inviteRebateRatio={user?.invite_rebate_ratio ?? 0}
                   complianceConfirmed={
                     topupInfo?.payment_compliance_confirmed !== false
                   }
@@ -431,6 +435,11 @@ export function Wallet(props: WalletProps) {
       <BillingHistoryDialog
         open={billingDialogOpen}
         onOpenChange={setBillingDialogOpen}
+      />
+
+      <AffiliateHistoryDialog
+        open={affiliateHistoryOpen}
+        onOpenChange={setAffiliateHistoryOpen}
       />
 
       <CreemConfirmDialog
