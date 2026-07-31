@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Share2 } from 'lucide-react'
+import { History, Share2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
@@ -26,14 +26,17 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
 import { formatQuota } from '@/lib/format'
 
+import { formatInviteRebateRatio } from '../lib/format'
 import type { UserWalletData } from '../types'
 
 interface AffiliateRewardsCardProps {
   user: UserWalletData | null
   affiliateLink: string
   onTransfer: () => void
+  onOpenHistory?: () => void
   inviterReward?: number
   inviteeReward?: number
+  inviteRebateRatio?: number
   complianceConfirmed?: boolean
   loading?: boolean
 }
@@ -42,8 +45,10 @@ export function AffiliateRewardsCard({
   user,
   affiliateLink,
   onTransfer,
+  onOpenHistory,
   inviterReward = 0,
   inviteeReward = 0,
+  inviteRebateRatio = 0,
   complianceConfirmed = true,
   loading,
 }: AffiliateRewardsCardProps) {
@@ -75,12 +80,27 @@ export function AffiliateRewardsCard({
       iconTone='chart-3'
       disableHoverEffect
       contentClassName='flex flex-col gap-5'
+      action={
+        onOpenHistory ? (
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            className='h-8 w-full sm:w-auto'
+            onClick={onOpenHistory}
+          >
+            <History className='size-3.5' />
+            {t('Reward records')}
+          </Button>
+        ) : null
+      }
     >
-      <div className='grid grid-cols-3 gap-2 text-center'>
+      <div className='grid grid-cols-2 gap-2 text-center sm:grid-cols-4'>
         {[
           [t('Pending'), formatQuota(user?.aff_quota ?? 0)],
           [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
           [t('Invites'), String(user?.aff_count ?? 0)],
+          [t('Top-up rebate'), formatInviteRebateRatio(inviteRebateRatio)],
         ].map(([label, value]) => (
           <div key={label} className='bg-muted/30 rounded-lg border p-2.5'>
             <div className='text-muted-foreground truncate text-[10px] font-medium tracking-wider uppercase'>
@@ -106,6 +126,12 @@ export function AffiliateRewardsCard({
             {t(
               'Friends who sign up with your referral code receive {{reward}} in account credit.',
               { reward: formatQuota(inviteeReward) }
+            )}
+          </li>
+          <li>
+            {t(
+              "Earn {{rate}} of each referred user's credited top-up as referral credit.",
+              { rate: formatInviteRebateRatio(inviteRebateRatio) }
             )}
           </li>
           <li>

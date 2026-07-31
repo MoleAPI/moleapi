@@ -125,6 +125,16 @@ export function formatHistoricalCreditedAmount(
   return hasCreditedFact ? formatQuota(record.credited_quota as number) : null
 }
 
+export function formatInviteRebateRatio(
+  ratio: number | null | undefined
+): string {
+  const normalized =
+    typeof ratio === 'number' && Number.isFinite(ratio) ? Math.max(0, ratio) : 0
+  return `${new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 2,
+  }).format(normalized / 100)}%`
+}
+
 /**
  * Get discount label for display (e.g., "20% OFF")
  */

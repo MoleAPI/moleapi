@@ -37,6 +37,21 @@ type TopUp struct {
 	Status                string  `json:"status"`
 }
 
+type InviteRebateTopUp struct {
+	Id                int    `json:"id"`
+	UserId            int    `json:"user_id"`
+	Amount            int64  `json:"amount"`
+	TradeNo           string `json:"trade_no"`
+	PaymentMethod     string `json:"payment_method"`
+	PaymentProvider   string `json:"payment_provider"`
+	CreditedQuota     int    `json:"credited_quota"`
+	InviteRebateRatio int    `json:"invite_rebate_ratio"`
+	InviteRebateQuota int    `json:"invite_rebate_quota"`
+	CreateTime        int64  `json:"create_time"`
+	CompleteTime      int64  `json:"complete_time"`
+	Status            string `json:"status"`
+}
+
 type TopUpSearchParams struct {
 	Keyword        string
 	UserKeyword    string
@@ -495,6 +510,38 @@ func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, tota
 		return nil, 0, err
 	}
 
+	return topups, total, nil
+}
+
+func GetInviteRebateTopUps(inviterId int, pageInfo *common.PageInfo) (topups []*InviteRebateTopUp, total int64, err error) {
+	tx := DB.Begin()
+	if tx.Error != nil {
+		return nil, 0, tx.Error
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	query := tx.Model(&TopUp{}).Where("invite_rebate_inviter_id = ? AND invite_rebate_quota > 0 AND status = ?", inviterId, common.TopUpStatusSuccess)
+	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
+
+	if err = query.Select([]string{
+		"id", "user_id", "amount", "trade_no", "payment_method",
+		"payment_provider", "credited_quota", "invite_rebate_ratio",
+		"invite_rebate_quota", "create_time", "complete_time", "status",
+	}).Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
+		tx.Rollback()
+		return nil, 0, err
+	}
+
+	if err = tx.Commit().Error; err != nil {
+		return nil, 0, err
+	}
 	return topups, total, nil
 }
 
