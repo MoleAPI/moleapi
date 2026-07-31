@@ -45,6 +45,7 @@ test('referral card explains each reward and how to transfer it', async () => {
 
   assert.match(html, /Referral Rewards/)
   assert.match(html, /Invite friends to earn extra rewards/)
+  assert.match(html, /Transferable/)
   assert.match(html, /Reward Details/)
   assert.match(html, /Reward records/)
   assert.match(html, /Top-up rebate/)

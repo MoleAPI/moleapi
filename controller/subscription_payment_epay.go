@@ -10,6 +10,7 @@ import (
 
 	"github.com/Calcium-Ion/go-epay/epay"
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -40,7 +41,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 
 	plan, err := model.GetSubscriptionPlanById(req.PlanId)
 	if err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	if !plan.Enabled {
@@ -73,7 +74,7 @@ func SubscriptionRequestEpay(c *gin.Context) {
 	if plan.MaxPurchasePerUser > 0 {
 		count, err := model.CountUserSubscriptionsByPlan(userId, plan.Id)
 		if err != nil {
-			common.ApiError(c, err)
+			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 			return
 		}
 		if count >= int64(plan.MaxPurchasePerUser) {

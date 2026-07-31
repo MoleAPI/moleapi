@@ -295,18 +295,19 @@ export interface UserWalletData {
 
 export interface AffiliateRewardRecord {
   id: number
-  user_id: number
-  amount: number
-  trade_no: string
-  payment_method: string
-  payment_provider?: string | null
-  credited_quota?: number | null
-  invite_rebate_ratio?: number | null
-  invite_rebate_quota?: number | null
-  create_time: number
-  complete_time?: number
-  status: TopupStatus
+  source: AffiliateRewardSource
+  quota: number
+  complete_time: number
 }
+
+export type AffiliateRewardSource =
+  | 'topup_rebate'
+  | 'invite_register'
+  | 'invitee_register'
+  | 'new_user_reward'
+  | 'reward_transfer'
+  | 'admin_adjustment'
+  | 'system_reward'
 
 export interface AffiliateHistoryResponseData {
   items: AffiliateRewardRecord[]

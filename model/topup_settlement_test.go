@@ -407,3 +407,21 @@ func TestRechargeWaffoRejectsUserQuotaOverflow(t *testing.T) {
 	assert.Zero(t, topUp.CompleteTime)
 	assert.Equal(t, common.MaxQuota-50, getUserQuotaForPaymentGuardTest(t, 520))
 }
+
+func TestBindPendingTopUpPaymentFactsCannotOverwriteSettlement(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+	insertUserForPaymentGuardTest(t, 529, 10)
+	insertTopUpForSettlementTest(t, "nowpayments-bind-race", 529, 2, 1, PaymentProviderNowPayments)
+
+	require.NoError(t, RechargeNowPaymentsWithPaymentDetails("nowpayments-bind-race", "payment-1", "USD", "203.0.113.70"))
+	err := BindPendingTopUpPaymentFacts("nowpayments-bind-race", PaymentProviderNowPayments, "", "USD", "invoice-1", "prod")
+	require.ErrorIs(t, err, ErrTopUpStatusInvalid)
+
+	topUp := GetTopUpByTradeNo("nowpayments-bind-race")
+	require.NotNil(t, topUp)
+	assert.Equal(t, common.TopUpStatusSuccess, topUp.Status)
+	assert.Equal(t, "payment-1", topUp.GatewayTradeNo)
+	assert.Empty(t, topUp.PaymentProductId)
+	assert.Equal(t, 210, getUserQuotaForPaymentGuardTest(t, 529))
+}

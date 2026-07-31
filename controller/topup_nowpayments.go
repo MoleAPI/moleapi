@@ -327,8 +327,7 @@ func RequestNowPaymentsPay(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
 		return
 	}
-	topUp.PaymentProductId = invoiceID
-	if err := topUp.Update(); err != nil {
+	if err := model.BindPendingTopUpPaymentFacts(tradeNo, model.PaymentProviderNowPayments, "", currency, invoiceID, topUp.PaymentMode); err != nil {
 		_ = model.UpdatePendingTopUpStatus(tradeNo, model.PaymentProviderNowPayments, common.TopUpStatusFailed)
 		logger.LogError(c.Request.Context(), fmt.Sprintf("NOWPayments 保存发票信息失败 user_id=%d trade_no=%s error=%q", userID, tradeNo, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})

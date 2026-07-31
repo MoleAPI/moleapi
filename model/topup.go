@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -39,17 +40,11 @@ type TopUp struct {
 
 type InviteRebateTopUp struct {
 	Id                int    `json:"id"`
-	UserId            int    `json:"user_id"`
-	Amount            int64  `json:"amount"`
-	TradeNo           string `json:"trade_no"`
-	PaymentMethod     string `json:"payment_method"`
-	PaymentProvider   string `json:"payment_provider"`
-	CreditedQuota     int    `json:"credited_quota"`
-	InviteRebateRatio int    `json:"invite_rebate_ratio"`
-	InviteRebateQuota int    `json:"invite_rebate_quota"`
-	CreateTime        int64  `json:"create_time"`
+	Source            string `json:"source"`
+	InviteRebateQuota int    `json:"-"`
+	Quota             int    `json:"quota"`
+	CreateTime        int64  `json:"-"`
 	CompleteTime      int64  `json:"complete_time"`
-	Status            string `json:"status"`
 }
 
 type TopUpSearchParams struct {
@@ -169,7 +164,7 @@ func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, ta
 }
 
 func BindPendingTopUpPaymentFacts(tradeNo string, expectedPaymentProvider string, gatewayTradeNo string, paymentCurrency string, paymentProductId string, paymentMode string) error {
-	if tradeNo == "" || expectedPaymentProvider == "" || gatewayTradeNo == "" {
+	if tradeNo == "" || expectedPaymentProvider == "" || (gatewayTradeNo == "" && paymentProductId == "") {
 		return errors.New("invalid payment facts")
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
@@ -186,7 +181,7 @@ func BindPendingTopUpPaymentFacts(tradeNo string, expectedPaymentProvider string
 		if topUp.Status != common.TopUpStatusPending {
 			return ErrTopUpStatusInvalid
 		}
-		if topUp.GatewayTradeNo != "" && topUp.GatewayTradeNo != gatewayTradeNo {
+		if gatewayTradeNo != "" && topUp.GatewayTradeNo != "" && topUp.GatewayTradeNo != gatewayTradeNo {
 			return ErrPaymentMethodMismatch
 		}
 		if paymentCurrency != "" && topUp.PaymentCurrency != "" && topUp.PaymentCurrency != paymentCurrency {
@@ -198,7 +193,9 @@ func BindPendingTopUpPaymentFacts(tradeNo string, expectedPaymentProvider string
 		if paymentMode != "" && topUp.PaymentMode != "" && topUp.PaymentMode != paymentMode {
 			return ErrPaymentMethodMismatch
 		}
-		topUp.GatewayTradeNo = gatewayTradeNo
+		if gatewayTradeNo != "" {
+			topUp.GatewayTradeNo = gatewayTradeNo
+		}
 		if paymentCurrency != "" {
 			topUp.PaymentCurrency = paymentCurrency
 		}
@@ -348,7 +345,7 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 			common.SysError("failed to invalidate user cache after topup: " + err.Error())
 		}
 		if inviteRebateGranted {
-			RecordLog(topUp.InviteRebateInviterId, LogTypeSystem, fmt.Sprintf("邀请好友充值返利 %s，订单号 %s", logger.LogQuota(topUp.InviteRebateQuota), topUp.TradeNo))
+			RecordLogWithQuota(topUp.InviteRebateInviterId, LogTypeSystem, fmt.Sprintf("邀请好友充值返利 %s", logger.LogQuota(topUp.InviteRebateQuota)), topUp.InviteRebateQuota)
 			if err := invalidateUserCache(topUp.InviteRebateInviterId); err != nil {
 				common.SysError("failed to invalidate inviter cache after topup: " + err.Error())
 			}
@@ -514,35 +511,139 @@ func GetUserTopUps(userId int, pageInfo *common.PageInfo) (topups []*TopUp, tota
 }
 
 func GetInviteRebateTopUps(inviterId int, pageInfo *common.PageInfo) (topups []*InviteRebateTopUp, total int64, err error) {
-	tx := DB.Begin()
-	if tx.Error != nil {
-		return nil, 0, tx.Error
+	start := pageInfo.GetStartIdx()
+	limit := pageInfo.GetEndIdx()
+	if start >= inviteRewardHistoryHardLimit {
+		limit = 0
+	} else if limit > inviteRewardHistoryHardLimit {
+		limit = inviteRewardHistoryHardLimit
 	}
-	defer func() {
-		if r := recover(); r != nil {
-			tx.Rollback()
-		}
-	}()
 
-	query := tx.Model(&TopUp{}).Where("invite_rebate_inviter_id = ? AND invite_rebate_quota > 0 AND status = ?", inviterId, common.TopUpStatusSuccess)
-	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {
-		tx.Rollback()
+	topups, topupTotal, err := getInviteRebateTopUpRecords(inviterId, limit)
+	if err != nil {
 		return nil, 0, err
+	}
+	logs, logTotal, err := getInviteRewardLogRecords(inviterId, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	topups = append(topups, logs...)
+	sort.SliceStable(topups, func(i, j int) bool {
+		left := inviteRewardRecordTime(topups[i])
+		right := inviteRewardRecordTime(topups[j])
+		if left == right {
+			return topups[i].Id > topups[j].Id
+		}
+		return left > right
+	})
+
+	total = topupTotal + logTotal
+	if total > inviteRewardHistoryHardLimit {
+		total = inviteRewardHistoryHardLimit
+	}
+	if start >= len(topups) {
+		return []*InviteRebateTopUp{}, total, nil
+	}
+	end := pageInfo.GetEndIdx()
+	if end > len(topups) {
+		end = len(topups)
+	}
+	page := topups[start:end]
+	for i := range page {
+		page[i].Id = start + i + 1
+	}
+	return page, total, nil
+}
+
+func getInviteRebateTopUpRecords(inviterId int, limit int) (topups []*InviteRebateTopUp, total int64, err error) {
+	query := DB.Model(&TopUp{}).Where("invite_rebate_inviter_id = ? AND invite_rebate_quota > 0 AND status = ?", inviterId, common.TopUpStatusSuccess)
+	limitedQuery := DB.Model(&TopUp{}).
+		Where("invite_rebate_inviter_id = ? AND invite_rebate_quota > 0 AND status = ?", inviterId, common.TopUpStatusSuccess).
+		Select("id").Limit(inviteRewardHistoryHardLimit)
+	if err = DB.Table("(?) AS invite_rebate_topups", limitedQuery).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if limit <= 0 {
+		return []*InviteRebateTopUp{}, total, nil
 	}
 
 	if err = query.Select([]string{
-		"id", "user_id", "amount", "trade_no", "payment_method",
-		"payment_provider", "credited_quota", "invite_rebate_ratio",
-		"invite_rebate_quota", "create_time", "complete_time", "status",
-	}).Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
-		tx.Rollback()
+		"id", "invite_rebate_quota", "create_time", "complete_time",
+	}).Order("complete_time desc, create_time desc, id desc").Limit(limit).Find(&topups).Error; err != nil {
 		return nil, 0, err
 	}
-
-	if err = tx.Commit().Error; err != nil {
-		return nil, 0, err
+	for _, topup := range topups {
+		topup.Source = "topup_rebate"
+		topup.Quota = topup.InviteRebateQuota
+		topup.CompleteTime = inviteRewardRecordTime(topup)
 	}
 	return topups, total, nil
+}
+
+func getInviteRewardLogRecords(userId int, limit int) (records []*InviteRebateTopUp, total int64, err error) {
+	logs, total, err := getInviteRewardSystemLogs(userId, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	for _, log := range logs {
+		records = append(records, inviteRewardRecordFromLog(log))
+	}
+	return records, total, nil
+}
+
+func getInviteRewardSystemLogs(userId int, limit int) (logs []*Log, total int64, err error) {
+	contentQuery := "(content LIKE ? OR content LIKE ? OR content LIKE ? OR content LIKE ? OR content LIKE ?)"
+	contentArgs := []interface{}{
+		"邀请用户赠送 %",
+		"使用邀请码赠送 %",
+		"新用户注册赠送 %",
+		"转移邀请奖励 %",
+		"管理员调整额度 %",
+	}
+	query := LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", userId, LogTypeSystem).Where(
+		contentQuery, contentArgs...,
+	)
+	limitedQuery := LOG_DB.Model(&Log{}).
+		Where("user_id = ? AND type = ?", userId, LogTypeSystem).
+		Where(contentQuery, contentArgs...).
+		Select("id").Limit(inviteRewardHistoryHardLimit)
+	if err = LOG_DB.Table("(?) AS invite_reward_logs", limitedQuery).Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	if limit <= 0 {
+		return []*Log{}, total, nil
+	}
+	err = query.Order("created_at desc, id desc").Limit(limit).Find(&logs).Error
+	return logs, total, err
+}
+
+func inviteRewardRecordFromLog(log *Log) *InviteRebateTopUp {
+	source := "system_reward"
+	if strings.HasPrefix(log.Content, "管理员调整额度 ") {
+		source = "admin_adjustment"
+	} else if strings.HasPrefix(log.Content, "邀请用户赠送 ") {
+		source = "invite_register"
+	} else if strings.HasPrefix(log.Content, "使用邀请码赠送 ") {
+		source = "invitee_register"
+	} else if strings.HasPrefix(log.Content, "新用户注册赠送 ") {
+		source = "new_user_reward"
+	} else if strings.HasPrefix(log.Content, "转移邀请奖励 ") {
+		source = "reward_transfer"
+	}
+	return &InviteRebateTopUp{
+		Id:           log.Id,
+		Source:       source,
+		Quota:        log.Quota,
+		CompleteTime: log.CreatedAt,
+	}
+}
+
+func inviteRewardRecordTime(record *InviteRebateTopUp) int64 {
+	if record.CompleteTime > 0 {
+		return record.CompleteTime
+	}
+	return record.CreateTime
 }
 
 // GetAllTopUps 获取全平台的充值记录（管理员使用，不限制时间窗口）
@@ -577,6 +678,9 @@ func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err 
 // searchTopUpCountHardLimit 搜索充值记录时 COUNT 的安全上限，
 // 防止对超大表执行无界 COUNT 触发 DoS。
 const searchTopUpCountHardLimit = 10000
+
+// ponytail: cap the cross-database merge; use a unified reward ledger if more history must be pageable.
+const inviteRewardHistoryHardLimit = 1000
 
 // SearchUserTopUps 按订单号搜索某用户的充值记录
 func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {

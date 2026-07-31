@@ -277,7 +277,8 @@ func Register(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
 			return
 		}
-		common.ApiError(c, err)
+		common.SysLog(fmt.Sprintf("register user insert error: %v", err))
+		common.ApiErrorI18n(c, i18n.MsgUserRegisterFailed)
 		return
 	}
 
@@ -444,17 +445,28 @@ func TransferAffQuota(c *gin.Context) {
 	id := c.GetInt("id")
 	user, err := model.GetUserById(id, true)
 	if err != nil {
-		common.ApiError(c, err)
+		logger.LogError(c.Request.Context(), fmt.Sprintf("failed to load user for reward transfer user_id=%d error=%q", id, err.Error()))
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	tran := TransferAffQuotaRequest{}
 	if err := c.ShouldBindJSON(&tran); err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
 	err = user.TransferAffQuotaToQuota(tran.Quota)
 	if err != nil {
-		common.ApiErrorI18n(c, i18n.MsgUserTransferFailed, map[string]any{"Error": err.Error()})
+		switch {
+		case errors.Is(err, model.ErrInvalidAffQuotaTransfer):
+			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		case errors.Is(err, model.ErrAffQuotaTransferBelowMinimum):
+			common.ApiErrorI18n(c, i18n.MsgUserTransferQuotaMinimum, map[string]any{"Min": logger.LogQuota(int(common.QuotaPerUnit))})
+		case errors.Is(err, model.ErrAffQuotaInsufficient):
+			common.ApiErrorI18n(c, i18n.MsgUserInviteQuotaInsufficient)
+		default:
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to transfer reward quota user_id=%d error=%q", id, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
+		}
 		return
 	}
 	common.ApiSuccessI18n(c, i18n.MsgUserTransferSuccess, nil)
@@ -462,25 +474,16 @@ func TransferAffQuota(c *gin.Context) {
 
 func GetAffCode(c *gin.Context) {
 	id := c.GetInt("id")
-	user, err := model.GetUserById(id, true)
+	affCode, err := model.GetOrCreateAffCode(id)
 	if err != nil {
-		common.ApiError(c, err)
+		logger.LogError(c.Request.Context(), fmt.Sprintf("failed to load affiliate code user_id=%d error=%q", id, err.Error()))
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
-	}
-	if user.AffCode == "" {
-		user.AffCode = common.GetRandomString(4)
-		if err := user.Update(false); err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": err.Error(),
-			})
-			return
-		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    user.AffCode,
+		"data":    affCode,
 	})
 	return
 }
@@ -1187,12 +1190,17 @@ func ManageUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
 	}
-	user := model.User{
-		Id: req.Id,
+	if req.Id <= 0 {
+		common.ApiErrorI18n(c, i18n.MsgInvalidId)
+		return
 	}
-	// Fill attributes
-	model.DB.Unscoped().Where(&user).First(&user)
-	if user.Id == 0 {
+	var user model.User
+	if err := model.DB.Unscoped().First(&user, req.Id).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to load managed user target_user_id=%d error=%q", req.Id, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
+			return
+		}
 		common.ApiErrorI18n(c, i18n.MsgUserNotExists)
 		return
 	}
@@ -1216,10 +1224,8 @@ func ManageUser(c *gin.Context) {
 			return
 		}
 		if err := user.Delete(); err != nil {
-			c.JSON(http.StatusOK, gin.H{
-				"success": false,
-				"message": err.Error(),
-			})
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to delete managed user target_user_id=%d error=%q", user.Id, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
 			return
 		}
 		// 删除用户后，强制清理 Redis 中所有该用户令牌的缓存，
@@ -1258,45 +1264,55 @@ func ManageUser(c *gin.Context) {
 		}
 		user.Role = common.RoleCommonUser
 	case "add_quota":
+		var oldQuota int
+		var newQuota int
+		var auditAction string
+		var auditParams map[string]interface{}
 		switch req.Mode {
 		case "add":
 			if req.Value <= 0 {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.IncreaseUserQuota(user.Id, req.Value, true); err != nil {
-				common.ApiError(c, err)
-				return
+			oldQuota, newQuota, err = model.AdjustUserQuota(user.Id, req.Value, false)
+			auditAction = "user.quota_add"
+			auditParams = map[string]interface{}{
+				"quota":     logger.LogQuota(req.Value),
+				"quota_raw": req.Value,
 			}
-			recordManageAuditFor(c, user.Id, "user.quota_add", map[string]interface{}{
-				"quota": logger.LogQuota(req.Value),
-			})
 		case "subtract":
 			if req.Value <= 0 {
 				common.ApiErrorI18n(c, i18n.MsgUserQuotaChangeZero)
 				return
 			}
-			if err := model.DecreaseUserQuota(user.Id, req.Value, true); err != nil {
-				common.ApiError(c, err)
-				return
+			oldQuota, newQuota, err = model.AdjustUserQuota(user.Id, -req.Value, false)
+			auditAction = "user.quota_subtract"
+			auditParams = map[string]interface{}{
+				"quota":     logger.LogQuota(req.Value),
+				"quota_raw": req.Value,
 			}
-			recordManageAuditFor(c, user.Id, "user.quota_subtract", map[string]interface{}{
-				"quota": logger.LogQuota(req.Value),
-			})
 		case "override":
-			oldQuota := user.Quota
-			if err := model.DB.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", req.Value).Error; err != nil {
-				common.ApiError(c, err)
-				return
+			oldQuota, newQuota, err = model.AdjustUserQuota(user.Id, req.Value, true)
+			auditAction = "user.quota_override"
+			auditParams = map[string]interface{}{
+				"from":      logger.LogQuota(oldQuota),
+				"to":        logger.LogQuota(newQuota),
+				"from_raw":  oldQuota,
+				"to_raw":    newQuota,
+				"delta_raw": newQuota - oldQuota,
 			}
-			recordManageAuditFor(c, user.Id, "user.quota_override", map[string]interface{}{
-				"from": logger.LogQuota(oldQuota),
-				"to":   logger.LogQuota(req.Value),
-			})
 		default:
 			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 			return
 		}
+		if err != nil {
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to adjust managed user quota target_user_id=%d error=%q", user.Id, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
+			return
+		}
+		quotaDelta := newQuota - oldQuota
+		recordManageAuditFor(c, user.Id, auditAction, auditParams)
+		model.RecordLogWithQuota(user.Id, model.LogTypeSystem, fmt.Sprintf("管理员调整额度 %s", logger.LogQuota(quotaDelta)), quotaDelta)
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "",
@@ -1314,24 +1330,29 @@ func ManageUser(c *gin.Context) {
 			}
 			return authz.ClearUserAuthorizationInTx(tx, user.Id)
 		}); err != nil {
-			common.ApiError(c, err)
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to demote managed user target_user_id=%d error=%q", user.Id, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
 			return
 		}
 		if err := authz.ReloadPolicy(); err != nil {
-			common.ApiError(c, err)
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to reload authorization after user demotion target_user_id=%d error=%q", user.Id, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
 			return
 		}
 		if err := model.PublishUserAuthCache(user.Id); err != nil {
-			common.ApiError(c, err)
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to publish authorization after user demotion target_user_id=%d error=%q", user.Id, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
 			return
 		}
 		if _, err := model.RevokeAllUserSessions(user.Id, "admin_demote"); err != nil {
-			common.ApiError(c, err)
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to revoke sessions after user demotion target_user_id=%d error=%q", user.Id, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
 			return
 		}
 	} else {
 		if err := user.Update(false); err != nil {
-			common.ApiError(c, err)
+			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to update managed user target_user_id=%d action=%s error=%q", user.Id, req.Action, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
 			return
 		}
 	}

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
@@ -37,7 +39,7 @@ func GetSubscriptionPlans(c *gin.Context) {
 
 	var plans []model.SubscriptionPlan
 	if err := model.DB.Where("enabled = ?", true).Order("sort_order desc, id desc").Find(&plans).Error; err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	result := make([]SubscriptionPlanDTO, 0, len(plans))
@@ -85,13 +87,13 @@ func UpdateSubscriptionPreference(c *gin.Context) {
 
 	user, err := model.GetUserById(userId, true)
 	if err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	current := user.GetSetting()
 	current.BillingPreference = pref
 	if err := model.UpdateUserSetting(user.Id, current); err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	common.ApiSuccess(c, gin.H{"billing_preference": pref})
@@ -110,7 +112,13 @@ func SubscriptionRequestBalancePay(c *gin.Context) {
 	}
 
 	if err := model.PurchaseSubscriptionWithBalance(userId, req.PlanId); err != nil {
-		common.ApiError(c, err)
+		switch err.Error() {
+		case "套餐未启用", "该套餐不允许使用余额兑换", "余额不足", "已达到该套餐购买上限":
+			common.ApiErrorMsg(c, err.Error())
+		default:
+			logger.LogError(c.Request.Context(), fmt.Sprintf("余额购买订阅失败 user_id=%d plan_id=%d error=%q", userId, req.PlanId, err.Error()))
+			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
+		}
 		return
 	}
 	common.ApiSuccess(c, nil)

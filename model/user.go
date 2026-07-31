@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -17,7 +18,18 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const UserNameMaxLength = 20
+const (
+	UserNameMaxLength         = 20
+	affCodeLength             = 4
+	affCodeGenerationAttempts = 10
+)
+
+var (
+	ErrInvalidAffQuotaTransfer      = errors.New("invalid affiliate quota transfer")
+	ErrAffQuotaTransferBelowMinimum = errors.New("affiliate quota transfer below minimum")
+	ErrAffQuotaInsufficient         = errors.New("affiliate quota insufficient")
+	ErrAffQuotaTransferOutOfRange   = errors.New("affiliate quota transfer out of range")
+)
 
 var userSortColumns = map[string]string{
 	"id":            "id",
@@ -475,6 +487,46 @@ func GetUserIdByAffCode(affCode string) (int, error) {
 	return user.Id, err
 }
 
+func generateUniqueAffCode(tx *gorm.DB) (string, error) {
+	for range affCodeGenerationAttempts {
+		code := common.GetRandomString(affCodeLength)
+		var count int64
+		if err := tx.Unscoped().Model(&User{}).Where("aff_code = ?", code).Count(&count).Error; err != nil {
+			return "", err
+		}
+		if count == 0 {
+			return code, nil
+		}
+	}
+	return "", errors.New("failed to generate unique affiliate code")
+}
+
+func GetOrCreateAffCode(userId int) (affCode string, err error) {
+	if userId <= 0 {
+		return "", errors.New("invalid user id")
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := lockForUpdate(tx).Select("id", "aff_code").Where("id = ?", userId).First(&user).Error; err != nil {
+			return err
+		}
+		if user.AffCode != "" {
+			affCode = user.AffCode
+			return nil
+		}
+		code, err := generateUniqueAffCode(tx)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&user).Update("aff_code", code).Error; err != nil {
+			return err
+		}
+		affCode = code
+		return nil
+	})
+	return affCode, err
+}
+
 func DeleteUserById(id int) (err error) {
 	if id == 0 {
 		return errors.New("id 为空！")
@@ -588,21 +640,38 @@ func UpdateZeroInviteRebateRatio(ratio int) (int64, error) {
 	return result.Updated, nil
 }
 
-func inviteUser(inviterId int) (err error) {
-	user, err := GetUserById(inviterId, true)
-	if err != nil {
-		return err
+func inviteUser(inviterId int, quota int) error {
+	if inviterId <= 0 || quota <= 0 || quota > common.MaxQuota {
+		return errors.New("invalid inviter reward")
 	}
-	user.AffCount++
-	user.AffQuota += common.QuotaForInviter
-	user.AffHistoryQuota += common.QuotaForInviter
-	return DB.Save(user).Error
+	result := DB.Model(&User{}).
+		Where("id = ?", inviterId).
+		Where("aff_count >= 0 AND aff_count < ?", common.MaxQuota).
+		Where("aff_quota >= 0 AND aff_quota <= ?", common.MaxQuota-quota).
+		Where("aff_history >= 0 AND aff_history <= ?", common.MaxQuota-quota).
+		Updates(map[string]interface{}{
+			"aff_count":   gorm.Expr("aff_count + 1"),
+			"aff_quota":   gorm.Expr("aff_quota + ?", quota),
+			"aff_history": gorm.Expr("aff_history + ?", quota),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return errors.New("inviter reward was not applied")
+	}
+	return nil
 }
 
 func (user *User) TransferAffQuotaToQuota(quota int) error {
-	// 检查quota是否小于最小额度
+	if quota <= 0 || quota > common.MaxQuota {
+		return ErrInvalidAffQuotaTransfer
+	}
+	if common.QuotaPerUnit <= 0 || math.IsNaN(common.QuotaPerUnit) || math.IsInf(common.QuotaPerUnit, 0) {
+		return errors.New("转移额度配置无效！")
+	}
 	if float64(quota) < common.QuotaPerUnit {
-		return fmt.Errorf("转移额度最小为%s！", logger.LogQuota(int(common.QuotaPerUnit)))
+		return ErrAffQuotaTransferBelowMinimum
 	}
 
 	// 开始数据库事务
@@ -620,23 +689,34 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 
 	// 再次检查用户的AffQuota是否足够
 	if user.AffQuota < quota {
-		return errors.New("邀请额度不足！")
+		return ErrAffQuotaInsufficient
+	}
+	quotaAfterTransfer := int64(user.Quota) + int64(quota)
+	if user.AffQuota < 0 || user.AffQuota > common.MaxQuota || quotaAfterTransfer < -int64(common.MaxQuota) || quotaAfterTransfer > int64(common.MaxQuota) {
+		return ErrAffQuotaTransferOutOfRange
 	}
 
-	// 更新用户额度
-	user.AffQuota -= quota
-	user.Quota += quota
-
-	// 保存用户状态
-	if err := tx.Save(user).Error; err != nil {
+	if err := tx.Model(&user).Updates(map[string]interface{}{
+		"aff_quota": user.AffQuota - quota,
+		"quota":     int(quotaAfterTransfer),
+	}).Error; err != nil {
 		return err
 	}
 
-	// 提交事务
-	return tx.Commit().Error
+	if err := tx.Commit().Error; err != nil {
+		return err
+	}
+	if err := invalidateUserCache(user.Id); err != nil {
+		common.SysError(fmt.Sprintf("failed to invalidate user cache after reward transfer user_id=%d: %v", user.Id, err))
+	}
+	RecordLogWithQuota(user.Id, LogTypeSystem, fmt.Sprintf("转移邀请奖励 %s 到余额", logger.LogQuota(quota)), -quota)
+	return nil
 }
 
 func (user *User) prepareForInsert(tx *gorm.DB) error {
+	if common.QuotaForNewUser < 0 || common.QuotaForNewUser > common.MaxQuota {
+		return errors.New("invalid new user reward configuration")
+	}
 	user.Email = NormalizeEmail(user.Email)
 	if err := ensureEmailAvailableWithTx(tx, user.Email, 0); err != nil {
 		return err
@@ -694,7 +774,12 @@ func (user *User) Insert(inviterId int) error {
 				return err
 			}
 			user.Quota = common.QuotaForNewUser
-			user.AffCode = common.GetRandomString(4)
+			affCode, err := generateUniqueAffCode(tx)
+			if err != nil {
+				return err
+			}
+			user.AffCode = affCode
+			user.InviterId = inviterId
 			user.InviteRebateRatio = GetDefaultInviteRebateRatio()
 
 			// 初始化用户设置，包括默认的边栏配置
@@ -714,6 +799,37 @@ func (user *User) Insert(inviterId int) error {
 	return nil
 }
 
+func (user *User) recordRegistrationRewards(inviterId int) {
+	if user.Quota > 0 {
+		RecordLogWithQuota(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(user.Quota)), user.Quota)
+	}
+	if inviterId == 0 || !operation_setting.IsPaymentComplianceConfirmed() {
+		return
+	}
+
+	inviteeQuota := common.QuotaForInvitee
+	if inviteeQuota < 0 || inviteeQuota > common.MaxQuota {
+		common.SysError(fmt.Sprintf("skipped invalid invitee registration reward user_id=%d quota=%d", user.Id, inviteeQuota))
+	} else if inviteeQuota > 0 {
+		if _, _, err := AdjustUserQuota(user.Id, inviteeQuota, false); err != nil {
+			common.SysError(fmt.Sprintf("failed to grant invitee registration reward user_id=%d: %v", user.Id, err))
+		} else {
+			RecordLogWithQuota(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(inviteeQuota)), inviteeQuota)
+		}
+	}
+
+	inviterQuota := common.QuotaForInviter
+	if inviterQuota < 0 || inviterQuota > common.MaxQuota {
+		common.SysError(fmt.Sprintf("skipped invalid inviter registration reward inviter_id=%d quota=%d", inviterId, inviterQuota))
+	} else if inviterQuota > 0 {
+		if err := inviteUser(inviterId, inviterQuota); err != nil {
+			common.SysError(fmt.Sprintf("failed to grant inviter registration reward inviter_id=%d: %v", inviterId, err))
+		} else {
+			RecordLogWithQuota(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(inviterQuota)), inviterQuota)
+		}
+	}
+}
+
 func (user *User) finishInsert(inviterId int) {
 	// 用户创建成功后，根据角色初始化边栏配置
 	// 需要重新获取用户以确保有正确的ID和Role
@@ -730,20 +846,7 @@ func (user *User) finishInsert(inviterId int) {
 		}
 	}
 
-	if common.QuotaForNewUser > 0 {
-		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
-	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		if common.QuotaForInviter > 0 {
-			//_ = IncreaseUserQuota(inviterId, common.QuotaForInviter)
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
-		}
-	}
+	user.recordRegistrationRewards(inviterId)
 }
 
 func (user *User) FinishInsert(inviterId int) {
@@ -759,7 +862,12 @@ func (user *User) InsertWithTx(tx *gorm.DB, inviterId int) error {
 			return err
 		}
 		user.Quota = common.QuotaForNewUser
-		user.AffCode = common.GetRandomString(4)
+		affCode, err := generateUniqueAffCode(tx)
+		if err != nil {
+			return err
+		}
+		user.AffCode = affCode
+		user.InviterId = inviterId
 		user.InviteRebateRatio = GetDefaultInviteRebateRatio()
 
 		// 初始化用户设置
@@ -788,19 +896,7 @@ func (user *User) FinalizeOAuthUserCreation(inviterId int) {
 		}
 	}
 
-	if common.QuotaForNewUser > 0 {
-		RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(common.QuotaForNewUser)))
-	}
-	if inviterId != 0 && operation_setting.IsPaymentComplianceConfirmed() {
-		if common.QuotaForInvitee > 0 {
-			_ = IncreaseUserQuota(user.Id, common.QuotaForInvitee, true)
-			RecordLog(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(common.QuotaForInvitee)))
-		}
-		if common.QuotaForInviter > 0 {
-			RecordLog(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(common.QuotaForInviter)))
-			_ = inviteUser(inviterId)
-		}
-	}
+	user.recordRegistrationRewards(inviterId)
 }
 
 func (user *User) Update(updatePassword bool) error {
@@ -1329,6 +1425,37 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 		Setting: setting,
 	}
 	return userBase.GetSetting(), nil
+}
+
+// AdjustUserQuota applies a bounded delta or replacement while holding the user row.
+func AdjustUserQuota(id int, value int, override bool) (oldQuota int, newQuota int, err error) {
+	if id <= 0 || value < -common.MaxQuota || value > common.MaxQuota {
+		return 0, 0, errors.New("invalid quota adjustment")
+	}
+	err = DB.Transaction(func(tx *gorm.DB) error {
+		var user User
+		if err := lockForUpdate(tx).Select("id", "quota").Where("id = ?", id).First(&user).Error; err != nil {
+			return err
+		}
+		oldQuota = user.Quota
+		target := int64(value)
+		if !override {
+			target = int64(oldQuota) + int64(value)
+		}
+		delta := target - int64(oldQuota)
+		if target < -int64(common.MaxQuota) || target > int64(common.MaxQuota) || delta < -int64(common.MaxQuota) || delta > int64(common.MaxQuota) {
+			return errors.New("quota adjustment exceeds supported range")
+		}
+		newQuota = int(target)
+		return tx.Model(&user).Update("quota", newQuota).Error
+	})
+	if err != nil {
+		return 0, 0, err
+	}
+	if err := invalidateUserCache(id); err != nil {
+		common.SysError(fmt.Sprintf("failed to invalidate user cache after quota adjustment user_id=%d: %v", id, err))
+	}
+	return oldQuota, newQuota, nil
 }
 
 func IncreaseUserQuota(id int, quota int, db bool) (err error) {

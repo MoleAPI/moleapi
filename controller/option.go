@@ -53,15 +53,6 @@ func isPaymentComplianceOptionKey(key string) bool {
 	return strings.HasPrefix(key, "payment_setting.compliance_")
 }
 
-func isPositiveOptionValue(value string) bool {
-	intValue, err := strconv.Atoi(strings.TrimSpace(value))
-	if err == nil {
-		return intValue > 0
-	}
-	floatValue, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
-	return err == nil && floatValue > 0
-}
-
 func collectModelNamesFromOptionValue(raw string, modelNames map[string]struct{}) {
 	if strings.TrimSpace(raw) == "" {
 		return
@@ -331,8 +322,13 @@ func UpdateOption(c *gin.Context) {
 		option.Value = fmt.Sprintf("%v", option.Value)
 	}
 	switch option.Key {
-	case "QuotaForInviter", "QuotaForInvitee":
-		if isPositiveOptionValue(option.Value.(string)) && !operation_setting.IsPaymentComplianceConfirmed() {
+	case "QuotaForNewUser", "QuotaForInviter", "QuotaForInvitee":
+		quota, quotaErr := strconv.ParseInt(strings.TrimSpace(option.Value.(string)), 10, 64)
+		if quotaErr != nil || quota < 0 || quota > int64(common.MaxQuota) {
+			common.ApiErrorMsg(c, "注册奖励额度无效")
+			return
+		}
+		if option.Key != "QuotaForNewUser" && quota > 0 && !operation_setting.IsPaymentComplianceConfirmed() {
 			common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
 			return
 		}

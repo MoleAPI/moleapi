@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
@@ -33,7 +34,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 
 	plan, err := model.GetSubscriptionPlanById(req.PlanId)
 	if err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	if !plan.Enabled {
@@ -56,7 +57,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	userId := c.GetInt("id")
 	user, err := model.GetUserById(userId, false)
 	if err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	if user == nil {
@@ -67,7 +68,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 	if plan.MaxPurchasePerUser > 0 {
 		count, err := model.CountUserSubscriptionsByPlan(userId, plan.Id)
 		if err != nil {
-			common.ApiError(c, err)
+			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 			return
 		}
 		if count >= int64(plan.MaxPurchasePerUser) {

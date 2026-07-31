@@ -97,7 +97,7 @@ export function AffiliateRewardsCard({
     >
       <div className='grid grid-cols-2 gap-2 text-center sm:grid-cols-4'>
         {[
-          [t('Pending'), formatQuota(user?.aff_quota ?? 0)],
+          [t('Transferable'), formatQuota(user?.aff_quota ?? 0)],
           [t('Total Earned'), formatQuota(user?.aff_history_quota ?? 0)],
           [t('Invites'), String(user?.aff_count ?? 0)],
           [t('Top-up rebate'), formatInviteRebateRatio(inviteRebateRatio)],
