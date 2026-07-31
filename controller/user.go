@@ -786,6 +786,19 @@ func ApplyDefaultInviteRebateRatio(c *gin.Context) {
 	})
 }
 
+func ListInviteRebateRatios(c *gin.Context) {
+	summaries, err := model.ListInviteRebateRatioSummaries()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+
+	common.ApiSuccess(c, gin.H{
+		"default_ratio": model.GetDefaultInviteRebateRatio(),
+		"ratios":        summaries,
+	})
+}
+
 type InviteRebateBatchUpdateRequest struct {
 	Scope        string `json:"scope"`
 	CurrentRatio *int   `json:"current_ratio"`
