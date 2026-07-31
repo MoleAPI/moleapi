@@ -89,6 +89,16 @@ test('WeChat Pay keeps its brand green independently of the active theme', async
   assert.match(html, /hover:bg-\[#06ad56\]!/)
 })
 
+test('Waffo Pancake renders as green Global Pay', async () => {
+  const html = await renderRechargeForm([
+    { name: 'Global Pay', type: 'waffo_pancake' },
+  ])
+
+  assert.match(html, /Global Pay/)
+  assert.match(html, /bg-\[#22c55e\]!/)
+  assert.match(html, /hover:bg-\[#16a34a\]!/)
+})
+
 test('billing entry uses recharge bills copy', async () => {
   const html = await renderRechargeForm([], true)
 

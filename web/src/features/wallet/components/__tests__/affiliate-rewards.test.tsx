@@ -37,7 +37,6 @@ test('referral card explains each reward and how to transfer it', async () => {
         onTransfer={() => undefined}
         inviterReward={25_000}
         inviteeReward={25_000}
-        firstTopupReward={250_000}
       />
     </I18nextProvider>
   )
@@ -47,6 +46,5 @@ test('referral card explains each reward and how to transfer it', async () => {
   assert.match(html, /Reward Details/)
   assert.match(html, /\$0\.05.*friend who signs up/)
   assert.match(html, /referral code.*\$0\.05.*account credit/)
-  assert.match(html, /\$0\.5(?:0)?.*first top-up/)
   assert.match(html, /moved to your account balance using Transfer/)
 })

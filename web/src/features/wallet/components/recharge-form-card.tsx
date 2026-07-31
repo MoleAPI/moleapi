@@ -370,6 +370,9 @@ export function RechargeFormCard({
                       ) {
                         paymentTone =
                           'border-[#07c160]! bg-[#07c160]! text-white! hover:border-[#06ad56]! hover:bg-[#06ad56]!'
+                      } else if (method.type === PAYMENT_TYPES.WAFFO_PANCAKE) {
+                        paymentTone =
+                          'border-[#22c55e]! bg-[#22c55e]! text-white! hover:border-[#16a34a]! hover:bg-[#16a34a]!'
                       }
 
                       const button = (

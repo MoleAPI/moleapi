@@ -1,11 +1,14 @@
 package controller
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -127,22 +130,20 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 
 	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
+	needWaffoPancakeCheck := setting.ShouldCheckPromptWithWaffoPancake()
+	needModerationCheck := setting.ShouldCheckPromptWithModeration()
 	needCountToken := constant.CountToken
 	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
 	var meta *types.TokenCountMeta
-	if needSensitiveCheck || needCountToken {
+	if needSensitiveCheck || needWaffoPancakeCheck || needModerationCheck || needCountToken {
 		meta = request.GetTokenCountMeta()
 	} else {
 		meta = fastTokenCountMetaForPricing(request)
 	}
 
-	if needSensitiveCheck && meta != nil {
-		contains, words := service.CheckSensitiveText(meta.CombineText)
-		if contains {
-			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
-			newAPIError = types.NewError(err, types.ErrorCodeSensitiveWordsDetected)
-			return
-		}
+	if safetyErr := checkPromptSafety(c, relayInfo, meta, needSensitiveCheck, needWaffoPancakeCheck, needModerationCheck); safetyErr != nil {
+		newAPIError = safetyErr
+		return
 	}
 
 	tokens, err := service.EstimateRequestToken(c, meta, relayInfo)
@@ -267,6 +268,248 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
+}
+
+const promptModerationModel = "text-moderation-stable"
+
+type moderationScanResponse struct {
+	Error   *types.OpenAIError `json:"error,omitempty"`
+	Results []struct {
+		Flagged    bool            `json:"flagged"`
+		Categories map[string]bool `json:"categories,omitempty"`
+	} `json:"results"`
+}
+
+func checkPromptSafety(c *gin.Context, relayInfo *relaycommon.RelayInfo, meta *types.TokenCountMeta, needSensitiveCheck, needWaffoPancakeCheck, needModerationCheck bool) *types.NewAPIError {
+	if meta == nil || strings.TrimSpace(meta.CombineText) == "" {
+		return nil
+	}
+	prompt := meta.CombineText
+
+	if needSensitiveCheck {
+		contains, words := service.CheckSensitiveText(prompt)
+		if contains {
+			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
+			return sensitiveWordsDetectedError("prompt blocked by sensitive words")
+		}
+	}
+
+	if needWaffoPancakeCheck && isImageRelayMode(relayInfo.RelayMode) {
+		result, err := service.ScanWaffoPancakePrompt(c.Request.Context(), prompt)
+		if err != nil {
+			logger.LogWarn(c, fmt.Sprintf("Waffo Pancake prompt safety check failed: %s", err.Error()))
+			return promptSafetyUnavailableError("Waffo Pancake", err)
+		}
+		if result != nil && result.Action != "" && result.Action != "allow" {
+			detail := result.Action
+			if result.ReasonCode != "" {
+				detail += "/" + result.ReasonCode
+			}
+			if len(result.MatchedCategories) > 0 {
+				detail += " categories=" + strings.Join(result.MatchedCategories, ",")
+			}
+			logger.LogWarn(c, fmt.Sprintf(
+				"Waffo Pancake prompt blocked: action=%s reason=%s request_id=%s categories=%s",
+				result.Action,
+				result.ReasonCode,
+				result.RequestID,
+				strings.Join(result.MatchedCategories, ","),
+			))
+			return promptBlockedError("prompt blocked by Waffo Pancake content safety: " + detail)
+		}
+	}
+
+	if needModerationCheck && relayInfo.RelayMode != relayconstant.RelayModeModerations {
+		flagged, categories, err := scanPromptWithModeration(c, relayInfo, prompt)
+		if err != nil {
+			logger.LogWarn(c, fmt.Sprintf("prompt moderation check failed: %s", err.Error()))
+			return promptSafetyUnavailableError("moderation", err)
+		}
+		if flagged {
+			detail := "prompt blocked by moderation"
+			if len(categories) > 0 {
+				detail += ": " + strings.Join(categories, ",")
+			}
+			logger.LogWarn(c, fmt.Sprintf("prompt blocked by moderation: categories=%s", strings.Join(categories, ",")))
+			return promptBlockedError(detail)
+		}
+	}
+
+	return nil
+}
+
+func isImageRelayMode(relayMode int) bool {
+	return relayMode == relayconstant.RelayModeImagesGenerations || relayMode == relayconstant.RelayModeImagesEdits
+}
+
+func scanPromptWithModeration(c *gin.Context, relayInfo *relaycommon.RelayInfo, prompt string) (bool, []string, error) {
+	group := moderationGroup(c, relayInfo)
+	channel, err := model.GetRandomSatisfiedChannel(group, promptModerationModel, 0, "/v1/moderations")
+	if err != nil {
+		return false, nil, err
+	}
+	if channel == nil {
+		return false, nil, fmt.Errorf("no available moderation channel for group %s", group)
+	}
+
+	upstreamModel, err := moderationUpstreamModel(channel)
+	if err != nil {
+		return false, nil, err
+	}
+
+	key, _, apiErr := channel.GetNextEnabledKey()
+	if apiErr != nil {
+		return false, nil, apiErr
+	}
+	bodyBytes, err := common.Marshal(map[string]any{
+		"model": upstreamModel,
+		"input": prompt,
+	})
+	if err != nil {
+		return false, nil, err
+	}
+
+	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, moderationRequestURL(channel, upstreamModel), bytes.NewReader(bodyBytes))
+	if err != nil {
+		return false, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if channel.Type == constant.ChannelTypeAzure {
+		req.Header.Set("api-key", key)
+	} else {
+		req.Header.Set("Authorization", "Bearer "+key)
+	}
+	if channel.OpenAIOrganization != nil && *channel.OpenAIOrganization != "" {
+		req.Header.Set("OpenAI-Organization", *channel.OpenAIOrganization)
+	}
+
+	client := service.GetHttpClient()
+	if client == nil {
+		client = http.DefaultClient
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, nil, err
+	}
+	defer service.CloseResponseBodyGracefully(resp)
+
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return false, nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return false, nil, fmt.Errorf("moderation upstream returned status %d: %s", resp.StatusCode, common.LocalLogPreview(string(responseBody)))
+	}
+	return moderationScanFlagged(responseBody)
+}
+
+func moderationGroup(c *gin.Context, relayInfo *relaycommon.RelayInfo) string {
+	group := relayInfo.UsingGroup
+	if group == "" {
+		group = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+	}
+	if group == "auto" {
+		autoGroup := common.GetContextKeyString(c, constant.ContextKeyAutoGroup)
+		if autoGroup != "" {
+			return autoGroup
+		}
+		groups := service.GetUserAutoGroup(relayInfo.UserGroup)
+		if len(groups) > 0 {
+			return groups[0]
+		}
+	}
+	if group == "" {
+		group = relayInfo.UserGroup
+	}
+	return group
+}
+
+func moderationRequestURL(channel *model.Channel, modelName string) string {
+	baseURL := strings.TrimRight(channel.GetBaseURL(), "/")
+	if channel.Type == constant.ChannelTypeAzure {
+		apiVersion := strings.TrimSpace(channel.Other)
+		if apiVersion == "" {
+			apiVersion = constant.AzureDefaultAPIVersion
+		}
+		return fmt.Sprintf("%s/openai/deployments/%s/moderations?api-version=%s", baseURL, modelName, url.QueryEscape(apiVersion))
+	}
+	return baseURL + "/v1/moderations"
+}
+
+func moderationUpstreamModel(channel *model.Channel) (string, error) {
+	modelName := promptModerationModel
+	modelMapping := channel.GetModelMapping()
+	if modelMapping == "" || modelMapping == "{}" {
+		return modelName, nil
+	}
+
+	modelMap := map[string]string{}
+	if err := common.Unmarshal([]byte(modelMapping), &modelMap); err != nil {
+		return "", errors.New("unmarshal_model_mapping_failed")
+	}
+
+	visited := map[string]bool{modelName: true}
+	for {
+		nextModel := modelMap[modelName]
+		if nextModel == "" || nextModel == modelName {
+			return modelName, nil
+		}
+		if visited[nextModel] {
+			return "", errors.New("model_mapping_contains_cycle")
+		}
+		visited[nextModel] = true
+		modelName = nextModel
+	}
+}
+
+func moderationScanFlagged(responseBody []byte) (bool, []string, error) {
+	var response moderationScanResponse
+	if err := common.Unmarshal(responseBody, &response); err != nil {
+		return false, nil, err
+	}
+	if response.Error != nil && response.Error.Message != "" {
+		return false, nil, errors.New(response.Error.Message)
+	}
+
+	matchedCategories := map[string]struct{}{}
+	flagged := false
+	for _, result := range response.Results {
+		if !result.Flagged {
+			continue
+		}
+		flagged = true
+		for category, matched := range result.Categories {
+			if matched {
+				matchedCategories[category] = struct{}{}
+			}
+		}
+	}
+
+	categories := make([]string, 0, len(matchedCategories))
+	for category := range matchedCategories {
+		categories = append(categories, category)
+	}
+	sort.Strings(categories)
+	return flagged, categories, nil
+}
+
+func sensitiveWordsDetectedError(message string) *types.NewAPIError {
+	err := types.NewErrorWithStatusCode(errors.New(message), types.ErrorCodeSensitiveWordsDetected, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	err.SetPublicMessage(message)
+	return err
+}
+
+func promptBlockedError(message string) *types.NewAPIError {
+	err := types.NewErrorWithStatusCode(errors.New(message), types.ErrorCodePromptBlocked, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
+	err.SetPublicMessage(message)
+	return err
+}
+
+func promptSafetyUnavailableError(source string, err error) *types.NewAPIError {
+	message := source + " content safety check failed"
+	apiErr := types.NewErrorWithStatusCode(fmt.Errorf("%s: %w", message, err), types.ErrorCodePromptBlocked, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
+	apiErr.SetPublicMessage(message)
+	return apiErr
 }
 
 func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {

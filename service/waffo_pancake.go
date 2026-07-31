@@ -98,6 +98,46 @@ func newWaffoPancakeClientFromCreds(merchantID, privateKey string) (*pancake.Cli
 	})
 }
 
+type WaffoPancakePromptScanResult struct {
+	Action            string
+	ReasonCode        string
+	MatchedCategories []string
+	RequestID         string
+	SemanticStatus    string
+}
+
+func ScanWaffoPancakePrompt(ctx context.Context, prompt string) (*WaffoPancakePromptScanResult, error) {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return nil, nil
+	}
+	client, err := newWaffoPancakeClient()
+	if err != nil {
+		return nil, err
+	}
+	result, err := client.ContentSafety.ScanPrompt(ctx, pancake.ScanPromptParams{
+		Prompt:   prompt,
+		Semantic: pancake.ScanSemanticModeEnforce,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil {
+		return nil, fmt.Errorf("Waffo Pancake returned empty prompt scan result")
+	}
+	categories := make([]string, 0, len(result.MatchedCategories))
+	for _, category := range result.MatchedCategories {
+		categories = append(categories, string(category))
+	}
+	return &WaffoPancakePromptScanResult{
+		Action:            string(result.Action),
+		ReasonCode:        string(result.ReasonCode),
+		MatchedCategories: categories,
+		RequestID:         result.RequestID,
+		SemanticStatus:    string(result.SemanticStatus),
+	}, nil
+}
+
 // CreateWaffoPancakeCheckoutSession creates an Authenticated-mode checkout
 // session: the order is bound to BuyerIdentity (stable per user) so it stays
 // attributable even if the buyer edits the email on Waffo's checkout form.
@@ -362,7 +402,7 @@ func CreateWaffoPancakePrimaryStore(ctx context.Context, merchantID, privateKey 
 	return storeRes.Store.ID, nil
 }
 
-// CreateWaffoPancakeProductForPlan mints (and publishes) a Pancake
+// CreateWaffoPancakeProductForPlan mints a Pancake
 // OnetimeProduct priced at `amount` USD, used as a subscription plan's
 // SubscriptionPlan.WaffoPancakeProductId.
 //
@@ -400,16 +440,12 @@ func CreateWaffoPancakeProductForPlan(ctx context.Context, merchantID, privateKe
 	if err != nil {
 		return "", fmt.Errorf("create Waffo Pancake plan product: %w", err)
 	}
-	productID := prodRes.Product.ID
-	if _, err := client.OnetimeProducts.Publish(ctx, pancake.PublishOnetimeProductParams{ID: productID}); err != nil {
-		return "", fmt.Errorf("publish Waffo Pancake plan product: %w", err)
-	}
-	return productID, nil
+	return prodRes.Product.ID, nil
 }
 
-// CreateWaffoPancakePrimaryProduct mints (and publishes) the wallet-top-up
-// OnetimeProduct under storeID. Per-checkout price overrides via PriceSnapshot
-// are what make the "1.00" seed price irrelevant at runtime.
+// CreateWaffoPancakePrimaryProduct mints the wallet-top-up OnetimeProduct
+// under storeID. Per-checkout price overrides via PriceSnapshot are what make
+// the "1.00" seed price irrelevant at runtime.
 func CreateWaffoPancakePrimaryProduct(ctx context.Context, merchantID, privateKey, storeID, returnURL string) (string, error) {
 	storeID = strings.TrimSpace(storeID)
 	if storeID == "" {
@@ -433,11 +469,7 @@ func CreateWaffoPancakePrimaryProduct(ctx context.Context, merchantID, privateKe
 	if err != nil {
 		return "", fmt.Errorf("create Waffo Pancake product: %w", err)
 	}
-	productID := prodRes.Product.ID
-	if _, err := client.OnetimeProducts.Publish(ctx, pancake.PublishOnetimeProductParams{ID: productID}); err != nil {
-		return "", fmt.Errorf("publish Waffo Pancake product: %w", err)
-	}
-	return productID, nil
+	return prodRes.Product.ID, nil
 }
 
 // WaffoPancakePairResult is the response of CreateWaffoPancakePrimaryPair.

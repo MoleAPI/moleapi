@@ -27,7 +27,7 @@ import { quotaUnitsToDollars } from '@/lib/format'
 import { ROLE } from '@/lib/roles'
 
 import { DEFAULT_GROUP } from '../constants'
-import { type UserFormData, type User } from '../types'
+import type { UserFormData, User } from '../types'
 
 // ============================================================================
 // Form Schema
@@ -39,6 +39,7 @@ export const userFormSchema = z.object({
   password: z.string().optional(),
   role: z.number().optional(),
   quota_dollars: z.number().min(0).optional(),
+  invite_rebate_percent: z.number().min(0).max(100).optional(),
   group: z.string().optional(),
   remark: z.string().optional(),
   admin_permissions: z
@@ -58,6 +59,7 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   password: '',
   role: 1, // Default to common user
   quota_dollars: 0,
+  invite_rebate_percent: 0,
   group: DEFAULT_GROUP,
   remark: '',
   // Filled against the backend catalog at render time; see UsersMutateDrawer.
@@ -101,6 +103,9 @@ export function transformFormDataToPayload(
     // For update: quota is adjusted atomically via /api/user/manage, not sent here
     payload.group = data.group
     payload.remark = data.remark || undefined
+    payload.invite_rebate_ratio = Math.round(
+      (data.invite_rebate_percent ?? 0) * 100
+    )
     payload.id = userId
   }
 
@@ -119,6 +124,7 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     password: '',
     role: user.role,
     quota_dollars: quotaUnitsToDollars(user.quota),
+    invite_rebate_percent: (user.invite_rebate_ratio ?? 0) / 100,
     group: user.group || DEFAULT_GROUP,
     remark: user.remark || '',
     admin_permissions: user.admin_permissions ?? {},

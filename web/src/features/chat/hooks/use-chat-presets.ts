@@ -24,6 +24,7 @@ import { useStatus } from '@/hooks/use-status'
 import {
   type ChatPreset,
   parseChatConfig,
+  resolveChatServerAddress,
   type RawChatConfig,
 } from '../lib/chat-links'
 
@@ -40,21 +41,10 @@ function getStoredStatusChats(): RawChatConfig {
 }
 
 function extractServerAddress(status: SystemStatus | null) {
-  const fromStatus =
-    (status?.server_address as string | undefined) ??
-    (status?.serverAddress as string | undefined) ??
-    status?.data?.server_address ??
-    (status?.data as Record<string, unknown> | undefined)?.serverAddress
-
-  if (fromStatus && typeof fromStatus === 'string') {
-    return fromStatus
-  }
-
-  if (typeof window !== 'undefined') {
-    return window.location.origin
-  }
-
-  return ''
+  return resolveChatServerAddress(
+    status,
+    typeof window === 'undefined' ? '' : window.location.origin
+  )
 }
 
 function extractChats(status: SystemStatus | null): RawChatConfig {
