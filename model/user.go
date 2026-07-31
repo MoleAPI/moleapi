@@ -493,20 +493,12 @@ func HardDeleteUserById(id int) error {
 
 const MaxInviteRebateRatio = 10000
 
-const (
-	InviteRebateBatchScopeZero         = "zero"
-	InviteRebateBatchScopeStandard     = "standard"
-	InviteRebateBatchScopeNonStandard  = "non_standard"
-	InviteRebateBatchScopeCurrentRatio = "current_ratio"
-)
-
 type InviteRebateBatchUpdateResult struct {
-	Scope        string `json:"scope"`
-	CurrentRatio *int   `json:"current_ratio,omitempty"`
-	TargetRatio  int    `json:"target_ratio"`
-	DefaultRatio int    `json:"default_ratio"`
-	Matched      int64  `json:"matched"`
-	Updated      int64  `json:"updated"`
+	CurrentRatio int   `json:"current_ratio"`
+	TargetRatio  int   `json:"target_ratio"`
+	DefaultRatio int   `json:"default_ratio"`
+	Matched      int64 `json:"matched"`
+	Updated      int64 `json:"updated"`
 }
 
 type InviteRebateRatioSummary struct {
@@ -535,41 +527,22 @@ func ListInviteRebateRatioSummaries() ([]InviteRebateRatioSummary, error) {
 	return summaries, err
 }
 
-func inviteRebateBatchQuery(db *gorm.DB, scope string, currentRatio *int, defaultRatio int) (*gorm.DB, error) {
-	switch scope {
-	case InviteRebateBatchScopeZero:
-		return db.Where("invite_rebate_ratio = ?", 0), nil
-	case InviteRebateBatchScopeStandard:
-		return db.Where("invite_rebate_ratio = ?", defaultRatio), nil
-	case InviteRebateBatchScopeNonStandard:
-		return db.Where("invite_rebate_ratio <> ? AND invite_rebate_ratio > ?", defaultRatio, 0), nil
-	case InviteRebateBatchScopeCurrentRatio:
-		if currentRatio == nil || *currentRatio < 0 || *currentRatio > MaxInviteRebateRatio {
-			return nil, fmt.Errorf("invalid current invite rebate ratio")
-		}
-		return db.Where("invite_rebate_ratio = ?", *currentRatio), nil
-	default:
-		return nil, fmt.Errorf("invalid invite rebate batch scope")
+func BatchUpdateInviteRebateRatio(currentRatio int, targetRatio int, dryRun bool) (*InviteRebateBatchUpdateResult, error) {
+	if currentRatio < 0 || currentRatio > MaxInviteRebateRatio {
+		return nil, fmt.Errorf("invalid current invite rebate ratio")
 	}
-}
-
-func BatchUpdateInviteRebateRatio(scope string, currentRatio *int, targetRatio int, dryRun bool) (*InviteRebateBatchUpdateResult, error) {
 	if targetRatio < 0 || targetRatio > MaxInviteRebateRatio {
 		return nil, fmt.Errorf("invalid invite rebate ratio")
 	}
 	defaultRatio := GetDefaultInviteRebateRatio()
 	result := &InviteRebateBatchUpdateResult{
-		Scope:        scope,
 		CurrentRatio: currentRatio,
 		TargetRatio:  targetRatio,
 		DefaultRatio: defaultRatio,
 	}
 	var ids []int
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		query, err := inviteRebateBatchQuery(tx.Model(&User{}), scope, currentRatio, defaultRatio)
-		if err != nil {
-			return err
-		}
+		query := tx.Model(&User{}).Where("invite_rebate_ratio = ?", currentRatio)
 		if err := query.Count(&result.Matched).Error; err != nil {
 			return err
 		}
@@ -577,10 +550,7 @@ func BatchUpdateInviteRebateRatio(scope string, currentRatio *int, targetRatio i
 			return nil
 		}
 
-		query, err = inviteRebateBatchQuery(tx.Model(&User{}), scope, currentRatio, defaultRatio)
-		if err != nil {
-			return err
-		}
+		query = tx.Model(&User{}).Where("invite_rebate_ratio = ?", currentRatio)
 		if err := query.Pluck("id", &ids).Error; err != nil {
 			return err
 		}
@@ -589,10 +559,7 @@ func BatchUpdateInviteRebateRatio(scope string, currentRatio *int, targetRatio i
 			return nil
 		}
 
-		query, err = inviteRebateBatchQuery(tx.Model(&User{}), scope, currentRatio, defaultRatio)
-		if err != nil {
-			return err
-		}
+		query = tx.Model(&User{}).Where("invite_rebate_ratio = ?", currentRatio)
 		update := query.Where("id IN ?", ids).Update("invite_rebate_ratio", targetRatio)
 		result.Updated = update.RowsAffected
 		return update.Error
@@ -614,7 +581,7 @@ func UpdateZeroInviteRebateRatio(ratio int) (int64, error) {
 	if ratio == 0 {
 		return 0, nil
 	}
-	result, err := BatchUpdateInviteRebateRatio(InviteRebateBatchScopeZero, nil, ratio, false)
+	result, err := BatchUpdateInviteRebateRatio(0, ratio, false)
 	if err != nil {
 		return 0, err
 	}

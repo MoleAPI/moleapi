@@ -800,10 +800,9 @@ func ListInviteRebateRatios(c *gin.Context) {
 }
 
 type InviteRebateBatchUpdateRequest struct {
-	Scope        string `json:"scope"`
-	CurrentRatio *int   `json:"current_ratio"`
-	TargetRatio  int    `json:"target_ratio"`
-	DryRun       bool   `json:"dry_run"`
+	CurrentRatio int  `json:"current_ratio"`
+	TargetRatio  int  `json:"target_ratio"`
+	DryRun       bool `json:"dry_run"`
 }
 
 func BatchUpdateInviteRebateRatio(c *gin.Context) {
@@ -818,7 +817,7 @@ func BatchUpdateInviteRebateRatio(c *gin.Context) {
 		return
 	}
 
-	result, err := model.BatchUpdateInviteRebateRatio(req.Scope, req.CurrentRatio, req.TargetRatio, req.DryRun)
+	result, err := model.BatchUpdateInviteRebateRatio(req.CurrentRatio, req.TargetRatio, req.DryRun)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -826,7 +825,6 @@ func BatchUpdateInviteRebateRatio(c *gin.Context) {
 
 	if !req.DryRun {
 		recordManageAudit(c, "user.invite_rebate_batch_update", map[string]interface{}{
-			"scope":         result.Scope,
 			"current_ratio": result.CurrentRatio,
 			"target_ratio":  result.TargetRatio,
 			"default_ratio": result.DefaultRatio,

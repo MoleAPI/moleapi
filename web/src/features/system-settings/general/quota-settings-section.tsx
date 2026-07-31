@@ -168,7 +168,6 @@ export function QuotaSettingsSection({
       return null
     }
     return {
-      scope: 'current_ratio',
       current_ratio: percentInputToRatio(batchCurrentPercent),
       target_ratio: percentInputToRatio(batchTargetPercent),
       dry_run: dryRun,
