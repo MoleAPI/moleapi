@@ -42,6 +42,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { getChannelSuccessMetrics } from '@/features/dashboard/api'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { getLobeIcon } from '@/lib/lobe-icon'
@@ -78,7 +79,6 @@ const CHANNEL_SORTABLE_COLUMNS = new Set<ChannelSortBy>([
   'priority',
   'balance',
   'response_time',
-  'test_time',
 ])
 
 function isDisabledChannelRow(channel: Channel) {
@@ -209,6 +209,13 @@ export function ChannelsTable() {
     queryFn: getGroups,
   })
 
+  const { data: channelSuccessData } = useQuery({
+    queryKey: ['channel-success-metrics', 24],
+    queryFn: () => getChannelSuccessMetrics(24),
+    staleTime: 60 * 1000,
+    retry: false,
+  })
+
   const groupOptions = useMemo(
     () =>
       (groupsData?.data || []).map((g) => ({
@@ -303,9 +310,22 @@ export function ChannelsTable() {
 
   const totalCount = data?.data?.total || 0
   const typeCounts = data?.data?.type_counts
+  const channelSuccessById = useMemo(
+    () =>
+      new Map(
+        (channelSuccessData?.data.channels ?? []).map((channel) => [
+          channel.channel_id,
+          channel,
+        ])
+      ),
+    [channelSuccessData]
+  )
 
   // Columns configuration
-  const columns = useChannelsColumns({ enableSelection: batchMode })
+  const columns = useChannelsColumns({
+    enableSelection: batchMode,
+    channelSuccessById,
+  })
 
   // React Table instance
   const { table } = useDataTable({
