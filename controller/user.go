@@ -765,6 +765,27 @@ func UpdateUser(c *gin.Context) {
 	return
 }
 
+func ApplyDefaultInviteRebateRatio(c *gin.Context) {
+	ratio := model.GetDefaultInviteRebateRatio()
+	if ratio > 0 && !operation_setting.IsPaymentComplianceConfirmed() {
+		common.ApiErrorI18n(c, i18n.MsgPaymentComplianceRequired)
+		return
+	}
+	updated, err := model.UpdateZeroInviteRebateRatio(ratio)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "user.invite_rebate_apply_default", map[string]interface{}{
+		"ratio":   ratio,
+		"updated": updated,
+	})
+	common.ApiSuccess(c, gin.H{
+		"updated":             updated,
+		"invite_rebate_ratio": ratio,
+	})
+}
+
 func AdminClearUserBinding(c *gin.Context) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {

@@ -17,12 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import type { ChangeEvent } from 'react'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { UsersRound } from 'lucide-react'
+import { type ChangeEvent, useState } from 'react'
 import type { Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import * as z from 'zod'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -36,6 +41,7 @@ import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { formatQuota } from '@/lib/format'
 
+import { applyDefaultInviteRebateRatio } from '../api'
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
 import {
@@ -61,6 +67,7 @@ const quotaSchema = z.object({
   }),
   quota_setting: z.object({
     enable_free_model_pre_consume: z.boolean(),
+    default_invite_rebate_ratio: z.coerce.number().min(0).max(10000),
   }),
 })
 
@@ -81,7 +88,9 @@ export function QuotaSettingsSection({
   complianceConfirmed = true,
 }: QuotaSettingsSectionProps) {
   const { t } = useTranslation()
+  const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
+  const [applyDialogOpen, setApplyDialogOpen] = useState(false)
   const handleNumberChange =
     (onChange: (value: QuotaInputValue) => void) =>
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -106,6 +115,29 @@ export function QuotaSettingsSection({
         }
       },
     })
+  const defaultInviteRebateRatio =
+    form.watch('quota_setting.default_invite_rebate_ratio') ?? 0
+  const applyDefaultRebate = useMutation({
+    mutationFn: applyDefaultInviteRebateRatio,
+    onSuccess: (data) => {
+      if (!data.success) {
+        toast.error(data.message || t('Failed to update users'))
+        return
+      }
+      queryClient.invalidateQueries({ queryKey: ['users'] })
+      setApplyDialogOpen(false)
+      toast.success(
+        t('Updated {{count}} users', { count: data.data?.updated ?? 0 })
+      )
+    },
+    onError: (error: Error) => {
+      toast.error(error.message || t('Failed to update users'))
+    },
+  })
+
+  const handleApplyDefaultRebate = () => {
+    applyDefaultRebate.mutate()
+  }
 
   return (
     <SettingsSection title={t('Quota Settings')}>
@@ -265,6 +297,75 @@ export function QuotaSettingsSection({
 
             <FormField
               control={form.control}
+              name='quota_setting.default_invite_rebate_ratio'
+              render={({ field }) => {
+                const ratioValue = field.value as number | ''
+                return (
+                  <FormItem>
+                    <FormLabel>{t('Default top-up rebate (%)')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={0}
+                        max={100}
+                        step={0.01}
+                        value={
+                          ratioValue === '' ? '' : Number(ratioValue) / 100
+                        }
+                        onChange={(event) => {
+                          const value = event.currentTarget.valueAsNumber
+                          field.onChange(
+                            Number.isNaN(value) ? '' : Math.round(value * 100)
+                          )
+                        }}
+                        name={field.name}
+                        onBlur={field.onBlur}
+                        ref={field.ref}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Default rebate ratio assigned to newly registered users. 1 means 1%.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )
+              }}
+            />
+
+            <SettingsFormGridItem span='full'>
+              <div className='border-border flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between'>
+                <div className='min-w-0 space-y-1'>
+                  <FormLabel>{t('Apply default top-up rebate')}</FormLabel>
+                  <FormDescription>
+                    {isDirty
+                      ? t(
+                          'Save the default value before running this batch update.'
+                        )
+                      : t(
+                          'Only updates existing users whose current top-up rebate is 0%. Custom user ratios are unchanged.'
+                        )}
+                  </FormDescription>
+                </div>
+                <Button
+                  type='button'
+                  variant='outline'
+                  onClick={() => setApplyDialogOpen(true)}
+                  disabled={
+                    isDirty ||
+                    defaultInviteRebateRatio <= 0 ||
+                    applyDefaultRebate.isPending
+                  }
+                >
+                  <UsersRound data-icon='inline-start' />
+                  <span>{t('Update 0% users')}</span>
+                </Button>
+              </div>
+            </SettingsFormGridItem>
+
+            <FormField
+              control={form.control}
               name='TopUpLink'
               render={({ field }) => (
                 <FormItem>
@@ -305,6 +406,19 @@ export function QuotaSettingsSection({
           </SettingsFormGrid>
         </SettingsForm>
       </Form>
+      <ConfirmDialog
+        open={applyDialogOpen}
+        onOpenChange={setApplyDialogOpen}
+        title={t('Apply default top-up rebate')}
+        desc={t(
+          'This updates only existing users whose current top-up rebate is 0%. Users with a custom ratio are unchanged.'
+        )}
+        confirmText={
+          applyDefaultRebate.isPending ? t('Updating...') : t('Update 0% users')
+        }
+        isLoading={applyDefaultRebate.isPending}
+        handleConfirm={handleApplyDefaultRebate}
+      />
     </SettingsSection>
   )
 }

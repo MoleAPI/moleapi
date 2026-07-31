@@ -69,6 +69,8 @@ const BILLING_SECTIONS = [
           quota_setting: {
             enable_free_model_pre_consume:
               settings['quota_setting.enable_free_model_pre_consume'],
+            default_invite_rebate_ratio:
+              settings['quota_setting.default_invite_rebate_ratio'],
           },
         }}
         complianceConfirmed={

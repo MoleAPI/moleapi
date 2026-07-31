@@ -21,6 +21,15 @@ export type UpdateOptionResponse = {
   message: string
 }
 
+export type ApplyDefaultInviteRebateRatioResponse = {
+  success: boolean
+  message: string
+  data?: {
+    updated: number
+    invite_rebate_ratio: number
+  }
+}
+
 export type ModelPricingExport = {
   version: number
   exported_at: number
@@ -250,6 +259,7 @@ export type BillingSettings = {
   TopUpLink: string
   'general_setting.docs_link': string
   'quota_setting.enable_free_model_pre_consume': boolean
+  'quota_setting.default_invite_rebate_ratio': number
   QuotaPerUnit: number
   USDExchangeRate: number
   'general_setting.quota_display_type': string
