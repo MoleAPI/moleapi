@@ -4,6 +4,8 @@ import type {
   ApplyDefaultInviteRebateRatioResponse,
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
+  InviteRebateBatchUpdateRequest,
+  InviteRebateBatchUpdateResponse,
   LogCleanupTask,
   ModelPricingExport,
   ModelPricingImportResponse,
@@ -29,6 +31,16 @@ export async function updateSystemOption(request: UpdateOptionRequest) {
 export async function applyDefaultInviteRebateRatio() {
   const res = await api.post<ApplyDefaultInviteRebateRatioResponse>(
     '/api/user/invite_rebate/apply_default'
+  )
+  return res.data
+}
+
+export async function batchUpdateInviteRebateRatio(
+  request: InviteRebateBatchUpdateRequest
+) {
+  const res = await api.post<InviteRebateBatchUpdateResponse>(
+    '/api/user/invite_rebate/batch_update',
+    request
   )
   return res.data
 }
