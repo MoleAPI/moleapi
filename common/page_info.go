@@ -1,6 +1,7 @@
 package common
 
 import (
+	"math"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -15,11 +16,24 @@ type PageInfo struct {
 }
 
 func (p *PageInfo) GetStartIdx() int {
+	if p.Page <= 1 || p.PageSize <= 0 {
+		return 0
+	}
+	if p.Page-1 > math.MaxInt/p.PageSize {
+		return math.MaxInt
+	}
 	return (p.Page - 1) * p.PageSize
 }
 
 func (p *PageInfo) GetEndIdx() int {
-	return p.Page * p.PageSize
+	start := p.GetStartIdx()
+	if p.PageSize <= 0 {
+		return start
+	}
+	if start > math.MaxInt-p.PageSize {
+		return math.MaxInt
+	}
+	return start + p.PageSize
 }
 
 func (p *PageInfo) GetPageSize() int {
@@ -48,13 +62,7 @@ func GetPageQuery(c *gin.Context) *PageInfo {
 		pageInfo.PageSize = pageSize
 	}
 	if pageInfo.Page < 1 {
-		// 兼容
-		page, _ := strconv.Atoi(c.Query("p"))
-		if page != 0 {
-			pageInfo.Page = page
-		} else {
-			pageInfo.Page = 1
-		}
+		pageInfo.Page = 1
 	}
 
 	if pageInfo.PageSize <= 0 {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
@@ -43,7 +44,7 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 
 	plan, err := model.GetSubscriptionPlanById(req.PlanId)
 	if err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	if !plan.Enabled {
@@ -66,7 +67,7 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 	userId := c.GetInt("id")
 	user, err := model.GetUserById(userId, false)
 	if err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	if user == nil {
@@ -77,7 +78,7 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 	if plan.MaxPurchasePerUser > 0 {
 		count, err := model.CountUserSubscriptionsByPlan(userId, plan.Id)
 		if err != nil {
-			common.ApiError(c, err)
+			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 			return
 		}
 		if count >= int64(plan.MaxPurchasePerUser) {
@@ -125,7 +126,7 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		Quota:     0,
 	}
 
-	checkout, err := genCreemLink(c.Request.Context(), referenceId, product, user.Email, user.Username)
+	checkout, err := genCreemLink(c.Request.Context(), referenceId, product, user.Email)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 订阅支付链接创建失败 trade_no=%s product_id=%s error=%q", referenceId, product.ProductId, err.Error()))
 		_ = model.UpdatePendingSubscriptionOrderStatus(referenceId, model.PaymentProviderCreem, common.TopUpStatusFailed)

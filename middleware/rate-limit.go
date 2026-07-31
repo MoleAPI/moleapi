@@ -175,6 +175,17 @@ func pathRateLimitFactory(maxRequestNum int, duration int64, mark string) func(c
 			return
 		}
 		routeMark := mark + ":" + routePath
+		if userID := c.GetInt("id"); userID > 0 {
+			if common.RedisEnabled {
+				userRedisRateLimiter(c, maxRequestNum, duration, redisUserRateLimitKey(routeMark, userID))
+			} else {
+				key := fmt.Sprintf("%s:user:%d", routeMark, userID)
+				if !inMemoryRateLimiter.Request(key, maxRequestNum, duration) {
+					writeRateLimited(c, duration)
+				}
+			}
+			return
+		}
 		if common.RedisEnabled {
 			redisRateLimiter(c, maxRequestNum, duration, routeMark)
 		} else {

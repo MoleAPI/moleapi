@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -38,4 +39,23 @@ func TestUpdateOptionRejectsOverflowingFirstTopupReward(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, response.Code)
 	assert.JSONEq(t, `{"success":false,"message":"首充邀请奖励额度无效"}`, response.Body.String())
+}
+
+func TestUpdateOptionRejectsOverflowingRegistrationRewards(t *testing.T) {
+	for _, key := range []string{"QuotaForNewUser", "QuotaForInviter", "QuotaForInvitee"} {
+		t.Run(key, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(response)
+			context.Request = httptest.NewRequest(
+				http.MethodPut,
+				"/api/option/",
+				strings.NewReader(fmt.Sprintf(`{"key":%q,"value":2147483648}`, key)),
+			)
+
+			UpdateOption(context)
+
+			assert.Equal(t, http.StatusOK, response.Code)
+			assert.JSONEq(t, `{"success":false,"message":"注册奖励额度无效"}`, response.Body.String())
+		})
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -254,4 +255,38 @@ func TestCriticalRateLimitIsPerRoute(t *testing.T) {
 	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/ratio_config", remoteAddr).Code)
 	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/user/login", remoteAddr).Code)
 	assert.Equal(t, http.StatusTooManyRequests, performRateLimitRequest(router, "/user/login", remoteAddr).Code)
+}
+
+func TestCriticalRateLimitUsesAuthenticatedUserAcrossIPs(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	previousRedisEnabled := common.RedisEnabled
+	previousEnabled := common.CriticalRateLimitEnable
+	previousLimit := common.CriticalRateLimitNum
+	previousDuration := common.CriticalRateLimitDuration
+	common.RedisEnabled = false
+	common.CriticalRateLimitEnable = true
+	common.CriticalRateLimitNum = 1
+	common.CriticalRateLimitDuration = 60
+	t.Cleanup(func() {
+		common.RedisEnabled = previousRedisEnabled
+		common.CriticalRateLimitEnable = previousEnabled
+		common.CriticalRateLimitNum = previousLimit
+		common.CriticalRateLimitDuration = previousDuration
+	})
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.GET(
+		"/wallet/pay",
+		func(c *gin.Context) {
+			userID, _ := strconv.Atoi(c.Query("user"))
+			c.Set("id", userID)
+		},
+		CriticalRateLimit(),
+		func(c *gin.Context) { c.Status(http.StatusNoContent) },
+	)
+
+	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/wallet/pay?user=7", "192.0.2.71:12345").Code)
+	assert.Equal(t, http.StatusTooManyRequests, performRateLimitRequest(router, "/wallet/pay?user=7", "192.0.2.72:12345").Code)
+	assert.Equal(t, http.StatusNoContent, performRateLimitRequest(router, "/wallet/pay?user=8", "192.0.2.71:12345").Code)
 }
