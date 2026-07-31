@@ -208,24 +208,17 @@ func TestUpdateZeroInviteRebateRatioOnlyTouchesZeroUsers(t *testing.T) {
 	assert.Equal(t, 100, users[2].InviteRebateRatio)
 }
 
-func TestBatchUpdateInviteRebateRatioScopes(t *testing.T) {
+func TestBatchUpdateInviteRebateRatioByCurrentRatio(t *testing.T) {
 	setupUserUpdateTestState(t)
-
-	quotaSetting := operation_setting.GetQuotaSetting()
-	originalRatio := quotaSetting.DefaultInviteRebateRatio
-	quotaSetting.DefaultInviteRebateRatio = 100
-	t.Cleanup(func() {
-		quotaSetting.DefaultInviteRebateRatio = originalRatio
-	})
 
 	require.NoError(t, DB.Create(&[]User{
 		{Id: 20, Username: "batch-zero", Status: common.UserStatusEnabled, AffCode: "batch-zero", InviteRebateRatio: 0},
 		{Id: 21, Username: "batch-standard", Status: common.UserStatusEnabled, AffCode: "batch-standard", InviteRebateRatio: 100},
 		{Id: 22, Username: "batch-custom-a", Status: common.UserStatusEnabled, AffCode: "batch-custom-a", InviteRebateRatio: 250},
-		{Id: 23, Username: "batch-custom-b", Status: common.UserStatusEnabled, AffCode: "batch-custom-b", InviteRebateRatio: 300},
+		{Id: 23, Username: "batch-custom-b", Status: common.UserStatusEnabled, AffCode: "batch-custom-b", InviteRebateRatio: 250},
 	}).Error)
 
-	result, err := BatchUpdateInviteRebateRatio(InviteRebateBatchScopeNonStandard, nil, 500, true)
+	result, err := BatchUpdateInviteRebateRatio(250, 500, true)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), result.Matched)
 	assert.Equal(t, int64(0), result.Updated)
@@ -234,25 +227,14 @@ func TestBatchUpdateInviteRebateRatioScopes(t *testing.T) {
 	require.NoError(t, DB.First(&custom, 22).Error)
 	assert.Equal(t, 250, custom.InviteRebateRatio)
 
-	result, err = BatchUpdateInviteRebateRatio(InviteRebateBatchScopeNonStandard, nil, 500, false)
+	result, err = BatchUpdateInviteRebateRatio(250, 500, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), result.Matched)
 	assert.Equal(t, int64(2), result.Updated)
-
-	currentRatio := 500
-	result, err = BatchUpdateInviteRebateRatio(InviteRebateBatchScopeCurrentRatio, &currentRatio, 250, false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(2), result.Matched)
-	assert.Equal(t, int64(2), result.Updated)
-
-	result, err = BatchUpdateInviteRebateRatio(InviteRebateBatchScopeStandard, nil, 150, false)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), result.Matched)
-	assert.Equal(t, int64(1), result.Updated)
 
 	var users []User
 	require.NoError(t, DB.Order("id asc").Find(&users).Error)
-	assert.Equal(t, []int{0, 150, 250, 250}, []int{
+	assert.Equal(t, []int{0, 100, 500, 500}, []int{
 		users[0].InviteRebateRatio,
 		users[1].InviteRebateRatio,
 		users[2].InviteRebateRatio,
