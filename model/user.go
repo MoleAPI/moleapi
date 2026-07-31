@@ -493,6 +493,22 @@ func HardDeleteUserById(id int) error {
 
 const MaxInviteRebateRatio = 10000
 
+const (
+	InviteRebateBatchScopeZero         = "zero"
+	InviteRebateBatchScopeStandard     = "standard"
+	InviteRebateBatchScopeNonStandard  = "non_standard"
+	InviteRebateBatchScopeCurrentRatio = "current_ratio"
+)
+
+type InviteRebateBatchUpdateResult struct {
+	Scope        string `json:"scope"`
+	CurrentRatio *int   `json:"current_ratio,omitempty"`
+	TargetRatio  int    `json:"target_ratio"`
+	DefaultRatio int    `json:"default_ratio"`
+	Matched      int64  `json:"matched"`
+	Updated      int64  `json:"updated"`
+}
+
 func GetDefaultInviteRebateRatio() int {
 	ratio := operation_setting.GetQuotaSetting().DefaultInviteRebateRatio
 	if ratio < 0 {
@@ -504,35 +520,90 @@ func GetDefaultInviteRebateRatio() int {
 	return ratio
 }
 
-func UpdateZeroInviteRebateRatio(ratio int) (int64, error) {
-	if ratio < 0 || ratio > MaxInviteRebateRatio {
-		return 0, fmt.Errorf("invalid invite rebate ratio")
+func inviteRebateBatchQuery(db *gorm.DB, scope string, currentRatio *int, defaultRatio int) (*gorm.DB, error) {
+	switch scope {
+	case InviteRebateBatchScopeZero:
+		return db.Where("invite_rebate_ratio = ?", 0), nil
+	case InviteRebateBatchScopeStandard:
+		return db.Where("invite_rebate_ratio = ?", defaultRatio), nil
+	case InviteRebateBatchScopeNonStandard:
+		return db.Where("invite_rebate_ratio <> ? AND invite_rebate_ratio > ?", defaultRatio, 0), nil
+	case InviteRebateBatchScopeCurrentRatio:
+		if currentRatio == nil || *currentRatio < 0 || *currentRatio > MaxInviteRebateRatio {
+			return nil, fmt.Errorf("invalid current invite rebate ratio")
+		}
+		return db.Where("invite_rebate_ratio = ?", *currentRatio), nil
+	default:
+		return nil, fmt.Errorf("invalid invite rebate batch scope")
 	}
-	if ratio == 0 {
-		return 0, nil
+}
+
+func BatchUpdateInviteRebateRatio(scope string, currentRatio *int, targetRatio int, dryRun bool) (*InviteRebateBatchUpdateResult, error) {
+	if targetRatio < 0 || targetRatio > MaxInviteRebateRatio {
+		return nil, fmt.Errorf("invalid invite rebate ratio")
+	}
+	defaultRatio := GetDefaultInviteRebateRatio()
+	result := &InviteRebateBatchUpdateResult{
+		Scope:        scope,
+		CurrentRatio: currentRatio,
+		TargetRatio:  targetRatio,
+		DefaultRatio: defaultRatio,
 	}
 	var ids []int
-	var rowsAffected int64
 	err := DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&User{}).Where("invite_rebate_ratio = ?", 0).Pluck("id", &ids).Error; err != nil {
+		query, err := inviteRebateBatchQuery(tx.Model(&User{}), scope, currentRatio, defaultRatio)
+		if err != nil {
 			return err
 		}
+		if err := query.Count(&result.Matched).Error; err != nil {
+			return err
+		}
+		if dryRun || result.Matched == 0 {
+			return nil
+		}
+
+		query, err = inviteRebateBatchQuery(tx.Model(&User{}), scope, currentRatio, defaultRatio)
+		if err != nil {
+			return err
+		}
+		if err := query.Pluck("id", &ids).Error; err != nil {
+			return err
+		}
+
 		if len(ids) == 0 {
 			return nil
 		}
-		result := tx.Model(&User{}).Where("id IN ? AND invite_rebate_ratio = ?", ids, 0).Update("invite_rebate_ratio", ratio)
-		rowsAffected = result.RowsAffected
-		return result.Error
+
+		query, err = inviteRebateBatchQuery(tx.Model(&User{}), scope, currentRatio, defaultRatio)
+		if err != nil {
+			return err
+		}
+		update := query.Where("id IN ?", ids).Update("invite_rebate_ratio", targetRatio)
+		result.Updated = update.RowsAffected
+		return update.Error
 	})
+	if err != nil {
+		return nil, err
+	}
+	if !dryRun {
+		for _, id := range ids {
+			if err := invalidateUserCache(id); err != nil {
+				common.SysError(fmt.Sprintf("failed to invalidate user cache after invite rebate batch update user_id=%d: %v", id, err))
+			}
+		}
+	}
+	return result, nil
+}
+
+func UpdateZeroInviteRebateRatio(ratio int) (int64, error) {
+	if ratio == 0 {
+		return 0, nil
+	}
+	result, err := BatchUpdateInviteRebateRatio(InviteRebateBatchScopeZero, nil, ratio, false)
 	if err != nil {
 		return 0, err
 	}
-	for _, id := range ids {
-		if err := invalidateUserCache(id); err != nil {
-			common.SysError(fmt.Sprintf("failed to invalidate user cache after invite rebate batch update user_id=%d: %v", id, err))
-		}
-	}
-	return rowsAffected, nil
+	return result.Updated, nil
 }
 
 func inviteUser(inviterId int) (err error) {

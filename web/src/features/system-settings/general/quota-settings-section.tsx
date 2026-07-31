@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { UsersRound } from 'lucide-react'
+import { Search, UsersRound } from 'lucide-react'
 import { type ChangeEvent, useState } from 'react'
 import type { Resolver } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -38,10 +38,18 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { formatQuota } from '@/lib/format'
 
-import { applyDefaultInviteRebateRatio } from '../api'
+import { batchUpdateInviteRebateRatio } from '../api'
 import { FormDirtyIndicator } from '../components/form-dirty-indicator'
 import { FormNavigationGuard } from '../components/form-navigation-guard'
 import {
@@ -55,6 +63,11 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useSettingsForm } from '../hooks/use-settings-form'
 import { useUpdateOption } from '../hooks/use-update-option'
+import type {
+  InviteRebateBatchScope,
+  InviteRebateBatchUpdateRequest,
+  InviteRebateBatchUpdateResult,
+} from '../types'
 
 const quotaSchema = z.object({
   QuotaForNewUser: z.coerce.number().min(0),
@@ -78,6 +91,10 @@ function formatQuotaInputValue(value: QuotaInputValue): string {
   return formatQuota(value === '' ? 0 : value)
 }
 
+function percentInputToRatio(value: QuotaInputValue): number {
+  return value === '' ? 0 : Math.round(value * 100)
+}
+
 type QuotaSettingsSectionProps = {
   defaultValues: QuotaFormValues
   complianceConfirmed?: boolean
@@ -90,12 +107,27 @@ export function QuotaSettingsSection({
   const { t } = useTranslation()
   const queryClient = useQueryClient()
   const updateOption = useUpdateOption()
-  const [applyDialogOpen, setApplyDialogOpen] = useState(false)
+  const [batchDialogOpen, setBatchDialogOpen] = useState(false)
+  const [batchScope, setBatchScope] =
+    useState<InviteRebateBatchScope>('non_standard')
+  const [batchCurrentPercent, setBatchCurrentPercent] =
+    useState<QuotaInputValue>('')
+  const [batchTargetPercent, setBatchTargetPercent] =
+    useState<QuotaInputValue>(1)
+  const [batchPreview, setBatchPreview] =
+    useState<InviteRebateBatchUpdateResult | null>(null)
   const handleNumberChange =
     (onChange: (value: QuotaInputValue) => void) =>
     (event: ChangeEvent<HTMLInputElement>) => {
       const value = event.currentTarget.valueAsNumber
       onChange(Number.isNaN(value) ? '' : value)
+    }
+  const handleBatchPercentChange =
+    (onChange: (value: QuotaInputValue) => void) =>
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const value = event.currentTarget.valueAsNumber
+      onChange(Number.isNaN(value) ? '' : value)
+      setBatchPreview(null)
     }
 
   const { form, handleSubmit, isDirty, isSubmitting } =
@@ -117,27 +149,94 @@ export function QuotaSettingsSection({
     })
   const defaultInviteRebateRatio =
     form.watch('quota_setting.default_invite_rebate_ratio') ?? 0
-  const applyDefaultRebate = useMutation({
-    mutationFn: applyDefaultInviteRebateRatio,
+  const canPreviewBatch =
+    batchTargetPercent !== '' &&
+    (batchScope !== 'current_ratio' || batchCurrentPercent !== '')
+  const buildBatchRebateRequest = (
+    dryRun: boolean
+  ): InviteRebateBatchUpdateRequest | null => {
+    if (!canPreviewBatch) {
+      return null
+    }
+    const request: InviteRebateBatchUpdateRequest = {
+      scope: batchScope,
+      target_ratio: percentInputToRatio(batchTargetPercent),
+      dry_run: dryRun,
+    }
+    if (batchScope === 'current_ratio') {
+      request.current_ratio = percentInputToRatio(batchCurrentPercent)
+    }
+    return request
+  }
+  const previewBatchRebate = useMutation({
+    mutationFn: batchUpdateInviteRebateRatio,
     onSuccess: (data) => {
-      if (!data.success) {
+      if (!data.success || !data.data) {
+        setBatchPreview(null)
+        toast.error(data.message || t('Failed to preview users'))
+        return
+      }
+      setBatchPreview(data.data)
+      if (data.data.matched === 0) {
+        toast.info(t('No users match this rule'))
+      }
+    },
+    onError: (error: Error) => {
+      setBatchPreview(null)
+      toast.error(error.message || t('Failed to preview users'))
+    },
+  })
+  const applyBatchRebate = useMutation({
+    mutationFn: batchUpdateInviteRebateRatio,
+    onSuccess: (data) => {
+      if (!data.success || !data.data) {
         toast.error(data.message || t('Failed to update users'))
         return
       }
       queryClient.invalidateQueries({ queryKey: ['users'] })
-      setApplyDialogOpen(false)
-      toast.success(
-        t('Updated {{count}} users', { count: data.data?.updated ?? 0 })
-      )
+      setBatchDialogOpen(false)
+      setBatchPreview(null)
+      toast.success(t('Updated {{count}} users', { count: data.data.updated }))
     },
     onError: (error: Error) => {
       toast.error(error.message || t('Failed to update users'))
     },
   })
 
-  const handleApplyDefaultRebate = () => {
-    applyDefaultRebate.mutate()
+  const handleOpenBatchDialog = () => {
+    setBatchTargetPercent(
+      defaultInviteRebateRatio > 0 ? defaultInviteRebateRatio / 100 : 1
+    )
+    setBatchPreview(null)
+    setBatchDialogOpen(true)
   }
+
+  const handlePreviewBatchRebate = () => {
+    const request = buildBatchRebateRequest(true)
+    if (!request) {
+      toast.error(t('Please enter valid rebate ratios'))
+      return
+    }
+    previewBatchRebate.mutate(request)
+  }
+
+  const handleApplyBatchRebate = () => {
+    const request = buildBatchRebateRequest(false)
+    if (!request) {
+      toast.error(t('Please enter valid rebate ratios'))
+      return
+    }
+    applyBatchRebate.mutate(request)
+  }
+  const batchScopeItems = [
+    { value: 'non_standard', label: t('Non-standard rebate users') },
+    { value: 'standard', label: t('Standard rebate users') },
+    { value: 'zero', label: t('Zero rebate users') },
+    {
+      value: 'current_ratio',
+      label: t('Users with a specific current rebate'),
+    },
+  ] satisfies { value: InviteRebateBatchScope; label: string }[]
 
   return (
     <SettingsSection title={t('Quota Settings')}>
@@ -337,29 +436,25 @@ export function QuotaSettingsSection({
             <SettingsFormGridItem span='full'>
               <div className='border-border flex min-w-0 flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between'>
                 <div className='min-w-0 space-y-1'>
-                  <FormLabel>{t('Apply default top-up rebate')}</FormLabel>
+                  <FormLabel>{t('Batch adjust top-up rebate')}</FormLabel>
                   <FormDescription>
                     {isDirty
                       ? t(
                           'Save the default value before running this batch update.'
                         )
                       : t(
-                          'Only updates existing users whose current top-up rebate is 0%. Custom user ratios are unchanged.'
+                          'Preview and update existing users by current rebate ratio. Default settings for new users are unchanged.'
                         )}
                   </FormDescription>
                 </div>
                 <Button
                   type='button'
                   variant='outline'
-                  onClick={() => setApplyDialogOpen(true)}
-                  disabled={
-                    isDirty ||
-                    defaultInviteRebateRatio <= 0 ||
-                    applyDefaultRebate.isPending
-                  }
+                  onClick={handleOpenBatchDialog}
+                  disabled={isDirty || applyBatchRebate.isPending}
                 >
                   <UsersRound data-icon='inline-start' />
-                  <span>{t('Update 0% users')}</span>
+                  <span>{t('Adjust rebate ratios')}</span>
                 </Button>
               </div>
             </SettingsFormGridItem>
@@ -407,18 +502,112 @@ export function QuotaSettingsSection({
         </SettingsForm>
       </Form>
       <ConfirmDialog
-        open={applyDialogOpen}
-        onOpenChange={setApplyDialogOpen}
-        title={t('Apply default top-up rebate')}
+        open={batchDialogOpen}
+        onOpenChange={(open) => {
+          setBatchDialogOpen(open)
+          if (!open) {
+            setBatchPreview(null)
+          }
+        }}
+        title={t('Batch adjust top-up rebate')}
         desc={t(
-          'This updates only existing users whose current top-up rebate is 0%. Users with a custom ratio are unchanged.'
+          'Preview and update existing users by current rebate ratio. Default settings for new users are unchanged.'
         )}
         confirmText={
-          applyDefaultRebate.isPending ? t('Updating...') : t('Update 0% users')
+          applyBatchRebate.isPending
+            ? t('Updating...')
+            : t('Apply to {{count}} users', {
+                count: batchPreview?.matched ?? 0,
+              })
         }
-        isLoading={applyDefaultRebate.isPending}
-        handleConfirm={handleApplyDefaultRebate}
-      />
+        disabled={!batchPreview || batchPreview.matched === 0}
+        isLoading={applyBatchRebate.isPending}
+        handleConfirm={handleApplyBatchRebate}
+        className='sm:max-w-lg'
+      >
+        <div className='grid gap-4'>
+          <div className='space-y-2'>
+            <FormLabel>{t('User range')}</FormLabel>
+            <Select
+              items={batchScopeItems}
+              value={batchScope}
+              onValueChange={(value) => {
+                setBatchScope(value as InviteRebateBatchScope)
+                setBatchPreview(null)
+              }}
+            >
+              <SelectTrigger className='w-full'>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  {batchScopeItems.map((item) => (
+                    <SelectItem key={item.value} value={item.value}>
+                      {item.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            {batchScope === 'non_standard' ? (
+              <p className='text-muted-foreground text-sm'>
+                {t(
+                  'Non-standard means users whose current rebate is greater than 0% and different from the default.'
+                )}
+              </p>
+            ) : null}
+          </div>
+
+          {batchScope === 'current_ratio' ? (
+            <div className='space-y-2'>
+              <FormLabel>{t('Current rebate (%)')}</FormLabel>
+              <Input
+                type='number'
+                min={0}
+                max={100}
+                step={0.01}
+                value={batchCurrentPercent}
+                onChange={handleBatchPercentChange(setBatchCurrentPercent)}
+              />
+            </div>
+          ) : null}
+
+          <div className='space-y-2'>
+            <FormLabel>{t('Target rebate (%)')}</FormLabel>
+            <Input
+              type='number'
+              min={0}
+              max={100}
+              step={0.01}
+              value={batchTargetPercent}
+              onChange={handleBatchPercentChange(setBatchTargetPercent)}
+            />
+          </div>
+
+          <div className='flex items-center justify-between gap-3'>
+            <Button
+              type='button'
+              variant='outline'
+              onClick={handlePreviewBatchRebate}
+              disabled={!canPreviewBatch || previewBatchRebate.isPending}
+            >
+              <Search data-icon='inline-start' />
+              <span>
+                {previewBatchRebate.isPending
+                  ? t('Previewing...')
+                  : t('Preview changes')}
+              </span>
+            </Button>
+            {batchPreview ? (
+              <span className='text-muted-foreground text-sm'>
+                {t('{{count}} users match this rule.', {
+                  count: batchPreview.matched,
+                })}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </ConfirmDialog>
     </SettingsSection>
   )
 }

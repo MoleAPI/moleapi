@@ -30,6 +30,34 @@ export type ApplyDefaultInviteRebateRatioResponse = {
   }
 }
 
+export type InviteRebateBatchScope =
+  | 'zero'
+  | 'standard'
+  | 'non_standard'
+  | 'current_ratio'
+
+export type InviteRebateBatchUpdateRequest = {
+  scope: InviteRebateBatchScope
+  current_ratio?: number
+  target_ratio: number
+  dry_run?: boolean
+}
+
+export type InviteRebateBatchUpdateResult = {
+  scope: InviteRebateBatchScope
+  current_ratio?: number
+  target_ratio: number
+  default_ratio: number
+  matched: number
+  updated: number
+}
+
+export type InviteRebateBatchUpdateResponse = {
+  success: boolean
+  message: string
+  data?: InviteRebateBatchUpdateResult
+}
+
 export type ModelPricingExport = {
   version: number
   exported_at: number
@@ -142,6 +170,7 @@ export type AuthSettings = {
   'discord.client_id': string
   'discord.client_secret': string
   'oidc.enabled': boolean
+  'oidc.display_name': string
   'oidc.client_id': string
   'oidc.client_secret': string
   'oidc.well_known': string

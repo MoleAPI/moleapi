@@ -29,6 +29,7 @@ var auditContentTemplates = map[string]string{
 	"user.passkey_delete":              "Deleted a passkey",
 	"user.reset_passkey":               "Reset the user passkey",
 	"user.invite_rebate_apply_default": "Applied default invite rebate ratio ${ratio} to ${updated} users",
+	"user.invite_rebate_batch_update":  "Batch updated invite rebate ratio to ${target_ratio} for ${updated} users",
 	"option.update":                    "Updated system setting ${key}",
 
 	"channel.create":             "Created channel ${name} (type ${type}, count ${count})",
