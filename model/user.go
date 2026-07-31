@@ -509,6 +509,11 @@ type InviteRebateBatchUpdateResult struct {
 	Updated      int64  `json:"updated"`
 }
 
+type InviteRebateRatioSummary struct {
+	Ratio int   `json:"ratio"`
+	Count int64 `json:"count"`
+}
+
 func GetDefaultInviteRebateRatio() int {
 	ratio := operation_setting.GetQuotaSetting().DefaultInviteRebateRatio
 	if ratio < 0 {
@@ -518,6 +523,16 @@ func GetDefaultInviteRebateRatio() int {
 		return MaxInviteRebateRatio
 	}
 	return ratio
+}
+
+func ListInviteRebateRatioSummaries() ([]InviteRebateRatioSummary, error) {
+	var summaries []InviteRebateRatioSummary
+	err := DB.Model(&User{}).
+		Select("invite_rebate_ratio AS ratio, COUNT(*) AS count").
+		Group("invite_rebate_ratio").
+		Order("invite_rebate_ratio ASC").
+		Scan(&summaries).Error
+	return summaries, err
 }
 
 func inviteRebateBatchQuery(db *gorm.DB, scope string, currentRatio *int, defaultRatio int) (*gorm.DB, error) {

@@ -6,6 +6,7 @@ import type {
   FetchUpstreamRatiosRequest,
   InviteRebateBatchUpdateRequest,
   InviteRebateBatchUpdateResponse,
+  InviteRebateRatiosResponse,
   LogCleanupTask,
   ModelPricingExport,
   ModelPricingImportResponse,
@@ -41,6 +42,13 @@ export async function batchUpdateInviteRebateRatio(
   const res = await api.post<InviteRebateBatchUpdateResponse>(
     '/api/user/invite_rebate/batch_update',
     request
+  )
+  return res.data
+}
+
+export async function getInviteRebateRatios() {
+  const res = await api.get<InviteRebateRatiosResponse>(
+    '/api/user/invite_rebate/ratios'
   )
   return res.data
 }

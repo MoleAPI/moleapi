@@ -260,6 +260,25 @@ func TestBatchUpdateInviteRebateRatioScopes(t *testing.T) {
 	})
 }
 
+func TestListInviteRebateRatioSummaries(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&[]User{
+		{Id: 20, Username: "ratio-zero", Status: common.UserStatusEnabled, AffCode: "ratio-zero", InviteRebateRatio: 0},
+		{Id: 21, Username: "ratio-one-a", Status: common.UserStatusEnabled, AffCode: "ratio-one-a", InviteRebateRatio: 100},
+		{Id: 22, Username: "ratio-one-b", Status: common.UserStatusEnabled, AffCode: "ratio-one-b", InviteRebateRatio: 100},
+		{Id: 23, Username: "ratio-two", Status: common.UserStatusEnabled, AffCode: "ratio-two", InviteRebateRatio: 250},
+	}).Error)
+
+	summaries, err := ListInviteRebateRatioSummaries()
+	require.NoError(t, err)
+	assert.Equal(t, []InviteRebateRatioSummary{
+		{Ratio: 0, Count: 1},
+		{Ratio: 100, Count: 2},
+		{Ratio: 250, Count: 1},
+	}, summaries)
+}
+
 func TestValidateAndFillRejectsPasswordlessUser(t *testing.T) {
 	setupUserUpdateTestState(t)
 

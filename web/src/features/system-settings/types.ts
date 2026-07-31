@@ -58,6 +58,20 @@ export type InviteRebateBatchUpdateResponse = {
   data?: InviteRebateBatchUpdateResult
 }
 
+export type InviteRebateRatioSummary = {
+  ratio: number
+  count: number
+}
+
+export type InviteRebateRatiosResponse = {
+  success: boolean
+  message: string
+  data?: {
+    default_ratio: number
+    ratios: InviteRebateRatioSummary[]
+  }
+}
+
 export type ModelPricingExport = {
   version: number
   exported_at: number
