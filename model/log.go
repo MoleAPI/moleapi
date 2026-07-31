@@ -142,6 +142,9 @@ func assignDisplayLogIds(logs []*Log, startIdx int) {
 func formatUserLogs(logs []*Log, startIdx int) {
 	for i := range logs {
 		logs[i].ChannelName = ""
+		if logs[i].Type == LogTypeSystem && strings.HasPrefix(logs[i].Content, "邀请好友充值返利 ") {
+			logs[i].Content, _, _ = strings.Cut(logs[i].Content, "，订单号 ")
+		}
 		var otherMap map[string]interface{}
 		otherMap, _ = common.StrToMap(logs[i].Other)
 		if otherMap != nil {
@@ -168,6 +171,10 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 }
 
 func RecordLog(userId int, logType int, content string) {
+	RecordLogWithQuota(userId, logType, content, 0)
+}
+
+func RecordLogWithQuota(userId int, logType int, content string, quota int) {
 	if logType == LogTypeConsume && !common.LogConsumeEnabled {
 		return
 	}
@@ -178,9 +185,9 @@ func RecordLog(userId int, logType int, content string) {
 		CreatedAt: common.GetTimestamp(),
 		Type:      logType,
 		Content:   content,
+		Quota:     quota,
 	}
-	err := createLog(log)
-	if err != nil {
+	if err := createLog(log); err != nil {
 		common.SysLog("failed to record log: " + err.Error())
 	}
 }

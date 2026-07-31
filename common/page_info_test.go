@@ -1,6 +1,7 @@
 package common
 
 import (
+	"math"
 	"net/http/httptest"
 	"testing"
 
@@ -31,4 +32,17 @@ func TestGetPageQueryClampsInvalidPageSize(t *testing.T) {
 			assert.Equal(t, tt.want, pageInfo.PageSize)
 		})
 	}
+}
+
+func TestPageInfoClampsInvalidPageAndIndexOverflow(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("GET", "/?p=-2&page_size=100", nil)
+	pageInfo := GetPageQuery(c)
+	assert.Equal(t, 1, pageInfo.Page)
+	assert.Zero(t, pageInfo.GetStartIdx())
+
+	overflow := &PageInfo{Page: math.MaxInt, PageSize: 100}
+	assert.Equal(t, math.MaxInt, overflow.GetStartIdx())
+	assert.Equal(t, math.MaxInt, overflow.GetEndIdx())
+	assert.Zero(t, (&PageInfo{Page: 1, PageSize: -1}).GetEndIdx())
 }

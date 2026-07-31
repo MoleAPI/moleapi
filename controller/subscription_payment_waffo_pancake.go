@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -32,7 +33,7 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 
 	plan, err := model.GetSubscriptionPlanById(req.PlanId)
 	if err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	if !plan.Enabled {
@@ -55,7 +56,7 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 	userId := c.GetInt("id")
 	user, err := model.GetUserById(userId, false)
 	if err != nil {
-		common.ApiError(c, err)
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 	if user == nil {
@@ -66,7 +67,7 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 	if plan.MaxPurchasePerUser > 0 {
 		count, err := model.CountUserSubscriptionsByPlan(userId, plan.Id)
 		if err != nil {
-			common.ApiError(c, err)
+			common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 			return
 		}
 		if count >= int64(plan.MaxPurchasePerUser) {
@@ -125,8 +126,7 @@ func SubscriptionRequestWaffoPancakePay(c *gin.Context) {
 	})
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Waffo Pancake 订阅结账会话创建失败 user_id=%d plan_id=%d trade_no=%s error=%q", userId, plan.Id, tradeNo, err.Error()))
-		order.Status = common.TopUpStatusFailed
-		_ = order.Update()
+		_ = model.UpdatePendingSubscriptionOrderStatus(tradeNo, model.PaymentProviderWaffoPancake, common.TopUpStatusFailed)
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
 		return
 	}

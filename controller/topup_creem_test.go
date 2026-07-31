@@ -236,6 +236,7 @@ func TestGenCreemLinkPinsConfiguredAmount(t *testing.T) {
 			assert.Equal(t, "MO1SCR00000000000000000000000000", checkoutRequest.RequestId)
 			assert.Equal(t, 1, checkoutRequest.Units)
 			assert.Equal(t, int64(1000), checkoutRequest.CustomPrice)
+			assert.Empty(t, checkoutRequest.Metadata)
 			return creemHTTPResponse(t, map[string]any{
 				"id": "checkout_123", "mode": "test", "status": "pending",
 				"product": map[string]string{"id": "prod_123"}, "request_id": checkoutRequest.RequestId,
@@ -249,7 +250,7 @@ func TestGenCreemLinkPinsConfiguredAmount(t *testing.T) {
 
 	checkout, err := genCreemLink(t.Context(), "MO1SCR00000000000000000000000000", &CreemProduct{
 		ProductId: "prod_123", Name: "Local subscription", Price: 10, Currency: "USD",
-	}, "buyer@example.com", "buyer")
+	}, "buyer@example.com")
 	require.NoError(t, err)
 	assert.Equal(t, "checkout_123", checkout.Id)
 	assert.Equal(t, 2, requests)
@@ -282,7 +283,7 @@ func TestGenCreemLinkRejectsRemoteProductDrift(t *testing.T) {
 
 			_, err := genCreemLink(t.Context(), "MO1TCR00000000000000000000000000", &CreemProduct{
 				ProductId: "prod_123", Name: "Local topup", Price: 10, Currency: "USD", Quota: 100,
-			}, "buyer@example.com", "buyer")
+			}, "buyer@example.com")
 			require.ErrorContains(t, err, "product facts mismatch")
 			assert.Equal(t, 1, requests)
 		})
@@ -305,6 +306,6 @@ func TestGenCreemLinkRejectsCheckoutBindingMismatch(t *testing.T) {
 
 	_, err := genCreemLink(t.Context(), "MO1TCR00000000000000000000000000", &CreemProduct{
 		ProductId: "prod_123", Name: "Local topup", Price: 10, Currency: "USD", Quota: 100,
-	}, "buyer@example.com", "buyer")
+	}, "buyer@example.com")
 	require.ErrorContains(t, err, "checkout facts mismatch")
 }

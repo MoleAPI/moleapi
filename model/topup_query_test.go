@@ -77,15 +77,19 @@ func TestSearchAllTopUpsFiltersAdminBillingHistory(t *testing.T) {
 
 func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 	originalDB := DB
+	originalLogDB := LOG_DB
 	originalDatabaseType := common.MainDatabaseType()
-	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.LogDatabaseType())
+	originalLogDatabaseType := common.LogDatabaseType()
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	DB = db
-	require.NoError(t, db.AutoMigrate(&TopUp{}))
+	LOG_DB = db
+	require.NoError(t, db.AutoMigrate(&TopUp{}, &Log{}))
 	t.Cleanup(func() {
 		DB = originalDB
-		common.SetDatabaseTypes(originalDatabaseType, common.LogDatabaseType())
+		LOG_DB = originalLogDB
+		common.SetDatabaseTypes(originalDatabaseType, originalLogDatabaseType)
 		sqlDB, dbErr := db.DB()
 		if dbErr == nil {
 			_ = sqlDB.Close()
@@ -102,12 +106,49 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 	for _, order := range orders {
 		require.NoError(t, db.Create(order).Error)
 	}
+	other := common.MapToJsonStr(map[string]interface{}{
+		"op": map[string]interface{}{
+			"action": "user.quota_subtract",
+			"params": map[string]interface{}{
+				"target_user_id": 70,
+				"quota_raw":      10,
+			},
+		},
+	})
+	logs := []*Log{
+		{UserId: 7, Type: LogTypeSystem, Content: "邀请用户赠送 ＄0.000060 额度", Quota: 60, CreatedAt: 350},
+		{UserId: 7, Type: LogTypeSystem, Content: "转移邀请奖励 ＄0.000010 额度 到余额", Quota: -10, CreatedAt: 250},
+		{UserId: 7, Type: LogTypeSystem, Content: "管理员调整额度 -＄0.000010 额度", Quota: -10, CreatedAt: 450},
+		{UserId: 1, Type: LogTypeManage, Content: "Decreased user 70 quota", Other: other, CreatedAt: 550},
+		{UserId: 99, Type: LogTypeSystem, Content: "邀请用户赠送 ＄0.000040 额度", Quota: 40, CreatedAt: 500},
+	}
+	for _, log := range logs {
+		require.NoError(t, db.Create(log).Error)
+	}
 
 	got, total, searchErr := GetInviteRebateTopUps(7, &common.PageInfo{Page: 1, PageSize: 10})
 	require.NoError(t, searchErr)
-	assert.Equal(t, int64(2), total)
-	if assert.Len(t, got, 2) {
-		assert.Equal(t, "reward-second", got[0].TradeNo)
-		assert.Equal(t, "reward-first", got[1].TradeNo)
+	assert.Equal(t, int64(5), total)
+	if assert.Len(t, got, 5) {
+		assert.Equal(t, "admin_adjustment", got[0].Source)
+		assert.Equal(t, -10, got[0].Quota)
+		assert.Equal(t, "invite_register", got[1].Source)
+		assert.Equal(t, 60, got[1].Quota)
+		assert.Equal(t, "topup_rebate", got[2].Source)
+		assert.Equal(t, 30, got[2].Quota)
+		assert.Equal(t, int64(300), got[2].CompleteTime)
+		assert.Equal(t, "reward_transfer", got[3].Source)
+		assert.Equal(t, -10, got[3].Quota)
+		assert.Equal(t, "topup_rebate", got[4].Source)
+
+		payload, marshalErr := common.Marshal(got[2])
+		require.NoError(t, marshalErr)
+		assert.JSONEq(t, `{"id":3,"source":"topup_rebate","quota":30,"complete_time":300}`, string(payload))
+		assert.NotContains(t, string(payload), "reward-first")
 	}
+
+	got, total, searchErr = GetInviteRebateTopUps(7, &common.PageInfo{Page: inviteRewardHistoryHardLimit + 1, PageSize: 1})
+	require.NoError(t, searchErr)
+	assert.Equal(t, int64(5), total)
+	assert.Empty(t, got)
 }

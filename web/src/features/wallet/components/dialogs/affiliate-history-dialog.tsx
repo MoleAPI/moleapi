@@ -36,10 +36,6 @@ import { formatQuota } from '@/lib/format'
 
 import { getAffiliateHistory, isApiSuccess } from '../../api'
 import { formatTimestamp } from '../../lib/billing'
-import {
-  formatHistoricalTopUpAmount,
-  formatInviteRebateRatio,
-} from '../../lib/format'
 import type { AffiliateRewardRecord } from '../../types'
 
 interface AffiliateHistoryDialogProps {
@@ -53,6 +49,36 @@ const SKELETON_IDS = Array.from(
   { length: 5 },
   (_, index) => `affiliate-history-skeleton-${index + 1}`
 )
+
+function rewardQuota(record: AffiliateRewardRecord): number {
+  return record.quota
+}
+
+function formatRewardQuota(record: AffiliateRewardRecord): string {
+  const quota = rewardQuota(record)
+  if (quota > 0) return `+${formatQuota(quota)}`
+  if (quota < 0) return `-${formatQuota(Math.abs(quota))}`
+  return '-'
+}
+
+function rewardSourceKey(record: AffiliateRewardRecord): string {
+  switch (record.source) {
+    case 'topup_rebate':
+      return 'Top-up rebate'
+    case 'invite_register':
+      return 'Registration reward'
+    case 'invitee_register':
+      return 'Invitee reward'
+    case 'new_user_reward':
+      return 'New user reward'
+    case 'reward_transfer':
+      return 'Reward transfer'
+    case 'admin_adjustment':
+      return 'Admin adjustment'
+    default:
+      return 'System reward'
+  }
+}
 
 export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
   const { t } = useTranslation()
@@ -98,8 +124,8 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
     <Dialog
       open={props.open}
       onOpenChange={props.onOpenChange}
-      title={t('Referral reward records')}
-      description={t("View rewards from invited users' completed top-ups.")}
+      title={t('Reward records')}
+      description={t('View all reward activity.')}
       contentClassName='flex max-h-[calc(100dvh-2rem)] flex-col max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4 sm:max-w-4xl'
       contentHeight='auto'
       bodyClassName='space-y-3'
@@ -110,9 +136,7 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
             {SKELETON_IDS.map((id) => (
               <div key={id} className='flex items-center gap-3'>
                 <Skeleton className='h-4 w-40' />
-                <Skeleton className='h-4 w-20' />
                 <Skeleton className='h-4 w-24' />
-                <Skeleton className='h-4 w-20' />
                 <Skeleton className='h-4 w-24' />
               </div>
             ))}
@@ -125,43 +149,37 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
               {t('No reward records found')}
             </p>
             <p className='mt-1 text-xs'>
-              {t("Rewards from invited users' top-ups will appear here.")}
+              {t('Reward activity will appear here.')}
             </p>
           </div>
         )}
 
         {!loading && records.length > 0 && (
-          <Table className='min-w-[760px] text-xs [&_td]:text-xs [&_th]:text-xs'>
+          <Table className='min-w-[520px] text-xs [&_td]:text-xs [&_th]:text-xs'>
             <TableHeader className='bg-muted/40 sticky top-0 z-10'>
               <TableRow>
-                <TableHead>{t('Order')}</TableHead>
-                <TableHead>{t('Invited user')}</TableHead>
-                <TableHead>{t('Amount')}</TableHead>
-                <TableHead>{t('Top-up rebate')}</TableHead>
+                <TableHead>{t('Source')}</TableHead>
                 <TableHead>{t('Reward')}</TableHead>
-                <TableHead>{t('Completed')}</TableHead>
+                <TableHead>{t('Time')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className='[&>tr]:h-11'>
               {records.map((record) => (
                 <TableRow key={record.id}>
-                  <TableCell className='font-mono whitespace-nowrap'>
-                    {record.trade_no}
+                  <TableCell className='whitespace-nowrap'>
+                    {t(rewardSourceKey(record))}
                   </TableCell>
-                  <TableCell className='font-mono'>{record.user_id}</TableCell>
-                  <TableCell className='font-medium'>
-                    {formatHistoricalTopUpAmount(record)}
-                  </TableCell>
-                  <TableCell>
-                    {formatInviteRebateRatio(record.invite_rebate_ratio)}
-                  </TableCell>
-                  <TableCell className='font-medium'>
-                    {formatQuota(record.invite_rebate_quota ?? 0)}
+                  <TableCell
+                    className={
+                      rewardQuota(record) < 0
+                        ? 'text-destructive font-medium'
+                        : 'text-success font-medium'
+                    }
+                  >
+                    {formatRewardQuota(record)}
                   </TableCell>
                   <TableCell className='font-mono'>
-                    {record.complete_time
-                      ? formatTimestamp(record.complete_time)
-                      : '-'}
+                    {formatTimestamp(record.complete_time)}
                   </TableCell>
                 </TableRow>
               ))}

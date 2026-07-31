@@ -28,6 +28,89 @@ func setupUserUpdateTestState(t *testing.T) {
 	})
 }
 
+func useRegistrationRewardSettings(t *testing.T, newUser int, invitee int, inviter int) {
+	t.Helper()
+	originalNewUser, originalInvitee, originalInviter := common.QuotaForNewUser, common.QuotaForInvitee, common.QuotaForInviter
+	payment := operation_setting.GetPaymentSetting()
+	originalCompliance, originalVersion := payment.ComplianceConfirmed, payment.ComplianceTermsVersion
+	common.QuotaForNewUser, common.QuotaForInvitee, common.QuotaForInviter = newUser, invitee, inviter
+	payment.ComplianceConfirmed = true
+	payment.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+	t.Cleanup(func() {
+		common.QuotaForNewUser, common.QuotaForInvitee, common.QuotaForInviter = originalNewUser, originalInvitee, originalInviter
+		payment.ComplianceConfirmed, payment.ComplianceTermsVersion = originalCompliance, originalVersion
+	})
+}
+
+func TestRegistrationRewardsMatchCreditedBalances(t *testing.T) {
+	setupUserUpdateTestState(t)
+	useRegistrationRewardSettings(t, 100, 20, 30)
+
+	inviter := User{Username: "registration-inviter", Status: common.UserStatusEnabled, AffCode: "registration-inviter-code"}
+	require.NoError(t, DB.Create(&inviter).Error)
+	invitee := User{Username: "registration-invitee", Status: common.UserStatusEnabled, InviterId: inviter.Id}
+	require.NoError(t, invitee.Insert(inviter.Id))
+
+	var storedInvitee User
+	require.NoError(t, DB.First(&storedInvitee, invitee.Id).Error)
+	assert.Equal(t, 120, storedInvitee.Quota)
+	var storedInviter User
+	require.NoError(t, DB.First(&storedInviter, inviter.Id).Error)
+	assert.Equal(t, 1, storedInviter.AffCount)
+	assert.Equal(t, 30, storedInviter.AffQuota)
+	assert.Equal(t, 30, storedInviter.AffHistoryQuota)
+
+	var inviteeLogs []Log
+	require.NoError(t, LOG_DB.Where("user_id = ? AND type = ?", invitee.Id, LogTypeSystem).Order("id asc").Find(&inviteeLogs).Error)
+	require.Len(t, inviteeLogs, 2)
+	assert.Equal(t, 100, inviteeLogs[0].Quota)
+	assert.Equal(t, 20, inviteeLogs[1].Quota)
+	var inviterLogs []Log
+	require.NoError(t, LOG_DB.Where("user_id = ? AND type = ?", inviter.Id, LogTypeSystem).Find(&inviterLogs).Error)
+	require.Len(t, inviterLogs, 1)
+	assert.Equal(t, 30, inviterLogs[0].Quota)
+}
+
+func TestRegistrationDoesNotLogFailedInviterReward(t *testing.T) {
+	setupUserUpdateTestState(t)
+	useRegistrationRewardSettings(t, 0, 0, 10)
+
+	inviter := User{
+		Username: "full-registration-inviter", Status: common.UserStatusEnabled, AffCode: "full-registration-inviter-code",
+		AffQuota: common.MaxQuota,
+	}
+	require.NoError(t, DB.Create(&inviter).Error)
+	invitee := User{Username: "failed-registration-reward", Status: common.UserStatusEnabled, InviterId: inviter.Id}
+	require.NoError(t, invitee.Insert(inviter.Id))
+
+	var storedInviter User
+	require.NoError(t, DB.First(&storedInviter, inviter.Id).Error)
+	assert.Zero(t, storedInviter.AffCount)
+	assert.Equal(t, common.MaxQuota, storedInviter.AffQuota)
+	var rewardLogs int64
+	require.NoError(t, LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", inviter.Id, LogTypeSystem).Count(&rewardLogs).Error)
+	assert.Zero(t, rewardLogs)
+}
+
+func TestTransferAffQuotaRejectsBalanceOverflow(t *testing.T) {
+	setupUserUpdateTestState(t)
+	originalQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaPerUnit = 1
+	t.Cleanup(func() { common.QuotaPerUnit = originalQuotaPerUnit })
+
+	user := User{Username: "transfer-limit-user", Status: common.UserStatusEnabled, Quota: common.MaxQuota, AffQuota: 10}
+	require.NoError(t, DB.Create(&user).Error)
+	require.Error(t, user.TransferAffQuotaToQuota(10))
+
+	var stored User
+	require.NoError(t, DB.First(&stored, user.Id).Error)
+	assert.Equal(t, common.MaxQuota, stored.Quota)
+	assert.Equal(t, 10, stored.AffQuota)
+	var rewardLogs int64
+	require.NoError(t, LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", user.Id, LogTypeSystem).Count(&rewardLogs).Error)
+	assert.Zero(t, rewardLogs)
+}
+
 func TestUserUpdateDoesNotOverwriteAccountingFields(t *testing.T) {
 	setupUserUpdateTestState(t)
 
@@ -152,6 +235,28 @@ func TestInsertKeepsBlankPasswordForPasswordlessUser(t *testing.T) {
 	var stored User
 	require.NoError(t, DB.Where("username = ?", user.Username).First(&stored).Error)
 	assert.Empty(t, stored.Password)
+	assert.Len(t, stored.AffCode, 4)
+}
+
+func TestGetOrCreateAffCodeGeneratesOnceAndKeepsExistingCode(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	generatedUser := User{Username: "generated-aff-code", Status: common.UserStatusEnabled}
+	existingUser := User{Username: "existing-aff-code", Status: common.UserStatusEnabled, AffCode: "KEEP"}
+	require.NoError(t, DB.Create(&generatedUser).Error)
+	require.NoError(t, DB.Create(&existingUser).Error)
+
+	generated, err := GetOrCreateAffCode(generatedUser.Id)
+	require.NoError(t, err)
+	assert.Len(t, generated, 4)
+	assert.Regexp(t, `^[A-Za-z0-9]{4}$`, generated)
+	generatedAgain, err := GetOrCreateAffCode(generatedUser.Id)
+	require.NoError(t, err)
+	assert.Equal(t, generated, generatedAgain)
+
+	existing, err := GetOrCreateAffCode(existingUser.Id)
+	require.NoError(t, err)
+	assert.Equal(t, "KEEP", existing)
 }
 
 func TestInsertUsesDefaultInviteRebateRatio(t *testing.T) {
@@ -186,6 +291,23 @@ func TestInsertUsesDefaultInviteRebateRatio(t *testing.T) {
 	for _, stored := range users {
 		assert.Equal(t, 125, stored.InviteRebateRatio)
 	}
+}
+
+func TestInsertPersistsInviterRelationship(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	passwordUser := &User{Username: "invited-password-user", Status: common.UserStatusEnabled}
+	require.NoError(t, passwordUser.Insert(41))
+	oauthUser := &User{Username: "invited-oauth-user", Status: common.UserStatusEnabled}
+	require.NoError(t, DB.Transaction(func(tx *gorm.DB) error {
+		return oauthUser.InsertWithTx(tx, 42)
+	}))
+
+	var users []User
+	require.NoError(t, DB.Where("id IN ?", []int{passwordUser.Id, oauthUser.Id}).Order("id asc").Find(&users).Error)
+	require.Len(t, users, 2)
+	assert.Equal(t, 41, users[0].InviterId)
+	assert.Equal(t, 42, users[1].InviterId)
 }
 
 func TestUpdateZeroInviteRebateRatioOnlyTouchesZeroUsers(t *testing.T) {

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -158,4 +159,67 @@ func TestManageUserDeleteReturnsImmediatelyAndUnknownActionFails(t *testing.T) {
 	require.NoError(t, db.First(&unchanged, unchanged.Id).Error)
 	assert.EqualValues(t, 1, unchanged.AuthVersion)
 	assert.Equal(t, common.UserStatusEnabled, unchanged.Status)
+}
+
+func TestManageUserQuotaAuditIncludesRawQuota(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	user := model.User{
+		Username: "managed-quota-user", Password: "password", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", Quota: 100,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"subtract","value":25}`, user.Id))
+	assert.Contains(t, recorder.Body.String(), `"success":true`)
+
+	var log model.Log
+	require.NoError(t, db.Where("type = ?", model.LogTypeManage).First(&log).Error)
+	var other map[string]interface{}
+	require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
+	op := other["op"].(map[string]interface{})
+	params := op["params"].(map[string]interface{})
+	assert.Equal(t, "user.quota_subtract", op["action"])
+	assert.EqualValues(t, user.Id, params["target_user_id"])
+	assert.EqualValues(t, 25, params["quota_raw"])
+
+	var rewardLog model.Log
+	require.NoError(t, db.Where("user_id = ? AND type = ?", user.Id, model.LogTypeSystem).First(&rewardLog).Error)
+	assert.Equal(t, -25, rewardLog.Quota)
+	assert.Contains(t, rewardLog.Content, "管理员调整额度")
+}
+
+func TestManageUserQuotaRejectsOutOfRangeBalance(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	user := model.User{
+		Username: "managed-quota-limit", Password: "password", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", Quota: common.MaxQuota,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":1}`, user.Id))
+	assert.Contains(t, recorder.Body.String(), `"success":false`)
+
+	var updated model.User
+	require.NoError(t, db.First(&updated, user.Id).Error)
+	assert.Equal(t, common.MaxQuota, updated.Quota)
+	var logCount int64
+	require.NoError(t, db.Model(&model.Log{}).Count(&logCount).Error)
+	assert.Zero(t, logCount)
+}
+
+func TestManageUserStopsWhenTargetLookupFails(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	require.NoError(t, db.Callback().Query().Before("gorm:query").Register("test:fail_manage_user_lookup", func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Table == "users" {
+			tx.AddError(errors.New("sensitive database detail"))
+		}
+	}))
+	t.Cleanup(func() {
+		db.Callback().Query().Remove("test:fail_manage_user_lookup")
+	})
+
+	recorder := performManageUserRequest(t, `{"id":1,"action":"disable"}`)
+
+	assert.Contains(t, recorder.Body.String(), `"success":false`)
+	assert.NotContains(t, recorder.Body.String(), "sensitive database detail")
 }

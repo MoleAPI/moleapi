@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
@@ -603,7 +604,8 @@ func GetUserTopUps(c *gin.Context) {
 		topups, total, err = model.GetUserTopUps(userId, pageInfo)
 	}
 	if err != nil {
-		common.ApiError(c, err)
+		logger.LogError(c.Request.Context(), fmt.Sprintf("failed to load top-up history user_id=%d error=%q", userId, err.Error()))
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 
@@ -617,7 +619,8 @@ func GetInviteRebateTopUps(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	topups, total, err := model.GetInviteRebateTopUps(userId, pageInfo)
 	if err != nil {
-		common.ApiError(c, err)
+		logger.LogError(c.Request.Context(), fmt.Sprintf("failed to load reward history user_id=%d error=%q", userId, err.Error()))
+		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
 		return
 	}
 

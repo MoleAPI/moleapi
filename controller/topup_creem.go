@@ -154,7 +154,7 @@ func (*CreemAdaptor) RequestPay(c *gin.Context, req *CreemPayRequest) {
 	}
 
 	// 创建支付链接，传入用户邮箱
-	checkout, err := genCreemLink(c.Request.Context(), referenceId, selectedProduct, user.Email, user.Username)
+	checkout, err := genCreemLink(c.Request.Context(), referenceId, selectedProduct, user.Email)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 创建支付链接失败 user_id=%d trade_no=%s product_id=%s error=%q", id, referenceId, selectedProduct.ProductId, err.Error()))
 		_ = model.UpdatePendingTopUpStatus(referenceId, model.PaymentProviderCreem, common.TopUpStatusFailed)
@@ -574,7 +574,7 @@ func fetchCreemProduct(ctx context.Context, productId string) (*CreemRemoteProdu
 	return &product, nil
 }
 
-func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct, email string, username string) (*CreemCheckoutResponse, error) {
+func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct, email string) (*CreemCheckoutResponse, error) {
 	if setting.CreemApiKey == "" {
 		return nil, fmt.Errorf("未配置Creem API密钥")
 	}
@@ -611,12 +611,6 @@ func genCreemLink(ctx context.Context, referenceId string, product *CreemProduct
 			Email string `json:"email"`
 		}{
 			Email: email, // 用户邮箱会在支付页面预填充
-		},
-		Metadata: map[string]string{
-			"username":     username,
-			"reference_id": referenceId,
-			"product_name": product.Name,
-			"quota":        fmt.Sprintf("%d", product.Quota),
 		},
 	}
 
