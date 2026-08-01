@@ -341,11 +341,16 @@ export function RechargeFormCard({
                 {hasStandardPaymentMethods ? (
                   <div className={rechargeFormLayoutClasses.paymentMethods}>
                     {paymentMethods.map((method) => {
-                      const methodName = t(
-                        method.type === PAYMENT_TYPES.NOWPAYMENTS
-                          ? 'Crypto Pay'
-                          : method.name
-                      )
+                      let methodLabel = method.name
+                      if (method.type === PAYMENT_TYPES.NOWPAYMENTS) {
+                        methodLabel = 'Crypto Pay'
+                      } else if (
+                        method.type === PAYMENT_TYPES.WECHAT ||
+                        method.type === PAYMENT_TYPES.LANTU
+                      ) {
+                        methodLabel = 'WeChat Pay'
+                      }
+                      const methodName = t(methodLabel)
                       const minTopup = Math.max(
                         method.min_topup || 0,
                         getMinTopupAmount(topupInfo)
@@ -404,7 +409,9 @@ export function RechargeFormCard({
                               )
                             )}
                           </span>
-                          <span className='flex min-w-0 flex-col items-center gap-0.5'>
+                          <span
+                            className={rechargeFormLayoutClasses.paymentLabel}
+                          >
                             <span className='max-w-full truncate'>
                               {methodName}
                             </span>
@@ -505,7 +512,9 @@ export function RechargeFormCard({
                             >
                               {methodIcon}
                             </span>
-                            <span className='flex min-w-0 flex-col items-center gap-0.5'>
+                            <span
+                              className={rechargeFormLayoutClasses.paymentLabel}
+                            >
                               <span className='max-w-full truncate'>
                                 {method.name}
                               </span>

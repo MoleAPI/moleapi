@@ -56,13 +56,6 @@ export function Profile() {
   const securitySections: Record<ProfileSecuritySection, ReactNode> = {
     passkey: <PasskeyCard loading={loading} />,
     'two-factor': <TwoFACard loading={loading} />,
-    'account-bindings': (
-      <AccountBindingsCard
-        profile={profile}
-        loading={loading}
-        onProfileUpdate={refreshProfile}
-      />
-    ),
   }
 
   return (
@@ -76,7 +69,7 @@ export function Profile() {
           <CardStaggerItem>
             <div className='grid gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:items-start'>
               <div className='flex flex-col gap-4 sm:gap-6'>
-                <ProfileSettingsCard
+                <AccountBindingsCard
                   profile={profile}
                   loading={loading}
                   onProfileUpdate={refreshProfile}
@@ -87,6 +80,11 @@ export function Profile() {
                 />
                 <ProfileSecurityCard profile={profile} loading={loading} />
                 <LoginSessionsCard />
+                <ProfileSettingsCard
+                  profile={profile}
+                  loading={loading}
+                  onProfileUpdate={refreshProfile}
+                />
               </div>
 
               <div className='flex flex-col gap-4 sm:gap-6'>

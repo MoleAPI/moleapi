@@ -101,6 +101,13 @@ func TestEveryRealTopupPathRebatesInviterExactlyOnce(t *testing.T) {
 			assert.Equal(t, MaxInviteRebateRatio, topUp.InviteRebateRatio)
 			assert.Equal(t, expectedRebate, topUp.InviteRebateQuota)
 
+			var rewardLog Log
+			require.NoError(t, LOG_DB.Where("user_id = ? AND type = ?", inviterID, LogTypeSystem).First(&rewardLog).Error)
+			maskedInvitee := maskedIdentifier(fmt.Sprintf("invitee_%d", inviteeID))
+			assert.Contains(t, rewardLog.Content, maskedInvitee)
+			assert.NotContains(t, rewardLog.Content, tradeNo)
+			assert.NotContains(t, rewardLog.Content, fmt.Sprintf("invitee_%d", inviteeID))
+			assert.NotContains(t, rewardLog.Content, fmt.Sprintf("#%d", inviteeID))
 			var rewardLogs int64
 			require.NoError(t, LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", inviterID, LogTypeSystem).Count(&rewardLogs).Error)
 			assert.EqualValues(t, 1, rewardLogs)

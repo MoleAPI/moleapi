@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -19,6 +21,7 @@ import (
 )
 
 const (
+	UserNameMinLength         = 4
 	UserNameMaxLength         = 20
 	affCodeLength             = 4
 	affCodeGenerationAttempts = 10
@@ -29,6 +32,7 @@ var (
 	ErrAffQuotaTransferBelowMinimum = errors.New("affiliate quota transfer below minimum")
 	ErrAffQuotaInsufficient         = errors.New("affiliate quota insufficient")
 	ErrAffQuotaTransferOutOfRange   = errors.New("affiliate quota transfer out of range")
+	usernamePattern                 = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
 
 var userSortColumns = map[string]string{
@@ -59,6 +63,17 @@ func NewUserSortOptions(sortBy string, sortOrder string) UserSortOptions {
 		SortBy:    normalizedSortBy,
 		SortOrder: normalizedSortOrder,
 	}
+}
+
+func ValidateUsername(username string) error {
+	length := utf8.RuneCountInString(username)
+	if length < UserNameMinLength || length > UserNameMaxLength {
+		return fmt.Errorf("用户名长度必须为 %d-%d 个字符", UserNameMinLength, UserNameMaxLength)
+	}
+	if !usernamePattern.MatchString(username) {
+		return errors.New("用户名只能包含英文字母、数字、下划线或连字符")
+	}
+	return nil
 }
 
 func (options UserSortOptions) Apply(query *gorm.DB) *gorm.DB {
@@ -261,7 +276,8 @@ func CheckUserExistOrDeleted(username string, email string) (bool, error) {
 	if email == "" {
 		err = DB.Unscoped().First(&user, "username = ?", username).Error
 	} else {
-		err = DB.Unscoped().First(&user, "username = ? or LOWER(email) = ?", username, email).Error
+		emailWhere, emailArgs := normalizedEmailWhere(email)
+		err = DB.Unscoped().Where("username = ?", username).Or(emailWhere, emailArgs...).First(&user).Error
 	}
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -276,14 +292,33 @@ func CheckUserExistOrDeleted(username string, email string) (bool, error) {
 }
 
 func NormalizeEmail(email string) string {
-	return strings.ToLower(strings.TrimSpace(email))
+	email = strings.ToLower(strings.TrimSpace(email))
+	local, domain, ok := strings.Cut(email, "@")
+	if ok && domain == "gmail.com" {
+		local, _, _ = strings.Cut(local, "+")
+		local = strings.ReplaceAll(local, ".", "")
+		email = local + "@" + domain
+	}
+	return email
+}
+
+func normalizedEmailWhere(email string) (string, []interface{}) {
+	email = NormalizeEmail(email)
+	if strings.HasSuffix(email, "@gmail.com") {
+		local, _, _ := strings.Cut(email, "@")
+		tagPattern := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(local) + "+%@gmailcom"
+		return "(LOWER(email) = ? OR (LOWER(email) LIKE ? AND (REPLACE(LOWER(email), '.', '') = ? OR REPLACE(LOWER(email), '.', '') LIKE ? ESCAPE '!')))",
+			[]interface{}{email, "%@gmail.com", strings.ReplaceAll(email, ".", ""), tagPattern}
+	}
+	return "LOWER(email) = ?", []interface{}{email}
 }
 
 func emailQuery(tx *gorm.DB, email string) *gorm.DB {
 	if tx == nil {
 		tx = DB
 	}
-	return tx.Unscoped().Model(&User{}).Where("LOWER(email) = ?", NormalizeEmail(email))
+	emailWhere, emailArgs := normalizedEmailWhere(email)
+	return tx.Unscoped().Model(&User{}).Where(emailWhere, emailArgs...)
 }
 
 func CountUsersByEmail(email string) (int64, error) {
@@ -1139,7 +1174,8 @@ func (user *User) ValidateAndFill() (err error) {
 		return ErrUserEmptyCredentials
 	}
 	// find by username or email
-	err = DB.Where("username = ? OR email = ?", username, username).First(user).Error
+	emailWhere, emailArgs := normalizedEmailWhere(username)
+	err = DB.Where("username = ?", username).Or(emailWhere, emailArgs...).First(user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrInvalidCredentials
@@ -1234,7 +1270,8 @@ func GetUniqueUserByEmail(email string) (*User, error) {
 		return nil, ErrEmailNotFound
 	}
 	var users []User
-	if err := DB.Where("LOWER(email) = ?", email).Limit(2).Find(&users).Error; err != nil {
+	emailWhere, emailArgs := normalizedEmailWhere(email)
+	if err := DB.Where(emailWhere, emailArgs...).Limit(2).Find(&users).Error; err != nil {
 		return nil, err
 	}
 	switch len(users) {

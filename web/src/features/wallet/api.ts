@@ -244,12 +244,20 @@ export async function transferAffiliateQuota(
 
 export async function getAffiliateHistory(
   page: number,
-  pageSize: number
+  pageSize: number,
+  startTimestamp?: number,
+  endTimestamp?: number
 ): Promise<AffiliateHistoryResponse> {
   const params = new URLSearchParams({
     p: page.toString(),
     page_size: pageSize.toString(),
   })
+  if (startTimestamp) {
+    params.append('start_timestamp', startTimestamp.toString())
+  }
+  if (endTimestamp) {
+    params.append('end_timestamp', endTimestamp.toString())
+  }
   const res = await api.get(`/api/user/aff/history?${params.toString()}`)
   return res.data
 }

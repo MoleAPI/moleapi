@@ -63,6 +63,7 @@ import {
 } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
 import { BillingHistoryDialog } from '@/features/wallet/components/dialogs/billing-history-dialog'
+import { useStatus } from '@/hooks/use-status'
 import {
   ADMIN_PERMISSION_ACTIONS,
   ADMIN_PERMISSION_RESOURCES,
@@ -81,6 +82,8 @@ import {
   getUser,
   getGroups,
   getPermissionCatalog,
+  getUserOAuthBindings,
+  type OAuthBinding,
 } from '../api'
 import { BINDING_FIELDS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
 import {
@@ -109,6 +112,7 @@ export function UsersMutateDrawer({
   const isUpdate = !!currentRow
   const { triggerRefresh } = useUsers()
   const currentUser = useAuthStore((s) => s.auth.user)
+  const { status } = useStatus()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
   const [billingDialogOpen, setBillingDialogOpen] = useState(false)
@@ -127,6 +131,11 @@ export function UsersMutateDrawer({
     queryKey: ['admin-permission-catalog'],
     queryFn: getPermissionCatalog,
     staleTime: 5 * 60 * 1000,
+  })
+  const { data: oauthBindingsData } = useQuery({
+    queryKey: ['user-oauth-bindings', currentRow?.id],
+    queryFn: () => getUserOAuthBindings(currentRow?.id ?? 0),
+    enabled: open && isUpdate && Boolean(currentRow?.id),
   })
 
   const form = useForm<UserFormValues>({
@@ -161,6 +170,13 @@ export function UsersMutateDrawer({
   const selectedRole = form.watch('role')
   const canEditAdminPermissions = currentUser?.role === ROLE.SUPER_ADMIN
   const targetIsAdmin = (selectedRole ?? currentRow?.role ?? 0) >= ROLE.ADMIN
+  const oauthBindingMap = new Map(
+    (oauthBindingsData?.data ?? []).map((binding: OAuthBinding) => [
+      String(binding.provider_id),
+      binding,
+    ])
+  )
+  const customOAuthProviders = status?.custom_oauth_providers ?? []
 
   const onSubmit = async (data: UserFormValues) => {
     if (!isUpdate) {
@@ -623,6 +639,25 @@ export function UsersMutateDrawer({
                         />
                       </div>
                     ))}
+                    {customOAuthProviders.map((provider) => {
+                      const binding = oauthBindingMap.get(String(provider.id))
+                      return (
+                        <div key={`custom-oauth-${provider.id}`}>
+                          <Label className='text-muted-foreground text-xs'>
+                            {provider.name}
+                          </Label>
+                          <Input
+                            value={
+                              binding?.provider_user_id ||
+                              binding?.external_id ||
+                              '-'
+                            }
+                            disabled
+                            className='mt-1'
+                          />
+                        </div>
+                      )
+                    })}
                   </div>
                 </SideDrawerSection>
               )}

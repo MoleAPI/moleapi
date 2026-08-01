@@ -17,7 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { Mail, Shield, Send, Link2, Unlink } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ComponentType,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { SiGithub, SiWechat, SiLinux } from 'react-icons/si'
 import { toast } from 'sonner'
@@ -26,7 +32,6 @@ import { IconDiscord } from '@/assets/brand-icons'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
-import { Separator } from '@/components/ui/separator'
 import { createOAuthFlow } from '@/features/auth/api'
 import {
   OAUTH_BIND_CALLBACK_MESSAGE,
@@ -290,128 +295,139 @@ export function AccountBindingsTab({
     [clearPendingOAuthBinding]
   )
 
-  // Memoize bindings to prevent unnecessary recalculations
-  const bindings: BindingItem[] = useMemo(() => {
-    if (!profile || !status) return []
+  const customBindingMap = new Map(
+    customBindings.map((binding) => [String(binding.provider_id), binding])
+  )
 
-    return [
-      {
-        id: 'email',
-        label: t('Email'),
-        icon: Mail,
-        value: profile.email,
-        isBound: Boolean(profile.email),
-        isEnabled: true,
-        onBind: () => dialogs.open('email'),
-      },
-      {
-        id: 'wechat',
-        label: t('WeChat'),
-        icon: SiWechat as React.ComponentType<{ className?: string }>,
-        value: undefined,
-        isBound: Boolean(
-          (profile as unknown as Record<string, unknown>).wechat_id
-        ),
-        isEnabled: status?.wechat_login || false,
-        onBind: () => dialogs.open('wechat'),
-      },
-      {
-        id: 'github',
-        label: t('GitHub'),
-        icon: SiGithub,
-        value: (profile as unknown as Record<string, unknown>).github_id as
-          | string
-          | undefined,
-        isBound: Boolean(
-          (profile as unknown as Record<string, unknown>).github_id
-        ),
-        isEnabled: status?.github_oauth || false,
-        onBind: () => {
-          const clientId = status?.github_client_id
-          if (clientId) {
-            void startOAuthBinding('github', (state) =>
-              buildGitHubOAuthUrl(clientId, state)
-            )
-          }
-        },
-      },
-      {
-        id: 'discord',
-        label: t('Discord'),
-        icon: IconDiscord,
-        value: (profile as unknown as Record<string, unknown>).discord_id as
-          | string
-          | undefined,
-        isBound: Boolean(
-          (profile as unknown as Record<string, unknown>).discord_id
-        ),
-        isEnabled: status?.discord_oauth || false,
-        onBind: () => {
-          const clientId = status?.discord_client_id
-          if (clientId) {
-            void startOAuthBinding('discord', (state) =>
-              buildDiscordOAuthUrl(clientId, state)
-            )
-          }
-        },
-      },
-      {
-        id: 'oidc',
-        label: t('OIDC'),
-        icon: Shield,
-        value: (profile as unknown as Record<string, unknown>).oidc_id as
-          | string
-          | undefined,
-        isBound: Boolean(
-          (profile as unknown as Record<string, unknown>).oidc_id
-        ),
-        isEnabled: status?.oidc_enabled || false,
-        onBind: () => {
-          const authorizationEndpoint = status?.oidc_authorization_endpoint
-          const clientId = status?.oidc_client_id
-          if (authorizationEndpoint && clientId) {
-            void startOAuthBinding('oidc', (state) =>
-              buildOIDCOAuthUrl(authorizationEndpoint, clientId, state)
-            )
-          }
-        },
-      },
-      {
-        id: 'telegram',
-        label: t('Telegram'),
-        icon: Send,
-        value: (profile as unknown as Record<string, unknown>).telegram_id as
-          | string
-          | undefined,
-        isBound: Boolean(
-          (profile as unknown as Record<string, unknown>).telegram_id
-        ),
-        isEnabled: status?.telegram_oauth || false,
-        onBind: () => dialogs.open('telegram'),
-      },
-      {
-        id: 'linuxdo',
-        label: t('LinuxDO'),
-        icon: SiLinux as React.ComponentType<{ className?: string }>,
-        value: (profile as unknown as Record<string, unknown>).linux_do_id as
-          | string
-          | undefined,
-        isBound: Boolean(
-          (profile as unknown as Record<string, unknown>).linux_do_id
-        ),
-        isEnabled: status?.linuxdo_oauth || false,
-        onBind: () => {
-          const clientId = status?.linuxdo_client_id
-          if (clientId) {
-            void startOAuthBinding('linuxdo', (state) =>
-              buildLinuxDOOAuthUrl(clientId, state)
-            )
-          }
-        },
-      },
-    ].filter((binding) => binding.isEnabled)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile, status, t])
+  const bindings: Array<BindingItem & { customBinding?: CustomOAuthBinding }> =
+    profile && status
+      ? [
+          {
+            id: 'email',
+            label: t('Email'),
+            icon: Mail,
+            value: profile.email,
+            isBound: Boolean(profile.email),
+            isEnabled: true,
+            onBind: () => dialogs.open('email'),
+          },
+          {
+            id: 'wechat',
+            label: t('WeChat'),
+            icon: SiWechat as ComponentType<{ className?: string }>,
+            value: undefined,
+            isBound: Boolean(
+              (profile as unknown as Record<string, unknown>).wechat_id
+            ),
+            isEnabled: status?.wechat_login || false,
+            onBind: () => dialogs.open('wechat'),
+          },
+          {
+            id: 'github',
+            label: t('GitHub'),
+            icon: SiGithub,
+            value: (profile as unknown as Record<string, unknown>).github_id as
+              | string
+              | undefined,
+            isBound: Boolean(
+              (profile as unknown as Record<string, unknown>).github_id
+            ),
+            isEnabled: status?.github_oauth || false,
+            onBind: () => {
+              const clientId = status?.github_client_id
+              if (clientId) {
+                void startOAuthBinding('github', (state) =>
+                  buildGitHubOAuthUrl(clientId, state)
+                )
+              }
+            },
+          },
+          {
+            id: 'discord',
+            label: t('Discord'),
+            icon: IconDiscord,
+            value: (profile as unknown as Record<string, unknown>)
+              .discord_id as string | undefined,
+            isBound: Boolean(
+              (profile as unknown as Record<string, unknown>).discord_id
+            ),
+            isEnabled: status?.discord_oauth || false,
+            onBind: () => {
+              const clientId = status?.discord_client_id
+              if (clientId) {
+                void startOAuthBinding('discord', (state) =>
+                  buildDiscordOAuthUrl(clientId, state)
+                )
+              }
+            },
+          },
+          {
+            id: 'oidc',
+            label: t('OIDC'),
+            icon: Shield,
+            value: (profile as unknown as Record<string, unknown>).oidc_id as
+              | string
+              | undefined,
+            isBound: Boolean(
+              (profile as unknown as Record<string, unknown>).oidc_id
+            ),
+            isEnabled: status?.oidc_enabled || false,
+            onBind: () => {
+              const authorizationEndpoint = status?.oidc_authorization_endpoint
+              const clientId = status?.oidc_client_id
+              if (authorizationEndpoint && clientId) {
+                void startOAuthBinding('oidc', (state) =>
+                  buildOIDCOAuthUrl(authorizationEndpoint, clientId, state)
+                )
+              }
+            },
+          },
+          {
+            id: 'telegram',
+            label: t('Telegram'),
+            icon: Send,
+            value: (profile as unknown as Record<string, unknown>)
+              .telegram_id as string | undefined,
+            isBound: Boolean(
+              (profile as unknown as Record<string, unknown>).telegram_id
+            ),
+            isEnabled: status?.telegram_oauth || false,
+            onBind: () => dialogs.open('telegram'),
+          },
+          {
+            id: 'linuxdo',
+            label: t('LinuxDO'),
+            icon: SiLinux as ComponentType<{ className?: string }>,
+            value: (profile as unknown as Record<string, unknown>)
+              .linux_do_id as string | undefined,
+            isBound: Boolean(
+              (profile as unknown as Record<string, unknown>).linux_do_id
+            ),
+            isEnabled: status?.linuxdo_oauth || false,
+            onBind: () => {
+              const clientId = status?.linuxdo_client_id
+              if (clientId) {
+                void startOAuthBinding('linuxdo', (state) =>
+                  buildLinuxDOOAuthUrl(clientId, state)
+                )
+              }
+            },
+          },
+          ...(customProviders?.map((provider) => {
+            const binding = customBindingMap.get(String(provider.id))
+            return {
+              id: `custom-${provider.slug}`,
+              label: provider.name,
+              icon: Link2,
+              value: binding?.provider_user_id || binding?.external_id,
+              isBound: Boolean(binding),
+              isEnabled: true,
+              onBind: () => handleBindCustomOAuth(provider),
+              customBinding: binding,
+            }
+          }) ?? []),
+        ].filter((binding) => binding.isEnabled)
+      : []
 
   if (!profile || loading) return null
 
@@ -420,7 +436,9 @@ export function AccountBindingsTab({
       <div className='grid grid-cols-1 gap-2.5 sm:gap-3'>
         {bindings.map((binding) => {
           let actionLabel = t('Bind')
-          if (binding.isBound && binding.id === 'email') {
+          if (binding.customBinding) {
+            actionLabel = t('Unbind')
+          } else if (binding.isBound && binding.id === 'email') {
             actionLabel = t('Change')
           } else if (binding.isBound) {
             actionLabel = t('Bound')
@@ -455,82 +473,24 @@ export function AccountBindingsTab({
                 variant='outline'
                 size='sm'
                 className='h-7 shrink-0 px-2.5 text-xs'
-                onClick={binding.onBind}
-                disabled={binding.isBound && binding.id !== 'email'}
+                onClick={() =>
+                  binding.customBinding
+                    ? setUnbindTarget(binding.customBinding)
+                    : binding.onBind()
+                }
+                disabled={
+                  binding.isBound &&
+                  binding.id !== 'email' &&
+                  !binding.customBinding
+                }
               >
+                {binding.customBinding && <Unlink className='mr-1 h-3 w-3' />}
                 {actionLabel}
               </Button>
             </div>
           )
         })}
       </div>
-
-      {/* Custom OAuth Bindings */}
-      {customProviders && customProviders.length > 0 && (
-        <>
-          <Separator className='my-4' />
-          <p className='text-muted-foreground mb-3 text-sm font-medium'>
-            {t('Custom OAuth')}
-          </p>
-          <div className='grid grid-cols-1 gap-2.5 sm:gap-3'>
-            {customProviders.map((provider) => {
-              const binding = customBindings.find(
-                (b) => b.provider_id === String(provider.id)
-              )
-              const isBound = !!binding
-              return (
-                <div
-                  key={provider.id}
-                  className='flex items-center justify-between gap-2.5 rounded-lg border p-2.5 sm:gap-3 sm:p-3'
-                >
-                  <div className='flex min-w-0 items-center gap-2.5 sm:gap-3'>
-                    <div className='bg-muted shrink-0 rounded-md p-1.5 sm:p-2'>
-                      <Link2 className='h-4 w-4' />
-                    </div>
-                    <div className='min-w-0'>
-                      <div className='flex items-center gap-1.5'>
-                        <p className='text-sm font-medium'>{provider.name}</p>
-                        {isBound && (
-                          <StatusBadge
-                            label={t('Bound')}
-                            variant='success'
-                            copyable={false}
-                          />
-                        )}
-                      </div>
-                      <p className='text-muted-foreground truncate text-xs'>
-                        {isBound
-                          ? binding?.external_id || t('Bound')
-                          : t('Not bound')}
-                      </p>
-                    </div>
-                  </div>
-                  {isBound ? (
-                    <Button
-                      variant='ghost'
-                      size='sm'
-                      className='text-destructive h-7 shrink-0 px-2.5 text-xs'
-                      onClick={() => setUnbindTarget(binding)}
-                    >
-                      <Unlink className='mr-1 h-3 w-3' />
-                      {t('Unbind')}
-                    </Button>
-                  ) : (
-                    <Button
-                      variant='outline'
-                      size='sm'
-                      className='h-7 shrink-0 px-2.5 text-xs'
-                      onClick={() => handleBindCustomOAuth(provider)}
-                    >
-                      {t('Bind')}
-                    </Button>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </>
-      )}
 
       {/* Custom OAuth Unbind Confirmation */}
       <ConfirmDialog

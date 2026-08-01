@@ -220,8 +220,8 @@ func Register(c *gin.Context) {
 	}
 	user.Username = strings.TrimSpace(user.Username)
 	user.Email = model.NormalizeEmail(user.Email)
-	if user.Username == "" {
-		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+	if err := model.ValidateUsername(user.Username); err != nil {
+		common.ApiErrorMsg(c, err.Error())
 		return
 	}
 	if err := common.Validate.Struct(&user); err != nil {
@@ -708,6 +708,12 @@ func UpdateUser(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	if updatedUser.Username != originUser.Username {
+		if err := model.ValidateUsername(updatedUser.Username); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	}
 	if updatedUser.Role != common.RoleGuestUser && updatedUser.Role != originUser.Role {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
 		return
@@ -961,7 +967,6 @@ func UpdateSelf(c *gin.Context) {
 
 	cleanUser := model.User{
 		Id:          c.GetInt("id"),
-		Username:    user.Username,
 		Password:    user.Password,
 		DisplayName: user.DisplayName,
 	}
@@ -1104,8 +1109,12 @@ func CreateUser(c *gin.Context) {
 	var user model.User
 	err := common.DecodeJson(c.Request.Body, &user)
 	user.Username = strings.TrimSpace(user.Username)
-	if err != nil || user.Username == "" || user.Password == "" {
+	if err != nil || user.Password == "" {
 		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		return
+	}
+	if err := model.ValidateUsername(user.Username); err != nil {
+		common.ApiErrorMsg(c, err.Error())
 		return
 	}
 	if err := common.Validate.Struct(&user); err != nil {

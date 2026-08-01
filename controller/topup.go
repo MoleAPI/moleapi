@@ -614,10 +614,37 @@ func GetUserTopUps(c *gin.Context) {
 	common.ApiSuccess(c, pageInfo)
 }
 
+const inviteRewardHistoryDefaultWindowSeconds int64 = 7 * 24 * 60 * 60
+
 func GetInviteRebateTopUps(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
-	topups, total, err := model.GetInviteRebateTopUps(userId, pageInfo)
+	params := model.InviteRewardHistoryParams{}
+	var err error
+	if value := c.Query("start_timestamp"); value != "" {
+		params.StartTimestamp, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || params.StartTimestamp < 0 {
+			common.ApiErrorMsg(c, "开始时间无效")
+			return
+		}
+	}
+	if value := c.Query("end_timestamp"); value != "" {
+		params.EndTimestamp, err = strconv.ParseInt(value, 10, 64)
+		if err != nil || params.EndTimestamp < 0 {
+			common.ApiErrorMsg(c, "结束时间无效")
+			return
+		}
+	}
+	if params.StartTimestamp == 0 && params.EndTimestamp == 0 {
+		params.EndTimestamp = common.GetTimestamp()
+		params.StartTimestamp = params.EndTimestamp - inviteRewardHistoryDefaultWindowSeconds
+	}
+	if params.StartTimestamp > 0 && params.EndTimestamp > 0 && params.StartTimestamp > params.EndTimestamp {
+		common.ApiErrorMsg(c, "开始时间不能晚于结束时间")
+		return
+	}
+
+	topups, total, err := model.GetInviteRebateTopUps(userId, pageInfo, params)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("failed to load reward history user_id=%d error=%q", userId, err.Error()))
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)

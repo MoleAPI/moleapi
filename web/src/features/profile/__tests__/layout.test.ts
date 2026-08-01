@@ -21,11 +21,6 @@ import { test } from 'node:test'
 
 import { profileSecuritySectionOrder } from '../lib/layout'
 
-test('account bindings appear immediately below two-factor authentication', () => {
-  const twoFactorIndex = profileSecuritySectionOrder.indexOf('two-factor')
-
-  assert.equal(
-    profileSecuritySectionOrder[twoFactorIndex + 1],
-    'account-bindings'
-  )
+test('profile security sidebar keeps account bindings out of the lower security stack', () => {
+  assert.deepEqual(profileSecuritySectionOrder, ['passkey', 'two-factor'])
 })
