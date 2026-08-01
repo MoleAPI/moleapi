@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import i18next from 'i18next'
 import { Bitcoin, CreditCard, Landmark } from 'lucide-react'
-import { type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 import { SiAlipay, SiWechat, SiStripe } from 'react-icons/si'
 
 import { ReactIconByName } from '@/components/react-icon-by-name'
@@ -66,7 +66,8 @@ export function getPaymentIcon(
   paymentType: string | undefined,
   className: string = 'h-4 w-4',
   icon?: string,
-  altName?: string
+  altName?: string,
+  monochrome = false
 ): ReactNode {
   const iconValue = icon?.trim()
   const safeIconUrl = normalizeHttpIconUrl(iconValue)
@@ -102,35 +103,55 @@ export function getPaymentIcon(
       return (
         <SiAlipay
           className={className}
-          style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.ALIPAY] }}
+          style={
+            monochrome
+              ? undefined
+              : { color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.ALIPAY] }
+          }
         />
       )
     case PAYMENT_TYPES.WECHAT:
       return (
         <SiWechat
           className={className}
-          style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.WECHAT] }}
+          style={
+            monochrome
+              ? undefined
+              : { color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.WECHAT] }
+          }
         />
       )
     case PAYMENT_TYPES.STRIPE:
       return (
         <SiStripe
           className={className}
-          style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.STRIPE] }}
+          style={
+            monochrome
+              ? undefined
+              : { color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.STRIPE] }
+          }
         />
       )
     case PAYMENT_TYPES.CREEM:
       return (
         <Landmark
           className={className}
-          style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.CREEM] }}
+          style={
+            monochrome
+              ? undefined
+              : { color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.CREEM] }
+          }
         />
       )
     case PAYMENT_TYPES.WAFFO:
       return (
         <CreditCard
           className={className}
-          style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.WAFFO] }}
+          style={
+            monochrome
+              ? undefined
+              : { color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.WAFFO] }
+          }
         />
       )
     case PAYMENT_TYPES.WAFFO_PANCAKE:
@@ -142,30 +163,48 @@ export function getPaymentIcon(
           className={`inline-flex items-center justify-center leading-none ${className}`}
           style={{ transform: 'scale(2)' }}
         >
-          <img
-            src='/waffo-logo-light.svg'
-            alt={i18next.t('Waffo')}
-            className='block h-full w-full object-contain dark:hidden'
-          />
-          <img
-            src='/waffo-logo-dark.svg'
-            alt={i18next.t('Waffo')}
-            className='hidden h-full w-full object-contain dark:block'
-          />
+          {monochrome ? (
+            <img
+              src='/waffo-logo-dark.svg'
+              alt={i18next.t('Waffo')}
+              className='h-full w-full object-contain'
+            />
+          ) : (
+            <>
+              <img
+                src='/waffo-logo-light.svg'
+                alt={i18next.t('Waffo')}
+                className='block h-full w-full object-contain dark:hidden'
+              />
+              <img
+                src='/waffo-logo-dark.svg'
+                alt={i18next.t('Waffo')}
+                className='hidden h-full w-full object-contain dark:block'
+              />
+            </>
+          )}
         </span>
       )
     case PAYMENT_TYPES.LANTU:
       return (
         <SiWechat
           className={className}
-          style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.LANTU] }}
+          style={
+            monochrome
+              ? undefined
+              : { color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.LANTU] }
+          }
         />
       )
     case PAYMENT_TYPES.NOWPAYMENTS:
       return (
         <Bitcoin
           className={className}
-          style={{ color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.NOWPAYMENTS] }}
+          style={
+            monochrome
+              ? undefined
+              : { color: PAYMENT_ICON_COLORS[PAYMENT_TYPES.NOWPAYMENTS] }
+          }
         />
       )
     default:

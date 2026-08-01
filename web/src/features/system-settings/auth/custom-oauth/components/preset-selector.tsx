@@ -32,7 +32,11 @@ import {
 } from '@/components/ui/select'
 
 import { SettingsControlGroup } from '../../../components/settings-form-layout'
-import { OAUTH_PRESETS, type CustomOAuthFormValues } from '../types'
+import {
+  buildOAuthPresetEndpoints,
+  OAUTH_PRESETS,
+  type CustomOAuthFormValues,
+} from '../types'
 
 type PresetSelectorProps = {
   form: UseFormReturn<CustomOAuthFormValues>
@@ -42,6 +46,9 @@ export function PresetSelector(props: PresetSelectorProps) {
   const { t } = useTranslation()
   const [selectedPreset, setSelectedPreset] = useState<string>('')
   const [baseUrl, setBaseUrl] = useState<string>('')
+  const selectedPresetConfig = OAUTH_PRESETS.find(
+    (preset) => preset.key === selectedPreset
+  )
 
   const handlePresetChange = (presetKey: string) => {
     setSelectedPreset(presetKey)
@@ -71,9 +78,14 @@ export function PresetSelector(props: PresetSelectorProps) {
     props.form.setValue('email_field', preset.email_field, {
       shouldDirty: true,
     })
+    props.form.setValue('well_known', preset.well_known ?? '', {
+      shouldDirty: true,
+    })
 
-    // Apply base URL if already entered
-    if (baseUrl) {
+    if (!preset.needsBaseUrl) {
+      setBaseUrl('')
+      applyEndpoints(preset, '')
+    } else if (baseUrl) {
       applyEndpoints(preset, baseUrl)
     }
   }
@@ -84,6 +96,7 @@ export function PresetSelector(props: PresetSelectorProps) {
 
     const preset = OAUTH_PRESETS.find((p) => p.key === selectedPreset)
     if (!preset) return
+    if (!preset.needsBaseUrl) return
 
     applyEndpoints(preset, url)
   }
@@ -92,20 +105,18 @@ export function PresetSelector(props: PresetSelectorProps) {
     preset: (typeof OAUTH_PRESETS)[number],
     url: string
   ) => {
-    const cleanUrl = url.replace(/\/+$/, '')
+    const endpoints = buildOAuthPresetEndpoints(preset, url)
     props.form.setValue(
       'authorization_endpoint',
-      cleanUrl + preset.authorization_endpoint,
+      endpoints.authorization_endpoint,
       { shouldDirty: true }
     )
-    props.form.setValue('token_endpoint', cleanUrl + preset.token_endpoint, {
+    props.form.setValue('token_endpoint', endpoints.token_endpoint, {
       shouldDirty: true,
     })
-    props.form.setValue(
-      'user_info_endpoint',
-      cleanUrl + preset.user_info_endpoint,
-      { shouldDirty: true }
-    )
+    props.form.setValue('user_info_endpoint', endpoints.user_info_endpoint, {
+      shouldDirty: true,
+    })
   }
 
   return (
@@ -136,14 +147,16 @@ export function PresetSelector(props: PresetSelectorProps) {
             </SelectContent>
           </Select>
         </div>
-        <div className='space-y-1.5'>
-          <Label>{t('Base URL')}</Label>
-          <Input
-            placeholder={t('https://your-server.example.com')}
-            value={baseUrl}
-            onChange={(e) => handleBaseUrlChange(e.target.value)}
-          />
-        </div>
+        {(!selectedPresetConfig || selectedPresetConfig.needsBaseUrl) && (
+          <div className='space-y-1.5'>
+            <Label>{t('Base URL')}</Label>
+            <Input
+              placeholder={t('https://your-server.example.com')}
+              value={baseUrl}
+              onChange={(e) => handleBaseUrlChange(e.target.value)}
+            />
+          </div>
+        )}
       </div>
     </SettingsControlGroup>
   )

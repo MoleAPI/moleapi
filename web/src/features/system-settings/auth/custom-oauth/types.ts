@@ -113,10 +113,26 @@ export interface OAuthPreset {
   username_field: string
   display_name_field: string
   email_field: string
+  well_known?: string
   needsBaseUrl: boolean
 }
 
 export const OAUTH_PRESETS: OAuthPreset[] = [
+  {
+    key: 'google',
+    name: 'Google',
+    icon: 'FcGoogle',
+    authorization_endpoint: 'https://accounts.google.com/o/oauth2/v2/auth',
+    token_endpoint: 'https://oauth2.googleapis.com/token',
+    user_info_endpoint: 'https://openidconnect.googleapis.com/v1/userinfo',
+    scopes: 'openid profile email',
+    user_id_field: 'sub',
+    username_field: 'preferred_username',
+    display_name_field: 'name',
+    email_field: 'email',
+    well_known: 'https://accounts.google.com/.well-known/openid-configuration',
+    needsBaseUrl: false,
+  },
   {
     key: 'github-enterprise',
     name: 'GitHub Enterprise',
@@ -216,6 +232,18 @@ export const OAUTH_PRESETS: OAuthPreset[] = [
     needsBaseUrl: true,
   },
 ]
+
+export function buildOAuthPresetEndpoints(
+  preset: OAuthPreset,
+  baseUrl: string
+) {
+  const prefix = preset.needsBaseUrl ? baseUrl.trim().replace(/\/+$/, '') : ''
+  return {
+    authorization_endpoint: prefix + preset.authorization_endpoint,
+    token_endpoint: prefix + preset.token_endpoint,
+    user_info_endpoint: prefix + preset.user_info_endpoint,
+  }
+}
 
 export const AUTH_STYLE_OPTIONS = [
   { value: 0, labelKey: 'Auto Detect' },
