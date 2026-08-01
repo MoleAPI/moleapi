@@ -26,6 +26,7 @@ import {
   IconTelegram,
   IconWeChat,
 } from '@/assets/brand-icons'
+import { ReactIconByName } from '@/components/react-icon-by-name'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
@@ -145,6 +146,13 @@ export function OAuthProviders({
         key: `custom-${provider.slug}`,
         label: t('Continue with {{name}}', { name: provider.name }),
         onClick: () => handleCustomOAuthLogin(provider),
+        icon: provider.icon ? (
+          <ReactIconByName
+            name={provider.icon}
+            className='h-4 w-4'
+            title={provider.name}
+          />
+        ) : undefined,
       })
     }
   }

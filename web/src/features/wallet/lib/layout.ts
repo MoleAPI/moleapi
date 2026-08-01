@@ -25,7 +25,9 @@ export const walletLayoutClasses = {
 export const rechargeFormLayoutClasses = {
   paymentMethods: 'grid max-w-md grid-cols-2 gap-1.5 sm:gap-2',
   paymentButton:
-    'min-h-11 w-full min-w-0 justify-center gap-1.5 rounded-lg px-3 py-2 text-center text-sm font-semibold shadow-sm hover:shadow-md [&>svg]:!text-white',
+    'h-auto min-h-14 w-full min-w-0 justify-center gap-2 rounded-xl border-border/70 bg-card px-3 py-2 text-center text-sm font-semibold text-card-foreground shadow-sm transition-colors hover:border-foreground/20 hover:bg-muted/60 dark:border-white/10 dark:bg-[#2d3035] dark:text-white dark:hover:bg-[#333841]',
+  paymentIconBadge:
+    'flex size-8 shrink-0 items-center justify-center rounded-[10px] shadow-sm ring-1 ring-white/20 [&>svg]:size-4',
   bonus:
     'bg-success/10 text-success rounded-md px-1.5 py-0.5 text-xs font-semibold',
 } as const
