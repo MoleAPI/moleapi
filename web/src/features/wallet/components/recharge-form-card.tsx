@@ -359,23 +359,18 @@ export function RechargeFormCard({
                       const disabledLabel = disabled
                         ? `${t('Minimum:')} ${minTopup}`
                         : undefined
-                      let paymentTone =
-                        'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
+                      let iconBadgeTone = 'bg-primary text-primary-foreground'
                       if (method.type === PAYMENT_TYPES.ALIPAY) {
-                        paymentTone =
-                          'border-[#1677ff] bg-[#1677ff] text-white hover:bg-[#1677ff]/90'
+                        iconBadgeTone = 'bg-[#1677ff] text-white'
                       } else if (
                         method.type === PAYMENT_TYPES.WECHAT ||
                         method.type === PAYMENT_TYPES.LANTU
                       ) {
-                        paymentTone =
-                          'border-[#07c160]! bg-[#07c160]! text-white! hover:border-[#06ad56]! hover:bg-[#06ad56]!'
+                        iconBadgeTone = 'bg-[#07c160] text-white'
                       } else if (method.type === PAYMENT_TYPES.NOWPAYMENTS) {
-                        paymentTone =
-                          'border-[#f7931a]! bg-[#f7931a]! text-[#111827]! hover:border-[#e07f00]! hover:bg-[#e07f00]!'
+                        iconBadgeTone = 'bg-[#f7931a] text-[#111827]'
                       } else if (method.type === PAYMENT_TYPES.WAFFO_PANCAKE) {
-                        paymentTone =
-                          'border-[#b91c1c]! bg-[#b91c1c]! text-white! hover:border-[#991b1b]! hover:bg-[#991b1b]!'
+                        iconBadgeTone = 'bg-[#b91c1c] text-white'
                       }
 
                       const button = (
@@ -389,21 +384,26 @@ export function RechargeFormCard({
                               ? `${methodName}. ${disabledReason}`
                               : methodName
                           }
-                          className={cn(
-                            rechargeFormLayoutClasses.paymentButton,
-                            paymentTone
-                          )}
+                          className={rechargeFormLayoutClasses.paymentButton}
                         >
-                          {paymentLoading === method.type ? (
-                            <Loader2 className='h-4 w-4 animate-spin' />
-                          ) : (
-                            getPaymentIcon(
-                              method.type,
-                              'size-4',
-                              method.icon,
-                              methodName
-                            )
-                          )}
+                          <span
+                            className={cn(
+                              rechargeFormLayoutClasses.paymentIconBadge,
+                              iconBadgeTone
+                            )}
+                          >
+                            {paymentLoading === method.type ? (
+                              <Loader2 className='size-4 animate-spin' />
+                            ) : (
+                              getPaymentIcon(
+                                method.type,
+                                'size-4',
+                                method.icon,
+                                methodName,
+                                true
+                              )
+                            )}
+                          </span>
                           <span className='flex min-w-0 flex-col items-center gap-0.5'>
                             <span className='max-w-full truncate'>
                               {methodName}
@@ -463,7 +463,13 @@ export function RechargeFormCard({
                           ? `${t('Minimum:')} ${waffoMin}`
                           : undefined
 
-                        let methodIcon = getPaymentIcon('waffo')
+                        let methodIcon = getPaymentIcon(
+                          'waffo',
+                          'size-4',
+                          undefined,
+                          undefined,
+                          true
+                        )
                         if (paymentLoading === loadingKey) {
                           methodIcon = (
                             <Loader2 className='h-4 w-4 animate-spin' />
@@ -489,12 +495,16 @@ export function RechargeFormCard({
                                 ? `${method.name}. ${disabledReason}`
                                 : method.name
                             }
-                            className={cn(
-                              rechargeFormLayoutClasses.paymentButton,
-                              'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
-                            )}
+                            className={rechargeFormLayoutClasses.paymentButton}
                           >
-                            {methodIcon}
+                            <span
+                              className={cn(
+                                rechargeFormLayoutClasses.paymentIconBadge,
+                                'bg-primary text-primary-foreground'
+                              )}
+                            >
+                              {methodIcon}
+                            </span>
                             <span className='flex min-w-0 flex-col items-center gap-0.5'>
                               <span className='max-w-full truncate'>
                                 {method.name}

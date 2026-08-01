@@ -82,21 +82,22 @@ test('top-up invoice note refers to partner invoicing in some regions', async ()
   assert.doesNotMatch(html, /Mainland China/)
 })
 
-test('WeChat Pay keeps its brand green independently of the active theme', async () => {
+test('WeChat Pay keeps brand green inside the app-style icon badge', async () => {
   const html = await renderRechargeForm([{ name: 'WeChat Pay', type: 'wxpay' }])
 
-  assert.match(html, /bg-\[#07c160\]!/)
-  assert.match(html, /hover:bg-\[#06ad56\]!/)
+  assert.match(html, /dark:bg-\[#2d3035\]/)
+  assert.match(html, /bg-\[#07c160\] text-white/)
+  assert.doesNotMatch(html, /hover:bg-\[#06ad56\]/)
 })
 
-test('Waffo Pancake renders as deep red Global Pay', async () => {
+test('Waffo Pancake renders Global Pay with a deep red icon badge', async () => {
   const html = await renderRechargeForm([
     { name: 'Global Pay', type: 'waffo_pancake' },
   ])
 
   assert.match(html, /Global Pay/)
-  assert.match(html, /bg-\[#b91c1c\]!/)
-  assert.match(html, /hover:bg-\[#991b1b\]!/)
+  assert.match(html, /bg-\[#b91c1c\] text-white/)
+  assert.doesNotMatch(html, /hover:bg-\[#991b1b\]/)
 })
 
 test('billing entry uses recharge bills copy', async () => {
@@ -140,6 +141,6 @@ test('NOWPayments button renders as Crypto Pay', async () => {
   ])
 
   assert.match(html, /Crypto Pay/)
-  assert.match(html, /bg-\[#f7931a\]!/)
-  assert.match(html, /hover:bg-\[#e07f00\]!/)
+  assert.match(html, /bg-\[#f7931a\] text-\[#111827\]/)
+  assert.doesNotMatch(html, /hover:bg-\[#e07f00\]/)
 })

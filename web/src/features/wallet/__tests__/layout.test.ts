@@ -27,12 +27,19 @@ test('wallet stacks on small screens and uses the former 7/5 desktop split', () 
   assert.ok(walletLayoutClasses.referral.includes('lg:col-span-5'))
 })
 
-test('payment choices use two filled buttons per row with a highlighted bonus', () => {
+test('payment choices use two neutral buttons per row with app-style icon badges', () => {
   assert.ok(rechargeFormLayoutClasses.paymentMethods.includes('grid-cols-2'))
   assert.ok(rechargeFormLayoutClasses.paymentMethods.includes('max-w-md'))
   assert.ok(rechargeFormLayoutClasses.paymentButton.includes('justify-center'))
   assert.ok(rechargeFormLayoutClasses.paymentButton.includes('text-sm'))
-  assert.ok(rechargeFormLayoutClasses.paymentButton.includes('min-h-11'))
+  assert.ok(rechargeFormLayoutClasses.paymentButton.includes('min-h-14'))
+  assert.ok(
+    rechargeFormLayoutClasses.paymentButton.includes('dark:bg-[#2d3035]')
+  )
+  assert.ok(rechargeFormLayoutClasses.paymentIconBadge.includes('size-8'))
+  assert.ok(
+    rechargeFormLayoutClasses.paymentIconBadge.includes('rounded-[10px]')
+  )
   assert.ok(rechargeFormLayoutClasses.bonus.includes('text-success'))
   assert.ok(rechargeFormLayoutClasses.bonus.includes('bg-success/10'))
 })

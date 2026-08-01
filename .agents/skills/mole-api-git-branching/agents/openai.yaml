@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mole API Git Branching"
+  short_description: "Use mole-api prerelease/release branch names, not codex or version/text branches."
+  default_prompt: "Use this skill before creating, switching, renaming, or pushing git branches in the mole-api repository."
