@@ -61,6 +61,38 @@ func TestOAuthLoginBindsVerifiedEmailToExistingUser(t *testing.T) {
 	assert.Equal(t, "owner@example.com", updated.Email)
 }
 
+func TestCustomOAuthLoginBindsVerifiedEmailToExistingUser(t *testing.T) {
+	db := setupOAuthEmailUnificationTest(t)
+	existing := model.User{
+		Username: "existing",
+		Password: "password",
+		Email:    "owner@example.com",
+		Role:     common.RoleCommonUser,
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}
+	require.NoError(t, db.Create(&existing).Error)
+
+	provider := oauth.NewGenericOAuthProvider(&model.CustomOAuthProvider{
+		Id:      7,
+		Name:    "Google",
+		Slug:    "google",
+		Enabled: true,
+	})
+	user, err := findOrCreateOAuthUser(nil, provider, &oauth.OAuthUser{
+		ProviderUserID: "google-sub-1",
+		Email:          "OWNER@example.com",
+		EmailVerified:  true,
+	}, "")
+
+	require.NoError(t, err)
+	assert.Equal(t, existing.Id, user.Id)
+
+	var binding model.UserOAuthBinding
+	require.NoError(t, db.Where("user_id = ? AND provider_id = ?", existing.Id, 7).First(&binding).Error)
+	assert.Equal(t, "google-sub-1", binding.ProviderUserId)
+}
+
 func TestOAuthLoginDoesNotBindUnverifiedEmail(t *testing.T) {
 	db := setupOAuthEmailUnificationTest(t)
 	existing := model.User{

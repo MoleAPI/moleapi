@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -44,11 +45,43 @@ interface AffiliateHistoryDialogProps {
 }
 
 const PAGE_SIZE = 10
+const DAY_MS = 24 * 60 * 60 * 1000
 
 const SKELETON_IDS = Array.from(
   { length: 5 },
   (_, index) => `affiliate-history-skeleton-${index + 1}`
 )
+
+function formatDateInput(date: Date): string {
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
+  return localDate.toISOString().slice(0, 10)
+}
+
+function defaultDateRange() {
+  const end = new Date()
+  return {
+    start: formatDateInput(new Date(end.getTime() - 6 * DAY_MS)),
+    end: formatDateInput(end),
+  }
+}
+
+function dateInputTimestamp(
+  value: string,
+  endOfDay = false
+): number | undefined {
+  if (!value) return undefined
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return undefined
+  const date = new Date(
+    year,
+    month - 1,
+    day,
+    endOfDay ? 23 : 0,
+    endOfDay ? 59 : 0,
+    endOfDay ? 59 : 0
+  )
+  return Math.floor(date.getTime() / 1000)
+}
 
 function rewardQuota(record: AffiliateRewardRecord): number {
   return record.quota
@@ -86,6 +119,8 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
+  const [startDate, setStartDate] = useState(() => defaultDateRange().start)
+  const [endDate, setEndDate] = useState(() => defaultDateRange().end)
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -94,7 +129,12 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
 
     setLoading(true)
     try {
-      const response = await getAffiliateHistory(page, PAGE_SIZE)
+      const response = await getAffiliateHistory(
+        page,
+        PAGE_SIZE,
+        dateInputTimestamp(startDate),
+        dateInputTimestamp(endDate, true)
+      )
       if (isApiSuccess(response) && response.data) {
         setRecords(response.data.items ?? [])
         setTotal(response.data.total ?? 0)
@@ -112,13 +152,20 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
     } finally {
       setLoading(false)
     }
-  }, [page, props.open, t])
+  }, [endDate, page, props.open, startDate, t])
 
   useEffect(() => {
     if (props.open) {
       void fetchHistory()
     }
   }, [fetchHistory, props.open])
+
+  const resetFilters = () => {
+    const range = defaultDateRange()
+    setStartDate(range.start)
+    setEndDate(range.end)
+    setPage(1)
+  }
 
   return (
     <Dialog
@@ -130,6 +177,38 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
       contentHeight='auto'
       bodyClassName='space-y-3'
     >
+      <div className='flex flex-col gap-2 sm:flex-row sm:flex-wrap'>
+        <Input
+          aria-label={t('Start time')}
+          type='date'
+          value={startDate}
+          onChange={(event) => {
+            setStartDate(event.target.value)
+            setPage(1)
+          }}
+          className='h-9 sm:max-w-48'
+        />
+        <Input
+          aria-label={t('End time')}
+          type='date'
+          value={endDate}
+          onChange={(event) => {
+            setEndDate(event.target.value)
+            setPage(1)
+          }}
+          className='h-9 sm:max-w-48'
+        />
+        <Button
+          type='button'
+          variant='outline'
+          size='sm'
+          className='h-9'
+          onClick={resetFilters}
+        >
+          {t('Reset filters')}
+        </Button>
+      </div>
+
       <div className='max-h-[min(58vh,520px)] overflow-y-auto rounded-md border'>
         {loading && (
           <div className='space-y-2 p-3'>
@@ -149,16 +228,19 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
               {t('No reward records found')}
             </p>
             <p className='mt-1 text-xs'>
-              {t('Reward activity will appear here.')}
+              {startDate || endDate
+                ? t('Try adjusting your search')
+                : t('Reward activity will appear here.')}
             </p>
           </div>
         )}
 
         {!loading && records.length > 0 && (
-          <Table className='min-w-[520px] text-xs [&_td]:text-xs [&_th]:text-xs'>
+          <Table className='min-w-[620px] text-xs [&_td]:text-xs [&_th]:text-xs'>
             <TableHeader className='bg-muted/40 sticky top-0 z-10'>
               <TableRow>
                 <TableHead>{t('Source')}</TableHead>
+                <TableHead>{t('Invited user')}</TableHead>
                 <TableHead>{t('Reward')}</TableHead>
                 <TableHead>{t('Time')}</TableHead>
               </TableRow>
@@ -168,6 +250,9 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
                 <TableRow key={record.id}>
                   <TableCell className='whitespace-nowrap'>
                     {t(rewardSourceKey(record))}
+                  </TableCell>
+                  <TableCell className='font-mono'>
+                    {record.related_user ?? '-'}
                   </TableCell>
                   <TableCell
                     className={

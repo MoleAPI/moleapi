@@ -377,14 +377,11 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 
 	// Set up new user
-	user.Username = provider.GetProviderPrefix() + strconv.Itoa(model.GetMaxUserId()+1)
+	user.Username = generatedOAuthUsername(provider.GetProviderPrefix(), model.GetMaxUserId()+1)
 
-	if oauthUser.Username != "" {
-		if exists, err := model.CheckUserExistOrDeleted(oauthUser.Username, ""); err == nil && !exists {
-			// 防止索引退化
-			if len(oauthUser.Username) <= model.UserNameMaxLength {
-				user.Username = oauthUser.Username
-			}
+	if candidate := strings.TrimSpace(oauthUser.Username); candidate != "" && model.ValidateUsername(candidate) == nil {
+		if exists, err := model.CheckUserExistOrDeleted(candidate, ""); err == nil && !exists {
+			user.Username = candidate
 		}
 	}
 
@@ -472,6 +469,32 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 
 	return user, nil
+}
+
+func generatedOAuthUsername(providerPrefix string, nextUserID int) string {
+	idPart := strconv.Itoa(nextUserID)
+	maxPrefixLength := model.UserNameMaxLength - len(idPart)
+	if maxPrefixLength < 0 {
+		maxPrefixLength = 0
+	}
+	if len(providerPrefix) > maxPrefixLength {
+		providerPrefix = providerPrefix[:maxPrefixLength]
+	}
+	username := providerPrefix + idPart
+	for len(username) < model.UserNameMinLength {
+		username = "u" + username
+	}
+	if model.ValidateUsername(username) == nil {
+		return username
+	}
+	if len(idPart) >= model.UserNameMaxLength {
+		return "u" + idPart[len(idPart)-model.UserNameMaxLength+1:]
+	}
+	username = "u" + idPart
+	for len(username) < model.UserNameMinLength {
+		username = "u" + username
+	}
+	return username
 }
 
 func verifiedOAuthEmail(oauthUser *oauth.OAuthUser) string {

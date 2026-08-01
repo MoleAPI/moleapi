@@ -297,6 +297,7 @@ export interface AffiliateRewardRecord {
   id: number
   source: AffiliateRewardSource
   quota: number
+  related_user?: string
   complete_time: number
 }
 

@@ -175,6 +175,10 @@ func RecordLog(userId int, logType int, content string) {
 }
 
 func RecordLogWithQuota(userId int, logType int, content string, quota int) {
+	recordLogWithQuota(userId, logType, content, quota, "")
+}
+
+func recordLogWithQuota(userId int, logType int, content string, quota int, other string) {
 	if logType == LogTypeConsume && !common.LogConsumeEnabled {
 		return
 	}
@@ -186,6 +190,7 @@ func RecordLogWithQuota(userId int, logType int, content string, quota int) {
 		Type:      logType,
 		Content:   content,
 		Quota:     quota,
+		Other:     other,
 	}
 	if err := createLog(log); err != nil {
 		common.SysLog("failed to record log: " + err.Error())

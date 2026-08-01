@@ -82,9 +82,13 @@ test('top-up invoice note refers to partner invoicing in some regions', async ()
   assert.doesNotMatch(html, /Mainland China/)
 })
 
-test('WeChat Pay keeps brand green inside the app-style icon badge', async () => {
-  const html = await renderRechargeForm([{ name: 'WeChat Pay', type: 'wxpay' }])
+test('WeChat Pay keeps brand green and uses the standard display name', async () => {
+  const html = await renderRechargeForm([
+    { name: '\u5fae\u4fe1', type: 'wxpay' },
+  ])
 
+  assert.match(html, /WeChat Pay/)
+  assert.doesNotMatch(html, /\u5fae\u4fe1/)
   assert.match(html, /dark:bg-\[#2d3035\]/)
   assert.match(html, /bg-\[#07c160\] text-white/)
   assert.doesNotMatch(html, /hover:bg-\[#06ad56\]/)
