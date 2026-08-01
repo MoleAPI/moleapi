@@ -324,6 +324,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		if user.Id == 0 {
 			return nil, &OAuthUserDeletedError{}
 		}
+		if err := backfillOAuthEmailIfEmpty(user, oauthUser); err != nil {
+			return nil, err
+		}
 		return user, nil
 	}
 
@@ -341,6 +344,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 				if err := user.UpdateGitHubId(oauthUser.ProviderUserID); err != nil {
 					common.SysError(fmt.Sprintf("[OAuth] Failed to migrate user %d: %s", user.Id, err.Error()))
 					// Continue with login even if migration fails
+				}
+				if err := backfillOAuthEmailIfEmpty(user, oauthUser); err != nil {
+					return nil, err
 				}
 				return user, nil
 			}
@@ -488,6 +494,17 @@ func alignOAuthEmailForBinding(user *model.User, oauthUser *oauth.OAuthUser) err
 		return errOAuthEmailMismatch
 	}
 	return nil
+}
+
+func backfillOAuthEmailIfEmpty(user *model.User, oauthUser *oauth.OAuthUser) error {
+	if model.NormalizeEmail(user.Email) != "" {
+		return nil
+	}
+	err := alignOAuthEmailForBinding(user, oauthUser)
+	if errors.Is(err, model.ErrEmailAlreadyTaken) {
+		return nil
+	}
+	return err
 }
 
 func bindOAuthProviderToUser(provider oauth.Provider, user *model.User, providerUserID string, allowReplace bool) error {
