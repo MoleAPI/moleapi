@@ -3,7 +3,7 @@ package oauth
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -37,6 +37,12 @@ type gitHubUser struct {
 	Email string `json:"email"`
 }
 
+type gitHubEmail struct {
+	Email    string `json:"email"`
+	Primary  bool   `json:"primary"`
+	Verified bool   `json:"verified"`
+}
+
 func (p *GitHubProvider) GetName() string {
 	return "GitHub"
 }
@@ -57,7 +63,7 @@ func (p *GitHubProvider) ExchangeToken(ctx context.Context, code string, c *gin.
 		"client_secret": common.GitHubClientSecret,
 		"code":          code,
 	}
-	jsonData, err := json.Marshal(values)
+	jsonData, err := common.Marshal(values)
 	if err != nil {
 		return nil, err
 	}
@@ -82,8 +88,7 @@ func (p *GitHubProvider) ExchangeToken(ctx context.Context, code string, c *gin.
 	logger.LogDebug(ctx, "[OAuth-GitHub] ExchangeToken response status: %d", res.StatusCode)
 
 	var oAuthResponse gitHubOAuthResponse
-	err = json.NewDecoder(res.Body).Decode(&oAuthResponse)
-	if err != nil {
+	if err := common.DecodeJson(res.Body, &oAuthResponse); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("[OAuth-GitHub] ExchangeToken decode error: %s", err.Error()))
 		return nil, err
 	}
@@ -135,8 +140,7 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*O
 	}
 
 	var githubUser gitHubUser
-	err = json.NewDecoder(res.Body).Decode(&githubUser)
-	if err != nil {
+	if err := common.DecodeJson(res.Body, &githubUser); err != nil {
 		logger.LogError(ctx, fmt.Sprintf("[OAuth-GitHub] GetUserInfo decode error: %s", err.Error()))
 		return nil, err
 	}
@@ -149,15 +153,59 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*O
 	logger.LogDebug(ctx, "[OAuth-GitHub] GetUserInfo success: id=%d, login=%s, name=%s, email=%s",
 		githubUser.Id, githubUser.Login, githubUser.Name, githubUser.Email)
 
+	email, err := p.getPrimaryVerifiedEmail(ctx, token.AccessToken)
+	if err != nil {
+		logger.LogError(ctx, fmt.Sprintf("[OAuth-GitHub] GetUserEmails failed: %s", err.Error()))
+		return nil, NewOAuthErrorWithRaw(i18n.MsgOAuthUserInfoEmpty, map[string]any{"Provider": "GitHub"}, err.Error())
+	}
 	return &OAuthUser{
 		ProviderUserID: strconv.FormatInt(githubUser.Id, 10), // Use numeric ID as primary identifier
 		Username:       githubUser.Login,
 		DisplayName:    githubUser.Name,
-		Email:          githubUser.Email,
+		Email:          email,
+		EmailVerified:  email != "",
 		Extra: map[string]any{
 			"legacy_id": githubUser.Login, // Store login for migration from old accounts
 		},
 	}, nil
+}
+
+func (p *GitHubProvider) getPrimaryVerifiedEmail(ctx context.Context, accessToken string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user/emails", nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
+	req.Header.Set("Accept", "application/vnd.github+json")
+
+	client := http.Client{Timeout: 20 * time.Second}
+	res, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("status %d", res.StatusCode)
+	}
+
+	var emails []gitHubEmail
+	if err := common.DecodeJson(res.Body, &emails); err != nil {
+		return "", err
+	}
+	email := primaryVerifiedGitHubEmail(emails)
+	if email == "" {
+		return "", errors.New("missing primary verified email")
+	}
+	return email, nil
+}
+
+func primaryVerifiedGitHubEmail(emails []gitHubEmail) string {
+	for _, email := range emails {
+		if email.Primary && email.Verified {
+			return email.Email
+		}
+	}
+	return ""
 }
 
 func (p *GitHubProvider) IsUserIDTaken(providerUserID string) bool {

@@ -1,5 +1,10 @@
 package oauth
 
+import (
+	"net/url"
+	"strings"
+)
+
 // OAuthToken represents the token received from OAuth provider
 type OAuthToken struct {
 	AccessToken  string `json:"access_token"`
@@ -20,8 +25,63 @@ type OAuthUser struct {
 	DisplayName string
 	// Email is the email from the OAuth provider
 	Email string
+	// EmailVerified means the provider has verified ownership of Email.
+	EmailVerified bool
 	// Extra contains any additional provider-specific data
 	Extra map[string]any
+}
+
+func oauthBool(value any) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	default:
+		return false
+	}
+}
+
+func oauthEmailVerified(email string, emailVerified any, googleVerifiedEmail any, hostedDomain any) bool {
+	if googleVerifiedEmail != nil {
+		return oauthBool(googleVerifiedEmail) && oauthGoogleEmailAuthoritative(email, oauthString(hostedDomain))
+	}
+	return oauthBool(emailVerified)
+}
+
+func oauthEmailVerifiedForEndpoint(email string, emailVerified any, googleVerifiedEmail any, hostedDomain any, userInfoEndpoint string) bool {
+	if oauthGoogleUserInfoEndpoint(userInfoEndpoint) {
+		return (oauthBool(emailVerified) || oauthBool(googleVerifiedEmail)) && oauthGoogleEmailAuthoritative(email, oauthString(hostedDomain))
+	}
+	return oauthEmailVerified(email, emailVerified, googleVerifiedEmail, hostedDomain)
+}
+
+func oauthString(value any) string {
+	if v, ok := value.(string); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
+}
+
+func oauthGoogleUserInfoEndpoint(rawURL string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	return host == "openidconnect.googleapis.com" || host == "www.googleapis.com"
+}
+
+func oauthGoogleEmailAuthoritative(email string, hostedDomain string) bool {
+	if strings.TrimSpace(hostedDomain) != "" {
+		return true
+	}
+	at := strings.LastIndex(email, "@")
+	if at < 0 {
+		return false
+	}
+	domain := strings.ToLower(strings.TrimSpace(email[at+1:]))
+	return domain == "gmail.com" || domain == "googlemail.com"
 }
 
 // OAuthError represents a translatable OAuth error
