@@ -85,3 +85,56 @@ func TestOAuthLoginDoesNotBindUnverifiedEmail(t *testing.T) {
 	require.NoError(t, db.First(&updated, existing.Id).Error)
 	assert.Empty(t, updated.GitHubId)
 }
+
+func TestOAuthLoginBackfillsVerifiedEmailForExistingGitHubUser(t *testing.T) {
+	db := setupOAuthEmailUnificationTest(t)
+	existing := model.User{
+		Username: "existing",
+		Password: "password",
+		GitHubId: "12345",
+		Role:     common.RoleCommonUser,
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}
+	require.NoError(t, db.Create(&existing).Error)
+
+	user, err := findOrCreateOAuthUser(nil, &oauth.GitHubProvider{}, &oauth.OAuthUser{
+		ProviderUserID: "12345",
+		Email:          "OWNER@example.com",
+		EmailVerified:  true,
+	}, "")
+
+	require.NoError(t, err)
+	assert.Equal(t, existing.Id, user.Id)
+
+	var updated model.User
+	require.NoError(t, db.First(&updated, existing.Id).Error)
+	assert.Equal(t, "owner@example.com", updated.Email)
+}
+
+func TestOAuthLoginDoesNotOverwriteExistingEmailForGitHubUser(t *testing.T) {
+	db := setupOAuthEmailUnificationTest(t)
+	existing := model.User{
+		Username: "existing",
+		Password: "password",
+		Email:    "manual@example.com",
+		GitHubId: "12345",
+		Role:     common.RoleCommonUser,
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}
+	require.NoError(t, db.Create(&existing).Error)
+
+	user, err := findOrCreateOAuthUser(nil, &oauth.GitHubProvider{}, &oauth.OAuthUser{
+		ProviderUserID: "12345",
+		Email:          "github@example.com",
+		EmailVerified:  true,
+	}, "")
+
+	require.NoError(t, err)
+	assert.Equal(t, existing.Id, user.Id)
+
+	var updated model.User
+	require.NoError(t, db.First(&updated, existing.Id).Error)
+	assert.Equal(t, "manual@example.com", updated.Email)
+}
