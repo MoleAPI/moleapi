@@ -19,6 +19,11 @@ import (
 
 const oauthAuthFlowTTL = 10 * time.Minute
 
+var (
+	errOAuthEmailMismatch        = errors.New("oauth email does not match current user email")
+	errOAuthProviderAlreadyBound = errors.New("oauth provider already bound to this user")
+)
+
 type oauthStateRequest struct {
 	Provider string `json:"provider"`
 	Intent   string `json:"intent"`
@@ -199,6 +204,14 @@ func HandleOAuth(c *gin.Context) {
 			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
 			return
 		}
+		if errors.Is(err, errOAuthProviderAlreadyBound) {
+			common.ApiErrorI18n(c, i18n.MsgOAuthAlreadyBound, providerParams(provider.GetName()))
+			return
+		}
+		if errors.Is(err, errOAuthEmailMismatch) {
+			common.ApiErrorI18n(c, i18n.MsgOAuthEmailMismatch)
+			return
+		}
 		switch err.(type) {
 		case *OAuthUserDeletedError:
 			common.ApiErrorI18n(c, i18n.MsgOAuthUserDeleted)
@@ -270,22 +283,26 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider, pendingFlow *model
 		return
 	}
 
-	// Handle binding based on provider type
-	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {
-		// Custom provider: use user_oauth_bindings table
-		err = model.UpdateUserOAuthBinding(user.Id, genericProvider.GetProviderId(), oauthUser.ProviderUserID)
-		if err != nil {
-			common.ApiError(c, err)
+	if err := alignOAuthEmailForBinding(&user, oauthUser); err != nil {
+		if errors.Is(err, model.ErrEmailAlreadyTaken) {
+			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
 			return
 		}
-	} else {
-		// Built-in provider: update user record directly
-		provider.SetProviderUserID(&user, oauthUser.ProviderUserID)
-		err = user.Update(false)
-		if err != nil {
-			common.ApiError(c, err)
+		if errors.Is(err, errOAuthEmailMismatch) {
+			common.ApiErrorI18n(c, i18n.MsgOAuthEmailMismatch)
 			return
 		}
+		common.ApiError(c, err)
+		return
+	}
+
+	if err := bindOAuthProviderToUser(provider, &user, oauthUser.ProviderUserID, true); err != nil {
+		if errors.Is(err, errOAuthProviderAlreadyBound) {
+			common.ApiErrorI18n(c, i18n.MsgOAuthAlreadyBound, providerParams(provider.GetName()))
+			return
+		}
+		common.ApiError(c, err)
+		return
 	}
 
 	common.ApiSuccessI18n(c, i18n.MsgOAuthBindSuccess, gin.H{
@@ -307,6 +324,9 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 		if user.Id == 0 {
 			return nil, &OAuthUserDeletedError{}
 		}
+		if err := backfillOAuthEmailIfEmpty(user, oauthUser); err != nil {
+			return nil, err
+		}
 		return user, nil
 	}
 
@@ -325,8 +345,29 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 					common.SysError(fmt.Sprintf("[OAuth] Failed to migrate user %d: %s", user.Id, err.Error()))
 					// Continue with login even if migration fails
 				}
+				if err := backfillOAuthEmailIfEmpty(user, oauthUser); err != nil {
+					return nil, err
+				}
 				return user, nil
 			}
+		}
+	}
+
+	if email := verifiedOAuthEmail(oauthUser); email != "" {
+		existingUser, err := model.GetUniqueUserByEmail(email)
+		switch {
+		case err == nil:
+			if existingUser.Status == common.UserStatusEnabled {
+				if err := bindOAuthProviderToUser(provider, existingUser, oauthUser.ProviderUserID, false); err != nil {
+					return nil, err
+				}
+			}
+			return existingUser, nil
+		case errors.Is(err, model.ErrEmailNotFound):
+		case errors.Is(err, model.ErrEmailAmbiguous):
+			return nil, &OAuthEmailAlreadyTakenError{}
+		default:
+			return nil, err
 		}
 	}
 
@@ -354,8 +395,8 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	} else {
 		user.DisplayName = provider.GetName() + " User"
 	}
-	if oauthUser.Email != "" {
-		user.Email = model.NormalizeEmail(oauthUser.Email)
+	if email := verifiedOAuthEmail(oauthUser); email != "" {
+		user.Email = email
 		if err := model.EnsureEmailAvailable(user.Email, 0); err != nil {
 			if errors.Is(err, model.ErrEmailAlreadyTaken) {
 				return nil, &OAuthEmailAlreadyTakenError{}
@@ -431,6 +472,74 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	}
 
 	return user, nil
+}
+
+func verifiedOAuthEmail(oauthUser *oauth.OAuthUser) string {
+	if oauthUser == nil || !oauthUser.EmailVerified {
+		return ""
+	}
+	return model.NormalizeEmail(oauthUser.Email)
+}
+
+func alignOAuthEmailForBinding(user *model.User, oauthUser *oauth.OAuthUser) error {
+	email := verifiedOAuthEmail(oauthUser)
+	if email == "" {
+		return nil
+	}
+	currentEmail := model.NormalizeEmail(user.Email)
+	if currentEmail == "" {
+		return model.BindEmailToUser(user, email)
+	}
+	if currentEmail != email {
+		return errOAuthEmailMismatch
+	}
+	return nil
+}
+
+func backfillOAuthEmailIfEmpty(user *model.User, oauthUser *oauth.OAuthUser) error {
+	if model.NormalizeEmail(user.Email) != "" {
+		return nil
+	}
+	err := alignOAuthEmailForBinding(user, oauthUser)
+	if errors.Is(err, model.ErrEmailAlreadyTaken) {
+		return nil
+	}
+	return err
+}
+
+func bindOAuthProviderToUser(provider oauth.Provider, user *model.User, providerUserID string, allowReplace bool) error {
+	if genericProvider, ok := provider.(*oauth.GenericOAuthProvider); ok {
+		binding, err := model.GetUserOAuthBinding(user.Id, genericProvider.GetProviderId())
+		if err == nil && binding.ProviderUserId != providerUserID && !allowReplace {
+			return errOAuthProviderAlreadyBound
+		}
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		return model.UpdateUserOAuthBinding(user.Id, genericProvider.GetProviderId(), providerUserID)
+	}
+
+	currentProviderUserID := userOAuthProviderID(provider, user)
+	if currentProviderUserID != "" && currentProviderUserID != providerUserID && !allowReplace {
+		return errOAuthProviderAlreadyBound
+	}
+	provider.SetProviderUserID(user, providerUserID)
+	return user.Update(false)
+}
+
+func userOAuthProviderID(provider oauth.Provider, user *model.User) string {
+	switch provider.(type) {
+	case *oauth.GitHubProvider:
+		return user.GitHubId
+	case *oauth.DiscordProvider:
+		return user.DiscordId
+	case *oauth.OIDCProvider:
+		return user.OidcId
+	case *oauth.LinuxDOProvider:
+		return user.LinuxDOId
+	default:
+		return ""
+	}
 }
 
 // Error types for OAuth
