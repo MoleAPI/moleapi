@@ -83,9 +83,9 @@ func sanitizeClickHouseLikePattern(input string) (string, error) {
 
 type Log struct {
 	Id               int    `json:"id" gorm:"index:idx_created_at_id,priority:2;index:idx_user_id_id,priority:2"`
-	UserId           int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1"`
-	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type"`
-	Type             int    `json:"type" gorm:"index:idx_created_at_type"`
+	UserId           int    `json:"user_id" gorm:"index;index:idx_user_id_id,priority:1;index:idx_log_user_type_created,priority:1"`
+	CreatedAt        int64  `json:"created_at" gorm:"bigint;index:idx_created_at_id,priority:1;index:idx_created_at_type;index:idx_log_user_type_created,priority:3"`
+	Type             int    `json:"type" gorm:"index:idx_created_at_type;index:idx_log_user_type_created,priority:2"`
 	Content          string `json:"content"`
 	Username         string `json:"username" gorm:"index;index:index_username_model_name,priority:2;default:''"`
 	TokenName        string `json:"token_name" gorm:"index;default:''"`
@@ -175,6 +175,10 @@ func RecordLog(userId int, logType int, content string) {
 }
 
 func RecordLogWithQuota(userId int, logType int, content string, quota int) {
+	recordLogWithQuota(userId, logType, content, quota, "")
+}
+
+func recordLogWithQuota(userId int, logType int, content string, quota int, other string) {
 	if logType == LogTypeConsume && !common.LogConsumeEnabled {
 		return
 	}
@@ -186,6 +190,7 @@ func RecordLogWithQuota(userId int, logType int, content string, quota int) {
 		Type:      logType,
 		Content:   content,
 		Quota:     quota,
+		Other:     other,
 	}
 	if err := createLog(log); err != nil {
 		common.SysLog("failed to record log: " + err.Error())

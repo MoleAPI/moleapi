@@ -196,6 +196,62 @@ func TestEnsureEmailAvailableRejectsExistingEmailCaseInsensitive(t *testing.T) {
 	require.NoError(t, EnsureEmailAvailable("taken@example.com", user.Id))
 }
 
+func TestGmailDotVariantsShareEmailIdentity(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&User{
+		Username: "gmail-owner",
+		Password: "old-password",
+		Email:    "coderwar.021@gmail.com",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	variants := []string{
+		"coderwar.021@gmail.com",
+		"coderwar021@gmail.com",
+		"coderwar021+promo@gmail.com",
+		"code.rwar021@gmail.com",
+		"code.rwar021+promo@gmail.com",
+		"code.rwar.021@GMAIL.COM",
+		"code.rwar.021+promo@GMAIL.COM",
+	}
+	for _, email := range variants {
+		assert.Equal(t, "coderwar021@gmail.com", NormalizeEmail(email), email)
+		assert.ErrorIs(t, EnsureEmailAvailable(email, 0), ErrEmailAlreadyTaken, email)
+
+		exists, err := CheckUserExistOrDeleted("gmail-probe", email)
+		require.NoError(t, err)
+		assert.True(t, exists, email)
+	}
+
+	user, err := GetUniqueUserByEmail("code.rwar.021@gmail.com")
+	require.NoError(t, err)
+	assert.Equal(t, "gmail-owner", user.Username)
+
+	assert.Equal(t, "code.rwar021@example.com", NormalizeEmail("code.rwar021@example.com"))
+	require.NoError(t, EnsureEmailAvailable("code.rwar021@example.com", 0))
+	assert.Equal(t, "code.rwar021+promo@example.com", NormalizeEmail("code.rwar021+promo@example.com"))
+	require.NoError(t, EnsureEmailAvailable("code.rwar021+promo@example.com", 0))
+	assert.Equal(t, "codewar021@gmail.com", NormalizeEmail("codewar021@gmail.com"))
+	require.NoError(t, EnsureEmailAvailable("codewar021@gmail.com", 0))
+}
+
+func TestGmailPlusTagLegacyRowsShareEmailIdentity(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	require.NoError(t, DB.Create(&User{
+		Username: "legacy-gmail-plus",
+		Password: "old-password",
+		Email:    "code.rwar021+promo@gmail.com",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	assert.ErrorIs(t, EnsureEmailAvailable("coderwar021@gmail.com", 0), ErrEmailAlreadyTaken)
+	user, err := GetUniqueUserByEmail("code.rwar.021+other@gmail.com")
+	require.NoError(t, err)
+	assert.Equal(t, "legacy-gmail-plus", user.Username)
+}
+
 func TestInsertRejectsDuplicateEmailWithoutUniqueIndex(t *testing.T) {
 	setupUserUpdateTestState(t)
 
@@ -402,6 +458,26 @@ func TestValidateAndFillRejectsPasswordlessUser(t *testing.T) {
 	var stored User
 	require.NoError(t, DB.Where("username = ?", "passwordless-user").First(&stored).Error)
 	assert.Empty(t, stored.Password)
+}
+
+func TestValidateAndFillMatchesGmailDotVariantEmail(t *testing.T) {
+	setupUserUpdateTestState(t)
+
+	hashedPassword, err := common.Password2Hash("NewPassword123")
+	require.NoError(t, err)
+	require.NoError(t, DB.Create(&User{
+		Username: "gmail-login",
+		Password: hashedPassword,
+		Email:    "coderwar021@gmail.com",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+
+	loginUser := User{
+		Username: "code.rwar.021+promo@gmail.com",
+		Password: "NewPassword123",
+	}
+	require.NoError(t, loginUser.ValidateAndFill())
+	assert.Equal(t, "gmail-login", loginUser.Username)
 }
 
 func TestResetUserPasswordByEmailRequiresSingleActiveMatch(t *testing.T) {

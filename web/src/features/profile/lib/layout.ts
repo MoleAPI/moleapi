@@ -16,11 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-export const profileSecuritySectionOrder = [
-  'passkey',
-  'two-factor',
-  'account-bindings',
-] as const
+export const profileSecuritySectionOrder = ['passkey', 'two-factor'] as const
 
 export type ProfileSecuritySection =
   (typeof profileSecuritySectionOrder)[number]

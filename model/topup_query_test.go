@@ -85,7 +85,7 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 	require.NoError(t, err)
 	DB = db
 	LOG_DB = db
-	require.NoError(t, db.AutoMigrate(&TopUp{}, &Log{}))
+	require.NoError(t, db.AutoMigrate(&Log{}))
 	t.Cleanup(func() {
 		DB = originalDB
 		LOG_DB = originalLogDB
@@ -96,16 +96,6 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 		}
 	})
 
-	orders := []*TopUp{
-		{UserId: 11, TradeNo: "reward-first", InviteRebateInviterId: 7, InviteRebateQuota: 30, CreateTime: 300, Status: common.TopUpStatusSuccess},
-		{UserId: 12, TradeNo: "reward-second", InviteRebateInviterId: 7, InviteRebateQuota: 20, CreateTime: 200, Status: common.TopUpStatusSuccess},
-		{UserId: 13, TradeNo: "different-inviter", InviteRebateInviterId: 8, InviteRebateQuota: 40, CreateTime: 100, Status: common.TopUpStatusSuccess},
-		{UserId: 14, TradeNo: "no-reward", InviteRebateInviterId: 7, InviteRebateQuota: 0, CreateTime: 400, Status: common.TopUpStatusSuccess},
-		{UserId: 15, TradeNo: "not-complete", InviteRebateInviterId: 7, InviteRebateQuota: 50, CreateTime: 500, Status: common.TopUpStatusPending},
-	}
-	for _, order := range orders {
-		require.NoError(t, db.Create(order).Error)
-	}
 	other := common.MapToJsonStr(map[string]interface{}{
 		"op": map[string]interface{}{
 			"action": "user.quota_subtract",
@@ -116,6 +106,8 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 		},
 	})
 	logs := []*Log{
+		{UserId: 7, Type: LogTypeSystem, Content: "邀请好友充值返利 ＄0.000030 额度，受邀用户 ta*****57", Quota: 30, Other: common.MapToJsonStr(map[string]interface{}{"related_user": "ta*****57"}), CreatedAt: 300},
+		{UserId: 7, Type: LogTypeSystem, Content: "邀请好友充值返利 ＄0.000020 额度，受邀用户 al***ce", Quota: 20, Other: common.MapToJsonStr(map[string]interface{}{"related_user": "al***ce"}), CreatedAt: 200},
 		{UserId: 7, Type: LogTypeSystem, Content: "邀请用户赠送 ＄0.000060 额度", Quota: 60, CreatedAt: 350},
 		{UserId: 7, Type: LogTypeSystem, Content: "转移邀请奖励 ＄0.000010 额度 到余额", Quota: -10, CreatedAt: 250},
 		{UserId: 7, Type: LogTypeSystem, Content: "管理员调整额度 -＄0.000010 额度", Quota: -10, CreatedAt: 450},
@@ -126,7 +118,7 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 		require.NoError(t, db.Create(log).Error)
 	}
 
-	got, total, searchErr := GetInviteRebateTopUps(7, &common.PageInfo{Page: 1, PageSize: 10})
+	got, total, searchErr := GetInviteRebateTopUps(7, &common.PageInfo{Page: 1, PageSize: 10}, InviteRewardHistoryParams{})
 	require.NoError(t, searchErr)
 	assert.Equal(t, int64(5), total)
 	if assert.Len(t, got, 5) {
@@ -136,18 +128,31 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 		assert.Equal(t, 60, got[1].Quota)
 		assert.Equal(t, "topup_rebate", got[2].Source)
 		assert.Equal(t, 30, got[2].Quota)
+		assert.Equal(t, "ta*****57", got[2].RelatedUser)
 		assert.Equal(t, int64(300), got[2].CompleteTime)
 		assert.Equal(t, "reward_transfer", got[3].Source)
 		assert.Equal(t, -10, got[3].Quota)
 		assert.Equal(t, "topup_rebate", got[4].Source)
+		assert.Equal(t, "al***ce", got[4].RelatedUser)
 
 		payload, marshalErr := common.Marshal(got[2])
 		require.NoError(t, marshalErr)
-		assert.JSONEq(t, `{"id":3,"source":"topup_rebate","quota":30,"complete_time":300}`, string(payload))
+		assert.JSONEq(t, `{"id":3,"source":"topup_rebate","quota":30,"related_user":"ta*****57","complete_time":300}`, string(payload))
 		assert.NotContains(t, string(payload), "reward-first")
 	}
 
-	got, total, searchErr = GetInviteRebateTopUps(7, &common.PageInfo{Page: inviteRewardHistoryHardLimit + 1, PageSize: 1})
+	got, total, searchErr = GetInviteRebateTopUps(7, &common.PageInfo{Page: 1, PageSize: 2}, InviteRewardHistoryParams{
+		StartTimestamp: 300,
+		EndTimestamp:   450,
+	})
+	require.NoError(t, searchErr)
+	assert.Equal(t, int64(3), total)
+	if assert.Len(t, got, 2) {
+		assert.Equal(t, "admin_adjustment", got[0].Source)
+		assert.Equal(t, "invite_register", got[1].Source)
+	}
+
+	got, total, searchErr = GetInviteRebateTopUps(7, &common.PageInfo{Page: inviteRewardHistoryHardLimit + 1, PageSize: 1}, InviteRewardHistoryParams{})
 	require.NoError(t, searchErr)
 	assert.Equal(t, int64(5), total)
 	assert.Empty(t, got)

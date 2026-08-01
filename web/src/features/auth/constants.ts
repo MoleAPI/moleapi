@@ -18,6 +18,13 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+export const USERNAME_MIN_LENGTH = 4
+export const USERNAME_MAX_LENGTH = 20
+const USERNAME_REGEX = /^[A-Za-z0-9_-]+$/
+const USERNAME_LENGTH_MESSAGE = 'Username must be between 4 and 20 characters'
+const USERNAME_CHARACTERS_MESSAGE =
+  'Username can only contain letters, numbers, underscores, or hyphens'
+
 // ============================================================================
 // Form Schemas
 // ============================================================================
@@ -29,7 +36,13 @@ export const loginFormSchema = z.object({
 
 export const registerFormSchema = z
   .object({
-    username: z.string().min(1, 'Please enter your username'),
+    username: z
+      .string()
+      .trim()
+      .min(1, 'Please enter your username')
+      .min(USERNAME_MIN_LENGTH, USERNAME_LENGTH_MESSAGE)
+      .max(USERNAME_MAX_LENGTH, USERNAME_LENGTH_MESSAGE)
+      .regex(USERNAME_REGEX, USERNAME_CHARACTERS_MESSAGE),
     email: z.string().optional(),
     password: z
       .string()
