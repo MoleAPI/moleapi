@@ -144,6 +144,28 @@ func TestOAuthLoginBackfillsVerifiedEmailForExistingGitHubUser(t *testing.T) {
 	assert.Equal(t, "owner@example.com", updated.Email)
 }
 
+func TestOAuthLoginUsesExistingGitHubBindingWithoutProviderEmail(t *testing.T) {
+	db := setupOAuthEmailUnificationTest(t)
+	existing := model.User{
+		Username: "existing",
+		Password: "password",
+		Email:    "local@example.com",
+		GitHubId: "12345",
+		Role:     common.RoleCommonUser,
+		Status:   common.UserStatusEnabled,
+		Group:    "default",
+	}
+	require.NoError(t, db.Create(&existing).Error)
+
+	user, err := findOrCreateOAuthUser(nil, &oauth.GitHubProvider{}, &oauth.OAuthUser{
+		ProviderUserID: "12345",
+	}, "")
+
+	require.NoError(t, err)
+	assert.Equal(t, existing.Id, user.Id)
+	assert.Equal(t, "local@example.com", user.Email)
+}
+
 func TestOAuthLoginDoesNotOverwriteExistingEmailForGitHubUser(t *testing.T) {
 	db := setupOAuthEmailUnificationTest(t)
 	existing := model.User{

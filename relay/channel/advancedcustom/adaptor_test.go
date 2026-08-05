@@ -482,6 +482,69 @@ func TestAdaptorConvertsResponsesRequestToInferredOpenAIChatUpstream(t *testing.
 	assert.Equal(t, "/v1/chat/completions", parsedURL.Path)
 }
 
+func TestAdaptorScopesOpenCodeGoDeepSeekCompatibility(t *testing.T) {
+	for _, tt := range []struct {
+		name                   string
+		upstreamPath           string
+		model                  string
+		wantDeveloperRole      string
+		wantToolTypes          []string
+		wantProviderToolChoice bool
+	}{
+		{name: "OpenCode DeepSeek applies compatibility", upstreamPath: "https://opencode.ai/zen/go/v1/chat/completions", model: "deepseek-v4-flash", wantDeveloperRole: "system", wantToolTypes: []string{"function"}},
+		{name: "same DeepSeek model on another channel is unchanged", upstreamPath: "https://example.com/v1/chat/completions", model: "deepseek-v4-flash", wantDeveloperRole: "developer", wantToolTypes: []string{"function", "web_search"}, wantProviderToolChoice: true},
+		{name: "another OpenCode model is unchanged", upstreamPath: "https://opencode.ai/zen/go/v1/chat/completions", model: "another-model", wantDeveloperRole: "developer", wantToolTypes: []string{"function", "web_search"}, wantProviderToolChoice: true},
+		{name: "lookalike host is unchanged", upstreamPath: "https://opencode.ai.example/zen/go/v1/chat/completions", model: "deepseek-v4-flash", wantDeveloperRole: "developer", wantToolTypes: []string{"function", "web_search"}, wantProviderToolChoice: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			adaptor := &Adaptor{}
+			info := advancedCustomRelayInfo(&dto.AdvancedCustomConfig{
+				Routes: []dto.AdvancedCustomRoute{
+					{
+						IncomingPath: "/v1/responses",
+						UpstreamPath: tt.upstreamPath,
+						Converter:    relayconvert.ConverterOpenAIResponsesToOpenAIChat,
+					},
+				},
+			})
+			info.RelayFormat = types.RelayFormatOpenAIResponses
+			info.RelayMode = relayconstant.RelayModeResponses
+			info.RequestURLPath = "/v1/responses"
+			info.OriginModelName = tt.model
+			info.UpstreamModelName = tt.model
+
+			converted, err := adaptor.ConvertOpenAIResponsesRequest(advancedCustomGinContext("/v1/responses"), info, dto.OpenAIResponsesRequest{
+				Model: tt.model,
+				Input: mustAdvancedCustomRawMessage(t, []map[string]any{
+					{"role": "developer", "content": "developer rules"},
+					{"role": "user", "content": "hello"},
+				}),
+				Tools: mustAdvancedCustomRawMessage(t, []map[string]any{
+					{"type": "function", "name": "lookup", "parameters": map[string]any{"type": "object"}},
+					{"type": "web_search"},
+				}),
+				ToolChoice: mustAdvancedCustomRawMessage(t, map[string]any{"type": "web_search"}),
+			})
+			require.NoError(t, err)
+
+			chatReq, ok := converted.(*dto.GeneralOpenAIRequest)
+			require.True(t, ok)
+			require.Len(t, chatReq.Messages, 2)
+			assert.Equal(t, tt.wantDeveloperRole, chatReq.Messages[0].Role)
+			require.Len(t, chatReq.Tools, len(tt.wantToolTypes))
+			for i, wantType := range tt.wantToolTypes {
+				assert.Equal(t, wantType, chatReq.Tools[i].Type)
+			}
+			assert.Equal(t, "lookup", chatReq.Tools[0].Function.Name)
+			if tt.wantProviderToolChoice {
+				assert.Equal(t, map[string]any{"type": "web_search"}, chatReq.ToolChoice)
+			} else {
+				assert.Nil(t, chatReq.ToolChoice)
+			}
+		})
+	}
+}
+
 func TestAdaptorSelectsDuplicateResponsesRoutesByModel(t *testing.T) {
 	config := &dto.AdvancedCustomConfig{
 		Routes: []dto.AdvancedCustomRoute{

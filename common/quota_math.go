@@ -8,9 +8,9 @@ import (
 )
 
 // Quota conversions are centralized here so every billing path shares one
-// saturation + logging policy. Quota columns (user/token/log) are 32-bit
-// integers in the database, so an oversized product must clamp to the int32
-// range instead of wrapping around and turning a charge into a credit.
+// saturation + logging policy. A single charge stays int32-bounded even when
+// account balances use wider storage, so an oversized product cannot wrap
+// around and turn a charge into a credit.
 const (
 	MaxQuota = math.MaxInt32
 	MinQuota = math.MinInt32

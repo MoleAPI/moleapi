@@ -48,6 +48,7 @@ import { cn } from '@/lib/utils'
 import type { UsageLog } from '../../data/schema'
 import {
   parseLogOther,
+  getLoginMethodLabel,
   getParamOverrideActionLabel,
   parseAuditLine,
   decodeBillingExprB64,
@@ -58,6 +59,7 @@ import {
   getResponseTimeColor,
   getImageTokenBreakdown,
   renderAuditContent,
+  renderLogContent,
 } from '../../lib/format'
 import {
   getLogTypeConfig,
@@ -660,16 +662,8 @@ function BillingBreakdown(props: {
         baseInputUSD * (other.cache_creation_ratio || 0)
       )
     }
-    addTokenTerm(
-      t('Image input'),
-      imageTokens,
-      imageUnitPrice
-    )
-    addTokenTerm(
-      t('Image Out'),
-      imageOutputTokens,
-      imageUnitPrice
-    )
+    addTokenTerm(t('Image input'), imageTokens, imageUnitPrice)
+    addTokenTerm(t('Image Out'), imageOutputTokens, imageUnitPrice)
     addTokenTerm(t('Audio input'), audioTokens, other.audio_input_price)
   }
 
@@ -812,7 +806,7 @@ export function InlineLogDetails(props: { log: UsageLog; isAdmin: boolean }) {
   const { t } = useTranslation()
   const other = parseLogOther(props.log.other)
   const isConsume = props.log.type === 2
-  const detailText = renderAuditContent(other, t) || props.log.content
+  const detailText = renderLogContent(props.log, other, t) || props.log.content
   const showTokens = other && isDisplayableType(props.log.type)
   const showBilling = other && isConsume && !isViolationFeeLog(other)
 
@@ -875,8 +869,9 @@ interface DetailsDialogProps {
 export function DetailsDialog(props: DetailsDialogProps) {
   const { t } = useTranslation()
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
-  const details = props.log.content ?? ''
   const other = parseLogOther(props.log.other)
+  const details =
+    renderLogContent(props.log, other, t) || props.log.content || ''
   const typeConfig = getLogTypeConfig(props.log.type)
 
   const isViolation = isViolationFeeLog(other)
@@ -971,7 +966,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
     ? ([
         other?.login_method && {
           label: t('Login Method'),
-          value: String(other.login_method),
+          value: getLoginMethodLabel(String(other.login_method), t),
         },
         props.log.ip && {
           label: t('IP Address'),

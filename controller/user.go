@@ -1316,12 +1316,16 @@ func ManageUser(c *gin.Context) {
 		}
 		if err != nil {
 			logger.LogError(c.Request.Context(), fmt.Sprintf("failed to adjust managed user quota target_user_id=%d error=%q", user.Id, err.Error()))
-			common.ApiErrorI18n(c, i18n.MsgOperationFailed)
+			if errors.Is(err, model.ErrUserQuotaAdjustmentOutOfRange) {
+				common.ApiErrorI18n(c, i18n.MsgQuotaExceedMax)
+			} else {
+				common.ApiErrorI18n(c, i18n.MsgOperationFailed)
+			}
 			return
 		}
 		quotaDelta := newQuota - oldQuota
 		recordManageAuditFor(c, user.Id, auditAction, auditParams)
-		model.RecordLogWithQuota(user.Id, model.LogTypeSystem, fmt.Sprintf("管理员调整额度 %s", logger.LogQuota(quotaDelta)), quotaDelta)
+		model.RecordLogWithQuotaAndOperation(user.Id, model.LogTypeSystem, fmt.Sprintf("管理员调整额度 %s", logger.LogQuota(quotaDelta)), quotaDelta, auditAction, auditParams)
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"message": "",
