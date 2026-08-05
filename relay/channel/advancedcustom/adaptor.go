@@ -27,7 +27,12 @@ import (
 
 const ChannelName = "advanced_custom"
 
-const advancedCustomModelPlaceholder = "{model}"
+const (
+	advancedCustomModelPlaceholder = "{model}"
+	openCodeGoDeepSeekModel        = "deepseek-v4-flash"
+	openCodeGoHost                 = "opencode.ai"
+	openCodeGoChatCompletionsPath  = "/zen/go/v1/chat/completions"
+)
 
 type Adaptor struct {
 	openaiAdaptor openai.Adaptor
@@ -872,11 +877,45 @@ func isJSONRequest(c *gin.Context) bool {
 }
 
 func (a *Adaptor) convertOpenAICompatibleRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
+	if request != nil && isOpenCodeGoDeepSeekResponsesBridge(a.route, a.converter, info) {
+		for i := range request.Messages {
+			if request.Messages[i].Role == "developer" {
+				request.Messages[i].Role = "system"
+			}
+		}
+		// ponytail: hosted Responses tools cannot run through a function-only Chat endpoint.
+		tools := request.Tools[:0]
+		for _, tool := range request.Tools {
+			if tool.Type == "function" {
+				tools = append(tools, tool)
+			}
+		}
+		request.Tools = tools
+		if toolChoice, ok := request.ToolChoice.(map[string]any); ok && toolChoice["type"] != "function" {
+			request.ToolChoice = nil
+		}
+		if len(request.Tools) == 0 {
+			request.ToolChoice = nil
+			request.ParallelTooCalls = nil
+		}
+	}
 	old := info.ChannelType
 	info.ChannelType = constant.ChannelTypeOpenAI
 	converted, err := a.openaiAdaptor.ConvertOpenAIRequest(c, info, request)
 	info.ChannelType = old
 	return converted, err
+}
+
+func isOpenCodeGoDeepSeekResponsesBridge(route dto.AdvancedCustomRoute, converter string, info *relaycommon.RelayInfo) bool {
+	if info == nil ||
+		converter != relayconvert.ConverterOpenAIResponsesToOpenAIChat ||
+		!strings.EqualFold(strings.TrimSpace(info.UpstreamModelName), openCodeGoDeepSeekModel) {
+		return false
+	}
+	targetURL, err := resolveUpstreamTargetURL(applyUpstreamPathTemplate(strings.TrimSpace(route.UpstreamPath), info), info)
+	return err == nil &&
+		strings.EqualFold(targetURL.Hostname(), openCodeGoHost) &&
+		strings.TrimRight(targetURL.Path, "/") == openCodeGoChatCompletionsPath
 }
 
 func openAICompletionsRequestToChat(request *dto.GeneralOpenAIRequest) *dto.GeneralOpenAIRequest {
