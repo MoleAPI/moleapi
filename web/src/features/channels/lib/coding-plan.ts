@@ -147,6 +147,16 @@ export function buildCodingPlanAdvancedCustomConfig(
         'gemini_generate_content_to_openai_chat_completions'
       )
     )
+    if (provider.value === 'opencode-go') {
+      routes.push({
+        ...codingPlanRoute(
+          '/v1/responses',
+          joinProviderPath(provider.openAIBaseUrl, 'responses'),
+          'none'
+        ),
+        models: ['deepseek-v4-flash'],
+      })
+    }
     if (!provider.responsesBaseUrl) {
       routes.push(
         codingPlanRoute(
