@@ -73,6 +73,11 @@ func (p CodingPlanPreset) AdvancedCustomConfig() *AdvancedCustomConfig {
 		chatURL := codingPlanJoinPath(p.OpenAIBaseURL, "chat/completions")
 		imageURL := codingPlanJoinPath(p.OpenAIBaseURL, "images/generations")
 		routes = append(routes, codingPlanRoute(advancedCustomEndpointPathOpenAIChat, chatURL, advancedCustomConverterNone), codingPlanRoute(advancedCustomEndpointPathOpenAICompletions, chatURL, advancedCustomConverterOpenAICompletionsToChat), codingPlanRoute("/v1beta/models/{model}:generateContent", chatURL, advancedCustomConverterGeminiContentToOpenAIChat), codingPlanRoute(advancedCustomEndpointPathImageGeneration, imageURL, advancedCustomConverterNone))
+		if p.ID == CodingPlanProviderOpenCodeGo {
+			responsesRoute := codingPlanRoute(advancedCustomEndpointPathOpenAIResponses, codingPlanJoinPath(p.OpenAIBaseURL, "responses"), advancedCustomConverterNone)
+			responsesRoute.Models = []string{"deepseek-v4-flash"}
+			routes = append(routes, responsesRoute)
+		}
 		if p.ResponsesBaseURL == "" {
 			routes = append(routes, codingPlanRoute(advancedCustomEndpointPathOpenAIResponses, chatURL, advancedCustomConverterOpenAIResponsesToOpenAIChat))
 		}

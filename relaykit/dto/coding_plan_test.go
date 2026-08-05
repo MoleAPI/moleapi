@@ -43,6 +43,20 @@ func TestCodingPlanPresetBuildsNativeResponsesRoute(t *testing.T) {
 	assert.Equal(t, "https://api.kimi.com/coding/v1/models", modelListRoute.UpstreamPath)
 }
 
+func TestOpenCodeGoPresetUsesNativeResponses(t *testing.T) {
+	settings := &ChannelOtherSettings{}
+	require.NoError(t, settings.ApplyCodingPlanPreset(CodingPlanProviderOpenCodeGo))
+	route, ok := settings.AdvancedCustom.MatchPathForModel(advancedCustomEndpointPathOpenAIResponses, "deepseek-v4-flash")
+	require.True(t, ok)
+	assert.Equal(t, advancedCustomConverterNone, route.Converter)
+	assert.Equal(t, "https://opencode.ai/zen/go/v1/responses", route.UpstreamPath)
+
+	fallback, ok := settings.AdvancedCustom.MatchPathForModel(advancedCustomEndpointPathOpenAIResponses, "glm-5.2")
+	require.True(t, ok)
+	assert.Equal(t, advancedCustomConverterOpenAIResponsesToOpenAIChat, fallback.Converter)
+	assert.Equal(t, "https://opencode.ai/zen/go/v1/chat/completions", fallback.UpstreamPath)
+}
+
 func TestCodingPlanPresetBuildsCustomPlaceholderRoutes(t *testing.T) {
 	settings := &ChannelOtherSettings{}
 	require.NoError(t, settings.ApplyCodingPlanPreset(CodingPlanProviderCustom))
