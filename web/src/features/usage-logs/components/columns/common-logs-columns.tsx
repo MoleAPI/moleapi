@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { ColumnDef } from '@tanstack/react-table'
-import { GitBranch, Sparkles, KeyRound } from 'lucide-react'
+import { GitBranch, ListFilter, Sparkles, KeyRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { GroupBadge } from '@/components/group-badge'
@@ -56,7 +56,7 @@ import {
   getLogTypeConfig,
   isPerCallBilling,
 } from '../../lib/utils'
-import type { LogOtherData } from '../../types'
+import type { CommonQuickFilterHandler, LogOtherData } from '../../types'
 import { LogCostDisplay } from '../log-cost-display'
 import { ModelBadge } from '../model-badge'
 import { TimingMetricsCell, StreamTpsCell } from '../timing-metrics-cell'
@@ -305,7 +305,10 @@ function buildTypeDetailSegments(
   return segments
 }
 
-export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
+export function useCommonLogsColumns(
+  isAdmin: boolean,
+  onQuickFilter?: CommonQuickFilterHandler
+): ColumnDef<UsageLog>[] {
   const { t } = useTranslation()
   const columns: ColumnDef<UsageLog>[] = [
     {
@@ -335,8 +338,14 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             variant={config.color as StatusBadgeProps['variant']}
             size='sm'
             copyable={false}
+            onClick={(event) => {
+              event.stopPropagation()
+              onQuickFilter?.('type', String(row.original.type))
+            }}
+            title={t('Filter by this value')}
             className={cn(
               logPillClassName,
+              onQuickFilter && 'cursor-pointer',
               'shrink-0 !text-xs [&_span]:!text-xs'
             )}
           />
@@ -400,6 +409,10 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
                       copyText={String(log.channel)}
                       size='sm'
                       showDot={false}
+                      onClick={() =>
+                        onQuickFilter?.('channel', String(log.channel))
+                      }
+                      title={t('Copy and filter')}
                       className={cn(logPillClassName, 'font-mono')}
                     />
                     {showMultiKeyIndex && (
@@ -521,45 +534,65 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
           if (!log.username) return null
 
           return (
-            <button
-              type='button'
-              className='flex items-center gap-1.5 text-left'
-              onClick={(e) => {
-                e.stopPropagation()
-                setSelectedUserId(log.user_id)
-                setUserInfoDialogOpen(true)
-              }}
-            >
-              <Avatar className='ring-border/60 size-6 ring-1 max-sm:hidden'>
-                <AvatarFallback
-                  className={cn(
-                    'text-[11px] font-semibold',
-                    !sensitiveVisible && 'bg-muted text-muted-foreground'
-                  )}
-                  style={
-                    sensitiveVisible
-                      ? getUserAvatarStyle(log.username)
-                      : undefined
-                  }
-                >
-                  {sensitiveVisible ? getUserAvatarFallback(log.username) : '•'}
-                </AvatarFallback>
-              </Avatar>
-              <TooltipProvider delay={300}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <span className='text-muted-foreground text-sm whitespace-nowrap hover:underline' />
+            <div className='flex items-center gap-1'>
+              <button
+                type='button'
+                className='flex items-center gap-1.5 text-left'
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setSelectedUserId(log.user_id)
+                  setUserInfoDialogOpen(true)
+                }}
+              >
+                <Avatar className='ring-border/60 size-6 ring-1 max-sm:hidden'>
+                  <AvatarFallback
+                    className={cn(
+                      'text-[11px] font-semibold',
+                      !sensitiveVisible && 'bg-muted text-muted-foreground'
+                    )}
+                    style={
+                      sensitiveVisible
+                        ? getUserAvatarStyle(log.username)
+                        : undefined
                     }
                   >
-                    {sensitiveVisible ? log.username : '••••'}
-                  </TooltipTrigger>
-                  {sensitiveVisible && log.username.length > 12 && (
-                    <TooltipContent side='top'>{log.username}</TooltipContent>
-                  )}
-                </Tooltip>
-              </TooltipProvider>
-            </button>
+                    {sensitiveVisible
+                      ? getUserAvatarFallback(log.username)
+                      : '•'}
+                  </AvatarFallback>
+                </Avatar>
+                <TooltipProvider delay={300}>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <span className='text-muted-foreground text-sm whitespace-nowrap hover:underline' />
+                      }
+                    >
+                      {sensitiveVisible ? log.username : '••••'}
+                    </TooltipTrigger>
+                    {sensitiveVisible && log.username.length > 12 && (
+                      <TooltipContent side='top'>{log.username}</TooltipContent>
+                    )}
+                  </Tooltip>
+                </TooltipProvider>
+              </button>
+              {sensitiveVisible && onQuickFilter && (
+                <button
+                  type='button'
+                  className='text-muted-foreground hover:text-foreground focus-visible:ring-ring inline-flex size-5 shrink-0 items-center justify-center rounded transition-colors focus-visible:ring-2 focus-visible:outline-none'
+                  aria-label={t('Filter logs by {{value}}', {
+                    value: log.username,
+                  })}
+                  title={t('Filter by this value')}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onQuickFilter('username', log.username)
+                  }}
+                >
+                  <ListFilter className='size-3' />
+                </button>
+              )}
+            </div>
           )
         },
         size: 112,
@@ -587,7 +620,12 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
               <TooltipTrigger render={<div className='max-w-none' />}>
                 <StatusBadge
                   icon={KeyRound}
+                  copyable={sensitiveVisible}
                   copyText={sensitiveVisible ? tokenName : undefined}
+                  onClick={() =>
+                    sensitiveVisible && onQuickFilter?.('token', tokenName)
+                  }
+                  title={sensitiveVisible ? t('Copy and filter') : undefined}
                   size='sm'
                   showDot={false}
                   className={cn(
@@ -631,6 +669,12 @@ export function useCommonLogsColumns(isAdmin: boolean): ColumnDef<UsageLog>[] {
             <GroupBadge
               group={group}
               label={sensitiveVisible ? undefined : '••••'}
+              copyable={sensitiveVisible}
+              copyText={sensitiveVisible ? group : undefined}
+              onClick={() =>
+                sensitiveVisible && onQuickFilter?.('group', group)
+              }
+              title={sensitiveVisible ? t('Copy and filter') : undefined}
               size='sm'
               className={cn(
                 logPillClassName,

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { api } from '@/lib/api'
 
 import type {
+  AdminBusinessMetrics,
   ChannelSuccessData,
   FlowQuotaDataItem,
   QuotaDataItem,
@@ -90,6 +91,18 @@ export async function getChannelSuccessMetrics(hours: number) {
     '/api/data/channel-success',
     { params: { hours } }
   )
+  return res.data
+}
+
+export async function getAdminBusinessMetrics(params: {
+  start_timestamp: number
+  end_timestamp: number
+}) {
+  const res = await api.get<{
+    success: boolean
+    message?: string
+    data?: AdminBusinessMetrics
+  }>('/api/data/business', { params })
   return res.data
 }
 
