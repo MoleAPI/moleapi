@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,29 @@ type TopUpSearchParams struct {
 	UserKeyword    string
 	StartTimestamp int64
 	EndTimestamp   int64
+}
+
+type AdminBusinessMetrics struct {
+	NewUsers           int64                      `json:"new_users"`
+	IntentOrders       int64                      `json:"intent_orders"`
+	IntentAmounts      []AdminBusinessOrderAmount `json:"intent_amounts"`
+	PaidOrders         int64                      `json:"paid_orders"`
+	PaidAmounts        []AdminBusinessOrderAmount `json:"paid_amounts"`
+	PayingUsers        int64                      `json:"paying_users"`
+	PaymentSuccessRate float64                    `json:"payment_success_rate"`
+}
+
+type AdminBusinessOrderAmount struct {
+	Currency      string  `json:"currency"`
+	Orders        int64   `json:"orders"`
+	Amount        float64 `json:"amount"`
+	AverageAmount float64 `json:"average_amount"`
+}
+
+type businessOrderAggregate struct {
+	Currency   string  `gorm:"column:currency"`
+	OrderCount int64   `gorm:"column:order_count"`
+	Amount     float64 `gorm:"column:order_amount"`
 }
 
 type InviteRewardHistoryParams struct {
@@ -380,12 +404,19 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 			common.SysError("failed to invalidate user cache after topup: " + err.Error())
 		}
 		if inviteRebateGranted {
+			other := map[string]interface{}{
+				"related_user": inviteRebateRelatedUser,
+				"op": buildOpField("user.topup_rebate", map[string]interface{}{
+					"quota_raw":    topUp.InviteRebateQuota,
+					"related_user": inviteRebateRelatedUser,
+				}),
+			}
 			recordLogWithQuota(
 				topUp.InviteRebateInviterId,
 				LogTypeSystem,
 				fmt.Sprintf("邀请好友充值返利 %s，受邀用户 %s", logger.LogQuota(topUp.InviteRebateQuota), inviteRebateRelatedUser),
 				topUp.InviteRebateQuota,
-				common.MapToJsonStr(map[string]interface{}{"related_user": inviteRebateRelatedUser}),
+				common.MapToJsonStr(other),
 			)
 			if err := invalidateUserCache(topUp.InviteRebateInviterId); err != nil {
 				common.SysError("failed to invalidate inviter cache after topup: " + err.Error())
@@ -501,7 +532,11 @@ func RechargeStripeWithPaymentDetails(referenceId string, customerId string, gat
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(quotaToAdd), topUp.Amount), callerIp, topUp.PaymentMethod, PaymentMethodStripe)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(quotaToAdd), topUp.Amount), callerIp, topUp.PaymentMethod, PaymentMethodStripe, "topup.completed", map[string]interface{}{
+			"provider":  "Stripe",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%d", topUp.Amount),
+		})
 	}
 
 	return nil
@@ -671,6 +706,109 @@ func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err 
 	return topups, total, nil
 }
 
+// GetAdminBusinessMetrics summarizes user growth and the checkout funnel for
+// an admin-selected period. Successful subscription purchases are mirrored in
+// topups, so paid totals come from topups while subscription intent comes from
+// subscription_orders to avoid double counting.
+func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBusinessMetrics, error) {
+	if startTimestamp <= 0 || endTimestamp < startTimestamp {
+		return nil, errors.New("invalid time range")
+	}
+
+	metrics := &AdminBusinessMetrics{}
+	if err := DB.Model(&User{}).
+		Where("created_at >= ? AND created_at <= ?", startTimestamp, endTimestamp).
+		Count(&metrics.NewUsers).Error; err != nil {
+		return nil, err
+	}
+
+	var topUpIntent []businessOrderAggregate
+	if err := DB.Model(&TopUp{}).
+		Select("payment_currency AS currency, COUNT(*) AS order_count, COALESCE(SUM(money), 0) AS order_amount").
+		Where("create_time >= ? AND create_time <= ? AND amount > 0", startTimestamp, endTimestamp).
+		Group("payment_currency").
+		Scan(&topUpIntent).Error; err != nil {
+		return nil, err
+	}
+
+	var subscriptionIntent []businessOrderAggregate
+	if err := DB.Model(&SubscriptionOrder{}).
+		Select("payment_currency AS currency, COUNT(*) AS order_count, COALESCE(SUM(money), 0) AS order_amount").
+		Where("create_time >= ? AND create_time <= ?", startTimestamp, endTimestamp).
+		Group("payment_currency").
+		Scan(&subscriptionIntent).Error; err != nil {
+		return nil, err
+	}
+
+	var paid []businessOrderAggregate
+	if err := DB.Model(&TopUp{}).
+		Select("payment_currency AS currency, COUNT(*) AS order_count, COALESCE(SUM(money), 0) AS order_amount").
+		Where("complete_time >= ? AND complete_time <= ? AND status = ? AND money > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Group("payment_currency").
+		Scan(&paid).Error; err != nil {
+		return nil, err
+	}
+	if err := DB.Model(&TopUp{}).
+		Where("complete_time >= ? AND complete_time <= ? AND status = ? AND money > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Distinct("user_id").
+		Count(&metrics.PayingUsers).Error; err != nil {
+		return nil, err
+	}
+
+	var convertedTopUps int64
+	if err := DB.Model(&TopUp{}).
+		Where("create_time >= ? AND create_time <= ? AND amount > 0 AND status = ?", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Count(&convertedTopUps).Error; err != nil {
+		return nil, err
+	}
+
+	var convertedSubscriptions int64
+	if err := DB.Model(&SubscriptionOrder{}).
+		Where("create_time >= ? AND create_time <= ? AND status = ?", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Count(&convertedSubscriptions).Error; err != nil {
+		return nil, err
+	}
+
+	metrics.IntentAmounts, metrics.IntentOrders = mergeBusinessOrderAmounts(topUpIntent, subscriptionIntent)
+	metrics.PaidAmounts, metrics.PaidOrders = mergeBusinessOrderAmounts(paid)
+	if metrics.IntentOrders > 0 {
+		metrics.PaymentSuccessRate = float64(convertedTopUps+convertedSubscriptions) / float64(metrics.IntentOrders)
+	}
+
+	return metrics, nil
+}
+
+func mergeBusinessOrderAmounts(groups ...[]businessOrderAggregate) ([]AdminBusinessOrderAmount, int64) {
+	byCurrency := make(map[string]*AdminBusinessOrderAmount)
+	var totalOrders int64
+	for _, group := range groups {
+		for _, aggregate := range group {
+			currency := strings.ToUpper(strings.TrimSpace(aggregate.Currency))
+			if byCurrency[currency] == nil {
+				byCurrency[currency] = &AdminBusinessOrderAmount{Currency: currency}
+			}
+			byCurrency[currency].Orders += aggregate.OrderCount
+			byCurrency[currency].Amount += aggregate.Amount
+			totalOrders += aggregate.OrderCount
+		}
+	}
+
+	currencies := make([]string, 0, len(byCurrency))
+	for currency := range byCurrency {
+		currencies = append(currencies, currency)
+	}
+	sort.Strings(currencies)
+	amounts := make([]AdminBusinessOrderAmount, 0, len(currencies))
+	for _, currency := range currencies {
+		amount := byCurrency[currency]
+		if amount.Orders > 0 {
+			amount.AverageAmount = amount.Amount / float64(amount.Orders)
+		}
+		amounts = append(amounts, *amount)
+	}
+	return amounts, totalOrders
+}
+
 // searchTopUpCountHardLimit 搜索充值记录时 COUNT 的安全上限，
 // 防止对超大表执行无界 COUNT 触发 DoS。
 const searchTopUpCountHardLimit = 10000
@@ -815,7 +953,10 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, "admin")
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, "admin", "topup.admin_complete", map[string]interface{}{
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 	return nil
 }
@@ -849,7 +990,11 @@ func RechargeCreemWithPaymentDetails(referenceId string, customerEmail string, c
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quotaToAdd, topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodCreem)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quotaToAdd, topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodCreem, "topup.completed", map[string]interface{}{
+			"provider":  "Creem",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 
 	return nil
@@ -875,7 +1020,11 @@ func RechargeEpay(tradeNo string, paymentMethod string, gatewayTradeNo string, c
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentProviderEpay)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentProviderEpay, "topup.completed", map[string]interface{}{
+			"provider":  "Epay",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 	return nil
 }
@@ -904,7 +1053,11 @@ func RechargeLanTuWithPaymentDetails(tradeNo string, gatewayTradeNo string, paym
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("蓝兔支付充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodLanTu)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("蓝兔支付充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodLanTu, "topup.completed", map[string]interface{}{
+			"provider":  "LanTu",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 	return nil
 }
@@ -929,7 +1082,11 @@ func RechargeNowPaymentsWithPaymentDetails(tradeNo string, gatewayTradeNo string
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("NOWPayments充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodNowPayments)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("NOWPayments充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodNowPayments, "topup.completed", map[string]interface{}{
+			"provider":  "NOWPayments",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 	return nil
 }
@@ -954,7 +1111,11 @@ func RechargeWaffoWithPaymentDetails(tradeNo string, gatewayTradeNo string, paym
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("Waffo充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffo)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("Waffo充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffo, "topup.completed", map[string]interface{}{
+			"provider":  "Waffo",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 
 	return nil
@@ -984,7 +1145,11 @@ func RechargeWaffoPancakeWithPaymentDetails(tradeNo string, gatewayTradeNo strin
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("Waffo Pancake充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffoPancake)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("Waffo Pancake充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffoPancake, "topup.completed", map[string]interface{}{
+			"provider":  "Waffo Pancake",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 
 	return nil

@@ -2,6 +2,7 @@ package model
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -92,7 +93,10 @@ func TestRegistrationDoesNotLogFailedInviterReward(t *testing.T) {
 	assert.Zero(t, rewardLogs)
 }
 
-func TestTransferAffQuotaRejectsBalanceOverflow(t *testing.T) {
+func TestTransferAffQuotaSupportsBalanceAboveChargeLimit(t *testing.T) {
+	if strconv.IntSize < 64 {
+		t.Skip("large account balances require a 64-bit server")
+	}
 	setupUserUpdateTestState(t)
 	originalQuotaPerUnit := common.QuotaPerUnit
 	common.QuotaPerUnit = 1
@@ -100,15 +104,29 @@ func TestTransferAffQuotaRejectsBalanceOverflow(t *testing.T) {
 
 	user := User{Username: "transfer-limit-user", Status: common.UserStatusEnabled, Quota: common.MaxQuota, AffQuota: 10}
 	require.NoError(t, DB.Create(&user).Error)
-	require.Error(t, user.TransferAffQuotaToQuota(10))
+	require.NoError(t, user.TransferAffQuotaToQuota(10))
 
 	var stored User
 	require.NoError(t, DB.First(&stored, user.Id).Error)
-	assert.Equal(t, common.MaxQuota, stored.Quota)
+	assert.EqualValues(t, int64(common.MaxQuota)+10, stored.Quota)
+	assert.Zero(t, stored.AffQuota)
+}
+
+func TestTransferAffQuotaRejectsAccountBalanceOverflow(t *testing.T) {
+	setupUserUpdateTestState(t)
+	originalQuotaPerUnit := common.QuotaPerUnit
+	common.QuotaPerUnit = 1
+	t.Cleanup(func() { common.QuotaPerUnit = originalQuotaPerUnit })
+
+	limit := int(userBalanceLimit())
+	user := User{Username: "transfer-overflow-user", Status: common.UserStatusEnabled, Quota: limit, AffQuota: 10}
+	require.NoError(t, DB.Create(&user).Error)
+	require.ErrorIs(t, user.TransferAffQuotaToQuota(10), ErrAffQuotaTransferOutOfRange)
+
+	var stored User
+	require.NoError(t, DB.First(&stored, user.Id).Error)
+	assert.Equal(t, limit, stored.Quota)
 	assert.Equal(t, 10, stored.AffQuota)
-	var rewardLogs int64
-	require.NoError(t, LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", user.Id, LogTypeSystem).Count(&rewardLogs).Error)
-	assert.Zero(t, rewardLogs)
 }
 
 func TestUserUpdateDoesNotOverwriteAccountingFields(t *testing.T) {

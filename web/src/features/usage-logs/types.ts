@@ -74,6 +74,18 @@ export interface TaskLogFilters extends CommonFilters {
  */
 export type LogFilters = CommonLogFilters | DrawingLogFilters | TaskLogFilters
 
+export type CommonQuickFilterField =
+  | 'type'
+  | 'channel'
+  | 'group'
+  | 'username'
+  | 'token'
+
+export type CommonQuickFilterHandler = (
+  field: CommonQuickFilterField,
+  value: string
+) => void
+
 // ============================================================================
 // Common Logs Additional Types
 // ============================================================================
@@ -142,7 +154,7 @@ export interface LogOtherData {
       clamped: number
     }
   }
-  // Language-independent operation descriptor (audit/login logs).
+  // Language-independent operation descriptor for user-visible business logs.
   // Frontend renders localized content from action + params via i18n templates.
   op?: {
     action?: string
@@ -409,6 +421,16 @@ export interface UserInfo {
   id: number
   username: string
   display_name?: string
+  role?: number
+  status?: number
+  email?: string
+  github_id?: string
+  discord_id?: string
+  oidc_id?: string
+  wechat_id?: string
+  telegram_id?: string
+  linux_do_id?: string
+  stripe_customer?: string
   quota: number
   used_quota: number
   request_count: number
@@ -416,5 +438,17 @@ export interface UserInfo {
   aff_code?: string
   aff_count?: number
   aff_quota?: number
+  aff_history_quota?: number
+  inviter_id?: number
+  invite_rebate_ratio?: number
+  created_at?: number
+  last_login_at?: number
   remark?: string
+}
+
+export interface UserOAuthBinding {
+  provider_id: number
+  provider_name: string
+  provider_user_id?: string
+  external_id?: string
 }

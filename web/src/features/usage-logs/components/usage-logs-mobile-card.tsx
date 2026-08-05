@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { flexRender, type Cell, type Table } from '@tanstack/react-table'
-import { Database } from 'lucide-react'
+import { Database, ListFilter } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -46,7 +46,7 @@ import {
   isDisplayableLogType,
   isTimingLogType,
 } from '../lib/utils'
-import type { LogCategory } from '../types'
+import type { CommonQuickFilterHandler, LogCategory } from '../types'
 import { StreamTpsCell, TimingMetricsCell } from './timing-metrics-cell'
 import { useUsageLogsContext } from './usage-logs-provider'
 
@@ -63,6 +63,7 @@ interface UsageLogsMobileListProps<TData> {
   emptyTitle?: string
   emptyDescription?: string
   logCategory: LogCategory
+  onQuickFilter?: CommonQuickFilterHandler
 }
 
 function UsageLogsMobileSkeleton() {
@@ -154,9 +155,11 @@ function SummaryField<TData>({
 function MobileLogTimeStatus({
   createdAt,
   type,
+  onQuickFilter,
 }: {
   createdAt: unknown
   type: unknown
+  onQuickFilter?: CommonQuickFilterHandler
 }) {
   const { t } = useTranslation()
   const timestamp = typeof createdAt === 'number' ? createdAt : undefined
@@ -169,18 +172,24 @@ function MobileLogTimeStatus({
       <div className='font-mono text-[11px] leading-tight tabular-nums'>
         {formatTimestampToDate(timestamp)}
       </div>
-      <div
+      <button
+        type='button'
         className={cn(
           'inline-flex items-center gap-1 text-xs leading-none font-medium',
           textColorMap[variant]
         )}
+        title={t('Filter by this value')}
+        onClick={(event) => {
+          event.stopPropagation()
+          if (logType != null) onQuickFilter?.('type', String(logType))
+        }}
       >
         <span
           className={cn('size-1.5 shrink-0 rounded-full', dotColorMap[variant])}
           aria-hidden='true'
         />
         <span>{t(config.label)}</span>
-      </div>
+      </button>
     </div>
   )
 }
@@ -245,39 +254,60 @@ function MobileTokensField({ log }: { log: UsageLog }) {
 }
 
 /** Mobile-only User block: own layout so avatar/name always line up on the same baseline. */
-function MobileUserField({ log }: { log: UsageLog }) {
+function MobileUserField(props: {
+  log: UsageLog
+  onQuickFilter?: CommonQuickFilterHandler
+}) {
+  const { t } = useTranslation()
   const { sensitiveVisible, setSelectedUserId, setUserInfoDialogOpen } =
     useUsageLogsContext()
+  const { log } = props
 
   if (!log.username) return null
 
   return (
-    <button
-      type='button'
-      className='bg-muted/20 flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-left'
-      onClick={(e) => {
-        e.stopPropagation()
-        setSelectedUserId(log.user_id)
-        setUserInfoDialogOpen(true)
-      }}
-    >
-      <Avatar className='ring-border/60 size-6 shrink-0 ring-1'>
-        <AvatarFallback
-          className={cn(
-            'text-[11px] font-semibold',
-            !sensitiveVisible && 'bg-muted text-muted-foreground'
-          )}
-          style={
-            sensitiveVisible ? getUserAvatarStyle(log.username) : undefined
-          }
+    <div className='bg-muted/20 flex min-w-0 items-center rounded-md pr-1'>
+      <button
+        type='button'
+        className='flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left'
+        onClick={(e) => {
+          e.stopPropagation()
+          setSelectedUserId(log.user_id)
+          setUserInfoDialogOpen(true)
+        }}
+      >
+        <Avatar className='ring-border/60 size-6 shrink-0 ring-1'>
+          <AvatarFallback
+            className={cn(
+              'text-[11px] font-semibold',
+              !sensitiveVisible && 'bg-muted text-muted-foreground'
+            )}
+            style={
+              sensitiveVisible ? getUserAvatarStyle(log.username) : undefined
+            }
+          >
+            {sensitiveVisible ? getUserAvatarFallback(log.username) : '•'}
+          </AvatarFallback>
+        </Avatar>
+        <span className='text-foreground min-w-0 truncate text-xs'>
+          {sensitiveVisible ? log.username : '••••'}
+        </span>
+      </button>
+      {sensitiveVisible && props.onQuickFilter && (
+        <button
+          type='button'
+          className='text-muted-foreground hover:text-foreground inline-flex size-6 shrink-0 items-center justify-center rounded'
+          aria-label={t('Filter logs by {{value}}', { value: log.username })}
+          title={t('Filter by this value')}
+          onClick={(event) => {
+            event.stopPropagation()
+            props.onQuickFilter?.('username', log.username)
+          }}
         >
-          {sensitiveVisible ? getUserAvatarFallback(log.username) : '•'}
-        </AvatarFallback>
-      </Avatar>
-      <span className='text-foreground min-w-0 truncate text-xs'>
-        {sensitiveVisible ? log.username : '••••'}
-      </span>
-    </button>
+          <ListFilter className='size-3.5' />
+        </button>
+      )}
+    </div>
   )
 }
 
@@ -314,8 +344,10 @@ function MobileStreamTimingField({ log }: { log: UsageLog }) {
 
 function CommonLogsCard<TData>({
   cells,
+  onQuickFilter,
 }: {
   cells: Map<string, Cell<TData, unknown>>
+  onQuickFilter?: CommonQuickFilterHandler
 }) {
   const { t } = useTranslation()
 
@@ -338,6 +370,7 @@ function CommonLogsCard<TData>({
           <MobileLogTimeStatus
             createdAt={rowData?.created_at}
             type={rowData?.type}
+            onQuickFilter={onQuickFilter}
           />
         </div>
         <SummaryField
@@ -345,7 +378,7 @@ function CommonLogsCard<TData>({
           valueClassName='[&_.flex-col]:max-w-none'
         />
         {rowData && cells.has('user') ? (
-          <MobileUserField log={rowData} />
+          <MobileUserField log={rowData} onQuickFilter={onQuickFilter} />
         ) : (
           <SummaryField cell={cells.get('user')} />
         )}
@@ -457,6 +490,7 @@ export function UsageLogsMobileList<TData>({
   emptyTitle,
   emptyDescription,
   logCategory,
+  onQuickFilter,
 }: UsageLogsMobileListProps<TData>) {
   const { t } = useTranslation()
 
@@ -507,7 +541,9 @@ export function UsageLogsMobileList<TData>({
               tintClass
             )}
           >
-            {logCategory === 'common' && <CommonLogsCard cells={cells} />}
+            {logCategory === 'common' && (
+              <CommonLogsCard cells={cells} onQuickFilter={onQuickFilter} />
+            )}
             {logCategory === 'task' && <TaskLogsCard cells={cells} />}
             {logCategory === 'drawing' && <DrawingLogsCard cells={cells} />}
           </div>

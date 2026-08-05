@@ -157,3 +157,64 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 	assert.Equal(t, int64(5), total)
 	assert.Empty(t, got)
 }
+
+func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {
+	originalDB := DB
+	originalDatabaseType := common.MainDatabaseType()
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.LogDatabaseType())
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	DB = db
+	require.NoError(t, db.AutoMigrate(&User{}, &TopUp{}, &SubscriptionPlan{}, &SubscriptionOrder{}))
+	t.Cleanup(func() {
+		DB = originalDB
+		common.SetDatabaseTypes(originalDatabaseType, common.LogDatabaseType())
+		sqlDB, dbErr := db.DB()
+		if dbErr == nil {
+			_ = sqlDB.Close()
+		}
+	})
+
+	users := []*User{
+		{Username: "metrics-alice", Password: "password", AffCode: "metrics_alice", CreatedAt: 120},
+		{Username: "metrics-bob", Password: "password", AffCode: "metrics_bob", CreatedAt: 180},
+		{Username: "metrics-old", Password: "password", AffCode: "metrics_old", CreatedAt: 50},
+	}
+	for _, user := range users {
+		require.NoError(t, db.Create(user).Error)
+	}
+
+	topUps := []*TopUp{
+		{UserId: users[0].Id, Amount: 12, Money: 12, TradeNo: "intent-pending", PaymentCurrency: "cny", CreateTime: 150, Status: common.TopUpStatusPending},
+		{UserId: users[0].Id, Amount: 20, Money: 20, TradeNo: "wallet-paid", PaymentCurrency: "CNY", CreateTime: 160, CompleteTime: 180, Status: common.TopUpStatusSuccess},
+		{UserId: users[1].Id, Amount: 0, Money: 30, TradeNo: "subscription-paid", PaymentCurrency: "USD", CreateTime: 170, CompleteTime: 190, Status: common.TopUpStatusSuccess},
+		{UserId: users[2].Id, Amount: 10, Money: 10, TradeNo: "outside", CreateTime: 50, CompleteTime: 60, Status: common.TopUpStatusSuccess},
+	}
+	for _, topUp := range topUps {
+		require.NoError(t, db.Create(topUp).Error)
+	}
+
+	orders := []*SubscriptionOrder{
+		{UserId: users[1].Id, PlanId: 1, Money: 40, TradeNo: "subscription-pending", PaymentCurrency: "USD", CreateTime: 155, Status: common.TopUpStatusPending, PlanSnapshot: "{}"},
+		{UserId: users[1].Id, PlanId: 1, Money: 30, TradeNo: "subscription-paid", PaymentCurrency: "USD", CreateTime: 170, CompleteTime: 190, Status: common.TopUpStatusSuccess, PlanSnapshot: "{}"},
+	}
+	for _, order := range orders {
+		require.NoError(t, db.Create(order).Error)
+	}
+
+	metrics, err := GetAdminBusinessMetrics(100, 200)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), metrics.NewUsers)
+	assert.Equal(t, int64(4), metrics.IntentOrders)
+	assert.Equal(t, []AdminBusinessOrderAmount{
+		{Currency: "CNY", Orders: 2, Amount: 32, AverageAmount: 16},
+		{Currency: "USD", Orders: 2, Amount: 70, AverageAmount: 35},
+	}, metrics.IntentAmounts)
+	assert.Equal(t, int64(2), metrics.PaidOrders)
+	assert.Equal(t, []AdminBusinessOrderAmount{
+		{Currency: "CNY", Orders: 1, Amount: 20, AverageAmount: 20},
+		{Currency: "USD", Orders: 1, Amount: 30, AverageAmount: 30},
+	}, metrics.PaidAmounts)
+	assert.Equal(t, int64(2), metrics.PayingUsers)
+	assert.InDelta(t, 0.5, metrics.PaymentSuccessRate, 0.001)
+}

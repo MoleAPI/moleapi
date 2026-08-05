@@ -23,6 +23,7 @@ import {
   parseTiersFromExpr,
   type ParsedTier,
 } from '@/features/pricing/lib/billing-expr'
+import { formatLogQuota } from '@/lib/format'
 
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
@@ -63,6 +64,26 @@ export function getParamOverrideActionLabel(
 ): string {
   const key = PARAM_OVERRIDE_ACTION_MAP[action.toLowerCase()]
   return key ? t(key) : action
+}
+
+export function getLoginMethodLabel(
+  method: string,
+  t: (key: string) => string
+): string {
+  const labels: Record<string, string> = {
+    password: 'Password',
+    '2fa': 'Two-Factor Authentication',
+    passkey: 'Passkey',
+    wechat: 'WeChat',
+    telegram: 'Telegram',
+    oauth: 'OAuth',
+    unknown: 'Unknown',
+  }
+  if (method.startsWith('oauth:')) {
+    return `${t('OAuth')}: ${method.slice('oauth:'.length)}`
+  }
+  const label = labels[method.toLowerCase()]
+  return label ? t(label) : method
 }
 
 /**
@@ -382,13 +403,27 @@ export function formatDuration(
 }
 
 /**
- * Maps a language-independent audit/login operation `action` to an i18n
+ * Maps a language-independent log operation `action` to an i18n
  * template string (the template itself is the i18n key, with {{placeholders}}).
  *
  * The backend stores only `action` + structured `params` in `other.op`; the UI
- * renders localized content at display time so audit/login logs are fully
+ * renders localized content at display time so business logs are fully
  * translatable instead of being frozen to whatever language was written to DB.
  */
+const AUDIT_PARAM_LABELS: Record<string, string> = {
+  'user.manage:disable': 'Disable',
+  'user.manage:enable': 'Enable',
+  'user.manage:delete': 'Delete',
+  'user.manage:promote': 'Promote',
+  'user.manage:demote': 'Demote',
+  'channel.multi_key_manage:disable_key': 'Disable',
+  'channel.multi_key_manage:enable_key': 'Enable',
+  'channel.multi_key_manage:enable_all_keys': 'Enable All',
+  'channel.multi_key_manage:disable_all_keys': 'Disable All',
+  'channel.multi_key_manage:delete_key': 'Delete',
+  'channel.multi_key_manage:delete_disabled_keys': 'Delete disabled keys',
+}
+
 const AUDIT_TEMPLATES: Record<string, string> = {
   login: 'Logged in successfully via {{method}}',
   // User management
@@ -406,19 +441,49 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'user.topup_complete': 'Completed top-up order for the user',
   'user.reset_passkey': 'Reset the user passkey',
   'user.oauth_unbind': 'Removed an OAuth binding for the user',
+  'user.invite_rebate_apply_default':
+    'Applied default invite rebate ratio {{ratio}} to {{updated}} users',
+  'user.invite_rebate_batch_update':
+    'Batch updated invite rebate ratio to {{target_ratio}} for {{updated}} users',
+  'user.reward_transfer':
+    'Transferred {{quota}} of referral rewards to the balance',
+  'user.registration_reward': 'Received a {{quota}} sign-up reward',
+  'user.invitee_reward':
+    'Received a {{quota}} reward for using an invitation code',
+  'user.inviter_reward': 'Received a {{quota}} reward for inviting a user',
+  'user.topup_rebate':
+    'Received a {{quota}} top-up rebate from user {{related_user}}',
+  'user.checkin_reward': 'Checked in and received {{quota}}',
+  'user.security_verification':
+    'Security verification succeeded via {{method}}',
+  'user.2fa_setup_started': 'Started two-factor authentication setup',
+  'user.2fa_enabled': 'Enabled two-factor authentication',
+  'user.2fa_disabled': 'Disabled two-factor authentication',
+  'user.2fa_backup_codes_regenerated':
+    'Regenerated two-factor authentication backup codes',
   // System settings
   'option.update': 'Updated system setting {{key}}',
+  'option.model_pricing.import':
+    'Imported {{updated_options}} model pricing settings',
   'option.payment_compliance': 'Confirmed payment compliance',
   'option.reset_ratio': 'Reset model ratios',
   'option.clear_affinity_cache': 'Cleared channel affinity cache',
+  'option.waffo_catalog': 'Fetched the Waffo Pancake catalog',
+  'option.waffo_pair': 'Created a Waffo Pancake pairing',
+  'option.waffo_save': 'Saved Waffo Pancake settings',
+  'option.waffo_subscription_product':
+    'Created a Waffo Pancake subscription product',
   // Custom OAuth
+  'custom_oauth.discovery': 'Discovered a custom OAuth provider configuration',
   'custom_oauth.create': 'Created a custom OAuth provider',
   'custom_oauth.update': 'Updated a custom OAuth provider',
   'custom_oauth.delete': 'Deleted a custom OAuth provider',
   // Performance / cache
   'performance.clear_disk_cache': 'Cleared disk cache',
+  'performance.reset_stats': 'Reset performance statistics',
   'performance.gc': 'Triggered garbage collection',
   'performance.clear_logs': 'Cleared log files',
+  'ratio_sync.fetch': 'Fetched upstream model ratios',
   // Channel
   'channel.create': 'Created channel {{name}} (type {{type}}, count {{count}})',
   'channel.update': 'Updated channel {{name}} (ID: {{id}})',
@@ -434,16 +499,37 @@ const AUDIT_TEMPLATES: Record<string, string> = {
     'Copied channel (source ID: {{sourceId}}) to {{name}} (new ID: {{id}})',
   'channel.multi_key_manage':
     'Multi-key management {{action}} on channel (ID: {{id}})',
+  'channel.status_update': 'Updated channel {{id}} status to {{status}}',
+  'channel.status_update_batch':
+    'Updated {{count}} of {{total}} channels to {{status}}',
+  'channel.fix': 'Repaired channel abilities',
+  'channel.fetch_models': 'Fetched upstream channel models',
+  'channel.codex_refresh': 'Refreshed Codex channel credentials',
+  'channel.codex_usage_reset': 'Reset Codex channel usage',
+  'channel.ollama_pull': 'Pulled an Ollama model',
+  'channel.ollama_delete': 'Deleted an Ollama model',
   'channel.upstream_apply':
     'Applied upstream model changes to channel (ID: {{id}})',
   'channel.upstream_apply_all':
     'Applied upstream model changes to {{count}} channels',
+  'channel.upstream_detect':
+    'Detected upstream model changes for channel {{name}} (ID: {{id}})',
+  'channel.upstream_detect_all':
+    'Started upstream model update detection task {{task_id}}',
   // Redemption codes
   'redemption.create':
     'Created {{count}} redemption codes named {{name}} ({{quota}} each)',
   'redemption.update': 'Updated a redemption code',
   'redemption.delete': 'Deleted a redemption code',
   'redemption.delete_invalid': 'Deleted invalid redemption codes',
+  // Top-ups
+  'topup.redemption': 'Redeemed code {{redemption_id}} and received {{quota}}',
+  'topup.completed':
+    'Top-up completed via {{provider}}: credited {{quota}}, paid {{money}}',
+  'topup.admin_complete':
+    'Admin completed the top-up: credited {{quota}}, paid {{money}}',
+  'topup.invoice_view':
+    'Viewed invoice for top-up {{trade_no}} (ID: {{topup_id}})',
   // Prefill groups
   'prefill_group.create': 'Created a prefill group',
   'prefill_group.update': 'Updated a prefill group',
@@ -461,21 +547,41 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'deployment.create': 'Created a deployment',
   'deployment.update': 'Updated a deployment',
   'deployment.delete': 'Deleted a deployment',
+  'deployment.test_connection': 'Tested the deployment connection',
+  'deployment.price_estimation': 'Estimated a deployment price',
+  'deployment.update_name': 'Renamed a deployment',
+  'deployment.extend': 'Extended a deployment',
   // Subscriptions
   'subscription.plan_create': 'Created a subscription plan',
   'subscription.plan_update': 'Updated a subscription plan',
   'subscription.plan_delete':
     'Deleted subscription plan {{plan_title}} (ID: {{plan_id}})',
   'subscription.bind': 'Bound a subscription',
+  'subscription.plan_reset':
+    'Reset active subscriptions for plan {{plan_title}} (ID: {{plan_id}})',
+  'subscription.user_plan_reset':
+    'Reset active subscriptions for user {{target_user_id}} under plan {{plan_title}} (ID: {{plan_id}})',
+  'subscription.user_bind': 'Bound a subscription to a user',
+  'subscription.user_invalidate': 'Invalidated a user subscription',
+  'subscription.user_delete': 'Deleted a user subscription',
+  'subscription.purchase':
+    'Purchased subscription {{plan}} for {{money}} via {{payment_method}}',
+  'subscription.balance_purchase':
+    'Purchased subscription {{plan}} with balance: paid {{money}}, deducted {{quota}}',
   // Logs
   'log.clear': 'Cleared historical logs',
   'log.cleanup_start': 'Log cleanup task started.',
+  // System instances
+  'system_info.delete_stale': 'Deleted stale system instances',
+  'system_info.delete_instance': 'Deleted a system instance',
+  // Model metadata
+  'model.descriptions_import': 'Imported model descriptions',
   // Generic middleware fallback
   generic: '{{method}} {{route}}',
 }
 
 /**
- * Render the localized content of an audit/login log from its structured
+ * Render localized content from a log's structured
  * `other.op` descriptor. Returns null when the log has no recognized action,
  * letting callers fall back to the raw `content` field.
  */
@@ -487,5 +593,237 @@ export function renderAuditContent(
   if (!op?.action) return null
   const template = AUDIT_TEMPLATES[op.action]
   if (!template) return null
-  return t(template, (op.params ?? {}) as Record<string, unknown>)
+  const params = { ...op.params } as Record<string, unknown>
+  if (typeof params.quota_raw === 'number') {
+    params.quota = formatLogQuota(params.quota_raw)
+  }
+  if (typeof params.from_raw === 'number') {
+    params.from = formatLogQuota(params.from_raw)
+  }
+  if (typeof params.to_raw === 'number') {
+    params.to = formatLogQuota(params.to_raw)
+  }
+  if (typeof params.action === 'string') {
+    const label = AUDIT_PARAM_LABELS[`${op.action}:${params.action}`]
+    if (label) params.action = t(label)
+  }
+  if (op.action === 'login' && typeof params.method === 'string') {
+    params.method = getLoginMethodLabel(params.method, t)
+  }
+  if (op.action === 'user.create' && typeof params.role === 'number') {
+    if (params.role === 1) params.role = t('User')
+    if (params.role === 10) params.role = t('Admin')
+    if (params.role === 100) params.role = t('Root')
+  }
+  if (
+    (op.action === 'channel.status_update' ||
+      op.action === 'channel.status_update_batch') &&
+    typeof params.status === 'number'
+  ) {
+    if (params.status === 1) params.status = t('Enabled')
+    if (params.status === 2) params.status = t('Disabled')
+  }
+  return t(template, params)
+}
+
+function normalizeLegacyQuota(value: string): string {
+  const tokenQuota = /^(-?\d+) 点额度$/.exec(value.trim())
+  if (tokenQuota) return formatLogQuota(Number(tokenQuota[1]))
+  return value.trim().replace(/\s*额度$/, '')
+}
+
+/**
+ * Render current structured operations and the finite set of historical
+ * business-log sentences that predate operation descriptors.
+ */
+export function renderLogContent(
+  log: UsageLog,
+  other: LogOtherData | null | undefined,
+  t: (key: string, opts?: Record<string, unknown>) => string
+): string | null {
+  const structured = renderAuditContent(other, t)
+  if (structured) return structured
+
+  const content = log.content?.trim()
+  if (!content) return null
+
+  // ponytail: keep this finite legacy parser until old natural-language rows age out;
+  // new log types must use other.op instead of adding another stored sentence.
+  let match: RegExpExecArray | null
+  if (log.type === 3) {
+    match = /^管理员重置订阅套餐 (.+)（ID: (\d+)）额度$/.exec(content)
+    if (match) {
+      return t(
+        'Reset active subscriptions for plan {{plan_title}} (ID: {{plan_id}})',
+        {
+          plan_title: match[1],
+          plan_id: match[2],
+        }
+      )
+    }
+  }
+
+  if (log.type === 7) {
+    match = /^Logged in successfully via (.+)$/.exec(content)
+    if (match) {
+      return t('Logged in successfully via {{method}}', {
+        method: getLoginMethodLabel(match[1], t),
+      })
+    }
+  }
+
+  if (log.type === 4) {
+    if (content === '开始设置两步验证') {
+      return t('Started two-factor authentication setup')
+    }
+    if (content === '成功启用两步验证') {
+      return t('Enabled two-factor authentication')
+    }
+    if (content === '禁用两步验证') {
+      return t('Disabled two-factor authentication')
+    }
+    if (content === '重新生成两步验证备用码') {
+      return t('Regenerated two-factor authentication backup codes')
+    }
+    if (content === '通用安全验证成功 (验证方式: 2FA)') {
+      return t('Security verification succeeded via {{method}}', {
+        method: '2FA',
+      })
+    }
+
+    match = /^管理员调整额度 (.+)$/.exec(content)
+    if (match) {
+      const quota =
+        log.quota === 0
+          ? normalizeLegacyQuota(match[1])
+          : formatLogQuota(Math.abs(log.quota))
+      if (log.quota > 0) {
+        return t('Increased user quota by {{quota}}', { quota })
+      }
+      if (log.quota < 0) {
+        return t('Decreased user quota by {{quota}}', { quota })
+      }
+    }
+
+    match = /^邀请好友充值返利 (.+)，受邀用户 (.+)$/.exec(content)
+    if (match) {
+      return t(
+        'Received a {{quota}} top-up rebate from user {{related_user}}',
+        {
+          quota:
+            log.quota === 0
+              ? normalizeLegacyQuota(match[1])
+              : formatLogQuota(Math.abs(log.quota)),
+          related_user: match[2],
+        }
+      )
+    }
+
+    const rewardPatterns: Array<[RegExp, string]> = [
+      [
+        /^转移邀请奖励 (.+) 到余额$/,
+        'Transferred {{quota}} of referral rewards to the balance',
+      ],
+      [/^新用户注册赠送 (.+)$/, 'Received a {{quota}} sign-up reward'],
+      [
+        /^使用邀请码赠送 (.+)$/,
+        'Received a {{quota}} reward for using an invitation code',
+      ],
+      [
+        /^邀请用户赠送 (.+)$/,
+        'Received a {{quota}} reward for inviting a user',
+      ],
+      [/^用户签到，获得额度 (.+)$/, 'Checked in and received {{quota}}'],
+    ]
+    for (const [pattern, template] of rewardPatterns) {
+      match = pattern.exec(content)
+      if (match) {
+        return t(template, {
+          quota:
+            log.quota === 0
+              ? normalizeLegacyQuota(match[1])
+              : formatLogQuota(Math.abs(log.quota)),
+        })
+      }
+    }
+  }
+
+  if (log.type === 1) {
+    match = /^通过兑换码充值 (.+)，兑换码ID (\d+)$/.exec(content)
+    if (match) {
+      return t('Redeemed code {{redemption_id}} and received {{quota}}', {
+        quota: normalizeLegacyQuota(match[1]),
+        redemption_id: match[2],
+      })
+    }
+
+    match =
+      /^管理员补单成功，充值金额:\s*(.+?)[，,]\s*支付金额[：:]\s*([0-9.]+)$/.exec(
+        content
+      )
+    if (match) {
+      return t(
+        'Admin completed the top-up: credited {{quota}}, paid {{money}}',
+        {
+          quota: normalizeLegacyQuota(match[1]),
+          money: match[2],
+        }
+      )
+    }
+
+    match =
+      /^(使用在线|使用Creem|蓝兔支付|NOWPayments|Waffo Pancake|Waffo)充值成功，充值(?:金额|额度):\s*(.+?)[，,]\s*支付金额[：:]\s*([0-9.]+)$/.exec(
+        content
+      )
+    if (match) {
+      const providers: Record<string, string> = {
+        使用在线: other?.admin_info?.callback_payment_method ?? t('Online'),
+        使用Creem: 'Creem',
+        蓝兔支付: 'LanTu',
+        NOWPayments: 'NOWPayments',
+        Waffo: 'Waffo',
+        'Waffo Pancake': 'Waffo Pancake',
+      }
+      return t(
+        'Top-up completed via {{provider}}: credited {{quota}}, paid {{money}}',
+        {
+          provider: providers[match[1]],
+          quota: normalizeLegacyQuota(match[2]),
+          money: match[3],
+        }
+      )
+    }
+
+    match =
+      /^订阅购买成功，套餐:\s*(.+?)[，,]\s*支付金额:\s*([^，,]+)[，,]\s*支付方式:\s*(.+)$/.exec(
+        content
+      )
+    if (match) {
+      return t(
+        'Purchased subscription {{plan}} for {{money}} via {{payment_method}}',
+        {
+          plan: match[1],
+          money: match[2],
+          payment_method: match[3],
+        }
+      )
+    }
+
+    match =
+      /^使用余额购买订阅成功，套餐:\s*(.+?)[，,]\s*支付金额:\s*([^，,]+)[，,]\s*扣除额度:\s*(-?\d+)$/.exec(
+        content
+      )
+    if (match) {
+      return t(
+        'Purchased subscription {{plan}} with balance: paid {{money}}, deducted {{quota}}',
+        {
+          plan: match[1],
+          money: match[2],
+          quota: formatLogQuota(Number(match[3])),
+        }
+      )
+    }
+  }
+
+  return null
 }

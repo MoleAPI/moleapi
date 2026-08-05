@@ -47,19 +47,35 @@ var auditRouteActions = map[string]string{
 	"DELETE /api/user/:id/oauth/bindings/:provider_id": "user.oauth_unbind",
 
 	// 系统设置（root）
-	"POST /api/option/payment_compliance":       "option.payment_compliance",
-	"POST /api/option/rest_model_ratio":         "option.reset_ratio",
-	"DELETE /api/option/channel_affinity_cache": "option.clear_affinity_cache",
+	"POST /api/option/payment_compliance":                 "option.payment_compliance",
+	"POST /api/option/rest_model_ratio":                   "option.reset_ratio",
+	"DELETE /api/option/channel_affinity_cache":           "option.clear_affinity_cache",
+	"POST /api/option/waffo-pancake/catalog":              "option.waffo_catalog",
+	"POST /api/option/waffo-pancake/pair":                 "option.waffo_pair",
+	"POST /api/option/waffo-pancake/save":                 "option.waffo_save",
+	"POST /api/option/waffo-pancake/subscription-product": "option.waffo_subscription_product",
 
 	// 自定义 OAuth（root）
-	"POST /api/custom-oauth-provider/":      "custom_oauth.create",
-	"PUT /api/custom-oauth-provider/:id":    "custom_oauth.update",
-	"DELETE /api/custom-oauth-provider/:id": "custom_oauth.delete",
+	"POST /api/custom-oauth-provider/discovery": "custom_oauth.discovery",
+	"POST /api/custom-oauth-provider/":          "custom_oauth.create",
+	"PUT /api/custom-oauth-provider/:id":        "custom_oauth.update",
+	"DELETE /api/custom-oauth-provider/:id":     "custom_oauth.delete",
 
 	// 性能/缓存（root）
 	"DELETE /api/performance/disk_cache": "performance.clear_disk_cache",
+	"POST /api/performance/reset_stats":  "performance.reset_stats",
 	"POST /api/performance/gc":           "performance.gc",
 	"DELETE /api/performance/logs":       "performance.clear_logs",
+	"POST /api/ratio_sync/fetch":         "ratio_sync.fetch",
+
+	// 渠道管理中尚未由 handler 写入结构化参数的操作
+	"POST /api/channel/fix":                   "channel.fix",
+	"POST /api/channel/fetch_models":          "channel.fetch_models",
+	"POST /api/channel/:id/codex/refresh":     "channel.codex_refresh",
+	"POST /api/channel/:id/codex/usage/reset": "channel.codex_usage_reset",
+	"POST /api/channel/ollama/pull":           "channel.ollama_pull",
+	"POST /api/channel/ollama/pull/stream":    "channel.ollama_pull",
+	"DELETE /api/channel/ollama/delete":       "channel.ollama_delete",
 
 	// 兑换码
 	"PUT /api/redemption/":           "redemption.update",
@@ -88,12 +104,30 @@ var auditRouteActions = map[string]string{
 	"DELETE /api/deployments/:id": "deployment.delete",
 
 	// 订阅（管理员）
-	"POST /api/subscription/admin/plans":    "subscription.plan_create",
-	"PUT /api/subscription/admin/plans/:id": "subscription.plan_update",
-	"POST /api/subscription/admin/bind":     "subscription.bind",
+	"POST /api/subscription/admin/plans":                             "subscription.plan_create",
+	"PUT /api/subscription/admin/plans/:id":                          "subscription.plan_update",
+	"PATCH /api/subscription/admin/plans/:id":                        "subscription.plan_update",
+	"POST /api/subscription/admin/bind":                              "subscription.bind",
+	"POST /api/subscription/admin/users/:id/subscriptions":           "subscription.user_bind",
+	"POST /api/subscription/admin/user_subscriptions/:id/invalidate": "subscription.user_invalidate",
+	"DELETE /api/subscription/admin/user_subscriptions/:id":          "subscription.user_delete",
 
 	// 日志
 	"POST /api/system-task/log-cleanup": "log.cleanup_start",
+
+	// 系统实例
+	"DELETE /api/system-info/stale-instances":      "system_info.delete_stale",
+	"DELETE /api/system-info/instances/:node_name": "system_info.delete_instance",
+
+	// 模型元数据补充操作
+	"POST /api/models/descriptions/import": "model.descriptions_import",
+
+	// 部署补充操作
+	"POST /api/deployments/settings/test-connection": "deployment.test_connection",
+	"POST /api/deployments/test-connection":          "deployment.test_connection",
+	"POST /api/deployments/price-estimation":         "deployment.price_estimation",
+	"PUT /api/deployments/:id/name":                  "deployment.update_name",
+	"POST /api/deployments/:id/extend":               "deployment.extend",
 }
 
 // beginAdminAudit 在管理/root 写操作进入 handler 前包装 ResponseWriter，

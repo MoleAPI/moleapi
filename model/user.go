@@ -28,12 +28,20 @@ const (
 )
 
 var (
-	ErrInvalidAffQuotaTransfer      = errors.New("invalid affiliate quota transfer")
-	ErrAffQuotaTransferBelowMinimum = errors.New("affiliate quota transfer below minimum")
-	ErrAffQuotaInsufficient         = errors.New("affiliate quota insufficient")
-	ErrAffQuotaTransferOutOfRange   = errors.New("affiliate quota transfer out of range")
-	usernamePattern                 = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	ErrInvalidAffQuotaTransfer       = errors.New("invalid affiliate quota transfer")
+	ErrAffQuotaTransferBelowMinimum  = errors.New("affiliate quota transfer below minimum")
+	ErrAffQuotaInsufficient          = errors.New("affiliate quota insufficient")
+	ErrAffQuotaTransferOutOfRange    = errors.New("affiliate quota transfer out of range")
+	ErrUserQuotaAdjustmentOutOfRange = errors.New("user quota adjustment out of range")
+	usernamePattern                  = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
 )
+
+// ponytail: JSON number clients stay exact at this ceiling; use string quotas before raising it.
+const maxUserBalance int64 = 1<<53 - 1
+
+func userBalanceLimit() int64 {
+	return min(maxUserBalance, int64(math.MaxInt))
+}
 
 var userSortColumns = map[string]string{
 	"id":            "id",
@@ -119,9 +127,9 @@ type User struct {
 	TelegramId           string                     `json:"telegram_id" gorm:"column:telegram_id;index"`
 	VerificationCode     string                     `json:"verification_code" gorm:"-:all"`                         // this field is only for Email verification, don't save it to database!
 	AccessToken          *string                    `json:"-" gorm:"type:char(32);column:access_token;uniqueIndex"` // this token is for system management
-	Quota                int                        `json:"quota" gorm:"type:int;default:0"`
-	UsedQuota            int                        `json:"used_quota" gorm:"type:int;default:0;column:used_quota"` // used quota
-	RequestCount         int                        `json:"request_count" gorm:"type:int;default:0;"`               // request number
+	Quota                int                        `json:"quota" gorm:"type:bigint;default:0"`
+	UsedQuota            int                        `json:"used_quota" gorm:"type:bigint;default:0;column:used_quota"` // used quota
+	RequestCount         int                        `json:"request_count" gorm:"type:int;default:0;"`                  // request number
 	Group                string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
 	AffCode              string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	AffCount             int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
@@ -726,10 +734,11 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 	if user.AffQuota < quota {
 		return ErrAffQuotaInsufficient
 	}
-	quotaAfterTransfer := int64(user.Quota) + int64(quota)
-	if user.AffQuota < 0 || user.AffQuota > common.MaxQuota || quotaAfterTransfer < -int64(common.MaxQuota) || quotaAfterTransfer > int64(common.MaxQuota) {
+	balanceLimit := userBalanceLimit()
+	if user.AffQuota < 0 || user.AffQuota > common.MaxQuota || int64(user.Quota) < -balanceLimit || int64(user.Quota) > balanceLimit-int64(quota) {
 		return ErrAffQuotaTransferOutOfRange
 	}
+	quotaAfterTransfer := int64(user.Quota) + int64(quota)
 
 	if err := tx.Model(&user).Updates(map[string]interface{}{
 		"aff_quota": user.AffQuota - quota,
@@ -744,7 +753,9 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 	if err := invalidateUserCache(user.Id); err != nil {
 		common.SysError(fmt.Sprintf("failed to invalidate user cache after reward transfer user_id=%d: %v", user.Id, err))
 	}
-	RecordLogWithQuota(user.Id, LogTypeSystem, fmt.Sprintf("转移邀请奖励 %s 到余额", logger.LogQuota(quota)), -quota)
+	RecordLogWithQuotaAndOperation(user.Id, LogTypeSystem, fmt.Sprintf("转移邀请奖励 %s 到余额", logger.LogQuota(quota)), -quota, "user.reward_transfer", map[string]interface{}{
+		"quota_raw": quota,
+	})
 	return nil
 }
 
@@ -836,7 +847,9 @@ func (user *User) Insert(inviterId int) error {
 
 func (user *User) recordRegistrationRewards(inviterId int) {
 	if user.Quota > 0 {
-		RecordLogWithQuota(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(user.Quota)), user.Quota)
+		RecordLogWithQuotaAndOperation(user.Id, LogTypeSystem, fmt.Sprintf("新用户注册赠送 %s", logger.LogQuota(user.Quota)), user.Quota, "user.registration_reward", map[string]interface{}{
+			"quota_raw": user.Quota,
+		})
 	}
 	if inviterId == 0 || !operation_setting.IsPaymentComplianceConfirmed() {
 		return
@@ -849,7 +862,9 @@ func (user *User) recordRegistrationRewards(inviterId int) {
 		if _, _, err := AdjustUserQuota(user.Id, inviteeQuota, false); err != nil {
 			common.SysError(fmt.Sprintf("failed to grant invitee registration reward user_id=%d: %v", user.Id, err))
 		} else {
-			RecordLogWithQuota(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(inviteeQuota)), inviteeQuota)
+			RecordLogWithQuotaAndOperation(user.Id, LogTypeSystem, fmt.Sprintf("使用邀请码赠送 %s", logger.LogQuota(inviteeQuota)), inviteeQuota, "user.invitee_reward", map[string]interface{}{
+				"quota_raw": inviteeQuota,
+			})
 		}
 	}
 
@@ -860,7 +875,9 @@ func (user *User) recordRegistrationRewards(inviterId int) {
 		if err := inviteUser(inviterId, inviterQuota); err != nil {
 			common.SysError(fmt.Sprintf("failed to grant inviter registration reward inviter_id=%d: %v", inviterId, err))
 		} else {
-			RecordLogWithQuota(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(inviterQuota)), inviterQuota)
+			RecordLogWithQuotaAndOperation(inviterId, LogTypeSystem, fmt.Sprintf("邀请用户赠送 %s", logger.LogQuota(inviterQuota)), inviterQuota, "user.inviter_reward", map[string]interface{}{
+				"quota_raw": inviterQuota,
+			})
 		}
 	}
 }
@@ -1466,8 +1483,10 @@ func GetUserSetting(id int, fromDB bool) (settingMap dto.UserSetting, err error)
 
 // AdjustUserQuota applies a bounded delta or replacement while holding the user row.
 func AdjustUserQuota(id int, value int, override bool) (oldQuota int, newQuota int, err error) {
-	if id <= 0 || value < -common.MaxQuota || value > common.MaxQuota {
-		return 0, 0, errors.New("invalid quota adjustment")
+	balanceLimit := userBalanceLimit()
+	adjustment := int64(value)
+	if id <= 0 || adjustment < -balanceLimit || adjustment > balanceLimit {
+		return 0, 0, ErrUserQuotaAdjustmentOutOfRange
 	}
 	err = DB.Transaction(func(tx *gorm.DB) error {
 		var user User
@@ -1475,13 +1494,18 @@ func AdjustUserQuota(id int, value int, override bool) (oldQuota int, newQuota i
 			return err
 		}
 		oldQuota = user.Quota
-		target := int64(value)
+		target := adjustment
 		if !override {
-			target = int64(oldQuota) + int64(value)
+			current := int64(oldQuota)
+			if current < -balanceLimit || current > balanceLimit ||
+				(adjustment > 0 && current > balanceLimit-adjustment) ||
+				(adjustment < 0 && current < -balanceLimit-adjustment) {
+				return ErrUserQuotaAdjustmentOutOfRange
+			}
+			target = current + adjustment
 		}
-		delta := target - int64(oldQuota)
-		if target < -int64(common.MaxQuota) || target > int64(common.MaxQuota) || delta < -int64(common.MaxQuota) || delta > int64(common.MaxQuota) {
-			return errors.New("quota adjustment exceeds supported range")
+		if target < -balanceLimit || target > balanceLimit {
+			return ErrUserQuotaAdjustmentOutOfRange
 		}
 		newQuota = int(target)
 		return tx.Model(&user).Update("quota", newQuota).Error

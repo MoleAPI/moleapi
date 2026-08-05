@@ -1,17 +1,29 @@
 package setting
 
 import (
+	"fmt"
+	"slices"
+	"strconv"
+	"sync/atomic"
+
 	"github.com/QuantumNous/new-api/common"
 )
 
-var autoGroups = []string{
-	"default",
-}
+const DefaultMaxTokenAutoGroups = 5
+
+var autoGroups atomic.Value
 
 var DefaultUseAutoGroup = false
 
+var maxTokenAutoGroups atomic.Int64
+
+func init() {
+	autoGroups.Store([]string{"default"})
+	maxTokenAutoGroups.Store(DefaultMaxTokenAutoGroups)
+}
+
 func ContainsAutoGroup(group string) bool {
-	for _, autoGroup := range autoGroups {
+	for _, autoGroup := range autoGroups.Load().([]string) {
 		if autoGroup == group {
 			return true
 		}
@@ -19,13 +31,30 @@ func ContainsAutoGroup(group string) bool {
 	return false
 }
 
+func parseAutoGroupsJsonString(jsonString string) ([]string, error) {
+	groups := make([]string, 0)
+	if err := common.Unmarshal([]byte(jsonString), &groups); err != nil {
+		return nil, err
+	}
+	return groups, nil
+}
+
+func ValidateAutoGroupsJsonString(jsonString string) error {
+	_, err := parseAutoGroupsJsonString(jsonString)
+	return err
+}
+
 func UpdateAutoGroupsByJsonString(jsonString string) error {
-	autoGroups = make([]string, 0)
-	return common.Unmarshal([]byte(jsonString), &autoGroups)
+	groups, err := parseAutoGroupsJsonString(jsonString)
+	if err != nil {
+		return err
+	}
+	autoGroups.Store(groups)
+	return nil
 }
 
 func AutoGroups2JsonString() string {
-	jsonBytes, err := common.Marshal(autoGroups)
+	jsonBytes, err := common.Marshal(GetAutoGroups())
 	if err != nil {
 		return "[]"
 	}
@@ -33,5 +62,26 @@ func AutoGroups2JsonString() string {
 }
 
 func GetAutoGroups() []string {
-	return autoGroups
+	return slices.Clone(autoGroups.Load().([]string))
+}
+
+func GetMaxTokenAutoGroups() int {
+	return int(maxTokenAutoGroups.Load())
+}
+
+func ValidateMaxTokenAutoGroups(value string) error {
+	maxCount, err := strconv.Atoi(value)
+	if err != nil || maxCount <= 0 {
+		return fmt.Errorf("MaxTokenAutoGroups must be a positive integer")
+	}
+	return nil
+}
+
+func UpdateMaxTokenAutoGroups(value string) error {
+	if err := ValidateMaxTokenAutoGroups(value); err != nil {
+		return err
+	}
+	maxCount, _ := strconv.Atoi(value)
+	maxTokenAutoGroups.Store(int64(maxCount))
+	return nil
 }

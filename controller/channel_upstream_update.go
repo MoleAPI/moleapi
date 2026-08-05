@@ -901,6 +901,11 @@ func DetectChannelUpstreamModelUpdates(c *gin.Context) {
 	if modelsChanged {
 		refreshChannelRuntimeCache()
 	}
+	recordManageAudit(c, "channel.upstream_detect", map[string]interface{}{
+		"id":             channel.Id,
+		"name":           channel.Name,
+		"models_changed": modelsChanged,
+	})
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,

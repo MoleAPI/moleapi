@@ -133,3 +133,17 @@ func TestGetUserFlowQuotaDatesRejectsInvalidTimeRange(t *testing.T) {
 	require.False(t, payload.Success)
 	require.Equal(t, "invalid start_timestamp", payload.Message)
 }
+
+func TestGetAdminBusinessMetricsRejectsRangesOverOneYear(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/data/business?start_timestamp=1&end_timestamp=40000000", nil)
+
+	GetAdminBusinessMetrics(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var payload flowQuotaResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+	require.False(t, payload.Success)
+	require.Equal(t, "time range cannot exceed 366 days", payload.Message)
+}

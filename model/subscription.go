@@ -778,7 +778,11 @@ func CompleteSubscriptionOrderWithPaymentDetails(tradeNo string, providerPayload
 	}
 	if logUserId > 0 {
 		msg := fmt.Sprintf("订阅购买成功，套餐: %s，支付金额: %.2f，支付方式: %s", logPlanTitle, logMoney, logPaymentMethod)
-		RecordLog(logUserId, LogTypeTopup, msg)
+		RecordLogWithQuotaAndOperation(logUserId, LogTypeTopup, msg, 0, "subscription.purchase", map[string]interface{}{
+			"plan":           logPlanTitle,
+			"money":          fmt.Sprintf("%.2f", logMoney),
+			"payment_method": logPaymentMethod,
+		})
 	}
 	return nil
 }
@@ -1024,7 +1028,11 @@ func PurchaseSubscriptionWithBalance(userId int, planId int) error {
 		refreshSubscriptionUserGroupCache(userId, "subscription balance purchase")
 	}
 	msg := fmt.Sprintf("使用余额购买订阅成功，套餐: %s，支付金额: %.2f，扣除额度: %d", logPlanTitle, logMoney, chargedQuota)
-	RecordLog(userId, LogTypeTopup, msg)
+	RecordLogWithQuotaAndOperation(userId, LogTypeTopup, msg, 0, "subscription.balance_purchase", map[string]interface{}{
+		"plan":      logPlanTitle,
+		"money":     fmt.Sprintf("%.2f", logMoney),
+		"quota_raw": chargedQuota,
+	})
 	return nil
 }
 

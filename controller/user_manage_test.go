@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -186,22 +187,58 @@ func TestManageUserQuotaAuditIncludesRawQuota(t *testing.T) {
 	require.NoError(t, db.Where("user_id = ? AND type = ?", user.Id, model.LogTypeSystem).First(&rewardLog).Error)
 	assert.Equal(t, -25, rewardLog.Quota)
 	assert.Contains(t, rewardLog.Content, "管理员调整额度")
+	require.NoError(t, common.UnmarshalJsonStr(rewardLog.Other, &other))
+	op = other["op"].(map[string]interface{})
+	assert.Equal(t, "user.quota_subtract", op["action"])
 }
 
-func TestManageUserQuotaRejectsOutOfRangeBalance(t *testing.T) {
+func TestManageUserQuotaSupportsLargeBalanceAdjustments(t *testing.T) {
+	if strconv.IntSize < 64 {
+		t.Skip("large account balances require a 64-bit server")
+	}
 	db := setupManageUserTestDB(t)
+	const largeAdjustment int64 = 5_000_000_000
 	user := model.User{
 		Username: "managed-quota-limit", Password: "password", Role: common.RoleCommonUser,
 		Status: common.UserStatusEnabled, Group: "default", Quota: common.MaxQuota,
 	}
 	require.NoError(t, db.Create(&user).Error)
 
-	recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":1}`, user.Id))
+	recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":%d}`, user.Id, largeAdjustment))
+	assert.Contains(t, recorder.Body.String(), `"success":true`)
+	recorder = performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"subtract","value":1000000000}`, user.Id))
+	assert.Contains(t, recorder.Body.String(), `"success":true`)
+	recorder = performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"override","value":6000000000}`, user.Id))
+	assert.Contains(t, recorder.Body.String(), `"success":true`)
+
+	var updated model.User
+	require.NoError(t, db.First(&updated, user.Id).Error)
+	assert.EqualValues(t, int64(6_000_000_000), updated.Quota)
+
+	var systemLogs []model.Log
+	require.NoError(t, db.Where("user_id = ? AND type = ?", user.Id, model.LogTypeSystem).Order("id asc").Find(&systemLogs).Error)
+	require.Len(t, systemLogs, 3)
+	assert.EqualValues(t, largeAdjustment, systemLogs[0].Quota)
+	assert.EqualValues(t, -1_000_000_000, systemLogs[1].Quota)
+}
+
+func TestManageUserQuotaRejectsBalanceOutsideExactRange(t *testing.T) {
+	if strconv.IntSize < 64 {
+		t.Skip("large account balances require a 64-bit server")
+	}
+	db := setupManageUserTestDB(t)
+	user := model.User{
+		Username: "managed-quota-overflow", Password: "password", Role: common.RoleCommonUser,
+		Status: common.UserStatusEnabled, Group: "default", Quota: 100,
+	}
+	require.NoError(t, db.Create(&user).Error)
+
+	recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"add","value":9007199254740992}`, user.Id))
 	assert.Contains(t, recorder.Body.String(), `"success":false`)
 
 	var updated model.User
 	require.NoError(t, db.First(&updated, user.Id).Error)
-	assert.Equal(t, common.MaxQuota, updated.Quota)
+	assert.Equal(t, 100, updated.Quota)
 	var logCount int64
 	require.NoError(t, db.Model(&model.Log{}).Count(&logCount).Error)
 	assert.Zero(t, logCount)
