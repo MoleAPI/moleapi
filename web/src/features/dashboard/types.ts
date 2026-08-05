@@ -68,6 +68,23 @@ export interface ChannelSuccessData {
   channels: ChannelSuccessSummary[]
 }
 
+export interface AdminBusinessMetrics {
+  new_users: number
+  intent_orders: number
+  intent_amounts: AdminBusinessOrderAmount[]
+  paid_orders: number
+  paid_amounts: AdminBusinessOrderAmount[]
+  paying_users: number
+  payment_success_rate: number
+}
+
+export interface AdminBusinessOrderAmount {
+  currency: string
+  orders: number
+  amount: number
+  average_amount: number
+}
+
 export type FlowMetric = 'quota' | 'tokens' | 'requests'
 
 export type FlowOverflowMode = 'aggregate' | 'hide'
@@ -226,7 +243,9 @@ export interface DashboardChartPreferences {
 // switching between dashboard sub-sections, matching the model/flow filters.
 export interface UserChartsFilters {
   timeGranularity: TimeGranularity
-  selectedRange: number
+  selectedRange: number | null
+  customStart?: Date
+  customEnd?: Date
   topUserLimit: number
 }
 

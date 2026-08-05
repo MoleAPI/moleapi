@@ -26,6 +26,7 @@ import type {
   CommonLogFilters,
   DrawingLogFilters,
   TaskLogFilters,
+  CommonQuickFilterField,
 } from '../types'
 
 // ============================================================================
@@ -35,6 +36,18 @@ import type {
 function cleanTextFilter(value: string | undefined): string | undefined {
   const nextValue = value?.trim()
   return nextValue ? nextValue : undefined
+}
+
+export function buildQuickFilterSearch(
+  search: Record<string, unknown>,
+  field: CommonQuickFilterField,
+  value: string
+): Record<string, unknown> {
+  return {
+    ...search,
+    page: 1,
+    [field]: field === 'type' ? [value] : value,
+  }
 }
 
 /**

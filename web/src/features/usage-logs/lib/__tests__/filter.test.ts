@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 
-import { buildSearchParams } from '../filter'
+import { buildQuickFilterSearch, buildSearchParams } from '../filter'
 
 describe('usage log filters', () => {
   test('trims text filters and merges request id filters', () => {
@@ -48,5 +48,21 @@ describe('usage log filters', () => {
         requestId: 'upstream-request',
       }
     )
+  })
+
+  test('quick filters overwrite the selected field and reset pagination', () => {
+    const first = buildQuickFilterSearch(
+      { page: 9, group: 'old', startTime: 1000 },
+      'group',
+      'relay'
+    )
+    const second = buildQuickFilterSearch(first, 'group', 'vip')
+
+    assert.deepEqual(second, {
+      page: 1,
+      group: 'vip',
+      startTime: 1000,
+    })
+    assert.deepEqual(buildQuickFilterSearch(second, 'type', '2').type, ['2'])
   })
 })

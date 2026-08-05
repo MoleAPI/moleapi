@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { useQuery } from '@tanstack/react-query'
 import { getRouteApi } from '@tanstack/react-router'
 import type { ColumnDef } from '@tanstack/react-table'
-import { Fragment, useState } from 'react'
+import { Fragment, useCallback, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -40,9 +40,10 @@ import {
 } from '../constants'
 import type { UsageLog } from '../data/schema'
 import { useColumnsByCategory } from '../lib/columns'
+import { buildQuickFilterSearch } from '../lib/filter'
 import { parseLogOther } from '../lib/format'
 import { fetchLogsByCategory } from '../lib/utils'
-import type { LogCategory } from '../types'
+import type { CommonQuickFilterField, LogCategory } from '../types'
 import { CommonLogsFilterBar } from './common-logs-filter-bar'
 import { InlineLogDetails } from './dialogs/details-dialog'
 import { TaskLogsFilterBar } from './task-logs-filter-bar'
@@ -86,6 +87,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const { isAdminView: isAdmin } = useLogsViewScope()
   const isMobile = useMediaQuery('(max-width: 640px)')
   const searchParams = route.useSearch()
+  const navigate = route.useNavigate()
   const [expandedLogId, setExpandedLogId] = useState<string | null>(null)
 
   const {
@@ -95,8 +97,8 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
     onPaginationChange,
     ensurePageInRange,
   } = useTableUrlState({
-    search: route.useSearch(),
-    navigate: route.useNavigate(),
+    search: searchParams,
+    navigate,
     pagination: { defaultPage: 1, defaultPageSize: isMobile ? 20 : 100 },
     globalFilter: { enabled: false },
     columnFilters: [
@@ -163,7 +165,24 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   })
 
   const logs = data?.items || []
-  const columns = useColumnsByCategory(logCategory, isAdmin)
+  const handleQuickFilter = useCallback(
+    (field: CommonQuickFilterField, value: string) => {
+      void navigate({
+        search: (current) =>
+          buildQuickFilterSearch(
+            current as Record<string, unknown>,
+            field,
+            value
+          ),
+      })
+    },
+    [navigate]
+  )
+  const columns = useColumnsByCategory(
+    logCategory,
+    isAdmin,
+    logCategory === 'common' ? handleQuickFilter : undefined
+  )
   const isLoadingData = isLoading || (isFetching && !data)
 
   const { table } = useDataTable({
@@ -210,6 +229,7 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
           table={table}
           isLoading={isLoadingData}
           logCategory={logCategory}
+          onQuickFilter={handleQuickFilter}
         />
       }
       toolbar={

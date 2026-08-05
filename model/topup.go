@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -50,6 +51,29 @@ type TopUpSearchParams struct {
 	UserKeyword    string
 	StartTimestamp int64
 	EndTimestamp   int64
+}
+
+type AdminBusinessMetrics struct {
+	NewUsers           int64                      `json:"new_users"`
+	IntentOrders       int64                      `json:"intent_orders"`
+	IntentAmounts      []AdminBusinessOrderAmount `json:"intent_amounts"`
+	PaidOrders         int64                      `json:"paid_orders"`
+	PaidAmounts        []AdminBusinessOrderAmount `json:"paid_amounts"`
+	PayingUsers        int64                      `json:"paying_users"`
+	PaymentSuccessRate float64                    `json:"payment_success_rate"`
+}
+
+type AdminBusinessOrderAmount struct {
+	Currency      string  `json:"currency"`
+	Orders        int64   `json:"orders"`
+	Amount        float64 `json:"amount"`
+	AverageAmount float64 `json:"average_amount"`
+}
+
+type businessOrderAggregate struct {
+	Currency   string  `gorm:"column:currency"`
+	OrderCount int64   `gorm:"column:order_count"`
+	Amount     float64 `gorm:"column:order_amount"`
 }
 
 type InviteRewardHistoryParams struct {
@@ -680,6 +704,109 @@ func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err 
 	}
 
 	return topups, total, nil
+}
+
+// GetAdminBusinessMetrics summarizes user growth and the checkout funnel for
+// an admin-selected period. Successful subscription purchases are mirrored in
+// topups, so paid totals come from topups while subscription intent comes from
+// subscription_orders to avoid double counting.
+func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBusinessMetrics, error) {
+	if startTimestamp <= 0 || endTimestamp < startTimestamp {
+		return nil, errors.New("invalid time range")
+	}
+
+	metrics := &AdminBusinessMetrics{}
+	if err := DB.Model(&User{}).
+		Where("created_at >= ? AND created_at <= ?", startTimestamp, endTimestamp).
+		Count(&metrics.NewUsers).Error; err != nil {
+		return nil, err
+	}
+
+	var topUpIntent []businessOrderAggregate
+	if err := DB.Model(&TopUp{}).
+		Select("payment_currency AS currency, COUNT(*) AS order_count, COALESCE(SUM(money), 0) AS order_amount").
+		Where("create_time >= ? AND create_time <= ? AND amount > 0", startTimestamp, endTimestamp).
+		Group("payment_currency").
+		Scan(&topUpIntent).Error; err != nil {
+		return nil, err
+	}
+
+	var subscriptionIntent []businessOrderAggregate
+	if err := DB.Model(&SubscriptionOrder{}).
+		Select("payment_currency AS currency, COUNT(*) AS order_count, COALESCE(SUM(money), 0) AS order_amount").
+		Where("create_time >= ? AND create_time <= ?", startTimestamp, endTimestamp).
+		Group("payment_currency").
+		Scan(&subscriptionIntent).Error; err != nil {
+		return nil, err
+	}
+
+	var paid []businessOrderAggregate
+	if err := DB.Model(&TopUp{}).
+		Select("payment_currency AS currency, COUNT(*) AS order_count, COALESCE(SUM(money), 0) AS order_amount").
+		Where("complete_time >= ? AND complete_time <= ? AND status = ? AND money > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Group("payment_currency").
+		Scan(&paid).Error; err != nil {
+		return nil, err
+	}
+	if err := DB.Model(&TopUp{}).
+		Where("complete_time >= ? AND complete_time <= ? AND status = ? AND money > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Distinct("user_id").
+		Count(&metrics.PayingUsers).Error; err != nil {
+		return nil, err
+	}
+
+	var convertedTopUps int64
+	if err := DB.Model(&TopUp{}).
+		Where("create_time >= ? AND create_time <= ? AND amount > 0 AND status = ?", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Count(&convertedTopUps).Error; err != nil {
+		return nil, err
+	}
+
+	var convertedSubscriptions int64
+	if err := DB.Model(&SubscriptionOrder{}).
+		Where("create_time >= ? AND create_time <= ? AND status = ?", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Count(&convertedSubscriptions).Error; err != nil {
+		return nil, err
+	}
+
+	metrics.IntentAmounts, metrics.IntentOrders = mergeBusinessOrderAmounts(topUpIntent, subscriptionIntent)
+	metrics.PaidAmounts, metrics.PaidOrders = mergeBusinessOrderAmounts(paid)
+	if metrics.IntentOrders > 0 {
+		metrics.PaymentSuccessRate = float64(convertedTopUps+convertedSubscriptions) / float64(metrics.IntentOrders)
+	}
+
+	return metrics, nil
+}
+
+func mergeBusinessOrderAmounts(groups ...[]businessOrderAggregate) ([]AdminBusinessOrderAmount, int64) {
+	byCurrency := make(map[string]*AdminBusinessOrderAmount)
+	var totalOrders int64
+	for _, group := range groups {
+		for _, aggregate := range group {
+			currency := strings.ToUpper(strings.TrimSpace(aggregate.Currency))
+			if byCurrency[currency] == nil {
+				byCurrency[currency] = &AdminBusinessOrderAmount{Currency: currency}
+			}
+			byCurrency[currency].Orders += aggregate.OrderCount
+			byCurrency[currency].Amount += aggregate.Amount
+			totalOrders += aggregate.OrderCount
+		}
+	}
+
+	currencies := make([]string, 0, len(byCurrency))
+	for currency := range byCurrency {
+		currencies = append(currencies, currency)
+	}
+	sort.Strings(currencies)
+	amounts := make([]AdminBusinessOrderAmount, 0, len(currencies))
+	for _, currency := range currencies {
+		amount := byCurrency[currency]
+		if amount.Orders > 0 {
+			amount.AverageAmount = amount.Amount / float64(amount.Orders)
+		}
+		amounts = append(amounts, *amount)
+	}
+	return amounts, totalOrders
 }
 
 // searchTopUpCountHardLimit 搜索充值记录时 COUNT 的安全上限，

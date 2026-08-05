@@ -18,19 +18,21 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { VChart } from '@visactor/react-vchart'
-import { Users, Loader2 } from 'lucide-react'
+import { CalendarDays, Users, Loader2 } from 'lucide-react'
 import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
+import { DateTimePicker } from '@/components/datetime-picker'
+import { Dialog } from '@/components/dialog'
+import { Button } from '@/components/ui/button'
 import { IconBadge } from '@/components/ui/icon-badge'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useTheme } from '@/context/theme-provider'
 import { getUserQuotaDataByUsers } from '@/features/dashboard/api'
-import {
-  TIME_GRANULARITY_OPTIONS,
-  TIME_RANGE_PRESETS,
-} from '@/features/dashboard/constants'
+import { TIME_GRANULARITY_OPTIONS } from '@/features/dashboard/constants'
 import {
   getDefaultDays,
   saveGranularity,
@@ -40,8 +42,10 @@ import type {
   ProcessedUserChartData,
   UserChartsFilters,
 } from '@/features/dashboard/types'
-import { getRollingDateRange, type TimeGranularity } from '@/lib/time'
+import { getNormalizedDateRange, type TimeGranularity } from '@/lib/time'
 import { VCHART_OPTION } from '@/lib/vchart'
+
+import { BusinessMetrics } from './business-metrics'
 
 let themeManagerPromise: Promise<
   (typeof import('@visactor/vchart'))['ThemeManager']
@@ -65,6 +69,8 @@ const USER_CHARTS: {
 ]
 
 const TOP_USER_LIMIT_OPTIONS = [5, 10, 20, 50]
+const USER_ANALYTICS_RANGE_PRESETS = [1, 7, 30]
+const MAX_CUSTOM_RANGE_MS = 366 * 24 * 60 * 60 * 1000
 
 interface UserChartsProps {
   filters: UserChartsFilters
@@ -75,28 +81,49 @@ export function UserCharts(props: UserChartsProps) {
   const { t } = useTranslation()
   const { resolvedTheme } = useTheme()
   const [themeReady, setThemeReady] = useState(false)
+  const [customRangeOpen, setCustomRangeOpen] = useState(false)
+  const [customStart, setCustomStart] = useState<Date>()
+  const [customEnd, setCustomEnd] = useState<Date>()
   const themeManagerRef = useRef<
     (typeof import('@visactor/vchart'))['ThemeManager'] | null
   >(null)
 
   // The selection is owned by the dashboard parent so it persists across
-  // sub-section switches; the rolling window is derived from the chosen range.
+  // sub-section switches.
   const timeGranularity = props.filters.timeGranularity
   const selectedRange = props.filters.selectedRange
   const topUserLimit = props.filters.topUserLimit
   const onFiltersChange = props.onFiltersChange
 
-  const timeRange = useMemo(() => {
-    const { start, end } = getRollingDateRange(selectedRange)
-    return {
-      start_timestamp: Math.floor(start.getTime() / 1000),
-      end_timestamp: Math.floor(end.getTime() / 1000),
+  const selectedDates = useMemo(() => {
+    if (
+      selectedRange == null &&
+      props.filters.customStart &&
+      props.filters.customEnd
+    ) {
+      return {
+        start: props.filters.customStart,
+        end: props.filters.customEnd,
+      }
     }
-  }, [selectedRange])
+    return getNormalizedDateRange(Math.max((selectedRange ?? 7) - 1, 0))
+  }, [props.filters.customEnd, props.filters.customStart, selectedRange])
+
+  const timeRange = useMemo(() => {
+    return {
+      start_timestamp: Math.floor(selectedDates.start.getTime() / 1000),
+      end_timestamp: Math.floor(selectedDates.end.getTime() / 1000),
+    }
+  }, [selectedDates])
 
   const handleRangeChange = useCallback(
     (days: number) => {
-      onFiltersChange({ ...props.filters, selectedRange: days })
+      onFiltersChange({
+        ...props.filters,
+        selectedRange: days,
+        customStart: undefined,
+        customEnd: undefined,
+      })
     },
     [onFiltersChange, props.filters]
   )
@@ -104,10 +131,13 @@ export function UserCharts(props: UserChartsProps) {
   const handleGranularityChange = useCallback(
     (g: TimeGranularity) => {
       saveGranularity(g)
+      const days = getDefaultDays(g)
       onFiltersChange({
         ...props.filters,
         timeGranularity: g,
-        selectedRange: getDefaultDays(g),
+        selectedRange: days,
+        customStart: undefined,
+        customEnd: undefined,
       })
     },
     [onFiltersChange, props.filters]
@@ -119,6 +149,32 @@ export function UserCharts(props: UserChartsProps) {
     },
     [onFiltersChange, props.filters]
   )
+
+  const handleCustomRangeOpenChange = (open: boolean) => {
+    if (open) {
+      setCustomStart(selectedDates.start)
+      setCustomEnd(selectedDates.end)
+    }
+    setCustomRangeOpen(open)
+  }
+
+  const handleCustomRangeApply = () => {
+    if (!customStart || !customEnd || customEnd < customStart) {
+      toast.error(t('Please select a valid time range'))
+      return
+    }
+    if (customEnd.getTime() - customStart.getTime() > MAX_CUSTOM_RANGE_MS) {
+      toast.error(t('The time range cannot exceed 366 days'))
+      return
+    }
+    onFiltersChange({
+      ...props.filters,
+      selectedRange: null,
+      customStart,
+      customEnd,
+    })
+    setCustomRangeOpen(false)
+  }
 
   useEffect(() => {
     const updateTheme = async () => {
@@ -158,22 +214,55 @@ export function UserCharts(props: UserChartsProps) {
     <div className='space-y-3'>
       <div className='flex items-center gap-1.5 overflow-x-auto pb-1 sm:gap-2'>
         <Tabs
-          value={String(selectedRange)}
+          value={selectedRange == null ? 'custom' : String(selectedRange)}
           onValueChange={(value) => handleRangeChange(Number(value))}
           className='shrink-0'
         >
           <TabsList>
-            {TIME_RANGE_PRESETS.map((preset) => (
+            {USER_ANALYTICS_RANGE_PRESETS.map((days) => (
               <TabsTrigger
-                key={preset.days}
-                value={String(preset.days)}
+                key={days}
+                value={String(days)}
                 className='px-2.5 text-xs'
               >
-                {t(preset.label)}
+                {days === 1 ? t('Today') : t('{{count}} Days', { count: days })}
               </TabsTrigger>
             ))}
           </TabsList>
         </Tabs>
+
+        <Dialog
+          open={customRangeOpen}
+          onOpenChange={handleCustomRangeOpenChange}
+          trigger={
+            <Button
+              variant={selectedRange == null ? 'default' : 'outline'}
+              size='sm'
+              className='shrink-0'
+            >
+              <CalendarDays className='size-4' />
+              {t('Custom')}
+            </Button>
+          }
+          title={t('Custom Time Range')}
+          description={t('Choose a range of up to 366 days.')}
+          contentClassName='sm:max-w-md'
+          contentHeight='auto'
+          footer={
+            <Button onClick={handleCustomRangeApply}>{t('Apply')}</Button>
+          }
+        >
+          <div className='grid gap-4 py-2'>
+            <div className='grid gap-2'>
+              <Label>{t('Start Time')}</Label>
+              <DateTimePicker value={customStart} onChange={setCustomStart} />
+            </div>
+            <div className='grid gap-2'>
+              <Label>{t('End Time')}</Label>
+              <DateTimePicker value={customEnd} onChange={setCustomEnd} />
+            </div>
+          </div>
+        </Dialog>
 
         <Tabs
           value={timeGranularity}
@@ -220,6 +309,11 @@ export function UserCharts(props: UserChartsProps) {
           <Loader2 className='text-muted-foreground size-4 animate-spin' />
         )}
       </div>
+
+      <BusinessMetrics
+        startTimestamp={timeRange.start_timestamp}
+        endTimestamp={timeRange.end_timestamp}
+      />
 
       <div className='grid gap-3'>
         {USER_CHARTS.map((chart) => {

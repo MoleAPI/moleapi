@@ -10,7 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func parseFlowQuotaTimeRange(c *gin.Context) (int64, int64, bool) {
+func parseDataTimeRange(c *gin.Context) (int64, int64, bool) {
 	startTimestamp, err := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	if err != nil || startTimestamp <= 0 {
 		common.ApiErrorMsg(c, "invalid start_timestamp")
@@ -86,7 +86,7 @@ func GetUserQuotaDates(c *gin.Context) {
 }
 
 func GetAllFlowQuotaDates(c *gin.Context) {
-	startTimestamp, endTimestamp, ok := parseFlowQuotaTimeRange(c)
+	startTimestamp, endTimestamp, ok := parseDataTimeRange(c)
 	if !ok {
 		return
 	}
@@ -106,7 +106,7 @@ func GetAllFlowQuotaDates(c *gin.Context) {
 
 func GetUserFlowQuotaDates(c *gin.Context) {
 	userId := c.GetInt("id")
-	startTimestamp, endTimestamp, ok := parseFlowQuotaTimeRange(c)
+	startTimestamp, endTimestamp, ok := parseDataTimeRange(c)
 	if !ok {
 		return
 	}
@@ -128,4 +128,28 @@ func GetUserFlowQuotaDates(c *gin.Context) {
 		"data":    dates,
 	})
 	return
+}
+
+const maxBusinessMetricsRangeSeconds int64 = 366 * 24 * 60 * 60
+
+func GetAdminBusinessMetrics(c *gin.Context) {
+	startTimestamp, endTimestamp, ok := parseDataTimeRange(c)
+	if !ok {
+		return
+	}
+	if endTimestamp-startTimestamp > maxBusinessMetricsRangeSeconds {
+		common.ApiErrorMsg(c, "time range cannot exceed 366 days")
+		return
+	}
+
+	metrics, err := model.GetAdminBusinessMetrics(startTimestamp, endTimestamp)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    metrics,
+	})
 }

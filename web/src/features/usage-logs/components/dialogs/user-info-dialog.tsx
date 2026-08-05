@@ -16,17 +16,23 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import { Dialog } from '@/components/dialog'
+import { StatusBadge } from '@/components/status-badge'
 import { Label } from '@/components/ui/label'
-import { formatQuota, formatCompactNumber } from '@/lib/format'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Separator } from '@/components/ui/separator'
+import {
+  formatCompactNumber,
+  formatQuota,
+  formatTimestampToDate,
+} from '@/lib/format'
 
-import { getUserInfo } from '../../api'
-import type { UserInfo } from '../../types'
+import { getUserInfo, getUserOAuthBindings } from '../../api'
+import type { UserInfo, UserOAuthBinding } from '../../types'
 
 interface UserInfoDialogProps {
   userId: number | null
@@ -34,152 +40,246 @@ interface UserInfoDialogProps {
   onOpenChange: (open: boolean) => void
 }
 
-export function UserInfoDialog({
-  userId,
-  open,
-  onOpenChange,
-}: UserInfoDialogProps) {
-  const { t } = useTranslation()
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+const BUILTIN_BINDINGS: ReadonlyArray<{
+  field: keyof UserInfo
+  label: string
+}> = [
+  { field: 'email', label: 'Email' },
+  { field: 'github_id', label: 'GitHub' },
+  { field: 'discord_id', label: 'Discord' },
+  { field: 'oidc_id', label: 'OIDC' },
+  { field: 'wechat_id', label: 'WeChat' },
+  { field: 'telegram_id', label: 'Telegram' },
+  { field: 'linux_do_id', label: 'LinuxDO' },
+  { field: 'stripe_customer', label: 'Stripe Customer' },
+]
 
-  const fetchUserInfo = useCallback(
-    async (id: number) => {
-      setIsLoading(true)
-      try {
-        const result = await getUserInfo(id)
-        if (result.success) {
-          setUserInfo(result.data || null)
-        } else {
-          toast.error(result.message || t('Failed to fetch user information'))
-        }
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to fetch user info:', error)
-        toast.error(t('Failed to fetch user information'))
-      } finally {
-        setIsLoading(false)
-      }
-    },
-    [t]
-  )
-
-  useEffect(() => {
-    if (open && userId) {
-      fetchUserInfo(userId)
-    }
-  }, [open, userId, fetchUserInfo])
-
-  const InfoItem = ({
-    label,
-    value,
-  }: {
-    label: string
-    value: string | number
-  }) => (
-    <div className='space-y-1.5'>
-      <Label className='text-muted-foreground text-xs'>{label}</Label>
-      <div className='text-sm font-semibold'>{value}</div>
+function InfoItem(props: { label: string; value: string | number }) {
+  return (
+    <div className='min-w-0 space-y-1'>
+      <Label className='text-muted-foreground text-xs'>{props.label}</Label>
+      <div
+        className='truncate text-sm font-semibold'
+        title={String(props.value)}
+      >
+        {props.value}
+      </div>
     </div>
   )
+}
+
+function getRoleLabel(role: number | undefined) {
+  if (role === 100) return 'Root'
+  if (role === 10) return 'Admin'
+  return 'User'
+}
+
+function getStatusLabel(status: number | undefined) {
+  return status === 2 ? 'Disabled' : 'Enabled'
+}
+
+export function UserInfoDialog(props: UserInfoDialogProps) {
+  const { t } = useTranslation()
+  const query = useQuery({
+    queryKey: ['usage-log-user-info', props.userId],
+    enabled: props.open && props.userId != null,
+    queryFn: async () => {
+      const id = props.userId as number
+      const [userResponse, bindingsResponse] = await Promise.all([
+        getUserInfo(id),
+        getUserOAuthBindings(id).catch(() => ({
+          success: false,
+          data: [] as UserOAuthBinding[],
+        })),
+      ])
+      if (!userResponse.success || !userResponse.data) {
+        throw new Error(
+          userResponse.message || 'Failed to fetch user information'
+        )
+      }
+      return {
+        user: userResponse.data,
+        customBindings: bindingsResponse.success
+          ? (bindingsResponse.data ?? [])
+          : [],
+      }
+    },
+    staleTime: 30_000,
+  })
+
+  const user = query.data?.user
+  const bindings = user
+    ? [
+        ...BUILTIN_BINDINGS.flatMap((binding) => {
+          const value = user[binding.field]
+          return typeof value === 'string' && value
+            ? [{ label: binding.label, value }]
+            : []
+        }),
+        ...(query.data?.customBindings ?? []).map((binding) => ({
+          label: binding.provider_name || String(binding.provider_id),
+          value: binding.provider_user_id || binding.external_id || '-',
+        })),
+      ]
+    : []
 
   return (
     <Dialog
-      open={open}
-      onOpenChange={onOpenChange}
+      open={props.open}
+      onOpenChange={props.onOpenChange}
       title={t('User Information')}
       description={t(
-        'View detailed information about this user including balance, usage statistics, and invitation details.'
+        'View account, activity, binding, balance, and invitation details for this user.'
       )}
-      contentClassName='sm:max-w-lg'
-      contentHeight='auto'
-      bodyClassName='space-y-4'
+      contentClassName='sm:max-w-2xl'
+      contentHeight='min(75vh, 680px)'
+      bodyClassName='min-h-0'
     >
-      {isLoading ? (
-        <div className='flex items-center justify-center py-8'>
+      {query.isLoading && (
+        <div className='flex items-center justify-center py-12'>
           <Loader2 className='text-muted-foreground size-6 animate-spin' />
         </div>
-      ) : userInfo ? (
-        <div className='space-y-4 py-4'>
-          {/* Basic Info */}
-          <div className='grid grid-cols-2 gap-4'>
-            <InfoItem label={t('Username')} value={userInfo.username} />
-            {userInfo.display_name && (
-              <InfoItem
-                label={t('Display Name')}
-                value={userInfo.display_name}
-              />
-            )}
-          </div>
-
-          {/* Balance Info */}
-          <div className='grid grid-cols-2 gap-4'>
-            <InfoItem
-              label={t('Balance')}
-              value={formatQuota(userInfo.quota)}
-            />
-            <InfoItem
-              label={t('Used Quota')}
-              value={formatQuota(userInfo.used_quota)}
-            />
-          </div>
-
-          {/* Statistics */}
-          <div className='grid grid-cols-2 gap-4'>
-            <InfoItem
-              label={t('Request Count')}
-              value={formatCompactNumber(userInfo.request_count)}
-            />
-            {userInfo.group && (
-              <InfoItem label={t('User Group')} value={userInfo.group} />
-            )}
-          </div>
-
-          {/* Invitation Info */}
-          {(userInfo.aff_code ||
-            userInfo.aff_count !== undefined ||
-            (userInfo.aff_quota !== undefined && userInfo.aff_quota > 0)) && (
-            <>
-              <div className='grid grid-cols-2 gap-4'>
-                {userInfo.aff_code && (
+      )}
+      {!query.isLoading && (query.isError || !user) && (
+        <div className='text-muted-foreground py-10 text-center text-sm'>
+          {t('Failed to fetch user information')}
+        </div>
+      )}
+      {!query.isLoading && !query.isError && user && (
+        <ScrollArea className='h-full pr-3'>
+          <div className='space-y-4 pb-1'>
+            <section className='space-y-3'>
+              <h3 className='text-sm font-semibold'>{t('Account')}</h3>
+              <div className='grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3'>
+                <InfoItem label='ID' value={user.id} />
+                <InfoItem label={t('Username')} value={user.username} />
+                {user.display_name && (
                   <InfoItem
-                    label={t('Invitation Code')}
-                    value={userInfo.aff_code}
+                    label={t('Display Name')}
+                    value={user.display_name}
                   />
                 )}
-                {userInfo.aff_count !== undefined && (
-                  <InfoItem
-                    label={t('Invited Users')}
-                    value={formatCompactNumber(userInfo.aff_count)}
-                  />
-                )}
-              </div>
-
-              {userInfo.aff_quota !== undefined && userInfo.aff_quota > 0 && (
                 <InfoItem
-                  label={t('Invitation Quota')}
-                  value={formatQuota(userInfo.aff_quota)}
+                  label={t('Role')}
+                  value={t(getRoleLabel(user.role))}
                 />
-              )}
-            </>
-          )}
-
-          {/* Remark */}
-          {userInfo.remark && (
-            <div className='space-y-1.5'>
-              <Label className='text-muted-foreground text-xs'>
-                {t('Remark')}
-              </Label>
-              <div className='text-sm leading-relaxed font-semibold break-words'>
-                {userInfo.remark}
+                <InfoItem
+                  label={t('Status')}
+                  value={t(getStatusLabel(user.status))}
+                />
+                {user.group && (
+                  <InfoItem label={t('User Group')} value={user.group} />
+                )}
               </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        <div className='text-muted-foreground py-8 text-center text-sm'>
-          {t('No user information available')}
-        </div>
+            </section>
+
+            <Separator />
+
+            <section className='space-y-3'>
+              <h3 className='text-sm font-semibold'>
+                {t('Usage and Activity')}
+              </h3>
+              <div className='grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3'>
+                <InfoItem
+                  label={t('Balance')}
+                  value={formatQuota(user.quota)}
+                />
+                <InfoItem
+                  label={t('Used Quota')}
+                  value={formatQuota(user.used_quota)}
+                />
+                <InfoItem
+                  label={t('Request Count')}
+                  value={formatCompactNumber(user.request_count)}
+                />
+                {user.created_at ? (
+                  <InfoItem
+                    label={t('Created At')}
+                    value={formatTimestampToDate(user.created_at, 'seconds')}
+                  />
+                ) : null}
+                {user.last_login_at ? (
+                  <InfoItem
+                    label={t('Last Login')}
+                    value={formatTimestampToDate(user.last_login_at, 'seconds')}
+                  />
+                ) : null}
+              </div>
+            </section>
+
+            <Separator />
+
+            <section className='space-y-3'>
+              <h3 className='text-sm font-semibold'>{t('Account Bindings')}</h3>
+              {bindings.length > 0 ? (
+                <div className='flex flex-wrap gap-2'>
+                  {bindings.map((binding) => (
+                    <StatusBadge
+                      key={`${binding.label}:${binding.value}`}
+                      label={`${t(binding.label)}: ${binding.value}`}
+                      copyText={binding.value}
+                      variant='neutral'
+                      className='max-w-full'
+                    />
+                  ))}
+                </div>
+              ) : (
+                <p className='text-muted-foreground text-sm'>
+                  {t('This user has no bindings')}
+                </p>
+              )}
+            </section>
+
+            {(user.aff_code || user.aff_count != null || user.inviter_id) && (
+              <>
+                <Separator />
+                <section className='space-y-3'>
+                  <h3 className='text-sm font-semibold'>
+                    {t('Invitation Details')}
+                  </h3>
+                  <div className='grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3'>
+                    {user.aff_code && (
+                      <InfoItem
+                        label={t('Invitation Code')}
+                        value={user.aff_code}
+                      />
+                    )}
+                    {user.aff_count != null && (
+                      <InfoItem
+                        label={t('Invited Users')}
+                        value={formatCompactNumber(user.aff_count)}
+                      />
+                    )}
+                    {user.aff_quota != null && (
+                      <InfoItem
+                        label={t('Invitation Quota')}
+                        value={formatQuota(user.aff_quota)}
+                      />
+                    )}
+                    {user.inviter_id ? (
+                      <InfoItem
+                        label={t('Inviter ID')}
+                        value={user.inviter_id}
+                      />
+                    ) : null}
+                  </div>
+                </section>
+              </>
+            )}
+
+            {user.remark && (
+              <>
+                <Separator />
+                <section className='space-y-1'>
+                  <h3 className='text-sm font-semibold'>{t('Remark')}</h3>
+                  <p className='text-muted-foreground text-sm leading-relaxed break-words'>
+                    {user.remark}
+                  </p>
+                </section>
+              </>
+            )}
+          </div>
+        </ScrollArea>
       )}
     </Dialog>
   )
