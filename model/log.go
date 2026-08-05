@@ -234,6 +234,15 @@ func buildOpField(action string, params map[string]interface{}) map[string]inter
 	return op
 }
 
+// RecordLogWithQuotaAndOperation records a normal log with a language-neutral
+// operation descriptor so the frontend can localize its content at display time.
+func RecordLogWithQuotaAndOperation(userId int, logType int, content string, quota int, action string, params map[string]interface{}) {
+	other := common.MapToJsonStr(map[string]interface{}{
+		"op": buildOpField(action, params),
+	})
+	recordLogWithQuota(userId, logType, content, quota, other)
+}
+
 // RecordLoginLog 记录用户登录成功的审计日志（type=LogTypeLogin）。
 // username 由调用方传入（登录流程已持有用户对象），避免额外的数据库查询。
 // content 为英文兜底文本（用于导出）；action+params 供前端本地化渲染。
@@ -290,6 +299,14 @@ func RecordOperationAuditLog(logUserId int, content string, ip string, action st
 }
 
 func RecordTopupLog(userId int, content string, callerIp string, paymentMethod string, callbackPaymentMethod string) {
+	recordTopupLog(userId, content, callerIp, paymentMethod, callbackPaymentMethod, "", nil)
+}
+
+func RecordTopupLogWithOperation(userId int, content string, callerIp string, paymentMethod string, callbackPaymentMethod string, action string, params map[string]interface{}) {
+	recordTopupLog(userId, content, callerIp, paymentMethod, callbackPaymentMethod, action, params)
+}
+
+func recordTopupLog(userId int, content string, callerIp string, paymentMethod string, callbackPaymentMethod string, action string, params map[string]interface{}) {
 	username, _ := GetUsernameById(userId, false)
 	adminInfo := map[string]interface{}{
 		"server_ip":               common.GetIp(),
@@ -301,6 +318,9 @@ func RecordTopupLog(userId int, content string, callerIp string, paymentMethod s
 	}
 	other := map[string]interface{}{
 		"admin_info": adminInfo,
+	}
+	if action != "" {
+		other["op"] = buildOpField(action, params)
 	}
 	log := &Log{
 		UserId:    userId,

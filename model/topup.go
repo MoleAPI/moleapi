@@ -380,12 +380,19 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 			common.SysError("failed to invalidate user cache after topup: " + err.Error())
 		}
 		if inviteRebateGranted {
+			other := map[string]interface{}{
+				"related_user": inviteRebateRelatedUser,
+				"op": buildOpField("user.topup_rebate", map[string]interface{}{
+					"quota_raw":    topUp.InviteRebateQuota,
+					"related_user": inviteRebateRelatedUser,
+				}),
+			}
 			recordLogWithQuota(
 				topUp.InviteRebateInviterId,
 				LogTypeSystem,
 				fmt.Sprintf("邀请好友充值返利 %s，受邀用户 %s", logger.LogQuota(topUp.InviteRebateQuota), inviteRebateRelatedUser),
 				topUp.InviteRebateQuota,
-				common.MapToJsonStr(map[string]interface{}{"related_user": inviteRebateRelatedUser}),
+				common.MapToJsonStr(other),
 			)
 			if err := invalidateUserCache(topUp.InviteRebateInviterId); err != nil {
 				common.SysError("failed to invalidate inviter cache after topup: " + err.Error())
@@ -501,7 +508,11 @@ func RechargeStripeWithPaymentDetails(referenceId string, customerId string, gat
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(quotaToAdd), topUp.Amount), callerIp, topUp.PaymentMethod, PaymentMethodStripe)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%d", logger.FormatQuota(quotaToAdd), topUp.Amount), callerIp, topUp.PaymentMethod, PaymentMethodStripe, "topup.completed", map[string]interface{}{
+			"provider":  "Stripe",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%d", topUp.Amount),
+		})
 	}
 
 	return nil
@@ -815,7 +826,10 @@ func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, "admin")
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("管理员补单成功，充值金额: %v，支付金额：%f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, "admin", "topup.admin_complete", map[string]interface{}{
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 	return nil
 }
@@ -849,7 +863,11 @@ func RechargeCreemWithPaymentDetails(referenceId string, customerEmail string, c
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quotaToAdd, topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodCreem)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("使用Creem充值成功，充值额度: %v，支付金额：%.2f", quotaToAdd, topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodCreem, "topup.completed", map[string]interface{}{
+			"provider":  "Creem",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 
 	return nil
@@ -875,7 +893,11 @@ func RechargeEpay(tradeNo string, paymentMethod string, gatewayTradeNo string, c
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentProviderEpay)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("使用在线充值成功，充值金额: %v，支付金额：%f", logger.LogQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentProviderEpay, "topup.completed", map[string]interface{}{
+			"provider":  "Epay",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 	return nil
 }
@@ -904,7 +926,11 @@ func RechargeLanTuWithPaymentDetails(tradeNo string, gatewayTradeNo string, paym
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("蓝兔支付充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodLanTu)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("蓝兔支付充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodLanTu, "topup.completed", map[string]interface{}{
+			"provider":  "LanTu",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 	return nil
 }
@@ -929,7 +955,11 @@ func RechargeNowPaymentsWithPaymentDetails(tradeNo string, gatewayTradeNo string
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("NOWPayments充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodNowPayments)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("NOWPayments充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodNowPayments, "topup.completed", map[string]interface{}{
+			"provider":  "NOWPayments",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 	return nil
 }
@@ -954,7 +984,11 @@ func RechargeWaffoWithPaymentDetails(tradeNo string, gatewayTradeNo string, paym
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("Waffo充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffo)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("Waffo充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffo, "topup.completed", map[string]interface{}{
+			"provider":  "Waffo",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 
 	return nil
@@ -984,7 +1018,11 @@ func RechargeWaffoPancakeWithPaymentDetails(tradeNo string, gatewayTradeNo strin
 	}
 
 	if settled {
-		RecordTopupLog(topUp.UserId, fmt.Sprintf("Waffo Pancake充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffoPancake)
+		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("Waffo Pancake充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffoPancake, "topup.completed", map[string]interface{}{
+			"provider":  "Waffo Pancake",
+			"quota_raw": quotaToAdd,
+			"money":     fmt.Sprintf("%.2f", topUp.Money),
+		})
 	}
 
 	return nil

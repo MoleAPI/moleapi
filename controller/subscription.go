@@ -441,9 +441,13 @@ func recordSubscriptionResetUserLogs(result *model.SubscriptionResetResult, admi
 	if result == nil || result.ResetCount == 0 {
 		return
 	}
-	content := fmt.Sprintf("管理员重置订阅套餐 %s（ID: %d）额度", result.PlanTitle, result.PlanId)
 	for _, userId := range result.AffectedUserIds {
-		model.RecordLogWithAdminInfo(userId, model.LogTypeManage, content, adminInfo)
+		params := map[string]interface{}{
+			"target_user_id": userId,
+			"plan_id":        result.PlanId,
+			"plan_title":     result.PlanTitle,
+		}
+		model.RecordOperationAuditLog(userId, auditContentEN("subscription.user_plan_reset", params), "", "subscription.user_plan_reset", params, adminInfo, nil)
 	}
 }
 

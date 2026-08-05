@@ -1,10 +1,21 @@
 package oauth
 
 import (
+	"context"
+	"io"
+	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return f(request)
+}
 
 func TestPrimaryVerifiedGitHubEmail(t *testing.T) {
 	emails := []gitHubEmail{
@@ -23,6 +34,31 @@ func TestPrimaryVerifiedGitHubEmailRejectsUnverifiedPrimary(t *testing.T) {
 	}
 
 	assert.Empty(t, primaryVerifiedGitHubEmail(emails))
+}
+
+func TestGitHubUserInfoContinuesWithoutVerifiedPrimaryEmail(t *testing.T) {
+	previousTransport := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		body := `[]`
+		if request.URL.Path == "/user" {
+			body = `{"id":12345,"login":"existing-user"}`
+		}
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Request:    request,
+		}, nil
+	})
+	t.Cleanup(func() { http.DefaultTransport = previousTransport })
+
+	user, err := (&GitHubProvider{}).GetUserInfo(context.Background(), &OAuthToken{AccessToken: "token"})
+
+	require.NoError(t, err)
+	assert.Equal(t, "12345", user.ProviderUserID)
+	assert.Equal(t, "existing-user", user.Username)
+	assert.Empty(t, user.Email)
+	assert.False(t, user.EmailVerified)
 }
 
 func TestOAuthEmailVerifiedHandlesGoogleAuthorityBoundary(t *testing.T) {

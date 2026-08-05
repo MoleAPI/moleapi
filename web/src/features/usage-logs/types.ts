@@ -142,7 +142,7 @@ export interface LogOtherData {
       clamped: number
     }
   }
-  // Language-independent operation descriptor (audit/login logs).
+  // Language-independent operation descriptor for user-visible business logs.
   // Frontend renders localized content from action + params via i18n templates.
   op?: {
     action?: string

@@ -155,8 +155,9 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*O
 
 	email, err := p.getPrimaryVerifiedEmail(ctx, token.AccessToken)
 	if err != nil {
-		logger.LogError(ctx, fmt.Sprintf("[OAuth-GitHub] GetUserEmails failed: %s", err.Error()))
-		return nil, NewOAuthErrorWithRaw(i18n.MsgOAuthUserInfoEmpty, map[string]any{"Provider": "GitHub"}, err.Error())
+		// ponytail: GitHub ID authenticates existing bindings; verified email is only an optional auto-link signal.
+		logger.LogWarn(ctx, fmt.Sprintf("[OAuth-GitHub] GetUserEmails unavailable, continuing without email: %s", err.Error()))
+		email = ""
 	}
 	return &OAuthUser{
 		ProviderUserID: strconv.FormatInt(githubUser.Id, 10), // Use numeric ID as primary identifier
