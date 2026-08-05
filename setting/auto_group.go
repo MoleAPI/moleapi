@@ -2,6 +2,7 @@ package setting
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"sync/atomic"
 
@@ -10,20 +11,19 @@ import (
 
 const DefaultMaxTokenAutoGroups = 5
 
-var autoGroups = []string{
-	"default",
-}
+var autoGroups atomic.Value
 
 var DefaultUseAutoGroup = false
 
 var maxTokenAutoGroups atomic.Int64
 
 func init() {
+	autoGroups.Store([]string{"default"})
 	maxTokenAutoGroups.Store(DefaultMaxTokenAutoGroups)
 }
 
 func ContainsAutoGroup(group string) bool {
-	for _, autoGroup := range autoGroups {
+	for _, autoGroup := range autoGroups.Load().([]string) {
 		if autoGroup == group {
 			return true
 		}
@@ -31,13 +31,30 @@ func ContainsAutoGroup(group string) bool {
 	return false
 }
 
+func parseAutoGroupsJsonString(jsonString string) ([]string, error) {
+	groups := make([]string, 0)
+	if err := common.Unmarshal([]byte(jsonString), &groups); err != nil {
+		return nil, err
+	}
+	return groups, nil
+}
+
+func ValidateAutoGroupsJsonString(jsonString string) error {
+	_, err := parseAutoGroupsJsonString(jsonString)
+	return err
+}
+
 func UpdateAutoGroupsByJsonString(jsonString string) error {
-	autoGroups = make([]string, 0)
-	return common.Unmarshal([]byte(jsonString), &autoGroups)
+	groups, err := parseAutoGroupsJsonString(jsonString)
+	if err != nil {
+		return err
+	}
+	autoGroups.Store(groups)
+	return nil
 }
 
 func AutoGroups2JsonString() string {
-	jsonBytes, err := common.Marshal(autoGroups)
+	jsonBytes, err := common.Marshal(GetAutoGroups())
 	if err != nil {
 		return "[]"
 	}
@@ -45,7 +62,7 @@ func AutoGroups2JsonString() string {
 }
 
 func GetAutoGroups() []string {
-	return autoGroups
+	return slices.Clone(autoGroups.Load().([]string))
 }
 
 func GetMaxTokenAutoGroups() int {

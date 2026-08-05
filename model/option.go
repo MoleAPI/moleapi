@@ -232,6 +232,9 @@ func validateOptionValue(key string, value string) error {
 			return errors.New("default invite rebate ratio must be between 0 and 10000")
 		}
 	}
+	if key == "AutoGroups" {
+		return setting.ValidateAutoGroupsJsonString(value)
+	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}

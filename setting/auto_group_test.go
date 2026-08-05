@@ -27,3 +27,18 @@ func TestUpdateMaxTokenAutoGroupsRejectsInvalidValuesWithoutChangingState(t *tes
 		})
 	}
 }
+
+func TestUpdateAutoGroupsRejectsInvalidValuesWithoutChangingState(t *testing.T) {
+	original := AutoGroups2JsonString()
+	t.Cleanup(func() {
+		require.NoError(t, UpdateAutoGroupsByJsonString(original))
+	})
+
+	require.NoError(t, UpdateAutoGroupsByJsonString(`["vip","default"]`))
+	groups := GetAutoGroups()
+	groups[0] = "changed"
+	assert.Equal(t, []string{"vip", "default"}, GetAutoGroups())
+
+	assert.Error(t, UpdateAutoGroupsByJsonString(`{"invalid":true}`))
+	assert.Equal(t, []string{"vip", "default"}, GetAutoGroups())
+}
