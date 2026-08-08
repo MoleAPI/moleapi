@@ -188,6 +188,7 @@ func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {
 		{UserId: users[0].Id, Amount: 12, Money: 12, TradeNo: "intent-pending", PaymentCurrency: "cny", CreateTime: 150, Status: common.TopUpStatusPending},
 		{UserId: users[0].Id, Amount: 20, Money: 20, TradeNo: "wallet-paid", PaymentCurrency: "CNY", CreateTime: 160, CompleteTime: 180, Status: common.TopUpStatusSuccess},
 		{UserId: users[1].Id, Amount: 0, Money: 30, TradeNo: "subscription-paid", PaymentCurrency: "USD", CreateTime: 170, CompleteTime: 190, Status: common.TopUpStatusSuccess},
+		{UserId: users[1].Id, Amount: 15, Money: 15, TradeNo: "wallet-paid-bob", PaymentCurrency: "cny", CreateTime: 175, CompleteTime: 195, Status: common.TopUpStatusSuccess},
 		{UserId: users[0].Id, Amount: 10, Money: 10, TradeNo: "outside", CreateTime: 50, CompleteTime: 60, Status: common.TopUpStatusSuccess},
 	}
 	for _, topUp := range topUps {
@@ -207,16 +208,21 @@ func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {
 	assert.Equal(t, int64(2), metrics.NewUsers)
 	assert.Equal(t, int64(1), metrics.NewPurchasingUsers)
 	assert.Equal(t, int64(1), metrics.NewUserPurchasingUsers)
-	assert.Equal(t, int64(4), metrics.IntentOrders)
+	assert.Equal(t, int64(5), metrics.IntentOrders)
 	assert.Equal(t, []AdminBusinessOrderAmount{
-		{Currency: "CNY", Orders: 2, Amount: 32, AverageAmount: 16},
+		{Currency: "CNY", Orders: 3, Amount: 47, AverageAmount: float64(47) / 3},
 		{Currency: "USD", Orders: 2, Amount: 70, AverageAmount: 35},
 	}, metrics.IntentAmounts)
-	assert.Equal(t, int64(2), metrics.PaidOrders)
+	assert.Equal(t, int64(3), metrics.PaidOrders)
 	assert.Equal(t, []AdminBusinessOrderAmount{
-		{Currency: "CNY", Orders: 1, Amount: 20, AverageAmount: 20},
+		{Currency: "CNY", Orders: 2, Amount: 35, AverageAmount: 17.5},
 		{Currency: "USD", Orders: 1, Amount: 30, AverageAmount: 30},
 	}, metrics.PaidAmounts)
 	assert.Equal(t, int64(2), metrics.PayingUsers)
-	assert.InDelta(t, 0.5, metrics.PaymentSuccessRate, 0.001)
+	assert.InDelta(t, 0.6, metrics.PaymentSuccessRate, 0.001)
+	assert.Equal(t, []AdminBusinessTopUpUser{
+		{Rank: 1, UserId: users[0].Id, Username: "metrics-alice", Currency: "CNY", Orders: 1, Amount: 20},
+		{Rank: 2, UserId: users[1].Id, Username: "metrics-bob", Currency: "CNY", Orders: 1, Amount: 15},
+		{Rank: 1, UserId: users[1].Id, Username: "metrics-bob", Currency: "USD", Orders: 1, Amount: 30},
+	}, metrics.TopUpRanking)
 }
