@@ -83,6 +83,15 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
       })
       .join(' · ')
   }
+  const payingUsers = data?.paying_users ?? 0
+  const newPurchasingUsers = data?.new_purchasing_users ?? 0
+  const repeatPurchasingUsers = Math.max(payingUsers - newPurchasingUsers, 0)
+  const repeatPurchaseRate = payingUsers
+    ? repeatPurchasingUsers / payingUsers
+    : 0
+  const newUserPurchaseRate = data?.new_users
+    ? (data.new_user_purchasing_users ?? 0) / data.new_users
+    : 0
   const metrics = [
     {
       key: 'new-users',
@@ -95,8 +104,24 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
     {
       key: 'paying-users',
       title: t('Paying Users'),
-      value: formatNumber(data?.paying_users, locale),
+      value: formatNumber(payingUsers, locale),
       detail: t('Unique users who paid'),
+      icon: UsersRound,
+      tone: 'chart-2' as const,
+    },
+    {
+      key: 'new-purchasers',
+      title: t('New Purchasers'),
+      value: formatNumber(newPurchasingUsers, locale),
+      detail: `${t('New User Purchase Rate')} · ${formatNumber(newUserPurchaseRate * 100, locale)}%`,
+      icon: UserPlus,
+      tone: 'chart-1' as const,
+    },
+    {
+      key: 'repeat-purchasers',
+      title: t('Repeat Purchasers'),
+      value: formatNumber(repeatPurchasingUsers, locale),
+      detail: `${t('Repeat Purchase Rate')} · ${formatNumber(repeatPurchaseRate * 100, locale)}%`,
       icon: UsersRound,
       tone: 'chart-2' as const,
     },
