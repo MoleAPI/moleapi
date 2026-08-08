@@ -50,21 +50,33 @@ var defaultModelRatio = map[string]float64{
 	"gpt-4o-realtime-preview-2024-12-17":        2.5,
 	"gpt-4o-mini-realtime-preview":              0.3,
 	"gpt-4o-mini-realtime-preview-2024-12-17":   0.3,
-	"gpt-4.1":                                   1.0,  // $2 / 1M tokens
-	"gpt-4.1-2025-04-14":                        1.0,  // $2 / 1M tokens
-	"gpt-4.1-mini":                              0.2,  // $0.4 / 1M tokens
-	"gpt-4.1-mini-2025-04-14":                   0.2,  // $0.4 / 1M tokens
-	"gpt-4.1-nano":                              0.05, // $0.1 / 1M tokens
-	"gpt-4.1-nano-2025-04-14":                   0.05, // $0.1 / 1M tokens
-	"gpt-image-1":                               2.5,  // $5 / 1M tokens
-	"o1":                                        7.5,  // $15 / 1M tokens
-	"o1-2024-12-17":                             7.5,  // $15 / 1M tokens
-	"o1-preview":                                7.5,  // $15 / 1M tokens
-	"o1-preview-2024-09-12":                     7.5,  // $15 / 1M tokens
-	"o1-mini":                                   0.55, // $1.1 / 1M tokens
-	"o1-mini-2024-09-12":                        0.55, // $1.1 / 1M tokens
-	"o1-pro":                                    75.0, // $150 / 1M tokens
-	"o1-pro-2025-03-19":                         75.0, // $150 / 1M tokens
+	"gpt-4.1":                                   1.0,   // $2 / 1M tokens
+	"gpt-4.1-2025-04-14":                        1.0,   // $2 / 1M tokens
+	"gpt-4.1-mini":                              0.2,   // $0.4 / 1M tokens
+	"gpt-4.1-mini-2025-04-14":                   0.2,   // $0.4 / 1M tokens
+	"gpt-4.1-nano":                              0.05,  // $0.1 / 1M tokens
+	"gpt-4.1-nano-2025-04-14":                   0.05,  // $0.1 / 1M tokens
+	"gpt-image-1":                               2.5,   // $5 / 1M tokens
+	"gpt-image-1-mini":                          1,     // $2 / 1M text input tokens
+	"gpt-image-1.5":                             2.5,   // $5 / 1M text input tokens
+	"gpt-image-1.5-2025-12-16":                  2.5,   // $5 / 1M text input tokens
+	"chatgpt-image-latest":                      2.5,   // $5 / 1M text input tokens
+	"gpt-image-2":                               2.5,   // $5 / 1M text input tokens
+	"gpt-image-2-2026-04-21":                    2.5,   // $5 / 1M text input tokens
+	"gemini-2.5-flash-image":                    0.15,  // $0.30 / 1M tokens
+	"gemini-3-pro-image":                        1,     // $2 / 1M tokens
+	"gemini-3-pro-image-preview":                1,     // $2 / 1M tokens
+	"gemini-3.1-flash-image":                    0.25,  // $0.50 / 1M tokens
+	"gemini-3.1-flash-image-preview":            0.25,  // $0.50 / 1M tokens
+	"gemini-3.1-flash-lite-image":               0.125, // $0.25 / 1M tokens
+	"o1":                                        7.5,   // $15 / 1M tokens
+	"o1-2024-12-17":                             7.5,   // $15 / 1M tokens
+	"o1-preview":                                7.5,   // $15 / 1M tokens
+	"o1-preview-2024-09-12":                     7.5,   // $15 / 1M tokens
+	"o1-mini":                                   0.55,  // $1.1 / 1M tokens
+	"o1-mini-2024-09-12":                        0.55,  // $1.1 / 1M tokens
+	"o1-pro":                                    75.0,  // $150 / 1M tokens
+	"o1-pro-2025-03-19":                         75.0,  // $150 / 1M tokens
 	"o3-mini":                                   0.55,
 	"o3-mini-2025-01-31":                        0.55,
 	"o3-mini-high":                              0.55,
@@ -326,10 +338,21 @@ var modelRatioMap = types.NewRWMap[string, float64]()
 var completionRatioMap = types.NewRWMap[string, float64]()
 
 var defaultCompletionRatio = map[string]float64{
-	"gpt-4-gizmo-*":  2,
-	"gpt-4o-gizmo-*": 3,
-	"gpt-4-all":      2,
-	"gpt-image-1":    8,
+	"gpt-4-gizmo-*":                  2,
+	"gpt-4o-gizmo-*":                 3,
+	"gpt-4-all":                      2,
+	"gpt-image-1":                    8,
+	"gpt-image-1-mini":               4,
+	"gpt-image-1.5":                  2,
+	"gpt-image-1.5-2025-12-16":       2,
+	"chatgpt-image-latest":           2,
+	"gpt-image-2":                    6,
+	"gpt-image-2-2026-04-21":         6,
+	"gemini-3-pro-image":             6,
+	"gemini-3-pro-image-preview":     6,
+	"gemini-3.1-flash-image":         6,
+	"gemini-3.1-flash-image-preview": 6,
+	"gemini-3.1-flash-lite-image":    6,
 }
 
 // InitRatioSettings initializes all model related settings maps
@@ -340,6 +363,7 @@ func InitRatioSettings() {
 	cacheRatioMap.AddAll(defaultCacheRatio)
 	createCacheRatioMap.AddAll(defaultCreateCacheRatio)
 	imageRatioMap.AddAll(defaultImageRatio)
+	imageOutputRatioMap.AddAll(defaultImageOutputRatio)
 	audioRatioMap.AddAll(defaultAudioRatio)
 	audioCompletionRatioMap.AddAll(defaultAudioCompletionRatio)
 }
@@ -653,9 +677,31 @@ func ModelRatio2JSONString() string {
 }
 
 var defaultImageRatio = map[string]float64{
-	"gpt-image-1": 2,
+	"gpt-image-1":              2,
+	"gpt-image-1-mini":         1.25,
+	"gpt-image-1.5":            1.6,
+	"gpt-image-1.5-2025-12-16": 1.6,
+	"chatgpt-image-latest":     1.6,
+	"gpt-image-2":              1.6,
+	"gpt-image-2-2026-04-21":   1.6,
+}
+var defaultImageOutputRatio = map[string]float64{
+	"gpt-image-1":                    8,
+	"gpt-image-1-mini":               4,
+	"gpt-image-1.5":                  6.4,
+	"gpt-image-1.5-2025-12-16":       6.4,
+	"chatgpt-image-latest":           6.4,
+	"gpt-image-2":                    6,
+	"gpt-image-2-2026-04-21":         6,
+	"gemini-2.5-flash-image":         100,
+	"gemini-3-pro-image":             60,
+	"gemini-3-pro-image-preview":     60,
+	"gemini-3.1-flash-image":         120,
+	"gemini-3.1-flash-image-preview": 120,
+	"gemini-3.1-flash-lite-image":    120,
 }
 var imageRatioMap = types.NewRWMap[string, float64]()
+var imageOutputRatioMap = types.NewRWMap[string, float64]()
 var audioRatioMap = types.NewRWMap[string, float64]()
 var audioCompletionRatioMap = types.NewRWMap[string, float64]()
 
@@ -668,11 +714,29 @@ func UpdateImageRatioByJSONString(jsonStr string) error {
 }
 
 func GetImageRatio(name string) (float64, bool) {
+	name = FormatMatchingModelName(name)
 	ratio, ok := imageRatioMap.Get(name)
-	if !ok {
+	if !ok || ratio < 0 {
 		return 1, false // Default to 1 if not found
 	}
 	return ratio, true
+}
+
+func ImageOutputRatio2JSONString() string {
+	return imageOutputRatioMap.MarshalJSONString()
+}
+
+func UpdateImageOutputRatioByJSONString(jsonStr string) error {
+	return types.LoadFromJsonStringWithCallback(imageOutputRatioMap, jsonStr, InvalidateExposedDataCache)
+}
+
+func GetImageOutputRatio(name string) (float64, bool) {
+	name = FormatMatchingModelName(name)
+	ratio, ok := imageOutputRatioMap.Get(name)
+	if ratio < 0 {
+		return 0, false
+	}
+	return ratio, ok
 }
 
 func AudioRatio2JSONString() string {
@@ -705,6 +769,10 @@ func GetCompletionRatioCopy() map[string]float64 {
 
 func GetImageRatioCopy() map[string]float64 {
 	return imageRatioMap.ReadAll()
+}
+
+func GetImageOutputRatioCopy() map[string]float64 {
+	return imageOutputRatioMap.ReadAll()
 }
 
 func GetAudioRatioCopy() map[string]float64 {

@@ -665,6 +665,11 @@ function PriceSection(props: {
       available: props.model.image_ratio != null,
     },
     {
+      label: t('Image Out'),
+      type: 'image_output',
+      available: props.model.image_output_ratio != null,
+    },
+    {
       label: t('Audio input'),
       type: 'audio_input',
       available: props.model.audio_ratio != null,
@@ -942,6 +947,9 @@ function GroupPricingSection(props: {
     }
     if (props.model.image_ratio != null) {
       types.push({ label: t('Image'), type: 'image' })
+    }
+    if (props.model.image_output_ratio != null) {
+      types.push({ label: t('Image Out'), type: 'image_output' })
     }
     if (props.model.audio_ratio != null) {
       types.push({ label: t('Audio In'), type: 'audio_input' })

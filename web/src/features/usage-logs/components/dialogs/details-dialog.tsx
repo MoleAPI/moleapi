@@ -366,6 +366,10 @@ function BillingBreakdown(props: {
   const imageBreakdown = getImageTokenBreakdown(other)
   const imageUnitPrice =
     other.model_ratio != null ? baseInputUSD * (other.image_ratio ?? 1) : 0
+  const outputUnitPrice =
+    other.model_ratio != null
+      ? baseInputUSD * (other.image_output_ratio ?? other.completion_ratio ?? 1)
+      : 0
   const audioInputTokens =
     other.audio_input_token_count || other.audio_input || 0
   const audioOutputTokens = other.audio_output || 0
@@ -484,19 +488,17 @@ function BillingBreakdown(props: {
       })
     }
 
-    if (imageUnitPrice > 0) {
-      if (imageBreakdown.input > 0) {
-        rows.push({
-          label: t('Image input'),
-          value: `${fmtPrice(imageUnitPrice)}/M`,
-        })
-      }
-      if (imageBreakdown.output > 0) {
-        rows.push({
-          label: t('Image Out'),
-          value: `${fmtPrice(imageUnitPrice)}/M`,
-        })
-      }
+    if (imageBreakdown.input > 0 && imageUnitPrice > 0) {
+      rows.push({
+        label: t('Image input'),
+        value: `${fmtPrice(imageUnitPrice)}/M`,
+      })
+    }
+    if (imageBreakdown.output > 0 && outputUnitPrice > 0) {
+      rows.push({
+        label: t('Image Out'),
+        value: `${fmtPrice(outputUnitPrice)}/M`,
+      })
     }
   }
 
@@ -663,7 +665,7 @@ function BillingBreakdown(props: {
       )
     }
     addTokenTerm(t('Image input'), imageTokens, imageUnitPrice)
-    addTokenTerm(t('Image Out'), imageOutputTokens, imageUnitPrice)
+    addTokenTerm(t('Image Out'), imageOutputTokens, outputUnitPrice)
     addTokenTerm(t('Audio input'), audioTokens, other.audio_input_price)
   }
 

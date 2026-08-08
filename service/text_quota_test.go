@@ -122,7 +122,7 @@ func TestPostTextConsumeQuotaLogsExplicitImageTokenDirections(t *testing.T) {
 	require.Equal(t, true, other["image"])
 }
 
-func TestPostTextConsumeQuotaLogsImageRatioForOutputOnly(t *testing.T) {
+func TestPostTextConsumeQuotaLogsImageOutputRatio(t *testing.T) {
 	truncate(t)
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
@@ -140,10 +140,12 @@ func TestPostTextConsumeQuotaLogsImageRatioForOutputOnly(t *testing.T) {
 		FirstResponseTime: now,
 		ChannelMeta:       &relaycommon.ChannelMeta{ChannelId: channelID},
 		PriceData: hosttypes.PriceData{
-			ModelRatio:      4,
-			CompletionRatio: 3.75,
-			ImageRatio:      1,
-			GroupRatioInfo:  hosttypes.GroupRatioInfo{GroupRatio: 1},
+			ModelRatio:          4,
+			CompletionRatio:     3.75,
+			ImageRatio:          1,
+			ImageOutputRatio:    6,
+			ImageOutputRatioSet: true,
+			GroupRatioInfo:      hosttypes.GroupRatioInfo{GroupRatio: 1},
 		},
 	}
 	usage := &dto.Usage{
@@ -162,7 +164,7 @@ func TestPostTextConsumeQuotaLogsImageRatioForOutputOnly(t *testing.T) {
 	var other map[string]interface{}
 	require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
 	require.Equal(t, float64(1372), other["image_output_tokens"])
-	require.Equal(t, float64(1), other["image_ratio"])
+	require.Equal(t, float64(6), other["image_output_ratio"])
 }
 
 func TestPostTextConsumeQuotaLogsUsageSemantic(t *testing.T) {
@@ -212,33 +214,126 @@ func TestPostTextConsumeQuotaLogsUsageSemantic(t *testing.T) {
 	require.Equal(t, float64(30), other["cache_tokens"])
 }
 
-func TestCalculateTextQuotaSummaryBillsImageOutputSeparately(t *testing.T) {
+func TestCalculateTextQuotaSummaryBillsImageOutputAtIndependentPrice(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 
 	relayInfo := &relaycommon.RelayInfo{
-		OriginModelName: "gpt-image-1",
+		OriginModelName: "gemini-3.1-flash-image-preview",
 		PriceData: hosttypes.PriceData{
-			ModelRatio:      4,
-			CompletionRatio: 3.75,
-			ImageRatio:      15,
-			GroupRatioInfo:  hosttypes.GroupRatioInfo{GroupRatio: 1},
+			ModelRatio:          0.25,
+			CompletionRatio:     6,
+			ImageRatio:          1,
+			ImageOutputRatio:    120,
+			ImageOutputRatioSet: true,
+			GroupRatioInfo:      hosttypes.GroupRatioInfo{GroupRatio: 1},
 		},
 		StartTime: time.Now(),
 	}
 	usage := &dto.Usage{
-		PromptTokens:     9,
-		CompletionTokens: 186,
-		TotalTokens:      195,
+		PromptTokens:     512,
+		CompletionTokens: 1314,
+		TotalTokens:      1826,
+		PromptTokensDetails: dto.InputTokenDetails{
+			ImageTokens: 258,
+		},
 		CompletionTokenDetails: dto.OutputTokenDetails{
-			ImageTokens: 186,
+			ImageTokens: 1120,
 		},
 	}
 
 	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
 
-	require.Equal(t, 11196, summary.Quota)
-	require.Equal(t, 186, summary.ImageOutputTokens)
+	require.Equal(t, 34019, summary.Quota)
+	require.Equal(t, 1120, summary.ImageOutputTokens)
+}
+
+func TestCalculateTextQuotaSummaryKeepsImageOutputAtCompletionPriceWithoutIndependentRatio(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-image-1",
+		PriceData: hosttypes.PriceData{
+			ModelRatio: 4, CompletionRatio: 3.75,
+			GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{CompletionTokens: 100, TotalTokens: 100, CompletionTokenDetails: dto.OutputTokenDetails{ImageTokens: 100}}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, 1500, summary.Quota)
+}
+
+func TestCalculateTextQuotaSummaryPricesGPTImageModalities(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	tests := []struct {
+		name              string
+		priceData         hosttypes.PriceData
+		completionTokens  int
+		textOutputTokens  int
+		imageOutputTokens int
+		wantQuota         int
+	}{
+		{
+			name:             "gpt-image-1",
+			priceData:        hosttypes.PriceData{ModelRatio: 2.5, CompletionRatio: 8, ImageRatio: 2, ImageOutputRatio: 8, ImageOutputRatioSet: true},
+			completionTokens: 200, imageOutputTokens: 200, wantQuota: 4500,
+		},
+		{
+			name:             "gpt-image-1.5",
+			priceData:        hosttypes.PriceData{ModelRatio: 2.5, CompletionRatio: 2, ImageRatio: 1.6, ImageOutputRatio: 6.4, ImageOutputRatioSet: true},
+			completionTokens: 300, textOutputTokens: 100, imageOutputTokens: 200, wantQuota: 4150,
+		},
+		{
+			name:             "gpt-image-2",
+			priceData:        hosttypes.PriceData{ModelRatio: 2.5, CompletionRatio: 6, ImageRatio: 1.6, ImageOutputRatio: 6, ImageOutputRatioSet: true},
+			completionTokens: 200, imageOutputTokens: 200, wantQuota: 3450,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			tt.priceData.GroupRatioInfo = hosttypes.GroupRatioInfo{GroupRatio: 1}
+			relayInfo := &relaycommon.RelayInfo{OriginModelName: tt.name, PriceData: tt.priceData, StartTime: time.Now()}
+			usage := &dto.Usage{
+				PromptTokens: 150, CompletionTokens: tt.completionTokens, TotalTokens: 150 + tt.completionTokens,
+				PromptTokensDetails:    dto.InputTokenDetails{TextTokens: 100, ImageTokens: 50},
+				CompletionTokenDetails: dto.OutputTokenDetails{TextTokens: tt.textOutputTokens, ImageTokens: tt.imageOutputTokens},
+			}
+
+			summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+			require.Equal(t, tt.wantQuota, summary.Quota)
+		})
+	}
+}
+
+func TestCalculateTextQuotaSummaryIgnoresNegativeImageTokenDetails(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "gpt-image-1",
+		PriceData: hosttypes.PriceData{
+			ModelRatio: 1, CompletionRatio: 2, ImageRatio: 2,
+			ImageOutputRatio: 8, ImageOutputRatioSet: true,
+			GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1},
+		},
+		StartTime: time.Now(),
+	}
+	usage := &dto.Usage{
+		PromptTokens: 100, CompletionTokens: 100, TotalTokens: 200,
+		PromptTokensDetails:    dto.InputTokenDetails{ImageTokens: -50},
+		CompletionTokenDetails: dto.OutputTokenDetails{ImageTokens: -50},
+	}
+
+	summary := calculateTextQuotaSummary(ctx, relayInfo, usage)
+
+	require.Equal(t, 300, summary.Quota)
+	require.Zero(t, summary.ImageInputTokens)
+	require.Zero(t, summary.ImageOutputTokens)
 }
 
 func TestCalculateTextQuotaSummaryUsesSplitClaudeCacheCreationRatios(t *testing.T) {
@@ -1175,6 +1270,32 @@ func TestCalculateTextToolCallSurchargeImageGenerationExplicitZeroDisables(t *te
 	surcharge := calculateTextToolCallSurcharge(ctx, relayInfo, summary)
 	assert.True(t, surcharge.IsZero())
 	assert.Empty(t, summary.ToolSurchargeItems)
+}
+
+func TestCalculateTextToolCallSurchargeImageGenerationUsesUnderlyingImageModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	relayInfo := &relaycommon.RelayInfo{
+		OriginModelName: "future-mainline-model",
+		ResponsesUsageInfo: &relaycommon.ResponsesUsageInfo{
+			BuiltInTools: map[string]*relaycommon.BuildInToolInfo{
+				dto.BuildInToolImageGeneration: {
+					CallCount:    2,
+					ImageModel:   "gpt-image-2",
+					ImageQuality: "medium",
+					ImageSize:    "1536x1024",
+				},
+			},
+		},
+	}
+	summary := &textQuotaSummary{ModelName: "future-mainline-model", GroupRatio: 1}
+
+	surcharge := calculateTextToolCallSurcharge(ctx, relayInfo, summary)
+	expected := decimal.NewFromFloat(0.041 * 2 * common.QuotaPerUnit)
+	assert.True(t, expected.Equal(surcharge), "got %s want %s", surcharge, expected)
+	require.Len(t, summary.ToolSurchargeItems, 1)
+	assert.Equal(t, 41.0, summary.ToolSurchargeItems[0].Price)
+	assert.Equal(t, 2, summary.ToolSurchargeItems[0].Count)
 }
 
 func TestCalculateTextQuotaSummaryImageGenerationUsesStructuredSurcharge(t *testing.T) {

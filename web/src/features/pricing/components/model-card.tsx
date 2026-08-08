@@ -407,6 +407,26 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           tone: 'accent',
         })
       }
+      if (props.model.image_output_ratio != null) {
+        lines.push({
+          id: 'image-output',
+          label: t('Image Out'),
+          value: stripTrailingZeros(
+            formatGroupPrice(
+              props.model,
+              item.group,
+              'image_output',
+              tokenUnit,
+              showRechargePrice,
+              priceRate,
+              usdExchangeRate,
+              groupRatio
+            )
+          ),
+          unit: tokenPriceUnit,
+          tone: 'accent',
+        })
+      }
       if (props.model.audio_ratio != null) {
         lines.push({
           id: 'audio-input',

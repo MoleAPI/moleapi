@@ -168,6 +168,7 @@ export const ModelPricingEditorPanel = forwardRef<
       createCacheRatio: '',
       completionRatio: '',
       imageRatio: '',
+      imageOutputRatio: '',
       audioRatio: '',
       audioCompletionRatio: '',
     },
@@ -185,6 +186,7 @@ export const ModelPricingEditorPanel = forwardRef<
         createCacheRatio: editData.createCacheRatio || '',
         completionRatio: editData.completionRatio || '',
         imageRatio: editData.imageRatio || '',
+        imageOutputRatio: editData.imageOutputRatio || '',
         audioRatio: editData.audioRatio || '',
         audioCompletionRatio: editData.audioCompletionRatio || '',
       })
@@ -206,6 +208,7 @@ export const ModelPricingEditorPanel = forwardRef<
         createCacheRatio: '',
         completionRatio: '',
         imageRatio: '',
+        imageOutputRatio: '',
         audioRatio: '',
         audioCompletionRatio: '',
       })
@@ -375,6 +378,7 @@ export const ModelPricingEditorPanel = forwardRef<
         editData.cacheRatio,
         editData.createCacheRatio,
         editData.imageRatio,
+        editData.imageOutputRatio,
         editData.audioRatio,
         editData.audioCompletionRatio,
       ].some(hasValue)
@@ -449,6 +453,7 @@ export const ModelPricingEditorPanel = forwardRef<
         createCacheRatio: values.createCacheRatio || '',
         completionRatio: values.completionRatio || '',
         imageRatio: values.imageRatio || '',
+        imageOutputRatio: values.imageOutputRatio || '',
         audioRatio: values.audioRatio || '',
         audioCompletionRatio: values.audioCompletionRatio || '',
       }
