@@ -49,6 +49,9 @@ type BuildInToolInfo struct {
 	ToolName          string
 	CallCount         int
 	SearchContextSize string
+	ImageModel        string
+	ImageQuality      string
+	ImageSize         string
 }
 
 type ResponsesUsageInfo struct {
@@ -148,13 +151,6 @@ type RelayInfo struct {
 	RuntimeHeadersOverride                map[string]interface{}
 	UseRuntimeHeadersOverride             bool
 	ParamOverrideAudit                    []string
-
-	// UpstreamRequestBodySize is the byte size of the marshaled upstream request
-	// body. It is set when the body is wrapped in a BodyStorage (see
-	// relay/common/outbound_body.go), so that DoApiRequest can populate
-	// http.Request.ContentLength manually (net/http only auto-detects it for
-	// *bytes.Reader/Buffer/strings.Reader). 0 means "let net/http decide".
-	UpstreamRequestBodySize int64
 
 	PriceData hosttypes.PriceData
 
@@ -417,6 +413,23 @@ func GenRelayInfoResponses(c *gin.Context, request *dto.OpenAIResponsesRequest) 
 					searchContextSize = "medium"
 				}
 				info.ResponsesUsageInfo.BuiltInTools[toolType].SearchContextSize = searchContextSize
+			case dto.BuildInToolImageGeneration:
+				imageModel := common.Interface2String(tool["model"])
+				if imageModel == "" {
+					imageModel = "gpt-image-1"
+				}
+				imageQuality := common.Interface2String(tool["quality"])
+				if imageQuality == "" {
+					imageQuality = "auto"
+				}
+				imageSize := common.Interface2String(tool["size"])
+				if imageSize == "" {
+					imageSize = "auto"
+				}
+				imageTool := info.ResponsesUsageInfo.BuiltInTools[toolType]
+				imageTool.ImageModel = imageModel
+				imageTool.ImageQuality = imageQuality
+				imageTool.ImageSize = imageSize
 			}
 		}
 	}

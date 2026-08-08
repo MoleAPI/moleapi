@@ -176,9 +176,9 @@ func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {
 	})
 
 	users := []*User{
-		{Username: "metrics-alice", Password: "password", AffCode: "metrics_alice", CreatedAt: 120},
+		{Username: "metrics-alice", Password: "password", AffCode: "metrics_alice", CreatedAt: 50},
 		{Username: "metrics-bob", Password: "password", AffCode: "metrics_bob", CreatedAt: 180},
-		{Username: "metrics-old", Password: "password", AffCode: "metrics_old", CreatedAt: 50},
+		{Username: "metrics-new-no-purchase", Password: "password", AffCode: "metrics_new_no_purchase", CreatedAt: 120},
 	}
 	for _, user := range users {
 		require.NoError(t, db.Create(user).Error)
@@ -188,7 +188,7 @@ func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {
 		{UserId: users[0].Id, Amount: 12, Money: 12, TradeNo: "intent-pending", PaymentCurrency: "cny", CreateTime: 150, Status: common.TopUpStatusPending},
 		{UserId: users[0].Id, Amount: 20, Money: 20, TradeNo: "wallet-paid", PaymentCurrency: "CNY", CreateTime: 160, CompleteTime: 180, Status: common.TopUpStatusSuccess},
 		{UserId: users[1].Id, Amount: 0, Money: 30, TradeNo: "subscription-paid", PaymentCurrency: "USD", CreateTime: 170, CompleteTime: 190, Status: common.TopUpStatusSuccess},
-		{UserId: users[2].Id, Amount: 10, Money: 10, TradeNo: "outside", CreateTime: 50, CompleteTime: 60, Status: common.TopUpStatusSuccess},
+		{UserId: users[0].Id, Amount: 10, Money: 10, TradeNo: "outside", CreateTime: 50, CompleteTime: 60, Status: common.TopUpStatusSuccess},
 	}
 	for _, topUp := range topUps {
 		require.NoError(t, db.Create(topUp).Error)
@@ -205,6 +205,8 @@ func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {
 	metrics, err := GetAdminBusinessMetrics(100, 200)
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), metrics.NewUsers)
+	assert.Equal(t, int64(1), metrics.NewPurchasingUsers)
+	assert.Equal(t, int64(1), metrics.NewUserPurchasingUsers)
 	assert.Equal(t, int64(4), metrics.IntentOrders)
 	assert.Equal(t, []AdminBusinessOrderAmount{
 		{Currency: "CNY", Orders: 2, Amount: 32, AverageAmount: 16},

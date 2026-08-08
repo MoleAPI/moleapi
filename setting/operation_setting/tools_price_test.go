@@ -84,6 +84,40 @@ func TestToolPriceCustomFunctionHasNoHardcodedFallback(t *testing.T) {
 	assert.Equal(t, 0.0, GetToolPrice("lookup_customer"))
 }
 
+func TestImageGenerationToolPriceUsesImageModelNotMainlineModel(t *testing.T) {
+	preserveToolPrices(t)
+	toolPriceSetting.Prices = map[string]float64{}
+	RebuildToolPriceIndex()
+
+	tests := []struct {
+		model   string
+		quality string
+		size    string
+		want    float64
+	}{
+		{"gpt-image-1", "medium", "1024x1024", 42},
+		{"gpt-image-1-mini", "high", "1536x1024", 52},
+		{"gpt-image-1.5", "low", "1024x1536", 13},
+		{"chatgpt-image-latest", "high", "1024x1024", 133},
+		{"gpt-image-2-2026-04-21", "medium", "1536x1024", 41},
+		{"future-image-model", "high", "1024x1024", 150},
+		{"gpt-image-2", "auto", "auto", 150},
+	}
+	for _, tt := range tests {
+		assert.Equal(t, tt.want, GetImageGenerationToolPrice("future-mainline-model", tt.model, tt.quality, tt.size), tt.model)
+	}
+	toolPriceSetting.Prices["image_generation:future-image-model*"] = 220
+	RebuildToolPriceIndex()
+	assert.Equal(t, 220.0, GetImageGenerationToolPrice("gpt-5.6", "future-image-model-v2", "auto", "auto"))
+	toolPriceSetting.Prices["image_generation:gpt-5.6*"] = 210
+	RebuildToolPriceIndex()
+	assert.Equal(t, 210.0, GetImageGenerationToolPrice("gpt-5.6", "gpt-image-1", "high", "1024x1024"))
+
+	toolPriceSetting.Prices["image_generation"] = 0
+	RebuildToolPriceIndex()
+	assert.Zero(t, GetImageGenerationToolPrice("gpt-5.5", "gpt-image-1", "high", "1024x1024"))
+}
+
 func TestValidateToolPricesJSON(t *testing.T) {
 	valid := []string{
 		`{}`,

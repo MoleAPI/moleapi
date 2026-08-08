@@ -141,7 +141,7 @@ func TestOaiResponsesHandlerCountsCompletedImageGenerationOutputs(t *testing.T) 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	info := &relaycommon.RelayInfo{OriginModelName: "gpt-5.1"}
+	info := &relaycommon.RelayInfo{OriginModelName: "gpt-5.6"}
 	resp := &http.Response{
 		StatusCode: http.StatusOK,
 		Body:       io.NopCloser(bytes.NewReader(body)),
@@ -176,7 +176,7 @@ func TestOaiResponsesHandlerIncompleteStatusCommitsZeroImageGeneration(t *testin
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	info := &relaycommon.RelayInfo{
-		OriginModelName: "gpt-5.1",
+		OriginModelName: "gpt-5.6",
 		ResponsesUsageInfo: &relaycommon.ResponsesUsageInfo{
 			BuiltInTools: map[string]*relaycommon.BuildInToolInfo{
 				dto.BuildInToolImageGeneration: {ToolName: dto.BuildInToolImageGeneration, CallCount: 0},
@@ -216,10 +216,10 @@ func runResponsesImageBillingStream(t *testing.T, events ...string) *relaycommon
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	c.Set(common.RequestIdKey, "responses-image-billing-test")
 	info := &relaycommon.RelayInfo{
-		OriginModelName: "gpt-5.1",
+		OriginModelName: "gpt-5.6",
 		DisablePing:     true,
 		ChannelMeta: &relaycommon.ChannelMeta{
-			UpstreamModelName: "gpt-5.1",
+			UpstreamModelName: "gpt-5.6",
 		},
 	}
 	resp := &http.Response{
@@ -236,14 +236,17 @@ func runResponsesImageBillingStream(t *testing.T, events ...string) *relaycommon
 }
 
 func TestOaiResponsesStreamHandlerDeduplicatesCompletedImageOutput(t *testing.T) {
-	item := `{"type":"image_generation_call","id":"img_1","call_id":"call_1","status":"completed","result":"base64-a"}`
+	item := `{"type":"image_generation_call","id":"img_1","call_id":"call_1","status":"completed","quality":"medium","size":"1024x1536","result":"base64-a"}`
 	info := runResponsesImageBillingStream(
 		t,
 		`{"type":"response.output_item.done","output_index":0,"item":`+item+`}`,
 		`{"type":"response.completed","response":{"status":"completed","output":[`+item+`],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`,
 	)
 
-	assert.Equal(t, 1, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
+	tool := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration]
+	assert.Equal(t, 1, tool.CallCount)
+	assert.Equal(t, "medium", tool.ImageQuality)
+	assert.Equal(t, "1024x1536", tool.ImageSize)
 }
 
 func TestOaiResponsesStreamHandlerDiscardsImageOutputOnIncomplete(t *testing.T) {

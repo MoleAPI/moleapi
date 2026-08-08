@@ -319,6 +319,35 @@ func TestImageGenerationCallCounterCommitCapsAtMaxImageN(t *testing.T) {
 	assert.Equal(t, dto.MaxImageN, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
 }
 
+func TestImageGenerationCallCounterCommitsReturnedPricingDimensions(t *testing.T) {
+	counter := &ImageGenerationCallCounter{}
+	idx := 0
+	counter.Observe(&dto.ResponsesOutput{
+		Type:    dto.ResponsesOutputTypeImageGenerationCall,
+		ID:      "img_1",
+		Status:  "completed",
+		Result:  "base64-a",
+		Quality: "high",
+		Size:    "1024x1536",
+	}, &idx)
+	info := &RelayInfo{ResponsesUsageInfo: &ResponsesUsageInfo{BuiltInTools: map[string]*BuildInToolInfo{
+		dto.BuildInToolImageGeneration: {
+			ToolName:     dto.BuildInToolImageGeneration,
+			ImageModel:   "gpt-image-1.5",
+			ImageQuality: "auto",
+			ImageSize:    "auto",
+		},
+	}}}
+
+	counter.Commit(info)
+
+	tool := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration]
+	assert.Equal(t, 1, tool.CallCount)
+	assert.Equal(t, "gpt-image-1.5", tool.ImageModel)
+	assert.Equal(t, "high", tool.ImageQuality)
+	assert.Equal(t, "1024x1536", tool.ImageSize)
+}
+
 func TestImageGenerationCallCounterCommitDoesNotBillDeclarationsAlone(t *testing.T) {
 	t.Parallel()
 

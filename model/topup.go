@@ -54,13 +54,15 @@ type TopUpSearchParams struct {
 }
 
 type AdminBusinessMetrics struct {
-	NewUsers           int64                      `json:"new_users"`
-	IntentOrders       int64                      `json:"intent_orders"`
-	IntentAmounts      []AdminBusinessOrderAmount `json:"intent_amounts"`
-	PaidOrders         int64                      `json:"paid_orders"`
-	PaidAmounts        []AdminBusinessOrderAmount `json:"paid_amounts"`
-	PayingUsers        int64                      `json:"paying_users"`
-	PaymentSuccessRate float64                    `json:"payment_success_rate"`
+	NewUsers               int64                      `json:"new_users"`
+	NewPurchasingUsers     int64                      `json:"new_purchasing_users"`
+	NewUserPurchasingUsers int64                      `json:"new_user_purchasing_users"`
+	IntentOrders           int64                      `json:"intent_orders"`
+	IntentAmounts          []AdminBusinessOrderAmount `json:"intent_amounts"`
+	PaidOrders             int64                      `json:"paid_orders"`
+	PaidAmounts            []AdminBusinessOrderAmount `json:"paid_amounts"`
+	PayingUsers            int64                      `json:"paying_users"`
+	PaymentSuccessRate     float64                    `json:"payment_success_rate"`
 }
 
 type AdminBusinessOrderAmount struct {
@@ -709,7 +711,8 @@ func GetAllTopUps(pageInfo *common.PageInfo) (topups []*TopUp, total int64, err 
 // GetAdminBusinessMetrics summarizes user growth and the checkout funnel for
 // an admin-selected period. Successful subscription purchases are mirrored in
 // topups, so paid totals come from topups while subscription intent comes from
-// subscription_orders to avoid double counting.
+// subscription_orders to avoid double counting. New purchasers have no paid
+// order before the period; new-user purchasers both registered and paid in it.
 func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBusinessMetrics, error) {
 	if startTimestamp <= 0 || endTimestamp < startTimestamp {
 		return nil, errors.New("invalid time range")
@@ -752,6 +755,27 @@ func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBu
 		Where("complete_time >= ? AND complete_time <= ? AND status = ? AND money > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
 		Distinct("user_id").
 		Count(&metrics.PayingUsers).Error; err != nil {
+		return nil, err
+	}
+	priorPaid := DB.Table("top_ups AS prior_topups").
+		Select("1").
+		Where("prior_topups.user_id = current_topups.user_id").
+		Where("prior_topups.complete_time < ? AND prior_topups.status = ? AND prior_topups.money > 0", startTimestamp, common.TopUpStatusSuccess)
+	if err := DB.Table("top_ups AS current_topups").
+		Where("current_topups.complete_time >= ? AND current_topups.complete_time <= ? AND current_topups.status = ? AND current_topups.money > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Where("NOT EXISTS (?)", priorPaid).
+		Distinct("current_topups.user_id").
+		Count(&metrics.NewPurchasingUsers).Error; err != nil {
+		return nil, err
+	}
+	newUsers := DB.Model(&User{}).
+		Select("id").
+		Where("created_at >= ? AND created_at <= ?", startTimestamp, endTimestamp)
+	if err := DB.Model(&TopUp{}).
+		Where("complete_time >= ? AND complete_time <= ? AND status = ? AND money > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Where("user_id IN (?)", newUsers).
+		Distinct("user_id").
+		Count(&metrics.NewUserPurchasingUsers).Error; err != nil {
 		return nil, err
 	}
 
