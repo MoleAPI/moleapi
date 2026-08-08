@@ -32,6 +32,8 @@ test('business metrics show the selected-period order funnel', async () => {
   const queryClient = new QueryClient()
   queryClient.setQueryData(['dashboard', 'business-metrics', 100, 200], {
     new_users: 12,
+    new_purchasing_users: 2,
+    new_user_purchasing_users: 1,
     intent_orders: 10,
     intent_amounts: [
       { currency: 'USD', orders: 10, amount: 160, average_amount: 16 },
@@ -55,6 +57,10 @@ test('business metrics show the selected-period order funnel', async () => {
   assert.match(html, /New Users/)
   assert.match(html, /Order Intents/)
   assert.match(html, /Paid Orders/)
+  assert.match(html, /New Purchasers/)
+  assert.match(html, /Repeat Purchasers/)
+  assert.match(html, /New User Purchase Rate.*8\.33%/)
+  assert.match(html, /Repeat Purchase Rate.*33\.33%/)
   assert.match(html, /Average Order Value/)
   assert.match(html, />12</)
   assert.match(html, />10</)

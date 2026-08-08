@@ -70,6 +70,8 @@ export interface ChannelSuccessData {
 
 export interface AdminBusinessMetrics {
   new_users: number
+  new_purchasing_users: number
+  new_user_purchasing_users: number
   intent_orders: number
   intent_amounts: AdminBusinessOrderAmount[]
   paid_orders: number
