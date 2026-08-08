@@ -78,6 +78,7 @@ export interface AdminBusinessMetrics {
   paid_amounts: AdminBusinessOrderAmount[]
   paying_users: number
   payment_success_rate: number
+  top_up_ranking: AdminBusinessTopUpUser[]
 }
 
 export interface AdminBusinessOrderAmount {
@@ -85,6 +86,15 @@ export interface AdminBusinessOrderAmount {
   orders: number
   amount: number
   average_amount: number
+}
+
+export interface AdminBusinessTopUpUser {
+  rank: number
+  user_id: number
+  username: string
+  currency: string
+  orders: number
+  amount: number
 }
 
 export type FlowMetric = 'quota' | 'tokens' | 'requests'

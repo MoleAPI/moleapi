@@ -89,6 +89,8 @@ type ChatCompletionsStreamResponseChoiceDelta struct {
 	Content          *string            `json:"content,omitempty"`
 	ReasoningContent *string            `json:"reasoning_content,omitempty"`
 	Reasoning        *string            `json:"reasoning,omitempty"`
+	ReasoningText    *string            `json:"reasoning_text,omitempty"`
+	ReasoningDetails json.RawMessage    `json:"reasoning_details,omitempty"`
 	Role             string             `json:"role,omitempty"`
 	ToolCalls        []ToolCallResponse `json:"tool_calls,omitempty"`
 }
@@ -105,13 +107,12 @@ func (c *ChatCompletionsStreamResponseChoiceDelta) GetContentString() string {
 }
 
 func (c *ChatCompletionsStreamResponseChoiceDelta) GetReasoningContent() string {
-	if c.ReasoningContent == nil && c.Reasoning == nil {
-		return ""
+	for _, reasoning := range []*string{c.ReasoningContent, c.Reasoning, c.ReasoningText} {
+		if reasoning != nil && *reasoning != "" {
+			return *reasoning
+		}
 	}
-	if c.ReasoningContent != nil {
-		return *c.ReasoningContent
-	}
-	return *c.Reasoning
+	return ""
 }
 
 func (c *ChatCompletionsStreamResponseChoiceDelta) SetReasoningContent(s string) {
@@ -325,17 +326,19 @@ type IncompleteDetails struct {
 }
 
 type ResponsesOutput struct {
-	Type      string                   `json:"type"`
-	ID        string                   `json:"id"`
-	Status    string                   `json:"status"`
-	Role      string                   `json:"role"`
-	Content   []ResponsesOutputContent `json:"content"`
-	Quality   string                   `json:"quality"`
-	Size      string                   `json:"size"`
-	Result    string                   `json:"result,omitempty"`
-	CallId    string                   `json:"call_id,omitempty"`
-	Name      string                   `json:"name,omitempty"`
-	Arguments json.RawMessage          `json:"arguments,omitempty"`
+	Type             string                          `json:"type"`
+	ID               string                          `json:"id"`
+	Status           string                          `json:"status"`
+	Role             string                          `json:"role"`
+	Content          []ResponsesOutputContent        `json:"content"`
+	Summary          []ResponsesReasoningSummaryPart `json:"summary,omitempty"`
+	EncryptedContent string                          `json:"encrypted_content,omitempty"`
+	Quality          string                          `json:"quality"`
+	Size             string                          `json:"size"`
+	Result           string                          `json:"result,omitempty"`
+	CallId           string                          `json:"call_id,omitempty"`
+	Name             string                          `json:"name,omitempty"`
+	Arguments        json.RawMessage                 `json:"arguments,omitempty"`
 }
 
 // ArgumentsString returns function call arguments in the string form expected by Chat Completions.

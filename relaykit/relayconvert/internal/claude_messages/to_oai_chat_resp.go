@@ -118,6 +118,7 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 		}
 	}
 	tools := make([]dto.ToolCallResponse, 0)
+	thinkingBlocks := make([]dto.ClaudeMediaMessage, 0)
 	thinkingContent := ""
 
 	fullTextResponse.Id = claudeResponse.Id
@@ -134,9 +135,12 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 				},
 			})
 		case "thinking":
+			thinkingBlocks = append(thinkingBlocks, message)
 			if message.Thinking != nil {
 				thinkingContent = *message.Thinking
 			}
+		case "redacted_thinking":
+			thinkingBlocks = append(thinkingBlocks, message)
 		case "text":
 			responseText = message.GetText()
 		}
@@ -157,6 +161,9 @@ func ResponseClaude2OpenAI(claudeResponse *dto.ClaudeResponse) *dto.OpenAITextRe
 	}
 	if thinkingContent != "" {
 		choice.Message.ReasoningContent = &thinkingContent
+	}
+	if len(thinkingBlocks) > 0 {
+		choice.Message.ReasoningDetails, _ = kitutil.Marshal(thinkingBlocks)
 	}
 	fullTextResponse.Model = claudeResponse.Model
 	choices = append(choices, choice)
