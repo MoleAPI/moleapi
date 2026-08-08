@@ -63,6 +63,7 @@ type AdminBusinessMetrics struct {
 	PaidAmounts            []AdminBusinessOrderAmount `json:"paid_amounts"`
 	PayingUsers            int64                      `json:"paying_users"`
 	PaymentSuccessRate     float64                    `json:"payment_success_rate"`
+	TopUpRanking           []AdminBusinessTopUpUser   `json:"top_up_ranking"`
 }
 
 type AdminBusinessOrderAmount struct {
@@ -72,8 +73,24 @@ type AdminBusinessOrderAmount struct {
 	AverageAmount float64 `json:"average_amount"`
 }
 
+type AdminBusinessTopUpUser struct {
+	Rank     int     `json:"rank"`
+	UserId   int     `json:"user_id"`
+	Username string  `json:"username"`
+	Currency string  `json:"currency"`
+	Orders   int64   `json:"orders"`
+	Amount   float64 `json:"amount"`
+}
+
 type businessOrderAggregate struct {
 	Currency   string  `gorm:"column:currency"`
+	OrderCount int64   `gorm:"column:order_count"`
+	Amount     float64 `gorm:"column:order_amount"`
+}
+
+type businessTopUpUserAggregate struct {
+	UserId     int     `gorm:"column:user_id"`
+	Username   string  `gorm:"column:username"`
 	OrderCount int64   `gorm:"column:order_count"`
 	Amount     float64 `gorm:"column:order_amount"`
 }
@@ -718,7 +735,7 @@ func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBu
 		return nil, errors.New("invalid time range")
 	}
 
-	metrics := &AdminBusinessMetrics{}
+	metrics := &AdminBusinessMetrics{TopUpRanking: make([]AdminBusinessTopUpUser, 0)}
 	if err := DB.Model(&User{}).
 		Where("created_at >= ? AND created_at <= ?", startTimestamp, endTimestamp).
 		Count(&metrics.NewUsers).Error; err != nil {
@@ -797,6 +814,32 @@ func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBu
 	metrics.PaidAmounts, metrics.PaidOrders = mergeBusinessOrderAmounts(paid)
 	if metrics.IntentOrders > 0 {
 		metrics.PaymentSuccessRate = float64(convertedTopUps+convertedSubscriptions) / float64(metrics.IntentOrders)
+	}
+
+	// ponytail: currencies are few; keep one limited query per currency until MySQL 5.7 support can be dropped for window functions.
+	for _, paidAmount := range metrics.PaidAmounts {
+		var ranking []businessTopUpUserAggregate
+		if err := DB.Table("top_ups").
+			Select("top_ups.user_id AS user_id, users.username AS username, COUNT(*) AS order_count, COALESCE(SUM(top_ups.money), 0) AS order_amount").
+			Joins("JOIN users ON users.id = top_ups.user_id").
+			Where("top_ups.complete_time >= ? AND top_ups.complete_time <= ? AND top_ups.status = ? AND top_ups.money > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+			Where("UPPER(TRIM(top_ups.payment_currency)) = ?", paidAmount.Currency).
+			Group("top_ups.user_id, users.username").
+			Order("order_amount DESC, top_ups.user_id ASC").
+			Limit(10).
+			Scan(&ranking).Error; err != nil {
+			return nil, err
+		}
+		for index, user := range ranking {
+			metrics.TopUpRanking = append(metrics.TopUpRanking, AdminBusinessTopUpUser{
+				Rank:     index + 1,
+				UserId:   user.UserId,
+				Username: user.Username,
+				Currency: paidAmount.Currency,
+				Orders:   user.OrderCount,
+				Amount:   user.Amount,
+			})
+		}
 	}
 
 	return metrics, nil
