@@ -154,6 +154,41 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 			}
 		}
 
+		if chatRequest, ok := convertedRequest.(*dto.GeneralOpenAIRequest); ok {
+			reasoningField := strings.TrimSpace(info.ChannelSetting.ReasoningContentField)
+			if reasoningField == "" {
+				reasoningField = dto.ReasoningFieldContent
+			}
+			reasoningMessages := 0
+			reasoningDetails := 0
+			toolCallMessages := 0
+			sourceContent, sourceReasoning, sourceText := 0, 0, 0
+			for i := range chatRequest.Messages {
+				message := &chatRequest.Messages[i]
+				if message.ReasoningContent != nil || message.Reasoning != nil || message.ReasoningText != nil {
+					reasoningMessages++
+				}
+				switch {
+				case message.ReasoningContent != nil:
+					sourceContent++
+				case message.Reasoning != nil:
+					sourceReasoning++
+				case message.ReasoningText != nil:
+					sourceText++
+				}
+				if len(message.ReasoningDetails) > 0 {
+					reasoningDetails++
+				}
+				if len(message.ToolCalls) > 0 {
+					toolCallMessages++
+				}
+				message.NormalizeReasoningContentField(reasoningField)
+			}
+			if toolCallMessages > 0 && (reasoningMessages > 0 || reasoningDetails > 0) {
+				logger.LogInfo(c, fmt.Sprintf("reasoning relay: channel_id=%d retry=%d target_field=%s source_reasoning_content=%d source_reasoning=%d source_reasoning_text=%d reasoning_details=%d tool_call_messages=%d", info.ChannelId, info.RetryIndex, reasoningField, sourceContent, sourceReasoning, sourceText, reasoningDetails, toolCallMessages))
+			}
+		}
+
 		jsonData, err := common.Marshal(convertedRequest)
 		if err != nil {
 			return types.NewError(err, types.ErrorCodeJsonMarshalFailed, types.ErrOptionWithSkipRetry())

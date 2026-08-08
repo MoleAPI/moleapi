@@ -96,8 +96,11 @@ type GeneralOpenAIRequest struct {
 	Think json.RawMessage `json:"think,omitempty"`
 	// baidu v2
 	WebSearch json.RawMessage `json:"web_search,omitempty"`
-	// doubao,zhipu_v4
-	THINKING json.RawMessage `json:"thinking,omitempty"`
+	// thinking compatibility
+	THINKING         json.RawMessage `json:"thinking,omitempty"`
+	ClearThinking    *bool           `json:"clear_thinking,omitempty"`
+	PreserveThinking *bool           `json:"preserve_thinking,omitempty"`
+	ToolStream       *bool           `json:"tool_stream,omitempty"`
 	// pplx Params
 	SearchDomainFilter     json.RawMessage `json:"search_domain_filter,omitempty"`
 	SearchRecencyFilter    json.RawMessage `json:"search_recency_filter,omitempty"`
@@ -307,6 +310,8 @@ type Message struct {
 	Prefix           *bool           `json:"prefix,omitempty"`
 	ReasoningContent *string         `json:"reasoning_content,omitempty"`
 	Reasoning        *string         `json:"reasoning,omitempty"`
+	ReasoningText    *string         `json:"reasoning_text,omitempty"`
+	ReasoningDetails json.RawMessage `json:"reasoning_details,omitempty"`
 	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
 	ToolCallId       string          `json:"tool_call_id,omitempty"`
 	parsedContent    []MediaContent
@@ -458,13 +463,44 @@ const (
 )
 
 func (m *Message) GetReasoningContent() string {
-	if m.ReasoningContent == nil && m.Reasoning == nil {
-		return ""
+	for _, reasoning := range []*string{m.ReasoningContent, m.Reasoning, m.ReasoningText} {
+		if reasoning != nil && *reasoning != "" {
+			return *reasoning
+		}
 	}
-	if m.ReasoningContent != nil {
-		return *m.ReasoningContent
+	return ""
+}
+
+// NormalizeReasoningContentField keeps one portable reasoning text field for the target upstream.
+func (m *Message) NormalizeReasoningContentField(field string) {
+	var reasoning *string
+	for _, candidate := range []*string{m.ReasoningContent, m.Reasoning, m.ReasoningText} {
+		if candidate == nil {
+			continue
+		}
+		if reasoning == nil {
+			reasoning = candidate
+		}
+		if *candidate != "" {
+			reasoning = candidate
+			break
+		}
 	}
-	return *m.Reasoning
+	if reasoning == nil {
+		return
+	}
+
+	m.ReasoningContent = nil
+	m.Reasoning = nil
+	m.ReasoningText = nil
+	switch field {
+	case ReasoningFieldReasoning:
+		m.Reasoning = reasoning
+	case ReasoningFieldText:
+		m.ReasoningText = reasoning
+	default:
+		m.ReasoningContent = reasoning
+	}
 }
 
 func (m *Message) GetPrefix() bool {

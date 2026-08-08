@@ -731,4 +731,9 @@ func TestChannelSettingsValidateHTTPTransport(t *testing.T) {
 	err = (&ChannelSettings{HTTPProtocol: "http1", HTTP2ConnectionShards: 2}).ValidateHTTPTransport()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "http2_connection_shards")
+
+	require.NoError(t, (&ChannelSettings{ReasoningContentField: ReasoningFieldReasoning}).ValidateHTTPTransport())
+	err = (&ChannelSettings{ReasoningContentField: "thought"}).ValidateHTTPTransport()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "reasoning_content_field")
 }

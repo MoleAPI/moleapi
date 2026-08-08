@@ -18,12 +18,15 @@ import (
 	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 )
 
 func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, forceFormat bool, thinkToContent bool) error {
 	if data == "" {
 		return nil
 	}
+	data = canonicalizeChatReasoningJSON(data)
 
 	if !forceFormat && !thinkToContent {
 		return helper.StringData(c, data)
@@ -60,6 +63,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 				response.Choices[i].Delta.SetContentString("<think>\n" + thinkingContent.String())
 				response.Choices[i].Delta.ReasoningContent = nil
 				response.Choices[i].Delta.Reasoning = nil
+				response.Choices[i].Delta.ReasoningText = nil
 			}
 			info.ThinkingContentInfo.IsFirstThinkingContent = false
 			info.ThinkingContentInfo.HasSentThinkingContent = true
@@ -81,6 +85,7 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 				response.Choices[j].Delta.SetContentString("\n</think>\n")
 				response.Choices[j].Delta.ReasoningContent = nil
 				response.Choices[j].Delta.Reasoning = nil
+				response.Choices[j].Delta.ReasoningText = nil
 			}
 			info.ThinkingContentInfo.SendLastThinkingContent = true
 			helper.ObjectData(c, response)
@@ -91,10 +96,12 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 			lastStreamResponse.Choices[i].Delta.SetContentString(choice.Delta.GetReasoningContent())
 			lastStreamResponse.Choices[i].Delta.ReasoningContent = nil
 			lastStreamResponse.Choices[i].Delta.Reasoning = nil
+			lastStreamResponse.Choices[i].Delta.ReasoningText = nil
 		} else if !hasThinkingContent && !hasContent {
 			// flush thinking content
 			lastStreamResponse.Choices[i].Delta.ReasoningContent = nil
 			lastStreamResponse.Choices[i].Delta.Reasoning = nil
+			lastStreamResponse.Choices[i].Delta.ReasoningText = nil
 		}
 	}
 
@@ -243,6 +250,7 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 			return nil, types.NewOpenAIError(fmt.Errorf("openrouter response success=false"), types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 		}
 	}
+	responseBody = common.StringToByteSlice(canonicalizeChatReasoningJSON(string(responseBody)))
 
 	err = common.Unmarshal(responseBody, &simpleResponse)
 	if err != nil {
@@ -334,4 +342,38 @@ func OpenaiHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respo
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	return &simpleResponse.Usage, nil
+}
+
+func canonicalizeChatReasoningJSON(data string) string {
+	choices := gjson.Get(data, "choices")
+	if !choices.IsArray() {
+		return data
+	}
+
+	result := data
+	for i := range choices.Array() {
+		for _, key := range []string{"message", "delta"} {
+			path := fmt.Sprintf("choices.%d.%s", i, key)
+			message := gjson.Get(result, path)
+			if !message.IsObject() {
+				continue
+			}
+			canonical := message.Get(dto.ReasoningFieldContent)
+			if canonical.Exists() && canonical.Raw != "null" {
+				continue
+			}
+			for _, alias := range []string{dto.ReasoningFieldReasoning, dto.ReasoningFieldText} {
+				value := message.Get(alias)
+				if !value.Exists() || value.Raw == "null" {
+					continue
+				}
+				updated, err := sjson.SetRaw(result, path+"."+dto.ReasoningFieldContent, value.Raw)
+				if err == nil {
+					result = updated
+				}
+				break
+			}
+		}
+	}
+	return result
 }

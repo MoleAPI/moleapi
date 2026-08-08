@@ -55,6 +55,10 @@ func TestOpenCodeGoPresetUsesNativeResponses(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, advancedCustomConverterOpenAIResponsesToOpenAIChat, fallback.Converter)
 	assert.Equal(t, "https://opencode.ai/zen/go/v1/chat/completions", fallback.UpstreamPath)
+
+	messages, ok := settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathClaudeMessages)
+	require.True(t, ok)
+	assert.Equal(t, "https://opencode.ai/zen/go/v1/messages", messages.UpstreamPath)
 }
 
 func TestCodingPlanPresetBuildsCustomPlaceholderRoutes(t *testing.T) {

@@ -146,6 +146,7 @@ func ClaudeMessagesRequestToOpenAIChat(claudeRequest dto.ClaudeRequest, info con
 			}
 			var toolCalls []dto.ToolCallRequest
 			mediaMessages := make([]dto.MediaContent, 0, len(content))
+			thinkingBlocks := make([]dto.ClaudeMediaMessage, 0)
 
 			for _, mediaMsg := range content {
 				switch mediaMsg.Type {
@@ -164,15 +165,12 @@ func ClaudeMessagesRequestToOpenAIChat(claudeRequest dto.ClaudeRequest, info con
 					}
 					mediaMessages = append(mediaMessages, mediaMessage)
 				case "thinking":
+					thinkingBlocks = append(thinkingBlocks, mediaMsg)
 					if mediaMsg.Thinking != nil {
 						openAIMessage.ReasoningContent = mediaMsg.Thinking
 					}
 				case "redacted_thinking":
-					if mediaMsg.Signature != "" {
-						openAIMessage.ReasoningContent = kitutil.GetPointer(mediaMsg.Signature)
-					} else if mediaMsg.Thinking != nil {
-						openAIMessage.ReasoningContent = mediaMsg.Thinking
-					}
+					thinkingBlocks = append(thinkingBlocks, mediaMsg)
 				case "tool_use":
 					toolCall := dto.ToolCallRequest{
 						ID:   mediaMsg.Id,
@@ -207,11 +205,14 @@ func ClaudeMessagesRequestToOpenAIChat(claudeRequest dto.ClaudeRequest, info con
 			if len(toolCalls) > 0 {
 				openAIMessage.SetToolCalls(toolCalls)
 			}
+			if len(thinkingBlocks) > 0 {
+				openAIMessage.ReasoningDetails, _ = kitutil.Marshal(thinkingBlocks)
+			}
 			if len(mediaMessages) > 0 && len(toolCalls) == 0 {
 				openAIMessage.SetMediaContent(mediaMessages)
 			}
 		}
-		if len(openAIMessage.ParseContent()) > 0 || len(openAIMessage.ToolCalls) > 0 || openAIMessage.GetReasoningContent() != "" {
+		if len(openAIMessage.ParseContent()) > 0 || len(openAIMessage.ToolCalls) > 0 || openAIMessage.GetReasoningContent() != "" || len(openAIMessage.ReasoningDetails) > 0 {
 			openAIMessages = append(openAIMessages, openAIMessage)
 		}
 	}

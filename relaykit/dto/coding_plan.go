@@ -33,7 +33,7 @@ var codingPlanPresets = []CodingPlanPreset{
 	{ID: CodingPlanProviderQwenCoding, OpenAIBaseURL: "https://coding-intl.dashscope.aliyuncs.com/v1", AnthropicBaseURL: "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic", ModelListBaseURL: "https://coding-intl.dashscope.aliyuncs.com/v1"},
 	{ID: CodingPlanProviderQwenTokenPlan, OpenAIBaseURL: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", AnthropicBaseURL: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic", ResponsesBaseURL: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", ModelListBaseURL: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"},
 	{ID: CodingPlanProviderMiniMax, OpenAIBaseURL: "https://api.minimax.io/v1", AnthropicBaseURL: "https://api.minimax.io/anthropic", ResponsesBaseURL: "https://api.minimax.io/v1", ModelListBaseURL: "https://api.minimax.io/v1"},
-	{ID: CodingPlanProviderOpenCodeGo, OpenAIBaseURL: "https://opencode.ai/zen/go/v1", AnthropicBaseURL: "https://opencode.ai/zen/go/v1", ModelListBaseURL: "https://opencode.ai/zen/go/v1"},
+	{ID: CodingPlanProviderOpenCodeGo, OpenAIBaseURL: "https://opencode.ai/zen/go/v1", AnthropicBaseURL: "https://opencode.ai/zen/go", ModelListBaseURL: "https://opencode.ai/zen/go/v1"},
 	{ID: CodingPlanProviderCustom, OpenAIBaseURL: "https://your-openai-compatible-base-url.example/v1", AnthropicBaseURL: "https://your-anthropic-compatible-base-url.example", ResponsesBaseURL: "https://your-openai-compatible-base-url.example/v1", ModelListBaseURL: "https://your-openai-compatible-base-url.example/v1"},
 }
 

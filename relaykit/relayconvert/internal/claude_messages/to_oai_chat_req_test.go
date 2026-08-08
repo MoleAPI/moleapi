@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,8 +23,8 @@ func TestClaudeMessagesRequestToOpenAIChatPreservesThinkingWithToolCall(t *testi
 		},
 		{
 			name: "redacted thinking",
-			part: dto.ClaudeMediaMessage{Type: "redacted_thinking", Signature: "sig_opaque"},
-			want: "sig_opaque",
+			part: dto.ClaudeMediaMessage{Type: "redacted_thinking", Data: "opaque_data"},
+			want: "",
 		},
 	}
 
@@ -47,7 +49,13 @@ func TestClaudeMessagesRequestToOpenAIChatPreservesThinkingWithToolCall(t *testi
 			}, nil)
 			require.NoError(t, err)
 			require.Len(t, converted.Messages, 1)
-			require.Equal(t, tt.want, converted.Messages[0].GetReasoningContent())
+			assert.Equal(t, tt.want, converted.Messages[0].GetReasoningContent())
+			var details []dto.ClaudeMediaMessage
+			require.NoError(t, kitutil.Unmarshal(converted.Messages[0].ReasoningDetails, &details))
+			require.Len(t, details, 1)
+			assert.Equal(t, tt.part.Type, details[0].Type)
+			assert.Equal(t, tt.part.Signature, details[0].Signature)
+			assert.Equal(t, tt.part.Data, details[0].Data)
 
 			toolCalls := converted.Messages[0].ParseToolCalls()
 			require.Len(t, toolCalls, 1)

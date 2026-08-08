@@ -15,6 +15,7 @@ const (
 	responsesInputTypeFunctionCallOutput = "function_call_output"
 	responsesInputTypeCustomToolCall     = "custom_tool_call"
 	responsesInputTypeCustomToolOutput   = "custom_tool_call_output"
+	responsesInputTypeReasoning          = "reasoning"
 )
 
 const (
@@ -167,6 +168,12 @@ func responsesRequestMessagesToChat(req *dto.OpenAIResponsesRequest) ([]dto.Mess
 func responsesInputItemToChatMessages(item map[string]any, messages []dto.Message) ([]dto.Message, error) {
 	itemType := strings.TrimSpace(kitutil.Interface2String(item["type"]))
 	switch itemType {
+	case responsesInputTypeReasoning:
+		reasoning := responsesReasoningText(item)
+		if reasoning == "" {
+			return messages, nil
+		}
+		return append(messages, dto.Message{Role: "assistant", Content: "", ReasoningContent: &reasoning}), nil
 	case responsesInputTypeFunctionCall:
 		toolCall, err := responsesFunctionCallItemToChatToolCall(item)
 		if err != nil {
@@ -194,6 +201,26 @@ func responsesInputItemToChatMessages(item map[string]any, messages []dto.Messag
 		return nil, err
 	}
 	return append(messages, dto.Message{Role: role, Content: content}), nil
+}
+
+func responsesReasoningText(item map[string]any) string {
+	var parts []string
+	for _, key := range []string{"content", "summary"} {
+		items, ok := item[key].([]any)
+		if !ok {
+			continue
+		}
+		for _, rawPart := range items {
+			part, ok := rawPart.(map[string]any)
+			if !ok {
+				continue
+			}
+			if text := strings.TrimSpace(kitutil.Interface2String(part["text"])); text != "" {
+				parts = append(parts, text)
+			}
+		}
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func responsesInputContentToChatContent(content any) (any, error) {

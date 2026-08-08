@@ -257,6 +257,24 @@ func TestResponsesRequestToChatCompletionsRequestCustomToolCallPreservesRawShape
 	assert.Equal(t, "patch body", gjson.GetBytes(toolCalls[0].Custom, "input").String())
 }
 
+func TestResponsesRequestToChatCompletionsRequestPreservesReasoningForToolContinuation(t *testing.T) {
+	got, err := ResponsesRequestToChatCompletionsRequest(&dto.OpenAIResponsesRequest{
+		Model: "deepseek-test",
+		Input: mustRawMessage(t, []map[string]any{
+			{"type": "reasoning", "content": []map[string]any{{"type": "reasoning_text", "text": "think"}}},
+			{"type": "function_call", "call_id": "call_1", "name": "lookup", "arguments": `{}`},
+			{"type": "function_call_output", "call_id": "call_1", "output": "done"},
+		}),
+	})
+	require.NoError(t, err)
+	require.Len(t, got.Messages, 2)
+	assert.Equal(t, "assistant", got.Messages[0].Role)
+	assert.Equal(t, "think", got.Messages[0].GetReasoningContent())
+	require.Len(t, got.Messages[0].ParseToolCalls(), 1)
+	assert.Equal(t, "call_1", got.Messages[0].ParseToolCalls()[0].ID)
+	assert.Equal(t, "tool", got.Messages[1].Role)
+}
+
 func TestResponsesRequestToChatCompletionsRequestRejectsStatefulFields(t *testing.T) {
 	tests := []struct {
 		name string
