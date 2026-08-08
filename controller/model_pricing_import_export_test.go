@@ -25,6 +25,8 @@ func setupModelPricingOptionTest(t *testing.T) {
 	previousDB := model.DB
 	previousLogDB := model.LOG_DB
 	previousOptionMap := common.OptionMap
+	previousRedisEnabled := common.RedisEnabled
+	common.RedisEnabled = false
 	savedBillingMode, err := common.Marshal(billing_setting.GetBillingModeCopy())
 	require.NoError(t, err)
 	savedBillingExpr, err := common.Marshal(billing_setting.GetBillingExprCopy())
@@ -36,6 +38,7 @@ func setupModelPricingOptionTest(t *testing.T) {
 		"CacheRatio":                   ratio_setting.CacheRatio2JSONString(),
 		"CreateCacheRatio":             ratio_setting.CreateCacheRatio2JSONString(),
 		"ImageRatio":                   ratio_setting.ImageRatio2JSONString(),
+		"ImageOutputRatio":             ratio_setting.ImageOutputRatio2JSONString(),
 		"AudioRatio":                   ratio_setting.AudioRatio2JSONString(),
 		"AudioCompletionRatio":         ratio_setting.AudioCompletionRatio2JSONString(),
 		"billing_setting.billing_mode": string(savedBillingMode),
@@ -56,6 +59,7 @@ func setupModelPricingOptionTest(t *testing.T) {
 		"CacheRatio":                   "{}",
 		"CreateCacheRatio":             "{}",
 		"ImageRatio":                   `{"old-image-model":15}`,
+		"ImageOutputRatio":             `{"old-image-model":60}`,
 		"AudioRatio":                   `{"old-audio-model":3}`,
 		"AudioCompletionRatio":         "{}",
 		"billing_setting.billing_mode": `{"old-tiered-model":"tiered_expr"}`,
@@ -70,6 +74,7 @@ func setupModelPricingOptionTest(t *testing.T) {
 		_ = ratio_setting.UpdateCacheRatioByJSONString(savedPricing["CacheRatio"])
 		_ = ratio_setting.UpdateCreateCacheRatioByJSONString(savedPricing["CreateCacheRatio"])
 		_ = ratio_setting.UpdateImageRatioByJSONString(savedPricing["ImageRatio"])
+		_ = ratio_setting.UpdateImageOutputRatioByJSONString(savedPricing["ImageOutputRatio"])
 		_ = ratio_setting.UpdateAudioRatioByJSONString(savedPricing["AudioRatio"])
 		_ = ratio_setting.UpdateAudioCompletionRatioByJSONString(savedPricing["AudioCompletionRatio"])
 		_ = model.UpdateOptionsBulk(map[string]string{
@@ -81,6 +86,7 @@ func setupModelPricingOptionTest(t *testing.T) {
 		common.OptionMapRWMutex.Unlock()
 		model.DB = previousDB
 		model.LOG_DB = previousLogDB
+		common.RedisEnabled = previousRedisEnabled
 		sqlDB, err := db.DB()
 		if err == nil {
 			_ = sqlDB.Close()
@@ -114,6 +120,7 @@ func TestModelPricingImportExport(t *testing.T) {
 	require.Contains(t, exported.Pricing, "ModelRatio")
 	assert.Equal(t, 1.25, pricingExportMap[float64](t, exported, "ModelRatio")["old-model"])
 	assert.Equal(t, 15.0, pricingExportMap[float64](t, exported, "ImageRatio")["old-image-model"])
+	assert.Equal(t, 60.0, pricingExportMap[float64](t, exported, "ImageOutputRatio")["old-image-model"])
 	assert.Equal(t, 3.0, pricingExportMap[float64](t, exported, "AudioRatio")["old-audio-model"])
 	assert.Equal(t, billing_setting.BillingModeTieredExpr, pricingExportMap[string](t, exported, "billing_setting.billing_mode")["old-tiered-model"])
 	assert.Contains(t, pricingExportMap[string](t, exported, "billing_setting.billing_expr")["old-tiered-model"], "p * 1")
@@ -129,6 +136,7 @@ func TestModelPricingImportExport(t *testing.T) {
 				"ModelRatio": {"glm-5-turbo": 0.25},
 				"CompletionRatio": "{\"glm-5-turbo\":2}",
 				"ImageRatio": {"glm-image": 15},
+				"ImageOutputRatio": {"glm-image": 60},
 				"AudioRatio": {"glm-audio": 3},
 				"billing_setting.billing_mode": {"glm-5-turbo": "tiered_expr"},
 				"billing_setting.billing_expr": {"glm-5-turbo": "tier(\"base\", p * 1 + c * 6)"},
@@ -149,7 +157,7 @@ func TestModelPricingImportExport(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(importResponse.Body.Bytes(), &imported))
 	require.True(t, imported.Success)
-	assert.Equal(t, 6, imported.Data.UpdatedOptions)
+	assert.Equal(t, 7, imported.Data.UpdatedOptions)
 	assert.Equal(t, []string{"Unknown"}, imported.Data.SkippedOptions)
 
 	var saved model.Option
@@ -161,6 +169,10 @@ func TestModelPricingImportExport(t *testing.T) {
 	require.NoError(t, model.DB.First(&saved, "`key` = ?", "ImageRatio").Error)
 	require.NoError(t, common.UnmarshalJsonStr(saved.Value, &savedRatio))
 	assert.Equal(t, 15.0, savedRatio["glm-image"])
+	saved = model.Option{}
+	require.NoError(t, model.DB.First(&saved, "`key` = ?", "ImageOutputRatio").Error)
+	require.NoError(t, common.UnmarshalJsonStr(saved.Value, &savedRatio))
+	assert.Equal(t, 60.0, savedRatio["glm-image"])
 	saved = model.Option{}
 	require.NoError(t, model.DB.First(&saved, "`key` = ?", "AudioRatio").Error)
 	require.NoError(t, common.UnmarshalJsonStr(saved.Value, &savedRatio))

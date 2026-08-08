@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { useQuery } from '@tanstack/react-query'
 import { Code2, Download, Eye, RotateCcw, Save, Upload } from 'lucide-react'
 import {
@@ -43,6 +61,7 @@ type ModelFormValues = {
   CreateCacheRatio: string
   CompletionRatio: string
   ImageRatio: string
+  ImageOutputRatio: string
   AudioRatio: string
   AudioCompletionRatio: string
   ExposeRatioEnabled: boolean
@@ -71,6 +90,7 @@ type ModelJsonFieldName =
   | 'CreateCacheRatio'
   | 'CompletionRatio'
   | 'ImageRatio'
+  | 'ImageOutputRatio'
   | 'AudioRatio'
   | 'AudioCompletionRatio'
 
@@ -111,6 +131,11 @@ const modelJsonFields: Array<{
     name: 'ImageRatio',
     labelKey: 'Image ratio',
     descriptionKey: 'Configure per-model ratio for image inputs or outputs.',
+  },
+  {
+    name: 'ImageOutputRatio',
+    labelKey: 'Image Out',
+    descriptionKey: 'Image output price',
   },
   {
     name: 'AudioRatio',
@@ -307,6 +332,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedCreateCacheRatio={savedValues.CreateCacheRatio}
               savedCompletionRatio={savedValues.CompletionRatio}
               savedImageRatio={savedValues.ImageRatio}
+              savedImageOutputRatio={savedValues.ImageOutputRatio}
               savedAudioRatio={savedValues.AudioRatio}
               savedAudioCompletionRatio={savedValues.AudioCompletionRatio}
               savedBillingMode={savedValues.BillingMode}
@@ -317,6 +343,7 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               createCacheRatio={form.watch('CreateCacheRatio')}
               completionRatio={form.watch('CompletionRatio')}
               imageRatio={form.watch('ImageRatio')}
+              imageOutputRatio={form.watch('ImageOutputRatio')}
               audioRatio={form.watch('AudioRatio')}
               audioCompletionRatio={form.watch('AudioCompletionRatio')}
               billingMode={form.watch('BillingMode')}

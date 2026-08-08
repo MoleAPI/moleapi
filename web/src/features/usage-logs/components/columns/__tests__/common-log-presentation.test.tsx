@@ -339,6 +339,7 @@ test('ratio billing details separate image output from text output', async () =>
       model_ratio: 4,
       completion_ratio: 3.75,
       image_ratio: 15,
+      image_output_ratio: 15,
       group_ratio: 1,
       image: true,
       image_output_tokens: 186,
@@ -354,7 +355,8 @@ test('ratio billing details separate image output from text output', async () =>
 
   assert.match(detailsHtml, /Image Out/)
   assert.match(detailsHtml, /Image Output Tokens/)
-  assert.match(detailsHtml, /Image Out 186/)
+  assert.match(detailsHtml, /Image Out 186 × \$120\/M/)
+  assert.doesNotMatch(detailsHtml, /Image Out 186 × \$30\/M/)
   assert.doesNotMatch(detailsHtml, /Output 186/)
 })
 

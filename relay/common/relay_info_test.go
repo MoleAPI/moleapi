@@ -74,6 +74,42 @@ func TestGenRelayInfoResponsesImageBridgeUsesImageRequestPath(t *testing.T) {
 	require.Equal(t, "/v1/images/generations", info.RequestURLPath)
 }
 
+func TestGenRelayInfoResponsesKeepsImageToolPricingDimensions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	request := &dto.OpenAIResponsesRequest{
+		Model: "future-mainline-model",
+		Tools: []byte(`[{"type":"image_generation","model":"gpt-image-2","quality":"medium","size":"1536x1024"}]`),
+	}
+
+	info := GenRelayInfoResponses(c, request)
+
+	tool := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration]
+	require.NotNil(t, tool)
+	assert.Equal(t, "gpt-image-2", tool.ImageModel)
+	assert.Equal(t, "medium", tool.ImageQuality)
+	assert.Equal(t, "1536x1024", tool.ImageSize)
+}
+
+func TestGenRelayInfoResponsesDefaultsImageToolPricingDimensions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	request := &dto.OpenAIResponsesRequest{
+		Model: "gpt-5.6",
+		Tools: []byte(`[{"type":"image_generation"}]`),
+	}
+
+	info := GenRelayInfoResponses(c, request)
+
+	tool := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration]
+	require.NotNil(t, tool)
+	assert.Equal(t, "gpt-image-1", tool.ImageModel)
+	assert.Equal(t, "auto", tool.ImageQuality)
+	assert.Equal(t, "auto", tool.ImageSize)
+}
+
 func TestRelayInfoMetaTypedNilReceiver(t *testing.T) {
 	var info *RelayInfo
 	var meta convmeta.Meta = info

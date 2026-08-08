@@ -1,3 +1,21 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -99,6 +117,7 @@ const createModelSchema = (t: Translate) =>
     CreateCacheRatio: createJsonStringField(t),
     CompletionRatio: createJsonStringField(t),
     ImageRatio: createJsonStringField(t),
+    ImageOutputRatio: createJsonStringField(t),
     AudioRatio: createJsonStringField(t),
     AudioCompletionRatio: createJsonStringField(t),
     ExposeRatioEnabled: z.boolean(),
@@ -214,6 +233,7 @@ export function RatioSettingsCard({
     CreateCacheRatio: normalizeJsonString(modelDefaults.CreateCacheRatio),
     CompletionRatio: normalizeJsonString(modelDefaults.CompletionRatio),
     ImageRatio: normalizeJsonString(modelDefaults.ImageRatio),
+    ImageOutputRatio: normalizeJsonString(modelDefaults.ImageOutputRatio),
     AudioRatio: normalizeJsonString(modelDefaults.AudioRatio),
     AudioCompletionRatio: normalizeJsonString(
       modelDefaults.AudioCompletionRatio
@@ -252,6 +272,7 @@ export function RatioSettingsCard({
       CreateCacheRatio: formatJsonForTextarea(modelDefaults.CreateCacheRatio),
       CompletionRatio: formatJsonForTextarea(modelDefaults.CompletionRatio),
       ImageRatio: formatJsonForTextarea(modelDefaults.ImageRatio),
+      ImageOutputRatio: formatJsonForTextarea(modelDefaults.ImageOutputRatio),
       AudioRatio: formatJsonForTextarea(modelDefaults.AudioRatio),
       AudioCompletionRatio: formatJsonForTextarea(
         modelDefaults.AudioCompletionRatio
@@ -285,6 +306,7 @@ export function RatioSettingsCard({
       CreateCacheRatio: normalizeJsonString(modelDefaults.CreateCacheRatio),
       CompletionRatio: normalizeJsonString(modelDefaults.CompletionRatio),
       ImageRatio: normalizeJsonString(modelDefaults.ImageRatio),
+      ImageOutputRatio: normalizeJsonString(modelDefaults.ImageOutputRatio),
       AudioRatio: normalizeJsonString(modelDefaults.AudioRatio),
       AudioCompletionRatio: normalizeJsonString(
         modelDefaults.AudioCompletionRatio
@@ -303,6 +325,7 @@ export function RatioSettingsCard({
       CreateCacheRatio: formatJsonForTextarea(modelDefaults.CreateCacheRatio),
       CompletionRatio: formatJsonForTextarea(modelDefaults.CompletionRatio),
       ImageRatio: formatJsonForTextarea(modelDefaults.ImageRatio),
+      ImageOutputRatio: formatJsonForTextarea(modelDefaults.ImageOutputRatio),
       AudioRatio: formatJsonForTextarea(modelDefaults.AudioRatio),
       AudioCompletionRatio: formatJsonForTextarea(
         modelDefaults.AudioCompletionRatio
@@ -348,6 +371,7 @@ export function RatioSettingsCard({
         CreateCacheRatio: normalizeJsonString(values.CreateCacheRatio),
         CompletionRatio: normalizeJsonString(values.CompletionRatio),
         ImageRatio: normalizeJsonString(values.ImageRatio),
+        ImageOutputRatio: normalizeJsonString(values.ImageOutputRatio),
         AudioRatio: normalizeJsonString(values.AudioRatio),
         AudioCompletionRatio: normalizeJsonString(values.AudioCompletionRatio),
         ExposeRatioEnabled: values.ExposeRatioEnabled,
@@ -504,6 +528,7 @@ export function RatioSettingsCard({
           CacheRatio: modelDefaults.CacheRatio,
           CreateCacheRatio: modelDefaults.CreateCacheRatio,
           ImageRatio: modelDefaults.ImageRatio,
+          ImageOutputRatio: modelDefaults.ImageOutputRatio,
           AudioRatio: modelDefaults.AudioRatio,
           AudioCompletionRatio: modelDefaults.AudioCompletionRatio,
           'billing_setting.billing_mode': modelDefaults.BillingMode,

@@ -77,8 +77,10 @@ func (info *RelayInfo) incrementBillableToolCall(name string) {
 // ImageGenerationCallCounter counts completed Responses image_generation_call
 // outputs with stream-safe identity deduplication.
 type ImageGenerationCallCounter struct {
-	seen  map[string]struct{}
-	count int
+	seen    map[string]struct{}
+	count   int
+	quality string
+	size    string
 }
 
 // Observe records one completed final image output when billable.
@@ -96,6 +98,12 @@ func (c *ImageGenerationCallCounter) Observe(item *dto.ResponsesOutput, outputIn
 	switch strings.ToLower(strings.TrimSpace(item.Status)) {
 	case "failed", "cancelled", "canceled", "incomplete", "partial":
 		return
+	}
+	if quality := strings.TrimSpace(item.Quality); quality != "" {
+		c.quality = quality
+	}
+	if size := strings.TrimSpace(item.Size); size != "" {
+		c.size = size
 	}
 
 	aliases := make([]string, 0, 4)
@@ -132,6 +140,8 @@ func (c *ImageGenerationCallCounter) Reset() {
 	}
 	c.seen = nil
 	c.count = 0
+	c.quality = ""
+	c.size = ""
 }
 
 // Count returns the deduplicated completed image output count before commit capping.
@@ -167,12 +177,23 @@ func (c *ImageGenerationCallCounter) Commit(info *RelayInfo) {
 
 	if existing, ok := info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration]; ok && existing != nil {
 		existing.CallCount = count
+		if c != nil && c.quality != "" {
+			existing.ImageQuality = c.quality
+		}
+		if c != nil && c.size != "" {
+			existing.ImageSize = c.size
+		}
 		return
 	}
-	info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration] = &BuildInToolInfo{
+	tool := &BuildInToolInfo{
 		ToolName:  dto.BuildInToolImageGeneration,
 		CallCount: count,
 	}
+	if c != nil {
+		tool.ImageQuality = c.quality
+		tool.ImageSize = c.size
+	}
+	info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration] = tool
 }
 
 // IsNonBillableResponsesStatus reports terminal response statuses that must not

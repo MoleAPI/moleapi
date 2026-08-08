@@ -5,6 +5,13 @@ import (
 )
 
 var defaultCacheRatio = map[string]float64{
+	"gpt-image-1":                         0.25,
+	"gpt-image-1-mini":                    0.1,
+	"gpt-image-1.5":                       0.25,
+	"gpt-image-1.5-2025-12-16":            0.25,
+	"chatgpt-image-latest":                0.25,
+	"gpt-image-2":                         0.25,
+	"gpt-image-2-2026-04-21":              0.25,
 	"gemini-3-flash-preview":              0.1,
 	"gemini-3-pro-preview":                0.1,
 	"gemini-3.1-pro-preview":              0.1,

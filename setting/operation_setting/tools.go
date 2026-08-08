@@ -218,6 +218,57 @@ func GetToolPrice(toolName string) float64 {
 	return GetToolPriceForModel(toolName, "")
 }
 
+// GetImageGenerationToolPrice returns the image tool output price in the
+// existing $/1K-calls unit. Operator overrides remain authoritative; otherwise
+// known image settings use per-image prices and unknown settings use the flat
+// image_generation fallback.
+func GetImageGenerationToolPrice(mainModel, imageModel, quality, size string) float64 {
+	imageModel = strings.ToLower(strings.TrimSpace(imageModel))
+	imageFallback := GetToolPriceForModel("image_generation", imageModel)
+	mainFallback := GetToolPriceForModel("image_generation", mainModel)
+	if imageFallback != defaultImageGenerationToolPrice {
+		return imageFallback
+	}
+	if mainFallback != defaultImageGenerationToolPrice {
+		return mainFallback
+	}
+
+	qualityIndex := -1
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case "low":
+		qualityIndex = 0
+	case "medium":
+		qualityIndex = 1
+	case "high":
+		qualityIndex = 2
+	}
+	sizeIndex := -1
+	switch strings.ToLower(strings.TrimSpace(size)) {
+	case "1024x1024":
+		sizeIndex = 0
+	case "1024x1536", "1536x1024":
+		sizeIndex = 1
+	}
+	if qualityIndex < 0 || sizeIndex < 0 {
+		return imageFallback
+	}
+
+	var prices [3][2]float64
+	switch {
+	case imageModel == "gpt-image-1-mini", strings.HasPrefix(imageModel, "gpt-image-1-mini-"):
+		prices = [3][2]float64{{0.005, 0.006}, {0.011, 0.015}, {0.036, 0.052}}
+	case imageModel == "gpt-image-1.5", strings.HasPrefix(imageModel, "gpt-image-1.5-"), imageModel == "chatgpt-image-latest":
+		prices = [3][2]float64{{0.009, 0.013}, {0.034, 0.05}, {0.133, 0.2}}
+	case imageModel == "gpt-image-2", strings.HasPrefix(imageModel, "gpt-image-2-"):
+		prices = [3][2]float64{{0.006, 0.005}, {0.053, 0.041}, {0.211, 0.165}}
+	case imageModel == "", imageModel == "gpt-image-1", strings.HasPrefix(imageModel, "gpt-image-1-"):
+		prices = [3][2]float64{{0.011, 0.016}, {0.042, 0.063}, {0.167, 0.25}}
+	default:
+		return imageFallback
+	}
+	return prices[qualityIndex][sizeIndex] * 1000
+}
+
 // SetToolPriceForTest injects a tool price and rebuilds the lookup index. Tests only.
 func SetToolPriceForTest(name string, price float64) {
 	if toolPriceSetting.Prices == nil {

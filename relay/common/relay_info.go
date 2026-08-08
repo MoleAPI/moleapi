@@ -49,6 +49,9 @@ type BuildInToolInfo struct {
 	ToolName          string
 	CallCount         int
 	SearchContextSize string
+	ImageModel        string
+	ImageQuality      string
+	ImageSize         string
 }
 
 type ResponsesUsageInfo struct {
@@ -417,6 +420,23 @@ func GenRelayInfoResponses(c *gin.Context, request *dto.OpenAIResponsesRequest) 
 					searchContextSize = "medium"
 				}
 				info.ResponsesUsageInfo.BuiltInTools[toolType].SearchContextSize = searchContextSize
+			case dto.BuildInToolImageGeneration:
+				imageModel := common.Interface2String(tool["model"])
+				if imageModel == "" {
+					imageModel = "gpt-image-1"
+				}
+				imageQuality := common.Interface2String(tool["quality"])
+				if imageQuality == "" {
+					imageQuality = "auto"
+				}
+				imageSize := common.Interface2String(tool["size"])
+				if imageSize == "" {
+					imageSize = "auto"
+				}
+				imageTool := info.ResponsesUsageInfo.BuiltInTools[toolType]
+				imageTool.ImageModel = imageModel
+				imageTool.ImageQuality = imageQuality
+				imageTool.ImageSize = imageSize
 			}
 		}
 	}
