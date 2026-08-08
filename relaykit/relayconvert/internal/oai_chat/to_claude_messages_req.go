@@ -246,6 +246,8 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 		if message.Role == "assistant" {
 			fmtMessage.ReasoningContent = message.ReasoningContent
 			fmtMessage.Reasoning = message.Reasoning
+			fmtMessage.ReasoningText = message.ReasoningText
+			fmtMessage.ReasoningDetails = message.ReasoningDetails
 		}
 		if lastMessage.Role == message.Role && lastMessage.Role != "tool" {
 			if lastMessage.IsStringContent() && message.IsStringContent() {
@@ -254,7 +256,7 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 			}
 		}
 		if (fmtMessage.Content == nil || (fmtMessage.IsStringContent() && fmtMessage.StringContent() == "")) &&
-			!(fmtMessage.Role == "assistant" && (fmtMessage.ToolCalls != nil || fmtMessage.GetReasoningContent() != "")) {
+			!(fmtMessage.Role == "assistant" && (fmtMessage.ToolCalls != nil || fmtMessage.GetReasoningContent() != "" || len(fmtMessage.ReasoningDetails) > 0)) {
 			fmtMessage.SetStringContent("...")
 		}
 		formatMessages = append(formatMessages, fmtMessage)
@@ -342,7 +344,23 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 			claudeMessage.Content = text
 		} else {
 			claudeMediaMessages := make([]dto.ClaudeMediaMessage, 0)
-			if reasoningContent := message.GetReasoningContent(); message.Role == "assistant" && reasoningContent != "" {
+			preservedThinking := false
+			if message.Role == "assistant" && len(message.ReasoningDetails) > 0 {
+				var thinkingBlocks []dto.ClaudeMediaMessage
+				if err := kitutil.Unmarshal(message.ReasoningDetails, &thinkingBlocks); err == nil {
+					preservedThinking = len(thinkingBlocks) > 0
+					for _, block := range thinkingBlocks {
+						if block.Type != "thinking" && block.Type != "redacted_thinking" {
+							preservedThinking = false
+							break
+						}
+					}
+					if preservedThinking {
+						claudeMediaMessages = append(claudeMediaMessages, thinkingBlocks...)
+					}
+				}
+			}
+			if reasoningContent := message.GetReasoningContent(); message.Role == "assistant" && reasoningContent != "" && !preservedThinking {
 				claudeMediaMessages = append(claudeMediaMessages, dto.ClaudeMediaMessage{
 					Type:     "thinking",
 					Thinking: kitutil.GetPointer(reasoningContent),

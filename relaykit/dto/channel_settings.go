@@ -23,12 +23,17 @@ type ChannelSettings struct {
 	// HTTP2ConnectionShards spreads HTTP/2 traffic across N independent transports
 	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1".
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
+	// ReasoningContentField selects the Chat Completions field expected by the upstream.
+	ReasoningContentField string `json:"reasoning_content_field,omitempty"`
 }
 
 const (
 	HTTPProtocolAuto         = "auto"
 	HTTPProtocolHTTP1        = "http1"
 	MaxHTTP2ConnectionShards = 8
+	ReasoningFieldContent    = "reasoning_content"
+	ReasoningFieldReasoning  = "reasoning"
+	ReasoningFieldText       = "reasoning_text"
 )
 
 // ValidateHTTPTransport validates save-time HTTP transport channel settings.
@@ -47,6 +52,12 @@ func (s *ChannelSettings) ValidateHTTPTransport() error {
 	}
 	if protocol == HTTPProtocolHTTP1 && s.HTTP2ConnectionShards > 1 {
 		return fmt.Errorf("http2_connection_shards must be 1 when http_protocol is http1")
+	}
+	reasoningField := strings.TrimSpace(s.ReasoningContentField)
+	switch reasoningField {
+	case "", ReasoningFieldContent, ReasoningFieldReasoning, ReasoningFieldText:
+	default:
+		return fmt.Errorf("invalid reasoning_content_field: %s", s.ReasoningContentField)
 	}
 	return nil
 }

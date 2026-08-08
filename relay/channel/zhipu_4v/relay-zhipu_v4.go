@@ -28,10 +28,14 @@ func requestOpenAI2Zhipu(request dto.GeneralOpenAIRequest) *dto.GeneralOpenAIReq
 			message.SetMediaContent(mediaMessages)
 		}
 		messages = append(messages, dto.Message{
-			Role:       message.Role,
-			Content:    message.Content,
-			ToolCalls:  message.ToolCalls,
-			ToolCallId: message.ToolCallId,
+			Role:             message.Role,
+			Content:          message.Content,
+			ReasoningContent: message.ReasoningContent,
+			Reasoning:        message.Reasoning,
+			ReasoningText:    message.ReasoningText,
+			ReasoningDetails: message.ReasoningDetails,
+			ToolCalls:        message.ToolCalls,
+			ToolCallId:       message.ToolCallId,
 		})
 	}
 	str, ok := request.Stop.(string)
@@ -42,15 +46,19 @@ func requestOpenAI2Zhipu(request dto.GeneralOpenAIRequest) *dto.GeneralOpenAIReq
 		Stop, _ = request.Stop.([]string)
 	}
 	out := &dto.GeneralOpenAIRequest{
-		Model:       request.Model,
-		Stream:      request.Stream,
-		Messages:    messages,
-		Temperature: request.Temperature,
-		TopP:        request.TopP,
-		Stop:        Stop,
-		Tools:       request.Tools,
-		ToolChoice:  request.ToolChoice,
-		THINKING:    request.THINKING,
+		Model:            request.Model,
+		Stream:           request.Stream,
+		Messages:         messages,
+		Temperature:      request.Temperature,
+		TopP:             request.TopP,
+		Stop:             Stop,
+		Tools:            request.Tools,
+		ToolChoice:       request.ToolChoice,
+		ReasoningEffort:  request.ReasoningEffort,
+		THINKING:         request.THINKING,
+		ClearThinking:    request.ClearThinking,
+		PreserveThinking: request.PreserveThinking,
+		ToolStream:       request.ToolStream,
 	}
 	if request.MaxTokens != nil || request.MaxCompletionTokens != nil {
 		maxTokens := request.GetMaxTokens()
