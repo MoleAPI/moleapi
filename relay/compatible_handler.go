@@ -162,10 +162,12 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 			reasoningMessages := 0
 			reasoningDetails := 0
 			toolCallMessages := 0
+			toolCallReasoningMessages := 0
 			sourceContent, sourceReasoning, sourceText := 0, 0, 0
 			for i := range chatRequest.Messages {
 				message := &chatRequest.Messages[i]
-				if message.ReasoningContent != nil || message.Reasoning != nil || message.ReasoningText != nil {
+				hasReasoning := message.ReasoningContent != nil || message.Reasoning != nil || message.ReasoningText != nil || len(message.ReasoningDetails) > 0
+				if hasReasoning {
 					reasoningMessages++
 				}
 				switch {
@@ -181,11 +183,14 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 				}
 				if len(message.ToolCalls) > 0 {
 					toolCallMessages++
+					if hasReasoning {
+						toolCallReasoningMessages++
+					}
 				}
 				message.NormalizeReasoningContentField(reasoningField)
 			}
-			if toolCallMessages > 0 && (reasoningMessages > 0 || reasoningDetails > 0) {
-				logger.LogInfo(c, fmt.Sprintf("reasoning relay: channel_id=%d retry=%d target_field=%s source_reasoning_content=%d source_reasoning=%d source_reasoning_text=%d reasoning_details=%d tool_call_messages=%d", info.ChannelId, info.RetryIndex, reasoningField, sourceContent, sourceReasoning, sourceText, reasoningDetails, toolCallMessages))
+			if toolCallMessages > 0 && (info.RetryIndex > 0 || sourceReasoning > 0 || sourceText > 0 || reasoningDetails > 0 || toolCallReasoningMessages == 0) {
+				logger.LogInfo(c, fmt.Sprintf("reasoning relay: channel_id=%d retry=%d target_field=%s source_reasoning_content=%d source_reasoning=%d source_reasoning_text=%d reasoning_details=%d reasoning_messages=%d tool_call_messages=%d tool_call_reasoning_messages=%d", info.ChannelId, info.RetryIndex, reasoningField, sourceContent, sourceReasoning, sourceText, reasoningDetails, reasoningMessages, toolCallMessages, toolCallReasoningMessages))
 			}
 		}
 
