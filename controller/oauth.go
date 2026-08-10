@@ -277,8 +277,7 @@ func handleOAuthBind(c *gin.Context, provider oauth.Provider, pendingFlow *model
 	}
 
 	user := model.User{Id: pendingFlow.UserId}
-	err = user.FillUserById()
-	if err != nil {
+	if err := user.FillUserById(); err != nil {
 		common.ApiError(c, err)
 		return
 	}
@@ -546,8 +545,7 @@ func bindOAuthProviderToUser(provider oauth.Provider, user *model.User, provider
 	if currentProviderUserID != "" && currentProviderUserID != providerUserID && !allowReplace {
 		return errOAuthProviderAlreadyBound
 	}
-	provider.SetProviderUserID(user, providerUserID)
-	return user.Update(false)
+	return model.UpdateUserBindColumn(user.Id, provider.ProviderUserIDColumn(), providerUserID)
 }
 
 func userOAuthProviderID(provider oauth.Provider, user *model.User) string {

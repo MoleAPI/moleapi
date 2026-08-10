@@ -129,6 +129,21 @@ func TestTransferAffQuotaRejectsAccountBalanceOverflow(t *testing.T) {
 	assert.Equal(t, 10, stored.AffQuota)
 }
 
+func createUserBindTestUser(t *testing.T) User {
+	t.Helper()
+	user := User{
+		Username:    "bind-test-user",
+		Password:    "unused-password-hash",
+		Role:        common.RoleCommonUser,
+		Status:      common.UserStatusEnabled,
+		Group:       "default",
+		AuthVersion: 1,
+		AffCode:     "bind-test-aff-code",
+	}
+	require.NoError(t, DB.Create(&user).Error)
+	return user
+}
+
 func TestUserUpdateDoesNotOverwriteConcurrentAccountingOrTokenChanges(t *testing.T) {
 	setupUserUpdateTestState(t)
 
@@ -520,6 +535,51 @@ func TestListInviteRebateRatioSummaries(t *testing.T) {
 		{Ratio: 100, Count: 2},
 		{Ratio: 250, Count: 1},
 	}, summaries)
+}
+
+func TestUpdateUserBindColumnOnlyTouchesTheBindingColumn(t *testing.T) {
+	truncateTables(t)
+
+	user := createUserBindTestUser(t)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).Updates(map[string]interface{}{
+		"role":   common.RoleAdminUser,
+		"status": common.UserStatusEnabled,
+		"group":  "vip",
+	}).Error)
+
+	require.NoError(t, UpdateUserBindColumn(user.Id, "github_id", "gh-12345"))
+
+	reloaded, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, "gh-12345", reloaded.GitHubId)
+	assert.Equal(t, common.RoleAdminUser, reloaded.Role)
+	assert.Equal(t, common.UserStatusEnabled, reloaded.Status)
+	assert.Equal(t, "vip", reloaded.Group)
+}
+
+func TestUpdateUserBindColumnPreservesRestrictiveChange(t *testing.T) {
+	truncateTables(t)
+
+	user := createUserBindTestUser(t)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", user.Id).
+		Update("status", common.UserStatusDisabled).Error)
+	require.NoError(t, UpdateUserBindColumn(user.Id, "wechat_id", "wx-open-id"))
+
+	reloaded, err := GetUserById(user.Id, true)
+	require.NoError(t, err)
+	assert.Equal(t, "wx-open-id", reloaded.WeChatId)
+	assert.Equal(t, common.UserStatusDisabled, reloaded.Status)
+}
+
+func TestUpdateUserBindColumnRejectsNonWhitelistedColumns(t *testing.T) {
+	truncateTables(t)
+
+	user := createUserBindTestUser(t)
+	for _, column := range []string{"role", "status", "group", "quota", "username", "password", "id"} {
+		assert.Error(t, UpdateUserBindColumn(user.Id, column, "1"), "column %s must be rejected", column)
+	}
+	assert.Error(t, UpdateUserBindColumn(user.Id, "github_id; DROP TABLE users", "x"))
+	assert.Error(t, UpdateUserBindColumn(0, "github_id", "x"))
 }
 
 func TestValidateAndFillRejectsPasswordlessUser(t *testing.T) {
