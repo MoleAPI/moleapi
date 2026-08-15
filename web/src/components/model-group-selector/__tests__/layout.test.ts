@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import {
   modelGroupSelectorLayoutClasses,
@@ -29,14 +28,14 @@ describe('model group selector layout', () => {
     const groupScrollClasses =
       modelGroupSelectorLayoutClasses.groupScroll.split(' ')
 
-    assert.ok(groupScrollClasses.includes('auto-rows-[2.25rem]'))
-    assert.ok(groupScrollClasses.includes('content-start'))
+    expect(groupScrollClasses.includes('auto-rows-[2.25rem]')).toBeTruthy()
+    expect(groupScrollClasses.includes('content-start')).toBeTruthy()
   })
 
   test('styles the group rail and selected group option', () => {
-    assert.match(modelGroupSelectorLayoutClasses.groupColumn, /bg-muted\/30/)
-    assert.match(modelGroupSelectorLayoutClasses.groupItem, /border/)
-    assert.match(modelGroupSelectorLayoutClasses.selectedGroupItem, /ring/)
+    expect(modelGroupSelectorLayoutClasses.groupColumn).toMatch(/bg-muted\/30/)
+    expect(modelGroupSelectorLayoutClasses.groupItem).toMatch(/border/)
+    expect(modelGroupSelectorLayoutClasses.selectedGroupItem).toMatch(/ring/)
   })
 
   test('centers the selected group inside its own scroll container', () => {
@@ -56,7 +55,7 @@ describe('model group selector layout', () => {
 
     scrollSelectedOptionIntoView(selectedOption, scrollContainer)
 
-    assert.deepEqual(scrollCalls, [{ top: 76, behavior: 'auto' }])
+    expect(scrollCalls).toEqual([{ top: 76, behavior: 'auto' }])
   })
 
   test('falls back to scrollIntoView when no group container is provided', () => {
@@ -69,6 +68,6 @@ describe('model group selector layout', () => {
 
     scrollSelectedOptionIntoView(selectedOption)
 
-    assert.deepEqual(scrollCalls, [{ block: 'center', inline: 'nearest' }])
+    expect(scrollCalls).toEqual([{ block: 'center', inline: 'nearest' }])
   })
 })

@@ -16,11 +16,24 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { test } from 'vitest'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-import { profileSecuritySectionOrder } from '../lib/layout'
+import { defineConfig } from 'vitest/config'
 
-test('profile security sidebar keeps account bindings out of the lower security stack', () => {
-  assert.deepEqual(profileSecuritySectionOrder, ['passkey', 'two-factor'])
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  test: {
+    environment: 'jsdom',
+    setupFiles: ['./src/test-setup.ts'],
+    clearMocks: true,
+    restoreMocks: true,
+    include: ['src/**/*.{test,spec}.{ts,tsx}'],
+  },
 })
