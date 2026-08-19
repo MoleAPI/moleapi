@@ -95,4 +95,5 @@ test('business metrics combine payments and orders while reusing usage data', as
   assert.match(html, /\$80/)
   assert.match(html, /¥584/)
   assert.match(html, /aria-label="User Top-up Ranking"/)
+  assert.match(html, /aria-label="Copy: alice"/)
 })

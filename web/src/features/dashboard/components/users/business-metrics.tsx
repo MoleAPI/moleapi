@@ -33,6 +33,7 @@ import {
 import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { CopyButton } from '@/components/copy-button'
 import {
   Card,
   CardContent,
@@ -167,11 +168,18 @@ function TopUpRankingChart(props: {
         return (
           <li key={item.user_id} className='space-y-1.5'>
             <div className='flex items-start justify-between gap-3 text-sm select-text'>
-              <div className='min-w-0 font-medium break-all'>
+              <div className='flex min-w-0 items-start font-medium break-all'>
                 <span className='text-muted-foreground mr-2 font-mono'>
                   #{item.rank}
                 </span>
-                {item.username}
+                <span className='min-w-0'>{item.username}</span>
+                <CopyButton
+                  value={item.username}
+                  className='-my-1 ml-1 size-7'
+                  iconClassName='size-3.5'
+                  tooltip={t('Copy')}
+                  aria-label={`${t('Copy')}: ${item.username}`}
+                />
               </div>
               <div className='shrink-0 text-right font-mono text-xs tabular-nums'>
                 <div className='font-semibold'>
