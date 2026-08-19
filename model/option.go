@@ -236,6 +236,9 @@ func validateOptionValue(key string, value string) error {
 	if key == "AutoGroups" {
 		return setting.ValidateAutoGroupsJsonString(value)
 	}
+	if key == operation_setting.ChannelTestConcurrencyOptionKey {
+		return operation_setting.ValidateChannelTestConcurrency(value)
+	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}

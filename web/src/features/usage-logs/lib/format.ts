@@ -188,6 +188,25 @@ export function parseLogOther(other: string): LogOtherData | null {
   }
 }
 
+export function getReasoningEffortVariant(
+  effort: string | undefined
+): StatusBadgeProps['variant'] {
+  switch (effort?.trim().toLowerCase()) {
+    case 'max':
+    case 'xhigh':
+    case 'high':
+      return 'orange'
+    case 'medium':
+      return 'yellow'
+    case 'low':
+    case 'minimal':
+      return 'green'
+    case 'none':
+    default:
+      return 'grey'
+  }
+}
+
 /**
  * Resolve image token counts across current and legacy usage-log payloads.
  * Older logs stored image-input tokens in `image_output`.

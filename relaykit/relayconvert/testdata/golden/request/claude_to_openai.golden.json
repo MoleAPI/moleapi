@@ -25,6 +25,13 @@
       "role": "assistant",
       "content": null,
       "reasoning_content": "Let me look.",
+      "reasoning_details": [
+        {
+          "type": "thinking",
+          "thinking": "Let me look.",
+          "signature": "sig"
+        }
+      ],
       "tool_calls": [
         {
           "id": "toolu_abc",
