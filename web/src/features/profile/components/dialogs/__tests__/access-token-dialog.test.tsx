@@ -37,7 +37,13 @@ vi.mock('@/components/dialog', () => ({
     open: boolean
     children: React.ReactNode
     footer: React.ReactNode
-  }) => (props.open ? <div>{props.children}{props.footer}</div> : null),
+  }) =>
+    props.open ? (
+      <div>
+        {props.children}
+        {props.footer}
+      </div>
+    ) : null,
 }))
 
 vi.mock('@/components/confirm-dialog', () => ({
@@ -45,11 +51,12 @@ vi.mock('@/components/confirm-dialog', () => ({
     open: boolean
     confirmText: React.ReactNode
     handleConfirm: () => void
-  }) => props.open ? (
-    <button type='button' onClick={props.handleConfirm}>
-      {props.confirmText}
-    </button>
-  ) : null,
+  }) =>
+    props.open ? (
+      <button type='button' onClick={props.handleConfirm}>
+        {props.confirmText}
+      </button>
+    ) : null,
 }))
 
 test('rotates an access token only after explicit confirmation', async () => {

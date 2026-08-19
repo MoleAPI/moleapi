@@ -208,10 +208,8 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
 
   // Fetch data after the search draft has settled.
   useEffect(() => {
-    if (
-      keyword !== debouncedKeyword ||
-      userKeyword !== debouncedUserKeyword
-    ) return
+    if (keyword !== debouncedKeyword || userKeyword !== debouncedUserKeyword)
+      return
 
     fetchBillingHistory()
   }, [
