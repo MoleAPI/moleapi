@@ -192,7 +192,11 @@ export function UserCharts(props: UserChartsProps) {
     updateTheme()
   }, [resolvedTheme])
 
-  const { data: userData, isLoading } = useQuery({
+  const {
+    data: userData,
+    isLoading,
+    isError: isUserDataError,
+  } = useQuery({
     queryKey: ['dashboard', 'user-quota', timeRange],
     queryFn: () => getUserQuotaDataByUsers(timeRange),
     select: (res) => (res.success ? res.data : []),
@@ -313,6 +317,9 @@ export function UserCharts(props: UserChartsProps) {
       <BusinessMetrics
         startTimestamp={timeRange.start_timestamp}
         endTimestamp={timeRange.end_timestamp}
+        usageData={userData}
+        usageLoading={isLoading}
+        usageError={isUserDataError}
       />
 
       <div className='grid gap-3'>
