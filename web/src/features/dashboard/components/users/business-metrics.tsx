@@ -18,8 +18,12 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import {
+  Activity,
   BadgeCheck,
   CircleDollarSign,
+  Coins,
+  Gauge,
+  Layers,
   ListOrdered,
   ShoppingCart,
   type LucideIcon,
@@ -45,14 +49,21 @@ import {
 import { IconBadge } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getAdminBusinessMetrics } from '@/features/dashboard/api'
-import type { AdminBusinessTopUpUser } from '@/features/dashboard/types'
+import { calculateDashboardStats, safeDivide } from '@/features/dashboard/lib'
+import type {
+  AdminBusinessTopUpUser,
+  QuotaDataItem,
+} from '@/features/dashboard/types'
 import { toIntlLocale } from '@/i18n/languages'
-import { formatNumber } from '@/lib/format'
+import { formatNumber, formatQuota } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 interface BusinessMetricsProps {
   startTimestamp: number
   endTimestamp: number
+  usageData?: QuotaDataItem[]
+  usageLoading?: boolean
+  usageError?: boolean
 }
 
 interface BusinessMetric {
@@ -240,6 +251,11 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
   const averageTopUpAmountUSD = topUpPaidOrders
     ? topUpPaidAmountUSD / topUpPaidOrders
     : 0
+  const usageStats = calculateDashboardStats(props.usageData ?? [])
+  const usageRangeMinutes = Math.max(
+    (props.endTimestamp - props.startTimestamp) / 60,
+    1
+  )
   const userMetrics: BusinessMetric[] = [
     {
       key: 'new-users',
@@ -274,7 +290,7 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
       tone: 'chart-2',
     },
   ]
-  const revenueMetrics: BusinessMetric[] = [
+  const paymentMetrics: BusinessMetric[] = [
     {
       key: 'revenue',
       title: t('Credited amount'),
@@ -284,15 +300,13 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
       tone: 'success',
     },
     {
-      key: 'average-order',
+      key: 'average-top-up',
       title: t('Average credited amount'),
       value: formatUSD(averageTopUpAmountUSD),
       detail: `≈ ${formatRMB(averageTopUpAmountUSD)}`,
       icon: CircleDollarSign,
       tone: 'warning',
     },
-  ]
-  const orderMetrics: BusinessMetric[] = [
     {
       key: 'intent-orders',
       title: t('Order Intents'),
@@ -309,12 +323,41 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
       icon: BadgeCheck,
       tone: 'success',
     },
+  ]
+  const usageMetrics: BusinessMetric[] = [
     {
-      key: 'success-rate',
-      title: t('Payment Success Rate'),
-      value: `${formatNumber((data?.payment_success_rate ?? 0) * 100, locale)}%`,
-      detail: `${t('Paid Orders')} · ${formatNumber(data?.paid_orders, locale)} / ${formatNumber(data?.intent_orders, locale)}`,
-      icon: BadgeCheck,
+      key: 'consumed-quota',
+      title: t('Total consumed'),
+      value: formatQuota(usageStats.totalQuota),
+      detail: t('Statistical quota'),
+      icon: Coins,
+      tone: 'success',
+    },
+    {
+      key: 'tokens',
+      title: t('Total Tokens'),
+      value: formatNumber(usageStats.totalTokens, locale),
+      detail: t('Statistical tokens'),
+      icon: Layers,
+      tone: 'chart-4',
+    },
+    {
+      key: 'requests',
+      title: t('Request Count'),
+      value: formatNumber(usageStats.totalCount, locale),
+      detail: t('Statistical count'),
+      icon: Activity,
+      tone: 'info',
+    },
+    {
+      key: 'average-tpm',
+      title: t('Average TPM'),
+      value: formatNumber(
+        safeDivide(usageStats.totalTokens, usageRangeMinutes),
+        locale
+      ),
+      detail: t('Tokens per minute'),
+      icon: Gauge,
       tone: 'warning',
     },
   ]
@@ -334,7 +377,9 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
             <ListOrdered />
           </EmptyMedia>
           <EmptyTitle>
-            {isError ? t('Failed to load') : t('No data')}
+            {isError
+              ? t('Failed to load')
+              : t('No successful top-ups in this period')}
           </EmptyTitle>
         </EmptyHeader>
       </Empty>
@@ -354,7 +399,9 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
       <div>
         <h2 className='text-sm font-semibold'>{t('Business Overview')}</h2>
         <p className='text-muted-foreground mt-0.5 text-xs'>
-          {t('Registration and payment results for the selected period.')}
+          {t(
+            'Registration, payment, and usage results for the selected period.'
+          )}
         </p>
       </div>
 
@@ -368,19 +415,19 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
           failedLabel={failedLabel}
         />
         <MetricCard
-          title={t('Top-up')}
+          title={t('Top-up and Orders')}
           icon={CircleDollarSign}
-          metrics={revenueMetrics}
+          metrics={paymentMetrics}
           isLoading={isLoading}
           isError={isError}
           failedLabel={failedLabel}
         />
         <MetricCard
-          title={t('Order Statistics')}
-          icon={ShoppingCart}
-          metrics={orderMetrics}
-          isLoading={isLoading}
-          isError={isError}
+          title={t('Usage')}
+          icon={Coins}
+          metrics={usageMetrics}
+          isLoading={props.usageLoading ?? false}
+          isError={props.usageError ?? false}
           failedLabel={failedLabel}
         />
       </div>

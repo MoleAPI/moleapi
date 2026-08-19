@@ -26,7 +26,7 @@ import { test } from 'vitest'
 
 import { BusinessMetrics } from '../business-metrics'
 
-test('business metrics show credited USD values, RMB conversions, and copyable ranking text', async () => {
+test('business metrics combine payments and orders while reusing usage data', async () => {
   const i18n = i18next.createInstance()
   await i18n.use(initReactI18next).init({ lng: 'en' })
   const queryClient = new QueryClient()
@@ -64,15 +64,29 @@ test('business metrics show credited USD values, RMB conversions, and copyable r
   const html = renderToStaticMarkup(
     <I18nextProvider i18n={i18n}>
       <QueryClientProvider client={queryClient}>
-        <BusinessMetrics startTimestamp={100} endTimestamp={200} />
+        <BusinessMetrics
+          startTimestamp={100}
+          endTimestamp={200}
+          usageData={[
+            {
+              created_at: 150,
+              quota: 500_000,
+              token_used: 2_500,
+              count: 4,
+            },
+          ]}
+        />
       </QueryClientProvider>
     </I18nextProvider>
   )
 
   assert.match(html, /Business Overview/)
   assert.match(html, /User Analytics/)
-  assert.match(html, /Top-up/)
-  assert.match(html, /Order Statistics/)
+  assert.match(html, /Top-up and Orders/)
+  assert.doesNotMatch(html, /Payment Success Rate/)
+  assert.match(html, /Usage/)
+  assert.match(html, /Total Tokens.*2,500/)
+  assert.match(html, /Request Count.*4/)
   assert.match(html, /User Top-up Ranking/)
   assert.match(html, /New User Purchase Rate.*8\.33%/)
   assert.match(html, /Repeat Purchase Rate.*33\.33%/)
@@ -81,5 +95,4 @@ test('business metrics show credited USD values, RMB conversions, and copyable r
   assert.match(html, /\$80/)
   assert.match(html, /¥584/)
   assert.match(html, /aria-label="User Top-up Ranking"/)
-  assert.match(html, /40%/)
 })
