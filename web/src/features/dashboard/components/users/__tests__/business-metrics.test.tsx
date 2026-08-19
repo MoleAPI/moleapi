@@ -17,16 +17,16 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18next from 'i18next'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import { test } from 'vitest'
 
 import { BusinessMetrics } from '../business-metrics'
 
-test('business metrics separate users, revenue, orders, and top-up ranking', async () => {
+test('business metrics show credited USD values, RMB conversions, and copyable ranking text', async () => {
   const i18n = i18next.createInstance()
   await i18n.use(initReactI18next).init({ lng: 'en' })
   const queryClient = new QueryClient()
@@ -38,10 +38,15 @@ test('business metrics separate users, revenue, orders, and top-up ranking', asy
     intent_amounts: [
       { currency: 'USD', orders: 10, amount: 160, average_amount: 16 },
     ],
+    top_up_intent_orders: 8,
+    top_up_intent_amount_usd: 120,
     paid_orders: 4,
     paid_amounts: [
       { currency: 'USD', orders: 4, amount: 100, average_amount: 25 },
     ],
+    top_up_paid_orders: 3,
+    top_up_paid_amount_usd: 90,
+    usd_exchange_rate: 7.3,
     paying_users: 3,
     payment_success_rate: 0.4,
     top_up_ranking: [
@@ -66,13 +71,15 @@ test('business metrics separate users, revenue, orders, and top-up ranking', asy
 
   assert.match(html, /Business Overview/)
   assert.match(html, /User Analytics/)
-  assert.match(html, /Revenue/)
+  assert.match(html, /Top-up/)
   assert.match(html, /Order Statistics/)
   assert.match(html, /User Top-up Ranking/)
   assert.match(html, /New User Purchase Rate.*8\.33%/)
   assert.match(html, /Repeat Purchase Rate.*33\.33%/)
-  assert.match(html, /Average Order Value/)
+  assert.match(html, /Average credited amount/)
   assert.match(html, /alice/)
   assert.match(html, /\$80/)
+  assert.match(html, /¥584/)
+  assert.match(html, /aria-label="User Top-up Ranking"/)
   assert.match(html, /40%/)
 })

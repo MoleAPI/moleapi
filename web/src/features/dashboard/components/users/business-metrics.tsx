@@ -29,7 +29,6 @@ import {
 import type { ComponentProps } from 'react'
 import { useTranslation } from 'react-i18next'
 
-import { Badge } from '@/components/ui/badge'
 import {
   Card,
   CardContent,
@@ -45,16 +44,8 @@ import {
 } from '@/components/ui/empty'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
 import { getAdminBusinessMetrics } from '@/features/dashboard/api'
-import type { AdminBusinessOrderAmount } from '@/features/dashboard/types'
+import type { AdminBusinessTopUpUser } from '@/features/dashboard/types'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -140,6 +131,63 @@ function MetricCard(props: MetricCardProps) {
   )
 }
 
+function TopUpRankingChart(props: {
+  rows: AdminBusinessTopUpUser[]
+  locale?: string
+  usdExchangeRate: number
+}) {
+  const { t } = useTranslation()
+  const maxAmount = Math.max(...props.rows.map((item) => item.amount), 0)
+  const formatCurrency = (amount: number, currency: 'USD' | 'CNY') =>
+    new Intl.NumberFormat(props.locale, {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+      maximumFractionDigits: 2,
+    }).format(amount)
+
+  return (
+    <ol
+      className='space-y-3 px-4 pb-4 sm:px-5'
+      aria-label={t('User Top-up Ranking')}
+    >
+      {props.rows.map((item) => {
+        const width = maxAmount > 0 ? (item.amount / maxAmount) * 100 : 0
+        return (
+          <li key={item.user_id} className='space-y-1.5'>
+            <div className='flex items-start justify-between gap-3 text-sm select-text'>
+              <div className='min-w-0 font-medium break-all'>
+                <span className='text-muted-foreground mr-2 font-mono'>
+                  #{item.rank}
+                </span>
+                {item.username}
+              </div>
+              <div className='shrink-0 text-right font-mono text-xs tabular-nums'>
+                <div className='font-semibold'>
+                  {formatCurrency(item.amount, 'USD')}
+                </div>
+                <div className='text-muted-foreground'>
+                  ≈ {formatCurrency(item.amount * props.usdExchangeRate, 'CNY')}
+                </div>
+              </div>
+            </div>
+            <div className='bg-muted h-2.5 overflow-hidden rounded-full'>
+              <div
+                className='bg-chart-3 h-full rounded-full'
+                style={{ width: `${width}%` }}
+                aria-hidden='true'
+              />
+            </div>
+            <div className='text-muted-foreground text-right text-[11px] select-text'>
+              {t('Paid Orders')} · {formatNumber(item.orders, props.locale)}
+            </div>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
 export function BusinessMetrics(props: BusinessMetricsProps) {
   const { t, i18n } = useTranslation()
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
@@ -162,30 +210,22 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
     },
     staleTime: 60_000,
   })
+  const configuredUsdExchangeRate = data?.usd_exchange_rate ?? 1
+  const usdExchangeRate =
+    Number.isFinite(configuredUsdExchangeRate) && configuredUsdExchangeRate > 0
+      ? configuredUsdExchangeRate
+      : 1
 
-  const formatAmount = (amount: number, currency: string) => {
-    if (!currency) return formatNumber(amount, locale)
-    try {
-      return new Intl.NumberFormat(locale, {
-        style: 'currency',
-        currency,
-        maximumFractionDigits: 2,
-      }).format(amount)
-    } catch {
-      return `${formatNumber(amount, locale)} ${currency}`
-    }
-  }
-  const formatAmounts = (
-    amounts: AdminBusinessOrderAmount[] | undefined,
-    average = false
-  ) => {
-    if (!amounts?.length) return formatNumber(0, locale)
-    return amounts
-      .map((item) =>
-        formatAmount(average ? item.average_amount : item.amount, item.currency)
-      )
-      .join(' · ')
-  }
+  const formatCurrency = (amount: number, currency: 'USD' | 'CNY') =>
+    new Intl.NumberFormat(locale, {
+      style: 'currency',
+      currency,
+      currencyDisplay: 'narrowSymbol',
+      maximumFractionDigits: 2,
+    }).format(amount)
+  const formatUSD = (amount: number) => formatCurrency(amount, 'USD')
+  const formatRMB = (amountUSD: number) =>
+    formatCurrency(amountUSD * usdExchangeRate, 'CNY')
   const payingUsers = data?.paying_users ?? 0
   const newPurchasingUsers = data?.new_purchasing_users ?? 0
   const repeatPurchasingUsers = Math.max(payingUsers - newPurchasingUsers, 0)
@@ -194,6 +234,11 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
     : 0
   const newUserPurchaseRate = data?.new_users
     ? (data.new_user_purchasing_users ?? 0) / data.new_users
+    : 0
+  const topUpPaidAmountUSD = data?.top_up_paid_amount_usd ?? 0
+  const topUpPaidOrders = data?.top_up_paid_orders ?? 0
+  const averageTopUpAmountUSD = topUpPaidOrders
+    ? topUpPaidAmountUSD / topUpPaidOrders
     : 0
   const userMetrics: BusinessMetric[] = [
     {
@@ -232,17 +277,17 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
   const revenueMetrics: BusinessMetric[] = [
     {
       key: 'revenue',
-      title: t('Paid Amount'),
-      value: formatAmounts(data?.paid_amounts),
-      detail: t('Revenue'),
+      title: t('Credited amount'),
+      value: formatUSD(topUpPaidAmountUSD),
+      detail: `≈ ${formatRMB(topUpPaidAmountUSD)} · ${t('Paid Orders')} · ${formatNumber(topUpPaidOrders, locale)}`,
       icon: CircleDollarSign,
       tone: 'success',
     },
     {
       key: 'average-order',
-      title: t('Average Order Value'),
-      value: formatAmounts(data?.paid_amounts, true),
-      detail: `${t('Paid Orders')} · ${formatNumber(data?.paid_orders, locale)}`,
+      title: t('Average credited amount'),
+      value: formatUSD(averageTopUpAmountUSD),
+      detail: `≈ ${formatRMB(averageTopUpAmountUSD)}`,
       icon: CircleDollarSign,
       tone: 'warning',
     },
@@ -252,7 +297,7 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
       key: 'intent-orders',
       title: t('Order Intents'),
       value: formatNumber(data?.intent_orders, locale),
-      detail: `${t('Intent Amount')} · ${formatAmounts(data?.intent_amounts)}`,
+      detail: `${t('Intent Amount')} · ${formatUSD(data?.top_up_intent_amount_usd ?? 0)} · ≈ ${formatRMB(data?.top_up_intent_amount_usd ?? 0)}`,
       icon: ShoppingCart,
       tone: 'chart-3',
     },
@@ -296,38 +341,11 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
     )
   } else if (!isLoading && data?.top_up_ranking?.length) {
     rankingContent = (
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className='w-16 pl-4'>#</TableHead>
-            <TableHead>{t('User')}</TableHead>
-            <TableHead>{t('Currency')}</TableHead>
-            <TableHead className='text-right'>{t('Paid Orders')}</TableHead>
-            <TableHead className='pr-4 text-right'>
-              {t('Paid Amount')}
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.top_up_ranking.map((item) => (
-            <TableRow key={`${item.currency}-${item.user_id}`}>
-              <TableCell className='pl-4 font-mono'>#{item.rank}</TableCell>
-              <TableCell className='max-w-48 truncate font-medium'>
-                {item.username}
-              </TableCell>
-              <TableCell>
-                <Badge variant='outline'>{item.currency || '--'}</Badge>
-              </TableCell>
-              <TableCell className='text-right'>
-                {formatNumber(item.orders, locale)}
-              </TableCell>
-              <TableCell className='pr-4 text-right font-mono font-medium'>
-                {formatAmount(item.amount, item.currency)}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+      <TopUpRankingChart
+        rows={data.top_up_ranking}
+        locale={locale}
+        usdExchangeRate={usdExchangeRate}
+      />
     )
   }
 
@@ -350,7 +368,7 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
           failedLabel={failedLabel}
         />
         <MetricCard
-          title={t('Revenue')}
+          title={t('Top-up')}
           icon={CircleDollarSign}
           metrics={revenueMetrics}
           isLoading={isLoading}
@@ -376,7 +394,9 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
             {t('User Top-up Ranking')}
           </CardTitle>
           <CardDescription>
-            {t('Top 10 users by paid amount in each currency.')}
+            {t(
+              'Top 10 users by credited USD value. RMB values use the configured exchange rate.'
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className='px-0'>{rankingContent}</CardContent>
