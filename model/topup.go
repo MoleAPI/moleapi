@@ -59,8 +59,13 @@ type AdminBusinessMetrics struct {
 	NewUserPurchasingUsers int64                      `json:"new_user_purchasing_users"`
 	IntentOrders           int64                      `json:"intent_orders"`
 	IntentAmounts          []AdminBusinessOrderAmount `json:"intent_amounts"`
+	TopUpIntentOrders      int64                      `json:"top_up_intent_orders"`
+	TopUpIntentAmountUSD   float64                    `json:"top_up_intent_amount_usd"`
 	PaidOrders             int64                      `json:"paid_orders"`
 	PaidAmounts            []AdminBusinessOrderAmount `json:"paid_amounts"`
+	TopUpPaidOrders        int64                      `json:"top_up_paid_orders"`
+	TopUpPaidAmountUSD     float64                    `json:"top_up_paid_amount_usd"`
+	USDExchangeRate        float64                    `json:"usd_exchange_rate"`
 	PayingUsers            int64                      `json:"paying_users"`
 	PaymentSuccessRate     float64                    `json:"payment_success_rate"`
 	TopUpRanking           []AdminBusinessTopUpUser   `json:"top_up_ranking"`
@@ -92,7 +97,12 @@ type businessTopUpUserAggregate struct {
 	UserId     int     `gorm:"column:user_id"`
 	Username   string  `gorm:"column:username"`
 	OrderCount int64   `gorm:"column:order_count"`
-	Amount     float64 `gorm:"column:order_amount"`
+	Quota      float64 `gorm:"column:quota_amount"`
+}
+
+type businessTopUpQuotaAggregate struct {
+	OrderCount int64   `gorm:"column:order_count"`
+	Quota      float64 `gorm:"column:quota_amount"`
 }
 
 type InviteRewardHistoryParams struct {
@@ -734,8 +744,17 @@ func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBu
 	if startTimestamp <= 0 || endTimestamp < startTimestamp {
 		return nil, errors.New("invalid time range")
 	}
+	if common.QuotaPerUnit <= 0 || math.IsNaN(common.QuotaPerUnit) || math.IsInf(common.QuotaPerUnit, 0) {
+		return nil, errors.New("invalid quota per unit")
+	}
 
-	metrics := &AdminBusinessMetrics{TopUpRanking: make([]AdminBusinessTopUpUser, 0)}
+	metrics := &AdminBusinessMetrics{
+		TopUpRanking:    make([]AdminBusinessTopUpUser, 0),
+		USDExchangeRate: operation_setting.USDExchangeRate,
+	}
+	if metrics.USDExchangeRate <= 0 || math.IsNaN(metrics.USDExchangeRate) || math.IsInf(metrics.USDExchangeRate, 0) {
+		metrics.USDExchangeRate = 1
+	}
 	if err := DB.Model(&User{}).
 		Where("created_at >= ? AND created_at <= ?", startTimestamp, endTimestamp).
 		Count(&metrics.NewUsers).Error; err != nil {
@@ -816,30 +835,51 @@ func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBu
 		metrics.PaymentSuccessRate = float64(convertedTopUps+convertedSubscriptions) / float64(metrics.IntentOrders)
 	}
 
-	// ponytail: currencies are few; keep one limited query per currency until MySQL 5.7 support can be dropped for window functions.
-	for _, paidAmount := range metrics.PaidAmounts {
-		var ranking []businessTopUpUserAggregate
-		if err := DB.Table("top_ups").
-			Select("top_ups.user_id AS user_id, users.username AS username, COUNT(*) AS order_count, COALESCE(SUM(top_ups.money), 0) AS order_amount").
-			Joins("JOIN users ON users.id = top_ups.user_id").
-			Where("top_ups.complete_time >= ? AND top_ups.complete_time <= ? AND top_ups.status = ? AND top_ups.money > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
-			Where("UPPER(TRIM(top_ups.payment_currency)) = ?", paidAmount.Currency).
-			Group("top_ups.user_id, users.username").
-			Order("order_amount DESC, top_ups.user_id ASC").
-			Limit(10).
-			Scan(&ranking).Error; err != nil {
-			return nil, err
-		}
-		for index, user := range ranking {
-			metrics.TopUpRanking = append(metrics.TopUpRanking, AdminBusinessTopUpUser{
-				Rank:     index + 1,
-				UserId:   user.UserId,
-				Username: user.Username,
-				Currency: paidAmount.Currency,
-				Orders:   user.OrderCount,
-				Amount:   user.Amount,
-			})
-		}
+	// Use credited quota as the common value across payment currencies. Legacy
+	// rows fall back to their promised quota or original top-up amount.
+	const intentQuotaSQL = "CASE WHEN promised_quota > 0 THEN promised_quota WHEN credited_quota > 0 THEN credited_quota WHEN payment_provider = ? OR payment_method = ? THEN amount ELSE amount * ? END"
+	const paidQuotaSQL = "CASE WHEN credited_quota > 0 THEN credited_quota WHEN promised_quota > 0 THEN promised_quota WHEN payment_provider = ? OR payment_method = ? THEN amount ELSE amount * ? END"
+
+	var intentTopUps businessTopUpQuotaAggregate
+	if err := DB.Model(&TopUp{}).
+		Select("COUNT(*) AS order_count, COALESCE(SUM("+intentQuotaSQL+"), 0) AS quota_amount", PaymentProviderCreem, PaymentMethodCreem, common.QuotaPerUnit).
+		Where("create_time >= ? AND create_time <= ? AND amount > 0", startTimestamp, endTimestamp).
+		Scan(&intentTopUps).Error; err != nil {
+		return nil, err
+	}
+	metrics.TopUpIntentOrders = intentTopUps.OrderCount
+	metrics.TopUpIntentAmountUSD = intentTopUps.Quota / common.QuotaPerUnit
+
+	var paidTopUps businessTopUpQuotaAggregate
+	if err := DB.Model(&TopUp{}).
+		Select("COUNT(*) AS order_count, COALESCE(SUM("+paidQuotaSQL+"), 0) AS quota_amount", PaymentProviderCreem, PaymentMethodCreem, common.QuotaPerUnit).
+		Where("complete_time >= ? AND complete_time <= ? AND status = ? AND amount > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Scan(&paidTopUps).Error; err != nil {
+		return nil, err
+	}
+	metrics.TopUpPaidOrders = paidTopUps.OrderCount
+	metrics.TopUpPaidAmountUSD = paidTopUps.Quota / common.QuotaPerUnit
+
+	var ranking []businessTopUpUserAggregate
+	if err := DB.Table("top_ups").
+		Select("top_ups.user_id AS user_id, users.username AS username, COUNT(*) AS order_count, COALESCE(SUM("+paidQuotaSQL+"), 0) AS quota_amount", PaymentProviderCreem, PaymentMethodCreem, common.QuotaPerUnit).
+		Joins("JOIN users ON users.id = top_ups.user_id").
+		Where("top_ups.complete_time >= ? AND top_ups.complete_time <= ? AND top_ups.status = ? AND top_ups.amount > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
+		Group("top_ups.user_id, users.username").
+		Order("quota_amount DESC, top_ups.user_id ASC").
+		Limit(10).
+		Scan(&ranking).Error; err != nil {
+		return nil, err
+	}
+	for index, user := range ranking {
+		metrics.TopUpRanking = append(metrics.TopUpRanking, AdminBusinessTopUpUser{
+			Rank:     index + 1,
+			UserId:   user.UserId,
+			Username: user.Username,
+			Currency: "USD",
+			Orders:   user.OrderCount,
+			Amount:   user.Quota / common.QuotaPerUnit,
+		})
 	}
 
 	return metrics, nil

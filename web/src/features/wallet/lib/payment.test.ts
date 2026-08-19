@@ -16,8 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import assert from 'node:assert/strict'
-import { describe, test } from 'node:test'
+import { describe, expect, test } from 'vitest'
 
 import { PAYMENT_TYPES } from '../constants'
 import {
@@ -35,39 +34,38 @@ import {
 
 describe('payment type classification', () => {
   test('keeps Waffo and Waffo Pancake on their dedicated flows', () => {
-    assert.equal(isWaffoPayment(PAYMENT_TYPES.WAFFO), true)
-    assert.equal(isWaffoPayment(PAYMENT_TYPES.WAFFO_PANCAKE), false)
-    assert.equal(isWaffoPancakePayment(PAYMENT_TYPES.WAFFO_PANCAKE), true)
-    assert.equal(isWaffoPancakePayment(PAYMENT_TYPES.WAFFO), false)
-    assert.equal(isStripePayment(PAYMENT_TYPES.STRIPE), true)
-    assert.equal(isLanTuPayment(PAYMENT_TYPES.LANTU), true)
-    assert.equal(isNowPaymentsPayment(PAYMENT_TYPES.NOWPAYMENTS), true)
+    expect(isWaffoPayment(PAYMENT_TYPES.WAFFO)).toBe(true)
+    expect(isWaffoPayment(PAYMENT_TYPES.WAFFO_PANCAKE)).toBe(false)
+    expect(isWaffoPancakePayment(PAYMENT_TYPES.WAFFO_PANCAKE)).toBe(true)
+    expect(isWaffoPancakePayment(PAYMENT_TYPES.WAFFO)).toBe(false)
+    expect(isStripePayment(PAYMENT_TYPES.STRIPE)).toBe(true)
+    expect(isLanTuPayment(PAYMENT_TYPES.LANTU)).toBe(true)
+    expect(isNowPaymentsPayment(PAYMENT_TYPES.NOWPAYMENTS)).toBe(true)
   })
 
   test('renders Waffo only in its dedicated method list', () => {
-    assert.deepEqual(
+    expect(
       getStandardPaymentMethods([
         { name: 'Alipay', type: PAYMENT_TYPES.ALIPAY },
         { name: 'Waffo', type: PAYMENT_TYPES.WAFFO },
         { name: 'LanTu', type: PAYMENT_TYPES.LANTU },
-      ]),
-      [
-        { name: 'Alipay', type: PAYMENT_TYPES.ALIPAY },
-        { name: 'LanTu', type: PAYMENT_TYPES.LANTU },
-      ]
-    )
+      ])
+    ).toEqual([
+      { name: 'Alipay', type: PAYMENT_TYPES.ALIPAY },
+      { name: 'LanTu', type: PAYMENT_TYPES.LANTU },
+    ])
   })
 
   test('accepts only absolute HTTP payment URLs without credentials', () => {
-    assert.equal(isSafeHttpPaymentUrl('https://pay.example.com/order'), true)
-    assert.equal(isSafeHttpPaymentUrl('http://pay.example.com/order'), true)
-    assert.equal(isSafeHttpPaymentUrl('javascript:alert(1)'), false)
-    assert.equal(isSafeHttpPaymentUrl('/relative'), false)
-    assert.equal(isSafeHttpPaymentUrl('https://user:pass@example.com'), false)
+    expect(isSafeHttpPaymentUrl('https://pay.example.com/order')).toBe(true)
+    expect(isSafeHttpPaymentUrl('http://pay.example.com/order')).toBe(true)
+    expect(isSafeHttpPaymentUrl('javascript:alert(1)')).toBe(false)
+    expect(isSafeHttpPaymentUrl('/relative')).toBe(false)
+    expect(isSafeHttpPaymentUrl('https://user:pass@example.com')).toBe(false)
   })
 
   test('keeps dedicated gateways out of Epay subscription methods', () => {
-    assert.deepEqual(
+    expect(
       getEpayPaymentMethods([
         { name: 'Alipay', type: 'alipay' },
         { name: 'Stripe', type: PAYMENT_TYPES.STRIPE },
@@ -77,12 +75,11 @@ describe('payment type classification', () => {
         { name: 'LanTu', type: 'lantu' },
         { name: 'Crypto Pay', type: PAYMENT_TYPES.NOWPAYMENTS },
         { name: 'WeChat', type: 'wxpay' },
-      ]),
-      [
-        { name: 'Alipay', type: 'alipay' },
-        { name: 'WeChat', type: 'wxpay' },
-      ]
-    )
+      ])
+    ).toEqual([
+      { name: 'Alipay', type: 'alipay' },
+      { name: 'WeChat', type: 'wxpay' },
+    ])
   })
 
   test('selects the nearest Creem product by configured price', () => {
@@ -92,15 +89,15 @@ describe('payment type classification', () => {
       { name: '$7', productId: 'prod_7', price: 7, quota: 7, currency: 'USD' },
     ] as const
 
-    assert.deepEqual(findNearestCreemProduct([...products], 3), {
+    expect(findNearestCreemProduct([...products], 3)).toEqual({
       product: products[1],
       adjusted: false,
     })
-    assert.deepEqual(findNearestCreemProduct([...products], 4), {
+    expect(findNearestCreemProduct([...products], 4)).toEqual({
       product: products[1],
       adjusted: true,
     })
-    assert.deepEqual(findNearestCreemProduct([...products], 5), {
+    expect(findNearestCreemProduct([...products], 5)).toEqual({
       product: products[1],
       adjusted: true,
     })
@@ -132,8 +129,8 @@ describe('payment dispatch', () => {
       }
     )
 
-    assert.equal(success, true)
-    assert.deepEqual(calls, ['waffo:120:3'])
+    expect(success).toBe(true)
+    expect(calls).toEqual(['waffo:120:3'])
   })
 
   test('does not create a Waffo order without a selected method index', async () => {
@@ -154,8 +151,8 @@ describe('payment dispatch', () => {
       }
     )
 
-    assert.equal(success, false)
-    assert.equal(called, false)
+    expect(success).toBe(false)
+    expect(called).toBe(false)
   })
 
   test('dispatches LanTu to its own checkout flow', async () => {
@@ -176,8 +173,8 @@ describe('payment dispatch', () => {
       }
     )
 
-    assert.equal(success, true)
-    assert.deepEqual(calls, ['lantu:50'])
+    expect(success).toBe(true)
+    expect(calls).toEqual(['lantu:50'])
   })
 
   test('dispatches NOWPayments to its hosted checkout flow', async () => {
@@ -198,7 +195,7 @@ describe('payment dispatch', () => {
       }
     )
 
-    assert.equal(success, true)
-    assert.deepEqual(calls, ['nowpayments:25'])
+    expect(success).toBe(true)
+    expect(calls).toEqual(['nowpayments:25'])
   })
 })

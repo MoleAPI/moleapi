@@ -20,6 +20,7 @@ import { useSearch } from '@tanstack/react-router'
 import { useMemo, useCallback, useState } from 'react'
 
 import type { PerfModelSummary } from '@/features/performance-metrics/types'
+import { useDebounce } from '@/hooks/use-debounce'
 
 import {
   FILTER_ALL,
@@ -72,6 +73,7 @@ export function useFilters(
   }))
 
   const searchInput = filterState.search || ''
+  const debouncedSearchInput = useDebounce(searchInput, 200)
   const sortBy = filterState.sort || SORT_OPTIONS.POPULAR
   const vendorFilter = filterState.vendor || FILTER_ALL
   const groupFilter = filterState.group || FILTER_ALL
@@ -152,7 +154,7 @@ export function useFilters(
     if (!models || models.length === 0) return []
 
     return filterAndSortModels(models, {
-      search: searchInput,
+      search: debouncedSearchInput,
       vendor: vendorFilter,
       group: groupFilter,
       quotaType: quotaTypeFilter,
@@ -163,7 +165,7 @@ export function useFilters(
     })
   }, [
     models,
-    searchInput,
+    debouncedSearchInput,
     vendorFilter,
     groupFilter,
     quotaTypeFilter,

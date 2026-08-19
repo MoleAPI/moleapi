@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { afterEach, beforeEach, describe, test } from 'node:test'
+import { afterEach, beforeEach, describe, test } from 'vitest'
 
 import { STORAGE_KEYS } from '../../constants'
 import type { Message, PlaygroundConversationSession } from '../../types'

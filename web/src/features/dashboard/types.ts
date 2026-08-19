@@ -74,8 +74,13 @@ export interface AdminBusinessMetrics {
   new_user_purchasing_users: number
   intent_orders: number
   intent_amounts: AdminBusinessOrderAmount[]
+  top_up_intent_orders: number
+  top_up_intent_amount_usd: number
   paid_orders: number
   paid_amounts: AdminBusinessOrderAmount[]
+  top_up_paid_orders: number
+  top_up_paid_amount_usd: number
+  usd_exchange_rate: number
   paying_users: number
   payment_success_rate: number
   top_up_ranking: AdminBusinessTopUpUser[]

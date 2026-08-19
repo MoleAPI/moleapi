@@ -161,13 +161,16 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {
 	originalDB := DB
 	originalDatabaseType := common.MainDatabaseType()
+	originalQuotaPerUnit := common.QuotaPerUnit
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.LogDatabaseType())
+	common.QuotaPerUnit = 100
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	DB = db
 	require.NoError(t, db.AutoMigrate(&User{}, &TopUp{}, &SubscriptionPlan{}, &SubscriptionOrder{}))
 	t.Cleanup(func() {
 		DB = originalDB
+		common.QuotaPerUnit = originalQuotaPerUnit
 		common.SetDatabaseTypes(originalDatabaseType, common.LogDatabaseType())
 		sqlDB, dbErr := db.DB()
 		if dbErr == nil {
@@ -185,10 +188,10 @@ func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {
 	}
 
 	topUps := []*TopUp{
-		{UserId: users[0].Id, Amount: 12, Money: 12, TradeNo: "intent-pending", PaymentCurrency: "cny", CreateTime: 150, Status: common.TopUpStatusPending},
-		{UserId: users[0].Id, Amount: 20, Money: 20, TradeNo: "wallet-paid", PaymentCurrency: "CNY", CreateTime: 160, CompleteTime: 180, Status: common.TopUpStatusSuccess},
+		{UserId: users[0].Id, Amount: 12, Money: 12, PromisedQuota: 1200, TradeNo: "intent-pending", PaymentCurrency: "cny", CreateTime: 150, Status: common.TopUpStatusPending},
+		{UserId: users[0].Id, Amount: 20, Money: 20, PromisedQuota: 2000, CreditedQuota: 2200, TradeNo: "wallet-paid", PaymentCurrency: "CNY", CreateTime: 160, CompleteTime: 180, Status: common.TopUpStatusSuccess},
 		{UserId: users[1].Id, Amount: 0, Money: 30, TradeNo: "subscription-paid", PaymentCurrency: "USD", CreateTime: 170, CompleteTime: 190, Status: common.TopUpStatusSuccess},
-		{UserId: users[1].Id, Amount: 15, Money: 15, TradeNo: "wallet-paid-bob", PaymentCurrency: "cny", CreateTime: 175, CompleteTime: 195, Status: common.TopUpStatusSuccess},
+		{UserId: users[1].Id, Amount: 15, Money: 15, PromisedQuota: 1500, CreditedQuota: 1500, TradeNo: "wallet-paid-bob", PaymentCurrency: "cny", CreateTime: 175, CompleteTime: 195, Status: common.TopUpStatusSuccess},
 		{UserId: users[0].Id, Amount: 10, Money: 10, TradeNo: "outside", CreateTime: 50, CompleteTime: 60, Status: common.TopUpStatusSuccess},
 	}
 	for _, topUp := range topUps {
@@ -220,9 +223,12 @@ func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {
 	}, metrics.PaidAmounts)
 	assert.Equal(t, int64(2), metrics.PayingUsers)
 	assert.InDelta(t, 0.6, metrics.PaymentSuccessRate, 0.001)
+	assert.Equal(t, int64(3), metrics.TopUpIntentOrders)
+	assert.InDelta(t, 47, metrics.TopUpIntentAmountUSD, 0.001)
+	assert.Equal(t, int64(2), metrics.TopUpPaidOrders)
+	assert.InDelta(t, 37, metrics.TopUpPaidAmountUSD, 0.001)
 	assert.Equal(t, []AdminBusinessTopUpUser{
-		{Rank: 1, UserId: users[0].Id, Username: "metrics-alice", Currency: "CNY", Orders: 1, Amount: 20},
-		{Rank: 2, UserId: users[1].Id, Username: "metrics-bob", Currency: "CNY", Orders: 1, Amount: 15},
-		{Rank: 1, UserId: users[1].Id, Username: "metrics-bob", Currency: "USD", Orders: 1, Amount: 30},
+		{Rank: 1, UserId: users[0].Id, Username: "metrics-alice", Currency: "USD", Orders: 1, Amount: 22},
+		{Rank: 2, UserId: users[1].Id, Username: "metrics-bob", Currency: "USD", Orders: 1, Amount: 15},
 	}, metrics.TopUpRanking)
 }

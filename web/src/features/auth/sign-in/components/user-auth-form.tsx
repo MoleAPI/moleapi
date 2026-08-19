@@ -74,6 +74,7 @@ export function UserAuthForm({
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
   const [legalConsentAttempted, setLegalConsentAttempted] = useState(false)
+  const [turnstileWidgetKey, setTurnstileWidgetKey] = useState(0)
   const legalConsentErrorMessage = t('Please agree to the legal terms first')
   const loginFailedMessage = t('Login failed')
 
@@ -171,12 +172,18 @@ export function UserAuthForm({
 
     if (!validateTurnstile()) return
 
+    const submittedTurnstileToken = turnstileToken
+    if (isTurnstileEnabled) {
+      setTurnstileToken('')
+      setTurnstileWidgetKey((current) => current + 1)
+    }
+
     setIsLoading(true)
     try {
       const res = await login({
         username: data.username,
         password: data.password,
-        turnstile: turnstileToken,
+        turnstile: submittedTurnstileToken,
       })
 
       if (res.success) {
@@ -416,8 +423,10 @@ export function UserAuthForm({
             {isTurnstileEnabled && (
               <div className='mt-2'>
                 <Turnstile
+                  key={turnstileWidgetKey}
                   siteKey={turnstileSiteKey}
                   onVerify={setTurnstileToken}
+                  onExpire={() => setTurnstileToken('')}
                 />
                 <TurnstileStatus verified={Boolean(turnstileToken)} />
               </div>
