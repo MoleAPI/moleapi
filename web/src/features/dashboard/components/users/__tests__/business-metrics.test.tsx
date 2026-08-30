@@ -42,11 +42,12 @@ test('business metrics combine payments and orders while reusing usage data', as
     top_up_intent_amount_usd: 120,
     paid_orders: 4,
     paid_amounts: [
-      { currency: 'USD', orders: 4, amount: 100, average_amount: 25 },
+      { currency: 'CNY', orders: 3, amount: 720.8, average_amount: 240.27 },
+      { currency: 'USD', orders: 1, amount: 3, average_amount: 3 },
     ],
     top_up_paid_orders: 3,
     top_up_paid_amount_usd: 90,
-    usd_exchange_rate: 7.3,
+    usd_exchange_rate: 6.8,
     paying_users: 3,
     payment_success_rate: 0.4,
     top_up_ranking: [
@@ -98,18 +99,19 @@ test('business metrics combine payments and orders while reusing usage data', as
   assert.match(html, /User Top-up Ranking/)
   assert.match(html, /New User Purchase Rate.*8\.33%/)
   assert.match(html, /Repeat Purchase Rate.*33\.33%/)
-  assert.match(html, /Amount paid.*\$100\.00/s)
+  assert.match(html, /Amount paid.*\$109\.00.*≈ ¥741\.20/s)
+  assert.doesNotMatch(html, /¥720\.80 · \$3\.00/)
   assert.match(
     html,
     /Credited amount.*\$90\.00.*Average credited amount.*\$30\.00/s
   )
   assert.match(html, /alice/)
   assert.match(html, /\$80/)
-  assert.match(html, /¥584/)
+  assert.match(html, /¥544/)
   assert.match(html, /aria-label="User Top-up Ranking"/)
   assert.match(html, /aria-label="Copy: alice"/)
   assert.match(html, /grid-cols-\[minmax\(0,12rem\)_minmax\(0,1fr\)\]/)
-  assert.match(html, /\$80\.00<\/span><span[^>]*> · ≈ ¥584\.00<\/span><\/div>/)
+  assert.match(html, /\$80\.00<\/span><span[^>]*> · ≈ ¥544\.00<\/span><\/div>/)
   const rankingColors = Array.from(
     html.matchAll(/background-color:([^;"]+)/g),
     (match) => match[1]
