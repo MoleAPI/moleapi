@@ -66,7 +66,7 @@ function CardContentSkeleton() {
   return (
     <div className='space-y-2'>
       {CARD_SKELETON_IDS.map((id) => (
-        <div key={id} className='rounded-lg border bg-background p-4'>
+        <div key={id} className='bg-background rounded-lg border p-4'>
           <div className='flex items-start gap-3'>
             <Skeleton className='size-11 shrink-0 rounded-lg' />
             <div className='min-w-0 flex-1'>

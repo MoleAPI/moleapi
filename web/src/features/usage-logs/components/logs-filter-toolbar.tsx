@@ -94,6 +94,7 @@ export function LogsFilterInput(props: LogsFilterInputProps) {
     <div className='relative min-w-0 overflow-hidden rounded-lg'>
       <Input
         {...inputProps}
+        autoComplete='off'
         className={cn(
           'h-8 min-w-0 text-sm leading-5',
           canClear && 'pe-8',

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
+
 import { describe, test } from 'vitest'
 
 import { buildApiBaseUrl, buildApiEndpointOptions } from '../api-endpoint'
@@ -46,10 +47,7 @@ describe('API key endpoint guidance', () => {
       'https://api.moleapi.com/v1'
     )
     assert.equal(
-      buildApiBaseUrl(
-        'https://home.moleapi.com/v1/',
-        'https://fallback.test'
-      ),
+      buildApiBaseUrl('https://home.moleapi.com/v1/', 'https://fallback.test'),
       'https://api.moleapi.com/v1'
     )
   })

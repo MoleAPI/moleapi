@@ -247,7 +247,9 @@ export function CommonLogsFilterBar<TData>(
     isAdmin ? filters.channel : undefined,
     filters.requestId,
   ].filter(Boolean).length
-  const sensitiveType = sensitiveVisible ? 'text' : 'password'
+  const sensitiveInputClass = sensitiveVisible
+    ? undefined
+    : '[-webkit-text-security:disc]'
   const logTypeItems = useMemo(
     () =>
       LOG_TYPE_FILTERS.map((type) => ({
@@ -308,7 +310,7 @@ export function CommonLogsFilterBar<TData>(
     <LogsFilterField>
       <LogsFilterInput
         placeholder={t('Group')}
-        type={sensitiveType}
+        className={sensitiveInputClass}
         value={filters.group || ''}
         onChange={(e) => handleChange('group', e.target.value)}
         onClear={() => handleChange('group', undefined)}
@@ -357,7 +359,7 @@ export function CommonLogsFilterBar<TData>(
       <LogsFilterField>
         <LogsFilterInput
           placeholder={t('Token Name')}
-          type={sensitiveType}
+          className={sensitiveInputClass}
           value={filters.token || ''}
           onChange={(e) => handleChange('token', e.target.value)}
           onClear={() => handleChange('token', undefined)}
@@ -368,7 +370,7 @@ export function CommonLogsFilterBar<TData>(
         <LogsFilterField>
           <LogsFilterInput
             placeholder={`${t('Username')} / ID`}
-            type={sensitiveType}
+            className={sensitiveInputClass}
             value={filters.username || ''}
             onChange={(e) => handleChange('username', e.target.value)}
             onClear={() => handleChange('username', undefined)}

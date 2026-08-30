@@ -134,6 +134,7 @@ import {
   getChannelKey,
   getGroups,
   getPrefillGroups,
+  getTaskPluginOptions,
   refreshCodexCredential,
 } from '../../api'
 import {
@@ -141,6 +142,8 @@ import {
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_STATUS_LABELS,
   CHANNEL_TYPE_OPTIONS,
+  CHANNEL_TYPE_TASK_PLUGIN,
+  channelTypeOptionsForTaskPluginBind,
   CHANNEL_TYPE_WARNINGS,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
@@ -626,6 +629,11 @@ export function ChannelMutateDrawer({
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
+  const canBindTaskPlugin = hasPermission(
+    currentUser,
+    ADMIN_PERMISSION_RESOURCES.TASK_PLUGIN,
+    ADMIN_PERMISSION_ACTIONS.BIND
+  )
   const canRevealChannelKey = currentUser?.role === ROLE.SUPER_ADMIN
   const [fetchModelsDialogOpen, setFetchModelsDialogOpen] = useState(false)
   const [channelKey, setChannelKey] = useState<string | null>(null)
@@ -938,13 +946,20 @@ export function ChannelMutateDrawer({
         ?.label || `#${currentType}`,
     [currentType]
   )
+  const taskPluginOptionsQuery = useQuery({
+    queryKey: ['task-plugin-options'],
+    queryFn: getTaskPluginOptions,
+    enabled: currentType === CHANNEL_TYPE_TASK_PLUGIN && canBindTaskPlugin,
+  })
 
   const channelTypeOptions = useMemo(() => {
-    const options = CHANNEL_TYPE_OPTIONS.map((option) => ({
-      value: String(option.value),
-      label: t(option.label),
-      icon: <ChannelTypeLogo type={option.value} size={16} />,
-    }))
+    const options = channelTypeOptionsForTaskPluginBind(canBindTaskPlugin).map(
+      (option) => ({
+        value: String(option.value),
+        label: t(option.label),
+        icon: <ChannelTypeLogo type={option.value} size={16} />,
+      })
+    )
     if (!options.some((option) => Number(option.value) === currentType)) {
       options.push({
         value: String(currentType),
@@ -953,7 +968,7 @@ export function ChannelMutateDrawer({
       })
     }
     return options
-  }, [currentType, t])
+  }, [canBindTaskPlugin, currentType, t])
 
   const formErrors = form.formState.errors
   const identityHasErrors = Boolean(
@@ -1301,9 +1316,8 @@ export function ChannelMutateDrawer({
 
     if (currentType === CHANNEL_TYPE_CODING_PLAN) {
       const currentBaseUrlValue = form.getValues('base_url')
-      const normalizedProvider = normalizeCodingPlanProvider(
-        currentBaseUrlValue
-      )
+      const normalizedProvider =
+        normalizeCodingPlanProvider(currentBaseUrlValue)
       const currentConfig =
         buildCodingPlanAdvancedCustomConfig(normalizedProvider)
       const provider = currentConfig
@@ -1316,10 +1330,7 @@ export function ChannelMutateDrawer({
         form.setValue('base_url', provider)
       }
       if (!form.getValues('advanced_custom')?.trim() && config) {
-        form.setValue(
-          'advanced_custom',
-          stringifyAdvancedCustomConfig(config)
-        )
+        form.setValue('advanced_custom', stringifyAdvancedCustomConfig(config))
       }
     }
 
@@ -2070,6 +2081,81 @@ export function ChannelMutateDrawer({
                               )}
                             />
                           </fieldset>
+
+                          {currentType === CHANNEL_TYPE_TASK_PLUGIN && (
+                            <FormField
+                              control={form.control}
+                              name='task_plugin_key'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>{t('Task plugin *')}</FormLabel>
+                                  {canBindTaskPlugin ? (
+                                    <Select
+                                      value={field.value}
+                                      onValueChange={(value) => {
+                                        field.onChange(value)
+                                        const plugin =
+                                          taskPluginOptionsQuery.data?.find(
+                                            (item) => item.key === value
+                                          )
+                                        if (plugin?.models?.length) {
+                                          form.setValue(
+                                            'models',
+                                            formatModelsArray(plugin.models),
+                                            {
+                                              shouldDirty: true,
+                                            }
+                                          )
+                                        }
+                                      }}
+                                      items={(
+                                        taskPluginOptionsQuery.data ?? []
+                                      ).map((plugin) => ({
+                                        value: plugin.key,
+                                        label: `${plugin.name} (${plugin.key})`,
+                                      }))}
+                                    >
+                                      <FormControl>
+                                        <SelectTrigger>
+                                          <SelectValue
+                                            placeholder={t(
+                                              'Select task plugin'
+                                            )}
+                                          />
+                                        </SelectTrigger>
+                                      </FormControl>
+                                      <SelectContent>
+                                        {(
+                                          taskPluginOptionsQuery.data ?? []
+                                        ).map((plugin) => (
+                                          <SelectItem
+                                            key={plugin.key}
+                                            value={plugin.key}
+                                          >
+                                            {plugin.name} ({plugin.key})
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  ) : (
+                                    <FormControl>
+                                      <Input
+                                        readOnly
+                                        value={field.value ?? ''}
+                                        className='font-mono'
+                                      />
+                                    </FormControl>
+                                  )}
+                                  <FormDescription>
+                                    {t(
+                                      'Selecting a plugin fills its declared models.'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+                          )}
 
                           <FormField
                             control={form.control}
@@ -2832,7 +2918,8 @@ export function ChannelMutateDrawer({
                                       )}
                                       onValueChange={(value) => {
                                         const provider =
-                                          value || getDefaultCodingPlanProvider()
+                                          value ||
+                                          getDefaultCodingPlanProvider()
                                         field.onChange(provider)
                                         const config =
                                           buildCodingPlanAdvancedCustomConfig(

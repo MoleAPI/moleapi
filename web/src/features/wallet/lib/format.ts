@@ -97,10 +97,7 @@ export function formatHistoricalPaymentAmount(
 }
 
 export function formatHistoricalTopUpAmount(
-  record: Pick<
-    TopupRecord,
-    'amount' | 'payment_method' | 'payment_provider'
-  >
+  record: Pick<TopupRecord, 'amount' | 'payment_method' | 'payment_provider'>
 ): string {
   const provider = record.payment_provider?.trim().toLowerCase()
   const method = record.payment_method.trim().toLowerCase()

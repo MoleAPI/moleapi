@@ -30,6 +30,12 @@ const DASHBOARD_SECTIONS = [
     build: () => null,
   },
   {
+    id: 'users',
+    titleKey: 'User Analytics',
+    adminOnly: true,
+    build: () => null,
+  },
+  {
     id: 'models',
     titleKey: 'Model Call Analytics',
     build: () => null,
@@ -43,12 +49,6 @@ const DASHBOARD_SECTIONS = [
   {
     id: 'flow',
     titleKey: 'Flow',
-    build: () => null,
-  },
-  {
-    id: 'users',
-    titleKey: 'User Analytics',
-    adminOnly: true,
     build: () => null,
   },
 ] as const

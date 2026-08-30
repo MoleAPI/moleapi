@@ -142,7 +142,7 @@ func TestEpayNotifyAcknowledgesSuccessfulTradeOnlyAfterAtomicSettlement(t *testi
 		Username: "epay_settlement_user",
 		Password: "password123",
 		Status:   common.UserStatusEnabled,
-		Quota:    common.MaxQuota - 50,
+		Quota:    common.MaxWalletQuota - 50,
 	}
 	require.NoError(t, db.Create(user).Error)
 	topUp := &model.TopUp{
@@ -173,7 +173,7 @@ func TestEpayNotifyAcknowledgesSuccessfulTradeOnlyAfterAtomicSettlement(t *testi
 
 	var storedUser model.User
 	require.NoError(t, db.Select("id", "quota").First(&storedUser, user.Id).Error)
-	assert.Equal(t, common.MaxQuota-50, storedUser.Quota)
+	assert.Equal(t, common.MaxWalletQuota-50, storedUser.Quota)
 
 	require.NoError(t, db.Model(&model.User{}).Where("id = ?", user.Id).Update("quota", 10).Error)
 	settled := runSignedEpayNotify(t, topUp.TradeNo, epay.StatusTradeSuccess, "1.00")

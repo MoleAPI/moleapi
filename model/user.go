@@ -133,8 +133,8 @@ type User struct {
 	Group                string                     `json:"group" gorm:"type:varchar(64);default:'default'"`
 	AffCode              string                     `json:"aff_code" gorm:"type:varchar(32);column:aff_code;uniqueIndex"`
 	AffCount             int                        `json:"aff_count" gorm:"type:int;default:0;column:aff_count"`
-	AffQuota             int                        `json:"aff_quota" gorm:"type:int;default:0;column:aff_quota"`           // 邀请剩余额度
-	AffHistoryQuota      int                        `json:"aff_history_quota" gorm:"type:int;default:0;column:aff_history"` // 邀请历史额度
+	AffQuota             int                        `json:"aff_quota" gorm:"type:bigint;default:0;column:aff_quota"`           // 邀请剩余额度
+	AffHistoryQuota      int                        `json:"aff_history_quota" gorm:"type:bigint;default:0;column:aff_history"` // 邀请历史额度
 	InviterId            int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
 	InviterTopupRewarded bool                       `json:"inviter_topup_rewarded" gorm:"type:bool;column:inviter_topup_rewarded"`
 	InviteRebateRatio    int                        `json:"invite_rebate_ratio" gorm:"type:int;default:0;column:invite_rebate_ratio"` // basis points, 100 = 1%
@@ -724,14 +724,14 @@ func UpdateZeroInviteRebateRatio(ratio int) (int64, error) {
 }
 
 func inviteUser(inviterId int, quota int) error {
-	if inviterId <= 0 || quota <= 0 || quota > common.MaxQuota {
+	if inviterId <= 0 || quota <= 0 || quota > common.MaxWalletQuota {
 		return errors.New("invalid inviter reward")
 	}
 	result := DB.Model(&User{}).
 		Where("id = ?", inviterId).
 		Where("aff_count >= 0 AND aff_count < ?", common.MaxQuota).
-		Where("aff_quota >= 0 AND aff_quota <= ?", common.MaxQuota-quota).
-		Where("aff_history >= 0 AND aff_history <= ?", common.MaxQuota-quota).
+		Where("aff_quota >= 0 AND aff_quota <= ?", common.MaxWalletQuota-quota).
+		Where("aff_history >= 0 AND aff_history <= ?", common.MaxWalletQuota-quota).
 		Updates(map[string]interface{}{
 			"aff_count":   gorm.Expr("aff_count + 1"),
 			"aff_quota":   gorm.Expr("aff_quota + ?", quota),
@@ -747,7 +747,7 @@ func inviteUser(inviterId int, quota int) error {
 }
 
 func (user *User) TransferAffQuotaToQuota(quota int) error {
-	if quota <= 0 || quota > common.MaxQuota {
+	if quota <= 0 || quota > common.MaxWalletQuota {
 		return ErrInvalidAffQuotaTransfer
 	}
 	if common.QuotaPerUnit <= 0 || math.IsNaN(common.QuotaPerUnit) || math.IsInf(common.QuotaPerUnit, 0) {
@@ -775,7 +775,7 @@ func (user *User) TransferAffQuotaToQuota(quota int) error {
 		return ErrAffQuotaInsufficient
 	}
 	balanceLimit := userBalanceLimit()
-	if user.AffQuota < 0 || user.AffQuota > common.MaxQuota || int64(user.Quota) < -balanceLimit || int64(user.Quota) > balanceLimit-int64(quota) {
+	if user.AffQuota < 0 || user.AffQuota > common.MaxWalletQuota || int64(user.Quota) < -balanceLimit || int64(user.Quota) > balanceLimit-int64(quota) {
 		return ErrAffQuotaTransferOutOfRange
 	}
 	quotaAfterTransfer := int64(user.Quota) + int64(quota)
@@ -1557,25 +1557,47 @@ func IncreaseUserQuota(id int, quota int, db bool) (err error) {
 	if quota < 0 {
 		return errors.New("quota 不能为负数！")
 	}
+	if err := common.ValidateWalletQuota(quota); err != nil {
+		return err
+	}
+	if !db && common.BatchUpdateEnabled {
+		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
+		gopool.Go(func() {
+			if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
+				common.SysLog("failed to increase user quota: " + err.Error())
+			}
+		})
+		return nil
+	}
+	if err := increaseUserQuota(id, quota); err != nil {
+		return err
+	}
 	gopool.Go(func() {
-		err := cacheIncrUserQuota(id, int64(quota))
-		if err != nil {
+		if err := cacheIncrUserQuota(id, int64(quota)); err != nil {
 			common.SysLog("failed to increase user quota: " + err.Error())
 		}
 	})
-	if !db && common.BatchUpdateEnabled {
-		addNewRecord(BatchUpdateTypeUserQuota, id, quota)
-		return nil
-	}
-	return increaseUserQuota(id, quota)
+	return nil
 }
 
 func increaseUserQuota(id int, quota int) (err error) {
-	err = DB.Model(&User{}).Where("id = ?", id).Update("quota", gorm.Expr("quota + ?", quota)).Error
-	if err != nil {
+	result := DB.Model(&User{}).
+		Where("id = ? AND quota <= ?", id, common.MaxWalletQuota-quota).
+		Update("quota", gorm.Expr("quota + ?", quota))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 1 {
+		return nil
+	}
+	var count int64
+	if err := DB.Model(&User{}).Where("id = ?", id).Count(&count).Error; err != nil {
 		return err
 	}
-	return err
+	if count == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return ErrWalletQuotaLimitExceeded
 }
 
 func DecreaseUserQuota(id int, quota int, db bool) (err error) {

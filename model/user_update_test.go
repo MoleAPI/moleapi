@@ -78,7 +78,7 @@ func TestRegistrationDoesNotLogFailedInviterReward(t *testing.T) {
 
 	inviter := User{
 		Username: "full-registration-inviter", Status: common.UserStatusEnabled, AffCode: "full-registration-inviter-code",
-		AffQuota: common.MaxQuota,
+		AffQuota: common.MaxWalletQuota,
 	}
 	require.NoError(t, DB.Create(&inviter).Error)
 	invitee := User{Username: "failed-registration-reward", Status: common.UserStatusEnabled, InviterId: inviter.Id}
@@ -87,7 +87,7 @@ func TestRegistrationDoesNotLogFailedInviterReward(t *testing.T) {
 	var storedInviter User
 	require.NoError(t, DB.First(&storedInviter, inviter.Id).Error)
 	assert.Zero(t, storedInviter.AffCount)
-	assert.Equal(t, common.MaxQuota, storedInviter.AffQuota)
+	assert.Equal(t, common.MaxWalletQuota, storedInviter.AffQuota)
 	var rewardLogs int64
 	require.NoError(t, LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", inviter.Id, LogTypeSystem).Count(&rewardLogs).Error)
 	assert.Zero(t, rewardLogs)

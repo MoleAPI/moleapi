@@ -271,7 +271,7 @@ func normalizeTopUpAmount(amount int64) (int64, error) {
 		}
 	}
 
-	if normalized.LessThanOrEqual(decimal.Zero) || normalized.GreaterThan(decimal.NewFromInt(int64(common.MaxQuota))) {
+	if normalized.LessThanOrEqual(decimal.Zero) || normalized.GreaterThan(decimal.NewFromInt(common.MaxWalletQuota)) {
 		return 0, errors.New("充值数量无效")
 	}
 	if err := validatePromisedTopUpQuota(normalized.IntPart(), amount); err != nil {
@@ -281,20 +281,102 @@ func normalizeTopUpAmount(amount int64) (int64, error) {
 }
 
 func validatePromisedTopUpQuota(amount int64, bonusBasis int64) error {
+	_, err := getPromisedTopUpQuota(amount, bonusBasis)
+	return err
+}
+
+func getPromisedTopUpQuota(amount int64, bonusBasis int64) (int, error) {
 	if amount <= 0 || bonusBasis <= 0 || common.QuotaPerUnit <= 0 || math.IsNaN(common.QuotaPerUnit) || math.IsInf(common.QuotaPerUnit, 0) {
-		return errors.New("充值数量无效")
+		return 0, errors.New("充值数量无效")
 	}
 	bonusRate, err := operation_setting.GetTopupBonusRateChecked(bonusBasis)
 	if err != nil {
-		return errors.New("充值赠额配置无效")
+		return 0, errors.New("充值赠额配置无效")
 	}
 	quota := decimal.NewFromInt(amount).
 		Mul(decimal.NewFromFloat(common.QuotaPerUnit)).
 		Mul(decimal.NewFromInt(1).Add(decimal.NewFromFloat(bonusRate)))
-	if quota.GreaterThan(decimal.NewFromInt(int64(common.MaxQuota))) {
-		return errors.New("充值数量过高")
+	value, err := common.WalletQuotaFromDecimalStrict(quota)
+	if err != nil || value <= 0 {
+		return 0, errors.New("充值数量过高")
 	}
-	return nil
+	return value, nil
+}
+
+func getTopUpQuota(amount int64) (int, error) {
+	quota := decimal.NewFromInt(amount)
+	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+		quota = decimal.NewFromInt(quota.Div(quotaPerUnit).IntPart()).Mul(quotaPerUnit)
+	} else {
+		quota = quota.Mul(decimal.NewFromFloat(common.QuotaPerUnit))
+	}
+	return common.WalletQuotaFromDecimalStrict(quota)
+}
+
+func getMaxTopUpAmount() int64 {
+	if common.QuotaPerUnit <= 0 {
+		return 0
+	}
+	quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
+	maxStoredAmount := decimal.NewFromInt(common.MaxWalletQuota).
+		Div(quotaPerUnit).
+		Floor()
+	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
+		return maxStoredAmount.Add(decimal.NewFromInt(1)).
+			Mul(quotaPerUnit).
+			Ceil().
+			Sub(decimal.NewFromInt(1)).
+			IntPart()
+	}
+	return maxStoredAmount.IntPart()
+}
+
+func validateCreditedQuota(quota decimal.Decimal) (int, error) {
+	value, err := common.WalletQuotaFromDecimalStrict(quota)
+	if err != nil {
+		return 0, errors.New("充值额度超出系统可表示范围")
+	}
+	if value <= 0 {
+		return 0, errors.New("充值额度必须大于 0")
+	}
+	return value, nil
+}
+
+func validateTopUpQuota(amount int64) (int, error) {
+	normalized, err := normalizeTopUpAmount(amount)
+	if err != nil {
+		maxAmount := getMaxTopUpAmount()
+		if maxAmount > 0 && amount > maxAmount {
+			return 0, fmt.Errorf("单笔充值数量不能大于 %d", maxAmount)
+		}
+		return 0, err
+	}
+	return getPromisedTopUpQuota(normalized, amount)
+}
+
+func rejectInvalidCreditedQuota(c *gin.Context, userId int, quota decimal.Decimal) bool {
+	creditedQuota, err := validateCreditedQuota(quota)
+	if err == nil {
+		err = model.ValidateTopUpQuotaCapacity(userId, creditedQuota)
+	}
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
+		return true
+	}
+	return false
+}
+
+func rejectInvalidTopUpQuota(c *gin.Context, userId int, amount int64) bool {
+	creditedQuota, err := validateTopUpQuota(amount)
+	if err == nil {
+		err = model.ValidateTopUpQuotaCapacity(userId, creditedQuota)
+	}
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
+		return true
+	}
+	return false
 }
 
 func RequestEpay(c *gin.Context) {
@@ -320,6 +402,10 @@ func RequestEpay(c *gin.Context) {
 	}
 
 	id := c.GetInt("id")
+	if rejectInvalidTopUpQuota(c, id, req.Amount) {
+		return
+	}
+
 	group, err := model.GetUserGroup(id, true)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})
@@ -494,6 +580,7 @@ func EpayNotify(c *gin.Context) {
 		}
 		return
 	}
+	logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 webhook 验签成功 trade_no=%s callback_type=%s trade_status=%s client_ip=%s verify_info=%q", verifyInfo.ServiceTradeNo, verifyInfo.Type, verifyInfo.TradeStatus, c.ClientIP(), common.GetJsonString(verifyInfo)))
 
 	logger.LogInfo(c.Request.Context(), fmt.Sprintf("易支付 webhook 验签成功 trade_no=%s gateway_trade_no=%s callback_type=%s trade_status=%s money=%s client_ip=%s", verifyInfo.ServiceTradeNo, verifyInfo.TradeNo, verifyInfo.Type, verifyInfo.TradeStatus, verifyInfo.Money, c.ClientIP()))
 	if verifyInfo.TradeStatus != epay.StatusTradeSuccess {
@@ -570,11 +657,10 @@ func RequestAmount(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": fmt.Sprintf("充值数量不能小于 %d", getMinTopup())})
 		return
 	}
-	if _, err := normalizeTopUpAmount(req.Amount); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
+	id := c.GetInt("id")
+	if rejectInvalidTopUpQuota(c, id, req.Amount) {
 		return
 	}
-	id := c.GetInt("id")
 	group, err := model.GetUserGroup(id, true)
 	if err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "获取用户分组失败"})

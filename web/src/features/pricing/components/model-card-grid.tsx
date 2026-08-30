@@ -65,8 +65,8 @@ export function ModelCardGrid(props: ModelCardGridProps) {
   }
 
   return (
-    <div className='min-w-0 max-w-full space-y-4 sm:space-y-5'>
-      <div className='min-w-0 max-w-full space-y-2'>
+    <div className='max-w-full min-w-0 space-y-4 sm:space-y-5'>
+      <div className='max-w-full min-w-0 space-y-2'>
         {pagedModels.map((model) => (
           <ModelCard
             key={model.id ?? model.model_name}
@@ -83,7 +83,7 @@ export function ModelCardGrid(props: ModelCardGridProps) {
       </div>
 
       {totalPages > 1 && (
-        <div className='text-muted-foreground flex flex-col items-center justify-between gap-3 rounded-lg border bg-background px-4 py-3 text-sm sm:flex-row'>
+        <div className='text-muted-foreground bg-background flex flex-col items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm sm:flex-row'>
           <p className='text-muted-foreground'>
             {t('Page {{current}} of {{total}}', {
               current: currentPage,

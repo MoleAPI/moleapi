@@ -428,6 +428,57 @@ export function createConversationSession(): PlaygroundConversationSession {
   }
 }
 
+export type ConversationStorageUsage = {
+  capacityBytes: number
+  remainingBytes: number
+  usedBytes: number
+}
+
+export function getConversationStorageUsage(
+  sessions: PlaygroundConversationSession[]
+): ConversationStorageUsage {
+  const usedBytes = getStoredConversationsSize(sessions)
+
+  return {
+    capacityBytes: MAX_STORED_CONVERSATIONS_BYTES,
+    remainingBytes: Math.max(MAX_STORED_CONVERSATIONS_BYTES - usedBytes, 0),
+    usedBytes,
+  }
+}
+
+export function deleteConversationSession(
+  sessions: PlaygroundConversationSession[],
+  activeSessionId: string,
+  sessionId: string
+): {
+  activeSessionId: string
+  sessions: PlaygroundConversationSession[]
+} {
+  const remainingSessions = sessions.filter(
+    (session) => session.id !== sessionId
+  )
+  if (remainingSessions.length === sessions.length) {
+    return { activeSessionId, sessions }
+  }
+
+  if (remainingSessions.length === 0) {
+    const session = createConversationSession()
+    return { activeSessionId: session.id, sessions: [session] }
+  }
+
+  if (remainingSessions.some((session) => session.id === activeSessionId)) {
+    return { activeSessionId, sessions: remainingSessions }
+  }
+
+  const newestSession = remainingSessions.reduce((newest, session) =>
+    session.updatedAt > newest.updatedAt ? session : newest
+  )
+  return {
+    activeSessionId: newestSession.id,
+    sessions: remainingSessions,
+  }
+}
+
 /**
  * Load playground config from localStorage
  */

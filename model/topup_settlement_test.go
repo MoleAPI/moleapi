@@ -226,7 +226,7 @@ func TestRechargeStripeRollsBackCustomerOnQuotaOverflow(t *testing.T) {
 	truncateTables(t)
 	useQuotaPerUnitForTopUpTest(t, 100)
 
-	insertUserForPaymentGuardTest(t, 522, common.MaxQuota-50)
+	insertUserForPaymentGuardTest(t, 522, common.MaxWalletQuota-50)
 	require.NoError(t, DB.Model(&User{}).Where("id = ?", 522).Update("stripe_customer", "cus_existing").Error)
 	insertTopUpForSettlementTest(t, "stripe-overflow", 522, 1, 1, PaymentProviderStripe)
 
@@ -243,7 +243,7 @@ func TestRechargeStripeRollsBackCustomerOnQuotaOverflow(t *testing.T) {
 
 	var user User
 	require.NoError(t, DB.Select("quota", "stripe_customer").Where("id = ?", 522).First(&user).Error)
-	assert.Equal(t, common.MaxQuota-50, user.Quota)
+	assert.Equal(t, common.MaxWalletQuota-50, user.Quota)
 	assert.Equal(t, "cus_existing", user.StripeCustomer)
 }
 
@@ -347,7 +347,7 @@ func TestRechargeWaffoRejectsInvalidQuotaWithoutPartialSettlement(t *testing.T) 
 		quotaPerUnit float64
 	}{
 		{name: "zero", amount: 0, quotaPerUnit: 100},
-		{name: "overflow", amount: int64(common.MaxQuota), quotaPerUnit: 2},
+		{name: "overflow", amount: common.MaxWalletQuota, quotaPerUnit: 2},
 	}
 
 	for index, testCase := range testCases {
@@ -394,7 +394,7 @@ func TestRechargeWaffoRollsBackWhenUserIsMissing(t *testing.T) {
 func TestRechargeWaffoRejectsUserQuotaOverflow(t *testing.T) {
 	truncateTables(t)
 	useQuotaPerUnitForTopUpTest(t, 100)
-	insertUserForPaymentGuardTest(t, 520, common.MaxQuota-50)
+	insertUserForPaymentGuardTest(t, 520, common.MaxWalletQuota-50)
 	insertTopUpForSettlementTest(t, "user-quota-overflow", 520, 1, 1, PaymentProviderWaffo)
 
 	err := RechargeWaffo("user-quota-overflow", "203.0.113.50")
@@ -405,7 +405,7 @@ func TestRechargeWaffoRejectsUserQuotaOverflow(t *testing.T) {
 	assert.Equal(t, common.TopUpStatusPending, topUp.Status)
 	assert.Zero(t, topUp.CreditedQuota)
 	assert.Zero(t, topUp.CompleteTime)
-	assert.Equal(t, common.MaxQuota-50, getUserQuotaForPaymentGuardTest(t, 520))
+	assert.Equal(t, common.MaxWalletQuota-50, getUserQuotaForPaymentGuardTest(t, 520))
 }
 
 func TestBindPendingTopUpPaymentFactsCannotOverwriteSettlement(t *testing.T) {
