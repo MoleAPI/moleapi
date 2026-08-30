@@ -25,6 +25,21 @@ import { getDashboardSectionNavItems } from './section-registry'
 
 const translate = ((key: string) => key) as TFunction
 
+test('user analytics precedes model analytics and remains admin-only', () => {
+  const adminTitles = getDashboardSectionNavItems(translate, {
+    isAdmin: true,
+  }).map((item) => item.title)
+  const userTitles = getDashboardSectionNavItems(translate).map(
+    (item) => item.title
+  )
+
+  assert.equal(
+    adminTitles.indexOf('User Analytics') + 1,
+    adminTitles.indexOf('Model Call Analytics')
+  )
+  assert.equal(userTitles.includes('User Analytics'), false)
+})
+
 test('channel success rate follows model analytics and is admin-only', () => {
   const adminTitles = getDashboardSectionNavItems(translate, {
     isAdmin: true,

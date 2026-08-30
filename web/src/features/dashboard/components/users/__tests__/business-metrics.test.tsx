@@ -98,7 +98,11 @@ test('business metrics combine payments and orders while reusing usage data', as
   assert.match(html, /User Top-up Ranking/)
   assert.match(html, /New User Purchase Rate.*8\.33%/)
   assert.match(html, /Repeat Purchase Rate.*33\.33%/)
-  assert.match(html, /Average credited amount/)
+  assert.match(html, /Amount paid.*\$100\.00/s)
+  assert.match(
+    html,
+    /Credited amount.*\$90\.00.*Average credited amount.*\$30\.00/s
+  )
   assert.match(html, /alice/)
   assert.match(html, /\$80/)
   assert.match(html, /¥584/)

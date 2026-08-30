@@ -27,14 +27,21 @@ import { cn } from '@/lib/utils'
 import { DEFAULT_TOKEN_UNIT } from '../constants'
 import {
   getCardExamplePrice,
-  getDynamicDisplayGroupRatio,
   getDynamicPriceUnitLabelKey,
   getDynamicPricingSummary,
   isUnconfiguredTaskUsageModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { isTokenBasedModel } from '../lib/model-helpers'
-import { formatPrice, formatRequestPrice } from '../lib/price'
+import {
+  getDisplayedPriceGroups,
+  getLocalizedModelDescription,
+  isTokenBasedModel,
+} from '../lib/model-helpers'
+import {
+  formatFixedPrice,
+  formatGroupPrice,
+  stripTrailingZeros,
+} from '../lib/price'
 import { getTaskNumberFields } from '../lib/task-expr'
 import type { PricingModel, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
@@ -52,7 +59,7 @@ export interface ModelCardProps {
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { copyToClipboard } = useCopyToClipboard()
   const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT
   const priceRate = props.priceRate ?? 1
@@ -61,7 +68,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const isTokenBased = isTokenBasedModel(props.model)
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
   const tags = parseTags(props.model.tags)
-  const groups = props.model.enable_groups || []
   const endpoints = props.model.supported_endpoint_types || []
   const modelIconKey = props.model.icon || props.model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 28) : null
@@ -71,171 +77,21 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     Boolean(props.model.billing_expr)
   const isUnconfiguredTaskUsage = isUnconfiguredTaskUsageModel(props.model)
   const hasCachedPrice = isTokenBased && props.model.cache_ratio != null
-  const dynamicPriceOptions = {
-    tokenUnit,
-    showRechargePrice,
-    priceRate,
-    usdExchangeRate,
-    groupRatioMultiplier: getDynamicDisplayGroupRatio(
-      props.model,
-      props.selectedGroup
-    ),
-  }
-  const dynamicSummary = isDynamicPricing
-    ? getDynamicPricingSummary(props.model, dynamicPriceOptions)
-    : null
-  const cardExamplePrice = getCardExamplePrice(props.model, dynamicPriceOptions)
   const showTaskFieldLabels =
     getTaskNumberFields(props.model.billing_usage_schema).length > 1
-
-  const primaryGroup = groups[0]
+  const groupRatio = props.model.group_ratio || {}
+  const visibleGroups = getDisplayedPriceGroups(
+    props.model,
+    props.selectedGroup
+  )
+  const description = getLocalizedModelDescription(props.model, i18n.language)
   const bottomTags = [...endpoints.slice(0, 2), ...tags.slice(0, 2)]
   const hiddenCount =
-    Math.max(groups.length - 1, 0) +
-    Math.max(endpoints.length - 2, 0) +
-    Math.max(tags.length - 2, 0)
+    Math.max(endpoints.length - 2, 0) + Math.max(tags.length - 2, 0)
 
   const handleCopy = (e: React.MouseEvent) => {
     e.stopPropagation()
     copyToClipboard(props.model.model_name || '')
-  }
-
-  let priceSummary: ReactNode
-  if (dynamicSummary) {
-    if (dynamicSummary.isSpecialExpression) {
-      priceSummary = (
-        <span className='min-w-0'>
-          <span className='text-amber-700 dark:text-amber-300'>
-            {t('Special billing expression')}
-          </span>
-          <code className='text-muted-foreground/70 mt-0.5 line-clamp-1 block font-mono text-[11px] break-all'>
-            {dynamicSummary.rawExpression}
-          </code>
-        </span>
-      )
-    } else if (dynamicSummary.primaryEntries.length > 0) {
-      priceSummary = (
-        <>
-          {dynamicSummary.primaryEntries.map((entry) => {
-            const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
-            let fieldPrefix: ReactNode = null
-            if (entry.labelKind !== 'schema') {
-              fieldPrefix = <>{t(entry.shortLabel)} </>
-            } else if (showTaskFieldLabels) {
-              fieldPrefix = (
-                <>
-                  <code className='font-mono text-[11px]'>
-                    {entry.shortLabel}
-                  </code>{' '}
-                </>
-              )
-            }
-            return (
-              <span
-                key={entry.key}
-                className='text-muted-foreground whitespace-nowrap'
-              >
-                {fieldPrefix}
-                <span className='text-foreground font-mono font-semibold'>
-                  {entry.formattedRange ?? entry.formatted}
-                  {unitLabelKey && <>/{t(unitLabelKey)}</>}
-                </span>
-              </span>
-            )
-          })}
-          {cardExamplePrice && (
-            <span className='text-muted-foreground/70 max-w-full min-w-0 truncate text-xs'>
-              {cardExamplePrice.label} ≈ {cardExamplePrice.formatted}
-            </span>
-          )}
-          {dynamicSummary.isTaskUsage &&
-            dynamicSummary.tier?.label &&
-            !dynamicSummary.primaryEntries.some(
-              (entry) => entry.formattedRange
-            ) && (
-              <span className='text-muted-foreground text-xs'>
-                ({dynamicSummary.tier.label})
-              </span>
-            )}
-        </>
-      )
-    } else {
-      priceSummary = (
-        <span className='text-muted-foreground text-sm'>
-          {t('Dynamic Pricing')}
-        </span>
-      )
-    }
-  } else if (isUnconfiguredTaskUsage) {
-    priceSummary = (
-      <span className='text-muted-foreground text-sm'>
-        {t('Usage-based billing · price not configured')}
-      </span>
-    )
-  } else if (isTokenBased) {
-    priceSummary = (
-      <>
-        <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Input')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
-              props.model,
-              'input',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              props.selectedGroup
-            )}
-          </span>
-        </span>
-        <span className='text-muted-foreground whitespace-nowrap'>
-          {t('Output')}{' '}
-          <span className='text-foreground font-mono font-semibold'>
-            {formatPrice(
-              props.model,
-              'output',
-              tokenUnit,
-              showRechargePrice,
-              priceRate,
-              usdExchangeRate,
-              props.selectedGroup
-            )}
-          </span>
-        </span>
-        {hasCachedPrice && (
-          <span className='text-muted-foreground whitespace-nowrap'>
-            {t('Cached')}{' '}
-            <span className='text-foreground font-mono font-semibold'>
-              {formatPrice(
-                props.model,
-                'cache',
-                tokenUnit,
-                showRechargePrice,
-                priceRate,
-                usdExchangeRate,
-                props.selectedGroup
-              )}
-            </span>
-          </span>
-        )}
-      </>
-    )
-  } else {
-    priceSummary = (
-      <span className='text-muted-foreground whitespace-nowrap'>
-        <span className='text-foreground font-mono font-semibold'>
-          {formatRequestPrice(
-            props.model,
-            showRechargePrice,
-            priceRate,
-            usdExchangeRate,
-            props.selectedGroup
-          )}
-        </span>{' '}
-        / {t('request')}
-      </span>
-    )
   }
 
   return (
@@ -259,9 +115,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             <h3 className='text-foreground truncate font-mono text-[15px] leading-tight font-bold'>
               {props.model.model_name}
             </h3>
-            <div className='mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-sm sm:mt-1 sm:gap-x-3'>
-              {priceSummary}
-            </div>
           </div>
         </div>
 
@@ -287,17 +140,165 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
 
       {/* Description */}
       <p className='text-muted-foreground mt-2 line-clamp-1 flex-1 text-[13px] leading-relaxed sm:mt-4 sm:line-clamp-2 sm:min-h-[2.5rem]'>
-        {props.model.description || t('No description available.')}
+        {description || t('No description available.')}
       </p>
+
+      <div className='mt-3 divide-y rounded-lg border'>
+        {visibleGroups.map((item) => {
+          const dynamicOptions = {
+            tokenUnit,
+            showRechargePrice,
+            priceRate,
+            usdExchangeRate,
+            groupRatioMultiplier: item.ratio,
+          }
+          const dynamicSummary = isDynamicPricing
+            ? getDynamicPricingSummary(props.model, dynamicOptions)
+            : null
+          const examplePrice = isDynamicPricing
+            ? getCardExamplePrice(props.model, dynamicOptions)
+            : null
+          let priceContent: ReactNode
+          if (dynamicSummary?.isSpecialExpression) {
+            priceContent = (
+              <code className='text-muted-foreground line-clamp-1 break-all'>
+                {dynamicSummary.rawExpression}
+              </code>
+            )
+          } else if (dynamicSummary?.primaryEntries.length) {
+            priceContent = (
+              <>
+                {dynamicSummary.primaryEntries.map((entry) => {
+                  const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
+                  let entryLabel = ''
+                  if (entry.labelKind !== 'schema') {
+                    entryLabel = `${t(entry.shortLabel)} `
+                  } else if (showTaskFieldLabels) {
+                    entryLabel = `${entry.shortLabel} `
+                  }
+                  return (
+                    <span
+                      key={entry.key}
+                      className='text-muted-foreground whitespace-nowrap'
+                    >
+                      {entryLabel}
+                      <span className='text-foreground font-mono font-semibold'>
+                        {entry.formattedRange ?? entry.formatted}
+                        {unitLabelKey ? `/${t(unitLabelKey)}` : ''}
+                      </span>
+                    </span>
+                  )
+                })}
+                {examplePrice ? (
+                  <span className='text-muted-foreground/70 min-w-0 truncate'>
+                    {examplePrice.label} ≈ {examplePrice.formatted}
+                  </span>
+                ) : null}
+              </>
+            )
+          } else if (isUnconfiguredTaskUsage) {
+            priceContent = (
+              <span className='text-muted-foreground'>
+                {t('Usage-based billing · price not configured')}
+              </span>
+            )
+          } else if (isTokenBased) {
+            priceContent = (
+              <>
+                {(['input', 'output'] as const).map((type) => (
+                  <span
+                    key={type}
+                    className='text-muted-foreground whitespace-nowrap'
+                  >
+                    {t(type === 'input' ? 'Input' : 'Output')}{' '}
+                    <span className='text-foreground font-mono font-semibold'>
+                      {stripTrailingZeros(
+                        formatGroupPrice(
+                          props.model,
+                          item.group,
+                          type,
+                          tokenUnit,
+                          showRechargePrice,
+                          priceRate,
+                          usdExchangeRate,
+                          groupRatio
+                        )
+                      )}
+                    </span>
+                    /{tokenUnitLabel}
+                  </span>
+                ))}
+                {hasCachedPrice ? (
+                  <span className='text-muted-foreground whitespace-nowrap'>
+                    {t('Cached')}{' '}
+                    <span className='text-foreground font-mono font-semibold'>
+                      {stripTrailingZeros(
+                        formatGroupPrice(
+                          props.model,
+                          item.group,
+                          'cache',
+                          tokenUnit,
+                          showRechargePrice,
+                          priceRate,
+                          usdExchangeRate,
+                          groupRatio
+                        )
+                      )}
+                    </span>
+                    /{tokenUnitLabel}
+                  </span>
+                ) : null}
+              </>
+            )
+          } else {
+            priceContent = (
+              <span className='text-muted-foreground whitespace-nowrap'>
+                <span className='text-foreground font-mono font-semibold'>
+                  {stripTrailingZeros(
+                    formatFixedPrice(
+                      props.model,
+                      item.group,
+                      showRechargePrice,
+                      priceRate,
+                      usdExchangeRate,
+                      groupRatio
+                    )
+                  )}
+                </span>{' '}
+                / {t('request')}
+              </span>
+            )
+          }
+
+          return (
+            <div
+              key={item.group}
+              className='grid min-w-0 gap-1.5 px-2.5 py-2 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-baseline sm:gap-3'
+            >
+              <div className='flex min-w-0 items-center gap-1.5'>
+                <span className='truncate text-xs font-semibold'>
+                  {item.group}
+                </span>
+                <span className='text-muted-foreground rounded border px-1 py-0.5 font-mono text-[10px]'>
+                  ×{item.ratio}
+                </span>
+                {item.isCurrent ? (
+                  <span className='bg-primary/10 text-primary rounded px-1 py-0.5 text-[10px]'>
+                    {t('Current')}
+                  </span>
+                ) : null}
+              </div>
+              <div className='flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1 text-xs'>
+                {priceContent}
+              </div>
+            </div>
+          )
+        })}
+      </div>
 
       {/* Footer: left metadata and right performance summary share row alignment */}
       <div className='mt-2 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-2 gap-y-1 sm:mt-4'>
         <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
-          {primaryGroup && (
-            <span className='text-muted-foreground text-sm font-medium'>
-              {primaryGroup}
-            </span>
-          )}
           <ModelBillingModeBadge model={props.model} />
         </div>
         <ModelPerfBadge perf={props.perf} className='row-span-2 self-start' />
@@ -308,11 +309,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               {item}
             </span>
           ))}
-          {!dynamicSummary?.isTaskUsage && !isUnconfiguredTaskUsage && (
-            <span className='text-muted-foreground/50 text-xs'>
-              {tokenUnitLabel}
-            </span>
-          )}
           {hiddenCount > 0 && (
             <span className='text-muted-foreground/40 text-xs'>
               +{hiddenCount}

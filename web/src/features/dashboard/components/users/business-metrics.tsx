@@ -247,13 +247,15 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
       ? configuredUsdExchangeRate
       : 1
 
-  const formatCurrency = (amount: number, currency: 'USD' | 'CNY') =>
-    new Intl.NumberFormat(locale, {
+  const formatCurrency = (amount: number, currency: string) => {
+    if (!currency) return formatNumber(amount, locale)
+    return new Intl.NumberFormat(locale, {
       style: 'currency',
       currency,
       currencyDisplay: 'narrowSymbol',
       maximumFractionDigits: 2,
     }).format(amount)
+  }
   const formatUSD = (amount: number) => formatCurrency(amount, 'USD')
   const formatRMB = (amountUSD: number) =>
     formatCurrency(amountUSD * usdExchangeRate, 'CNY')
@@ -271,6 +273,10 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
   const averageTopUpAmountUSD = topUpPaidOrders
     ? topUpPaidAmountUSD / topUpPaidOrders
     : 0
+  const amountPaid =
+    data?.paid_amounts
+      .map((item) => formatCurrency(item.amount, item.currency))
+      .join(' · ') || formatUSD(0)
   const usageStats = calculateDashboardStats(props.usageData ?? [])
   const usageRangeMinutes = Math.max(
     (props.endTimestamp - props.startTimestamp) / 60,
@@ -312,19 +318,19 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
   ]
   const paymentMetrics: BusinessMetric[] = [
     {
-      key: 'revenue',
-      title: t('Credited amount'),
-      value: formatUSD(topUpPaidAmountUSD),
-      detail: `≈ ${formatRMB(topUpPaidAmountUSD)} · ${t('Paid Orders')} · ${formatNumber(topUpPaidOrders, locale)}`,
+      key: 'amount-paid',
+      title: t('Amount paid'),
+      value: amountPaid,
+      detail: `${t('Paid Orders')} · ${formatNumber(data?.paid_orders, locale)}`,
       icon: CircleDollarSign,
       tone: 'success',
     },
     {
-      key: 'average-top-up',
-      title: t('Average credited amount'),
-      value: formatUSD(averageTopUpAmountUSD),
-      detail: `≈ ${formatRMB(averageTopUpAmountUSD)}`,
-      icon: CircleDollarSign,
+      key: 'credited-amount',
+      title: t('Credited amount'),
+      value: formatUSD(topUpPaidAmountUSD),
+      detail: `${t('Average credited amount')} · ${formatUSD(averageTopUpAmountUSD)} · ≈ ${formatRMB(averageTopUpAmountUSD)}`,
+      icon: Coins,
       tone: 'warning',
     },
     {

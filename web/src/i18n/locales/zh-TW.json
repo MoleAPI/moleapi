@@ -381,7 +381,7 @@
     "Amount must be greater than 0": "金額必須大於 0",
     "Amount of quota to credit to user account.": "添加到用戶用戶的配額數量。",
     "Amount options must be a JSON array": "金額選項必須是 JSON 陣列",
-    "Amount paid": "實付",
+    "Amount paid": "實付金額",
     "Amount received": "實到",
     "Amount the user pays to purchase this plan (USD).": "用戶購買該套餐需支付的金額（美元）。",
     "Amount the user pays to purchase this plan; the actual currency depends on the payment gateway.": "用戶購買該套餐需支付的金額，具體幣種由支付渠道決定",
