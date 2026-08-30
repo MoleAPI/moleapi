@@ -273,10 +273,26 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
   const averageTopUpAmountUSD = topUpPaidOrders
     ? topUpPaidAmountUSD / topUpPaidOrders
     : 0
-  const amountPaid =
-    data?.paid_amounts
-      .map((item) => formatCurrency(item.amount, item.currency))
-      .join(' · ') || formatUSD(0)
+  const paidAmounts = data?.paid_amounts ?? []
+  const hasUnsupportedPaidCurrency = paidAmounts.some(
+    (item) => !['CNY', 'USD'].includes(item.currency.toUpperCase())
+  )
+  const paidAmountUSD = paidAmounts.reduce((total, item) => {
+    return (
+      total +
+      (item.currency.toUpperCase() === 'CNY'
+        ? item.amount / usdExchangeRate
+        : item.amount)
+    )
+  }, 0)
+  const amountPaid = hasUnsupportedPaidCurrency
+    ? paidAmounts
+        .map(
+          (item) =>
+            `${item.currency.toUpperCase()} ${formatCurrency(item.amount, item.currency)}`
+        )
+        .join(' + ')
+    : `${formatUSD(paidAmountUSD)} · ≈ ${formatRMB(paidAmountUSD)}`
   const usageStats = calculateDashboardStats(props.usageData ?? [])
   const usageRangeMinutes = Math.max(
     (props.endTimestamp - props.startTimestamp) / 60,
@@ -468,7 +484,7 @@ export function BusinessMetrics(props: BusinessMetricsProps) {
           </CardTitle>
           <CardDescription>
             {t(
-              'Top 10 users by credited USD value. RMB values use the configured exchange rate.'
+              'Top 10 users by actual paid USD equivalent. CNY values use the configured exchange rate.'
             )}
           </CardDescription>
         </CardHeader>
