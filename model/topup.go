@@ -97,7 +97,7 @@ type businessTopUpUserAggregate struct {
 	UserId     int     `gorm:"column:user_id"`
 	Username   string  `gorm:"column:username"`
 	OrderCount int64   `gorm:"column:order_count"`
-	Quota      float64 `gorm:"column:quota_amount"`
+	MoneyUSD   float64 `gorm:"column:money_usd"`
 }
 
 type businessTopUpQuotaAggregate struct {
@@ -914,13 +914,15 @@ func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBu
 	metrics.TopUpPaidOrders = paidTopUps.OrderCount
 	metrics.TopUpPaidAmountUSD = paidTopUps.Quota / common.QuotaPerUnit
 
+	// ponytail: only CNY needs conversion today; store per-order FX snapshots before comparing more currencies.
+	const paidMoneyUSD = "CASE WHEN UPPER(TRIM(top_ups.payment_currency)) = ? THEN top_ups.money / ? ELSE top_ups.money END"
 	var ranking []businessTopUpUserAggregate
 	if err := DB.Table("top_ups").
-		Select("top_ups.user_id AS user_id, users.username AS username, COUNT(*) AS order_count, COALESCE(SUM("+paidQuotaSQL+"), 0) AS quota_amount", PaymentProviderCreem, PaymentMethodCreem, common.QuotaPerUnit).
+		Select("top_ups.user_id AS user_id, users.username AS username, COUNT(*) AS order_count, COALESCE(SUM("+paidMoneyUSD+"), 0) AS money_usd", "CNY", metrics.USDExchangeRate).
 		Joins("JOIN users ON users.id = top_ups.user_id").
 		Where("top_ups.complete_time >= ? AND top_ups.complete_time <= ? AND top_ups.status = ? AND top_ups.amount > 0", startTimestamp, endTimestamp, common.TopUpStatusSuccess).
 		Group("top_ups.user_id, users.username").
-		Order("quota_amount DESC, top_ups.user_id ASC").
+		Order("money_usd DESC, top_ups.user_id ASC").
 		Limit(10).
 		Scan(&ranking).Error; err != nil {
 		return nil, err
@@ -932,7 +934,7 @@ func GetAdminBusinessMetrics(startTimestamp int64, endTimestamp int64) (*AdminBu
 			Username: user.Username,
 			Currency: "USD",
 			Orders:   user.OrderCount,
-			Amount:   user.Quota / common.QuotaPerUnit,
+			Amount:   user.MoneyUSD,
 		})
 	}
 
