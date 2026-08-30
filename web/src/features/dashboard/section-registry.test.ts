@@ -17,13 +17,28 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { test } from 'vitest'
 
 import type { TFunction } from 'i18next'
+import { test } from 'vitest'
 
 import { getDashboardSectionNavItems } from './section-registry'
 
 const translate = ((key: string) => key) as TFunction
+
+test('user analytics precedes model analytics and remains admin-only', () => {
+  const adminTitles = getDashboardSectionNavItems(translate, {
+    isAdmin: true,
+  }).map((item) => item.title)
+  const userTitles = getDashboardSectionNavItems(translate).map(
+    (item) => item.title
+  )
+
+  assert.equal(
+    adminTitles.indexOf('User Analytics') + 1,
+    adminTitles.indexOf('Model Call Analytics')
+  )
+  assert.equal(userTitles.includes('User Analytics'), false)
+})
 
 test('channel success rate follows model analytics and is admin-only', () => {
   const adminTitles = getDashboardSectionNavItems(translate, {

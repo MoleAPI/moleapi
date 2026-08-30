@@ -11,8 +11,8 @@ import (
 )
 
 var StartTime = time.Now().Unix() // unit: second
-var Version = "v0.10.7.3-dev2"    // this hard coding will be replaced automatically when building, no need to manually change
-var UpstreamVersion = "v1.0.0-rc.25"
+var Version = "v0.10.7.4-dev1"     // this hard coding will be replaced automatically when building, no need to manually change
+var UpstreamVersion = "v1.0.0-rc.27"
 var Commit = ""
 var SystemName = "New API"
 var Footer = ""
@@ -62,6 +62,7 @@ var ItemsPerPage = 10
 var MaxRecentItems = 1000
 
 var PasswordLoginEnabled = true
+var PasswordLoginEncryptionEnabled = false
 var PasswordRegisterEnabled = true
 var EmailVerificationEnabled = false
 var GitHubOAuthEnabled = false

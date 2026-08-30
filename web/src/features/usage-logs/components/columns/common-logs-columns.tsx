@@ -107,14 +107,22 @@ function buildDetailSegments(
   isAdmin: boolean
 ): DetailSegment[] {
   const segments = buildTypeDetailSegments(log, other, t)
+  const adminSegments: DetailSegment[] = []
   // Quota saturation is a rare, admin-only anomaly marker; surface it first
   // and in danger styling so it stands out on the related billing log. The
   // backend already strips admin_info for non-admins; gate on isAdmin too as
   // defense in depth so the marker never leaks if that changes.
   if (isAdmin && other?.admin_info?.quota_saturation) {
-    return [{ text: t('Quota clamped'), danger: true }, ...segments]
+    adminSegments.push({ text: t('Quota clamped'), danger: true })
   }
-  return segments
+  const plugin = isAdmin ? other?.admin_info?.task_plugin : undefined
+  if (plugin) {
+    const version = plugin.version ? ` @ ${plugin.version}` : ''
+    adminSegments.push({
+      text: `${t('Plugin')}: ${plugin.name || plugin.key}${version}`,
+    })
+  }
+  return [...adminSegments, ...segments]
 }
 
 function buildTypeDetailSegments(

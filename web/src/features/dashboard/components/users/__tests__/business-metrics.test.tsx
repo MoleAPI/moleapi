@@ -58,6 +58,14 @@ test('business metrics combine payments and orders while reusing usage data', as
         orders: 3,
         amount: 80,
       },
+      {
+        rank: 2,
+        user_id: 8,
+        username: 'bob',
+        currency: 'USD',
+        orders: 1,
+        amount: 10,
+      },
     ],
   })
 
@@ -90,10 +98,22 @@ test('business metrics combine payments and orders while reusing usage data', as
   assert.match(html, /User Top-up Ranking/)
   assert.match(html, /New User Purchase Rate.*8\.33%/)
   assert.match(html, /Repeat Purchase Rate.*33\.33%/)
-  assert.match(html, /Average credited amount/)
+  assert.match(html, /Amount paid.*\$100\.00/s)
+  assert.match(
+    html,
+    /Credited amount.*\$90\.00.*Average credited amount.*\$30\.00/s
+  )
   assert.match(html, /alice/)
   assert.match(html, /\$80/)
   assert.match(html, /¥584/)
   assert.match(html, /aria-label="User Top-up Ranking"/)
   assert.match(html, /aria-label="Copy: alice"/)
+  assert.match(html, /grid-cols-\[minmax\(0,12rem\)_minmax\(0,1fr\)\]/)
+  assert.match(html, /\$80\.00<\/span><span[^>]*> · ≈ ¥584\.00<\/span><\/div>/)
+  const rankingColors = Array.from(
+    html.matchAll(/background-color:([^;"]+)/g),
+    (match) => match[1]
+  )
+  assert.equal(rankingColors.length, 2)
+  assert.equal(new Set(rankingColors).size, 2)
 })

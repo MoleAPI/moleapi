@@ -77,6 +77,14 @@ func TestZhipuV4ConvertsResponsesRequestToChat(t *testing.T) {
 	assert.Equal(t, maxOutputTokens, *chatReq.MaxTokens)
 }
 
+func TestZhipuV4PassesNativeResponsesRequestThrough(t *testing.T) {
+	request := dto.OpenAIResponsesRequest{Model: "glm-4.5"}
+
+	converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, nil, request)
+	require.NoError(t, err)
+	assert.Equal(t, request, converted)
+}
+
 func TestZhipuV4ConvertsGeminiRequestToChat(t *testing.T) {
 	maxOutputTokens := uint(16)
 	adaptor := &Adaptor{}

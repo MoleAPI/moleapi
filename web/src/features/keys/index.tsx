@@ -93,7 +93,7 @@ function ApiKeyEndpointGuidance() {
           >
             <SelectTrigger
               aria-label={t('Route')}
-              className='min-w-0 flex-1 bg-background/80 sm:w-40'
+              className='bg-background/80 min-w-0 flex-1 sm:w-40'
               size='sm'
             >
               <SelectValue />

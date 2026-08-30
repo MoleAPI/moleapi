@@ -148,7 +148,7 @@ func TestInvalidInviterNeverBlocksPaidTopup(t *testing.T) {
 				Username:          "overflow_inviter",
 				AffCode:           "overflow-inviter-aff",
 				Status:            common.UserStatusEnabled,
-				AffQuota:          common.MaxQuota - 10,
+				AffQuota:          common.MaxWalletQuota - 10,
 				AffHistoryQuota:   20,
 				InviteRebateRatio: MaxInviteRebateRatio,
 			}).Error)
@@ -181,7 +181,7 @@ func TestInvalidInviterNeverBlocksPaidTopup(t *testing.T) {
 			if testCase.name == "overflow" {
 				var inviter User
 				require.NoError(t, DB.Select("aff_quota", "aff_history").First(&inviter, testCase.inviterID).Error)
-				assert.Equal(t, common.MaxQuota-10, inviter.AffQuota)
+				assert.Equal(t, common.MaxWalletQuota-10, inviter.AffQuota)
 				assert.Equal(t, 20, inviter.AffHistoryQuota)
 			}
 		})
@@ -346,7 +346,7 @@ func TestPendingTopupRejectsUnsafeBonusBeforePayment(t *testing.T) {
 
 	overflow := &TopUp{
 		UserId:          1,
-		Amount:          int64(common.MaxQuota),
+		Amount:          common.MaxWalletQuota,
 		Money:           1,
 		TradeNo:         "unsafe-bonus-overflow",
 		PaymentMethod:   PaymentMethodWaffo,

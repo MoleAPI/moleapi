@@ -57,7 +57,7 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	}
 	baseURL := info.ChannelBaseUrl
 	if baseURL == "" {
-		baseURL = channelconstant.ChannelBaseURLs[channelconstant.ChannelTypeZhipu_v4]
+		baseURL = channelconstant.GetChannelBaseURL(channelconstant.ChannelTypeZhipu_v4)
 	}
 	specialPlan, hasSpecialPlan := channelconstant.ChannelSpecialBases[baseURL]
 
@@ -79,6 +79,8 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 				return fmt.Sprintf("%s/images/generations", specialPlan.OpenAIBaseURL), nil
 			}
 			return fmt.Sprintf("%s/api/paas/v4/images/generations", baseURL), nil
+		case relayconstant.RelayModeResponses:
+			return fmt.Sprintf("%s/api/v1/responses", baseURL), nil
 		default:
 			if hasSpecialPlan && specialPlan.OpenAIBaseURL != "" {
 				return fmt.Sprintf("%s/chat/completions", specialPlan.OpenAIBaseURL), nil
@@ -113,7 +115,10 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	if info != nil && info.ChannelMeta != nil && channel.CodingPlanSupportsResponses(info.ChannelBaseUrl) {
+	if info == nil ||
+		info.ChannelMeta == nil ||
+		!channel.IsCodingPlanBase(info.ChannelBaseUrl) ||
+		channel.CodingPlanSupportsResponses(info.ChannelBaseUrl) {
 		return request, nil
 	}
 	result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAI, &request)

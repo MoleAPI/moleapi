@@ -90,11 +90,13 @@ test('consumes the Turnstile token after each password login attempt', async () 
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
   await waitFor(() => {
-    expect(mocks.login).toHaveBeenCalledWith({
-      username: 'alice',
-      password: 'password123',
-      turnstile: 'verified-token',
-    })
+    expect(mocks.login).toHaveBeenCalledWith(
+      expect.objectContaining({
+        username: 'alice',
+        password: 'password123',
+        turnstile: 'verified-token',
+      })
+    )
   })
   expect(mocks.setTurnstileToken).toHaveBeenCalledWith('')
 })
