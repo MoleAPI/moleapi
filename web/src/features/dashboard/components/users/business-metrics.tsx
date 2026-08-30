@@ -160,19 +160,24 @@ function TopUpRankingChart(props: {
 
   return (
     <ol
-      className='space-y-3 px-4 pb-4 sm:px-5'
+      className='space-y-2 overflow-x-auto px-4 pb-4 sm:px-5'
       aria-label={t('User Top-up Ranking')}
     >
-      {props.rows.map((item) => {
+      {props.rows.map((item, index) => {
         const width = maxAmount > 0 ? (item.amount / maxAmount) * 100 : 0
         return (
-          <li key={item.user_id} className='space-y-1.5'>
-            <div className='flex items-start justify-between gap-3 text-sm select-text'>
-              <div className='flex min-w-0 items-start font-medium break-all'>
+          <li
+            key={item.user_id}
+            className='grid min-w-[34rem] grid-cols-[minmax(0,12rem)_minmax(0,1fr)] items-center gap-2'
+          >
+            <div className='min-w-0 select-text'>
+              <div className='flex min-w-0 items-center text-sm font-medium'>
                 <span className='text-muted-foreground mr-2 font-mono'>
                   #{item.rank}
                 </span>
-                <span className='min-w-0'>{item.username}</span>
+                <span className='min-w-0 truncate' title={item.username}>
+                  {item.username}
+                </span>
                 <CopyButton
                   value={item.username}
                   className='-my-1 ml-1 size-7'
@@ -181,24 +186,31 @@ function TopUpRankingChart(props: {
                   aria-label={`${t('Copy')}: ${item.username}`}
                 />
               </div>
-              <div className='shrink-0 text-right font-mono text-xs tabular-nums'>
-                <div className='font-semibold'>
-                  {formatCurrency(item.amount, 'USD')}
-                </div>
-                <div className='text-muted-foreground'>
-                  ≈ {formatCurrency(item.amount * props.usdExchangeRate, 'CNY')}
-                </div>
+              <div className='text-muted-foreground text-[11px]'>
+                {t('Paid Orders')} · {formatNumber(item.orders, props.locale)}
               </div>
             </div>
-            <div className='bg-muted h-2.5 overflow-hidden rounded-full'>
-              <div
-                className='bg-chart-3 h-full rounded-full'
-                style={{ width: `${width}%` }}
-                aria-hidden='true'
-              />
-            </div>
-            <div className='text-muted-foreground text-right text-[11px] select-text'>
-              {t('Paid Orders')} · {formatNumber(item.orders, props.locale)}
+            <div className='flex min-w-0 items-center gap-2'>
+              <div className='bg-muted h-2.5 min-w-12 flex-1 overflow-hidden rounded-full'>
+                <div
+                  className='h-full rounded-full'
+                  style={{
+                    width: `${width}%`,
+                    backgroundColor: `oklch(0.68 0.18 ${35 + index * 35})`,
+                  }}
+                  aria-hidden='true'
+                />
+              </div>
+              <div className='shrink-0 font-mono text-xs whitespace-nowrap tabular-nums select-text'>
+                <span className='font-semibold'>
+                  {formatCurrency(item.amount, 'USD')}
+                </span>
+                <span className='text-muted-foreground'>
+                  {' '}
+                  · ≈{' '}
+                  {formatCurrency(item.amount * props.usdExchangeRate, 'CNY')}
+                </span>
+              </div>
             </div>
           </li>
         )

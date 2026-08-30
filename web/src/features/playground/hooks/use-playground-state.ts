@@ -26,6 +26,8 @@ import {
   getConversationTitle,
   saveConversationState,
   applyMessageStateUpdate,
+  deleteConversationSession,
+  getConversationStorageUsage,
   getInitialParameterEnabled,
   getInitialPlaygroundConfig,
   loadConversationState,
@@ -57,6 +59,9 @@ export function usePlaygroundState() {
 
   const [messages, setMessages] = useState<Message[]>([])
   const [sessions, setSessions] = useState<PlaygroundConversationSession[]>([])
+  const [storageUsage, setStorageUsage] = useState(() =>
+    getConversationStorageUsage([])
+  )
   const [activeSessionId, setActiveSessionId] = useState('')
   const [isLoadingMessages, setIsLoadingMessages] = useState(true)
   const messagesSaveTimerRef = useRef<number | null>(null)
@@ -80,10 +85,12 @@ export function usePlaygroundState() {
 
       messagesSaveTimerRef.current = window.setTimeout(() => {
         messagesSaveTimerRef.current = null
-        latestSessionsRef.current = saveConversationState(
-          sessionsToSave,
-          activeId
-        )
+        const savedSessions = saveConversationState(sessionsToSave, activeId)
+        latestSessionsRef.current = savedSessions
+        setStorageUsage(getConversationStorageUsage(savedSessions))
+        if (savedSessions.length !== sessionsToSave.length) {
+          setSessions(savedSessions)
+        }
       }, MESSAGE_SAVE_DEBOUNCE_MS)
     },
     []
@@ -139,6 +146,7 @@ export function usePlaygroundState() {
       activeSessionIdRef.current = loadedState.activeSessionId
       hasLoadedMessagesRef.current = true
       setSessions(loadedState.sessions)
+      setStorageUsage(getConversationStorageUsage(loadedState.sessions))
       setActiveSessionId(loadedState.activeSessionId)
       setMessages(loadedMessages)
       setIsLoadingMessages(false)
@@ -216,30 +224,71 @@ export function usePlaygroundState() {
     if (messagesSaveTimerRef.current !== null) {
       window.clearTimeout(messagesSaveTimerRef.current)
       messagesSaveTimerRef.current = null
-      latestSessionsRef.current = saveConversationState(
-        latestSessionsRef.current,
-        activeSessionIdRef.current
-      )
     }
 
+    const previousSessions = latestSessionsRef.current
+    const savedSessions = saveConversationState(
+      previousSessions,
+      nextSession.id
+    )
+    latestSessionsRef.current = savedSessions
     activeSessionIdRef.current = nextSession.id
     latestMessagesRef.current = nextSession.messages
+    if (savedSessions.length !== previousSessions.length) {
+      setSessions(savedSessions)
+    }
+    setStorageUsage(getConversationStorageUsage(savedSessions))
     setActiveSessionId(nextSession.id)
     setMessages(nextSession.messages)
-    saveConversationState(latestSessionsRef.current, nextSession.id)
   }, [])
 
   const createConversation = useCallback(() => {
     const nextSession = createConversationSession()
-    const nextSessions = [nextSession, ...latestSessionsRef.current]
+    const nextSessions = saveConversationState(
+      [nextSession, ...latestSessionsRef.current],
+      nextSession.id
+    )
 
     latestSessionsRef.current = nextSessions
     activeSessionIdRef.current = nextSession.id
     latestMessagesRef.current = []
     setSessions(nextSessions)
+    setStorageUsage(getConversationStorageUsage(nextSessions))
     setActiveSessionId(nextSession.id)
     setMessages([])
-    saveConversationState(nextSessions, nextSession.id)
+  }, [])
+
+  const deleteConversation = useCallback((sessionId: string) => {
+    const nextState = deleteConversationSession(
+      latestSessionsRef.current,
+      activeSessionIdRef.current,
+      sessionId
+    )
+    if (nextState.sessions === latestSessionsRef.current) {
+      return
+    }
+
+    if (messagesSaveTimerRef.current !== null) {
+      window.clearTimeout(messagesSaveTimerRef.current)
+      messagesSaveTimerRef.current = null
+    }
+
+    const nextSessions = saveConversationState(
+      nextState.sessions,
+      nextState.activeSessionId
+    )
+    const nextActiveSession =
+      nextSessions.find(
+        (session) => session.id === nextState.activeSessionId
+      ) ?? nextSessions[0]
+
+    latestSessionsRef.current = nextSessions
+    activeSessionIdRef.current = nextActiveSession.id
+    latestMessagesRef.current = nextActiveSession.messages
+    setSessions(nextSessions)
+    setStorageUsage(getConversationStorageUsage(nextSessions))
+    setActiveSessionId(nextActiveSession.id)
+    setMessages(nextActiveSession.messages)
   }, [])
 
   // Reset config to defaults
@@ -256,6 +305,7 @@ export function usePlaygroundState() {
     parameterEnabled,
     messages,
     sessions,
+    storageUsage,
     activeSessionId,
     isLoadingMessages,
     models,
@@ -271,6 +321,7 @@ export function usePlaygroundState() {
     updateMessages,
     clearMessages,
     createConversation,
+    deleteConversation,
     selectConversation,
     resetConfig,
   }

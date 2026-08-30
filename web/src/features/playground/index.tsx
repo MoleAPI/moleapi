@@ -32,6 +32,7 @@ export function Playground() {
     parameterEnabled,
     messages,
     sessions,
+    storageUsage,
     activeSessionId,
     isLoadingMessages,
     models,
@@ -43,6 +44,7 @@ export function Playground() {
     updateParameterEnabled,
     clearMessages,
     createConversation,
+    deleteConversation,
     selectConversation,
   } = usePlaygroundState()
 
@@ -79,6 +81,11 @@ export function Playground() {
   const handleSelectConversation = (sessionId: string) => {
     handleEditOpenChange(false)
     selectConversation(sessionId)
+  }
+
+  const handleDeleteConversation = (sessionId: string) => {
+    handleEditOpenChange(false)
+    deleteConversation(sessionId)
   }
 
   const { isLoadingModels } = usePlaygroundOptions({
@@ -136,9 +143,11 @@ export function Playground() {
       <PlaygroundHistorySidebar
         activeSessionId={activeSessionId}
         disabled={isGenerating || isLoadingMessages}
+        onDeleteConversation={handleDeleteConversation}
         onNewConversation={handleNewConversation}
         onSelectConversation={handleSelectConversation}
         sessions={sessions}
+        storageUsage={storageUsage}
       />
     </div>
   )

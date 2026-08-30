@@ -17,12 +17,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
+
 import { afterEach, beforeEach, describe, test } from 'vitest'
 
 import { STORAGE_KEYS } from '../../constants'
 import type { Message, PlaygroundConversationSession } from '../../types'
+import {
+  deleteConversationSession,
+  getConversationStorageUsage,
+  loadConversationState,
+  saveConversationState,
+} from './storage'
 import { MAX_STORED_CONVERSATIONS_BYTES } from './storage-schema'
-import { loadConversationState, saveConversationState } from './storage'
 
 const originalLocalStorageDescriptor = Object.getOwnPropertyDescriptor(
   globalThis,
@@ -105,6 +111,44 @@ afterEach(() => {
 })
 
 describe('playground conversation storage', () => {
+  test('reports remaining history space against the automatic cleanup cap', () => {
+    const usage = getConversationStorageUsage([createSession('active', 1)])
+
+    assert.equal(usage.capacityBytes, MAX_STORED_CONVERSATIONS_BYTES)
+    assert.ok(usage.usedBytes > 0)
+    assert.equal(usage.remainingBytes, usage.capacityBytes - usage.usedBytes)
+  })
+
+  test('selects the newest remaining conversation after deleting the active one', () => {
+    const nextState = deleteConversationSession(
+      [
+        createSession('active', 3),
+        createSession('old', 1),
+        createSession('newest', 2),
+      ],
+      'active',
+      'active'
+    )
+
+    assert.equal(nextState.activeSessionId, 'newest')
+    assert.deepEqual(
+      nextState.sessions.map((session) => session.id),
+      ['old', 'newest']
+    )
+  })
+
+  test('creates an empty conversation after deleting the final record', () => {
+    const nextState = deleteConversationSession(
+      [createSession('active', 1)],
+      'active',
+      'active'
+    )
+
+    assert.equal(nextState.sessions.length, 1)
+    assert.equal(nextState.sessions[0]?.id, nextState.activeSessionId)
+    assert.deepEqual(nextState.sessions[0]?.messages, [])
+  })
+
   test('loads legacy single-message storage as the default conversation', () => {
     localStorage.setItem(
       STORAGE_KEYS.MESSAGES,
