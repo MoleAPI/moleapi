@@ -115,7 +115,21 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	return request, nil
+	if info == nil ||
+		info.ChannelMeta == nil ||
+		!channel.IsCodingPlanBase(info.ChannelBaseUrl) ||
+		channel.CodingPlanSupportsResponses(info.ChannelBaseUrl) {
+		return request, nil
+	}
+	result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAI, &request)
+	if err != nil {
+		return nil, err
+	}
+	openAIRequest, ok := result.Value.(*dto.GeneralOpenAIRequest)
+	if !ok {
+		return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
+	}
+	return a.ConvertOpenAIRequest(c, info, openAIRequest)
 }
 
 func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, requestBody io.Reader) (any, error) {
