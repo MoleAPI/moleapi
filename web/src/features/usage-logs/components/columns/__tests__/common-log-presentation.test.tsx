@@ -17,12 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
-import { test, vi } from 'vitest'
 
 import i18next from 'i18next'
 import type { ComponentType } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
+import { test, vi } from 'vitest'
 
 import { usageLogSchema, type UsageLog } from '../../../data/schema'
 

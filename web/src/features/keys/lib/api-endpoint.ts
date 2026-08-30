@@ -30,10 +30,11 @@ export type ApiEndpointOption = {
 
 function normalizeApiEndpointUrl(rawUrl: string): string {
   const baseUrl = rawUrl.trim().replace(/\/+$/, '')
-  const endpointBaseUrl =
-    /^https?:\/\/home\.moleapi\.com(?:\/v1)?$/i.test(baseUrl)
-      ? 'https://api.moleapi.com'
-      : baseUrl
+  const endpointBaseUrl = /^https?:\/\/home\.moleapi\.com(?:\/v1)?$/i.test(
+    baseUrl
+  )
+    ? 'https://api.moleapi.com'
+    : baseUrl
   if (!endpointBaseUrl || /\/v1$/i.test(endpointBaseUrl)) {
     return endpointBaseUrl || '/v1'
   }

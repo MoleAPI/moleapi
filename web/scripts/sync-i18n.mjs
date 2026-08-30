@@ -30,6 +30,7 @@ const OBFUSCATED_KEYS = [
 ]
 
 const BRAND_AND_LITERAL_KEYS = new Set([
+  '1M token',
   'AI Proxy',
   'AIGC2D',
   'Alipay',
@@ -42,11 +43,13 @@ const BRAND_AND_LITERAL_KEYS = new Set([
   'CC Switch',
   'ChatGPT',
   'ChatGPT Subscription (Codex)',
+  'Coding Plan',
   'Claude',
   'Client ID',
   'Client Secret',
   'Cloudflare',
   'Cohere',
+  'credit',
   'DeepSeek',
   'Discord',
   'DoubaoVideo',
@@ -67,6 +70,7 @@ const BRAND_AND_LITERAL_KEYS = new Set([
   'New API',
   'New API &lt;noreply@example.com&gt;',
   'NewAPI',
+  'NOWPayments',
   'OAuth Client Secret',
   'OhMyGPT',
   'Ollama',

@@ -186,6 +186,8 @@ export function TimingMetricsCell(props: TimingMetricsCellProps) {
 
 interface StreamTpsCellProps {
   isStream: boolean
+  /** Task logs are asynchronous jobs; stream vs non-stream does not apply. */
+  isTask?: boolean
   tokensPerSecond?: number | null
   streamStatus?: LogOtherData['stream_status']
   className?: string

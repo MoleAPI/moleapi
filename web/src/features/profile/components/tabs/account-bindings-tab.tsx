@@ -51,13 +51,10 @@ import {
   buildGitHubOAuthUrl,
   buildLinuxDOOAuthUrl,
   buildOIDCOAuthUrl,
+  type CustomOAuthBinding,
 } from '@/lib/oauth'
 
-import {
-  getSelfOAuthBindings,
-  unbindCustomOAuth,
-  type CustomOAuthBinding,
-} from '../../api'
+import { getSelfOAuthBindings, unbindCustomOAuth } from '../../api'
 import type { UserProfile, BindingItem } from '../../types'
 import { EmailBindDialog } from '../dialogs/email-bind-dialog'
 import { TelegramBindDialog } from '../dialogs/telegram-bind-dialog'
@@ -117,7 +114,6 @@ export function AccountBindingsTab({
   const customProviders = status?.custom_oauth_providers as
     | CustomOAuthProviderInfo[]
     | undefined
-
   const fetchCustomBindings = useCallback(async () => {
     if (!customProviders || customProviders.length === 0) return
     try {

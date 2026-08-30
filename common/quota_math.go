@@ -12,9 +12,20 @@ import (
 // account balances use wider storage, so an oversized product cannot wrap
 // around and turn a charge into a credit.
 const (
-	MaxQuota = math.MaxInt32
-	MinQuota = math.MinInt32
+	MaxQuota       = math.MaxInt32
+	MinQuota       = math.MinInt32
+	MaxWalletQuota = 1<<53 - 1
 )
+
+// ValidateWalletQuota enforces the upper bound shared by wallet mutations.
+// Negative balances remain valid because billing can temporarily overdraw a
+// wallet; callers that accept credits must apply their own positive check.
+func ValidateWalletQuota(quota int) error {
+	if quota > MaxWalletQuota {
+		return fmt.Errorf("wallet quota exceeds %d", MaxWalletQuota)
+	}
+	return nil
+}
 
 // QuotaClampKind identifies why a quota conversion had to be saturated.
 type QuotaClampKind string
@@ -27,11 +38,11 @@ const (
 )
 
 // QuotaClamp describes a single saturation event: a quota conversion whose
-// input fell outside the representable int32 range (or was NaN) and was
+// input fell outside its supported range (or was NaN) and was
 // therefore clamped. It is surfaced to billing callers so the event can be
 // recorded on the related consume/task log for admin auditing.
 type QuotaClamp struct {
-	Op       string         `json:"op"`       // "QuotaFromFloat" | "QuotaRound" | "QuotaFromDecimal"
+	Op       string         `json:"op"`       // "QuotaFromFloat" | "QuotaRound" | "QuotaFromDecimal" | "WalletQuotaFromDecimal"
 	Kind     QuotaClampKind `json:"kind"`     // "overflow" | "underflow" | "nan"
 	Original float64        `json:"original"` // best-effort pre-clamp value (decimal -> float64 approx)
 	Clamped  int            `json:"clamped"`  // the saturated result actually used
@@ -61,23 +72,27 @@ func (c *QuotaClamp) AuditMap() map[string]interface{} {
 	}
 }
 
-// saturateQuota converts an already-rounded quota value to int, clamping to
-// the int32 range. Whenever clamping (what would otherwise be an integer
-// wraparound) or a NaN fallback is triggered it logs a warning, because in
+// saturateQuota converts an already-rounded single-request quota to int.
+// Whenever clamping (what would otherwise be an integer wraparound) or a NaN
+// fallback is triggered it logs a warning, because in
 // normal operation a single request never approaches these bounds — hitting
 // them signals a bug or an abusive request. `op` names the caller. When a
 // clamp occurs it returns a non-nil *QuotaClamp so callers can additionally
 // record the event (e.g. on the consume log); the returned pointer is nil for
 // in-range values.
 func saturateQuota(value float64, op string) (int, *QuotaClamp) {
+	return saturateQuotaBounded(value, op, MaxQuota, MinQuota)
+}
+
+func saturateQuotaBounded(value float64, op string, maxQuota int, minQuota int) (int, *QuotaClamp) {
 	var clamp *QuotaClamp
 	switch {
 	case math.IsNaN(value):
 		clamp = &QuotaClamp{Op: op, Kind: QuotaClampNaN, Original: value, Clamped: 0}
-	case value >= MaxQuota:
-		clamp = &QuotaClamp{Op: op, Kind: QuotaClampOverflow, Original: value, Clamped: MaxQuota}
-	case value <= MinQuota:
-		clamp = &QuotaClamp{Op: op, Kind: QuotaClampUnderflow, Original: value, Clamped: MinQuota}
+	case value > float64(maxQuota):
+		clamp = &QuotaClamp{Op: op, Kind: QuotaClampOverflow, Original: value, Clamped: maxQuota}
+	case value < float64(minQuota):
+		clamp = &QuotaClamp{Op: op, Kind: QuotaClampUnderflow, Original: value, Clamped: minQuota}
 	default:
 		return int(value), nil
 	}
@@ -151,4 +166,11 @@ func QuotaFromDecimalChecked(d decimal.Decimal) (int, *QuotaClamp) {
 // value that would otherwise be saturated at the database's int32 boundary.
 func QuotaFromDecimalStrict(d decimal.Decimal) (int, error) {
 	return strictQuota(QuotaFromDecimalChecked(d))
+}
+
+// WalletQuotaFromDecimalStrict converts wallet and top-up values within the
+// JavaScript-safe integer range, which is also exactly representable by float64.
+func WalletQuotaFromDecimalStrict(d decimal.Decimal) (int, error) {
+	f, _ := d.Round(0).Float64()
+	return strictQuota(saturateQuotaBounded(f, "WalletQuotaFromDecimal", MaxWalletQuota, -MaxWalletQuota))
 }

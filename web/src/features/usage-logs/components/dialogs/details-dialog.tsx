@@ -40,6 +40,7 @@ import { Button } from '@/components/ui/button'
 import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Label } from '@/components/ui/label'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
+import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
@@ -68,6 +69,7 @@ import {
   isTimingLogType,
 } from '../../lib/utils'
 import { USAGE_BILLING_PATH, type LogOtherData } from '../../types'
+import { PluginAuthorLink } from '../plugin-author-link'
 
 // Maps a channel-update changed-field token (as recorded by the backend audit)
 // to its i18n label key for display in the audit details.
@@ -696,21 +698,52 @@ function BillingBreakdown(props: {
     })
   }
 
-  rows.push({
-    label: t('Total Cost'),
-    value: formatLogQuota(log.quota),
-  })
-
-  if (rows.length === 0) return null
+  const usageFacts =
+    other.usage_facts != null &&
+    typeof other.usage_facts === 'object' &&
+    !Array.isArray(other.usage_facts)
+      ? Object.entries(other.usage_facts)
+      : []
 
   const renderedRows = rows.map((row) => (
     <DetailRow key={row.label} label={row.label} value={row.value} mono />
   ))
+  renderedRows.push(
+    <DetailRow
+      key='total-cost'
+      label={t('Total Cost')}
+      value={formatLogQuota(log.quota)}
+      mono
+    />
+  )
 
-  if (inline) return <div className='contents'>{renderedRows}</div>
+  const renderedUsageFacts = usageFacts.map(([key, value]) => (
+    <DetailRow
+      key={`usage-fact-${key}`}
+      label={key}
+      value={String(value)}
+      mono
+    />
+  ))
+
+  if (inline) {
+    return (
+      <div className='contents'>
+        {renderedRows}
+        {renderedUsageFacts}
+      </div>
+    )
+  }
 
   return (
-    <DetailSection label={t('Billing Details')}>{renderedRows}</DetailSection>
+    <DetailSection label={t('Billing Details')}>
+      {renderedRows.slice(0, -1)}
+      {usageFacts.length > 0 && (
+        <Label className='text-xs font-semibold'>{t('Usage parameters')}</Label>
+      )}
+      {renderedUsageFacts}
+      {renderedRows.at(-1)}
+    </DetailSection>
   )
 }
 
@@ -865,6 +898,7 @@ export function InlineLogDetails(props: { log: UsageLog; isAdmin: boolean }) {
 interface DetailsDialogProps {
   log: UsageLog
   isAdmin: boolean
+  isRoot: boolean
   open: boolean
   onOpenChange: (open: boolean) => void
 }
@@ -888,6 +922,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
     !isViolation &&
     other?.billing_mode === 'tiered_expr' &&
     !!other?.expr_b64
+  const pricingData = usePricingData(props.open && isTieredBilling)
+  const billingUsageSchema = pricingData.models.find(
+    (model) => model.model_name === props.log.model_name
+  )?.billing_usage_schema
   const hasAudioTokens = other?.ws || other?.audio
   const showTiming = isTimingLogType(props.log.type)
   const showAdminIp =
@@ -1249,6 +1287,68 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
+        {props.isAdmin && adminInfo?.task_plugin ? (
+          <DetailSection label={t('Task Plugin')}>
+            <DetailRow
+              label={t('Plugin key')}
+              value={adminInfo.task_plugin.key}
+              mono
+            />
+            <DetailRow label={t('Name')} value={adminInfo.task_plugin.name} />
+            {adminInfo.task_plugin.version ? (
+              <DetailRow
+                label={t('Version')}
+                value={adminInfo.task_plugin.version}
+                mono
+              />
+            ) : null}
+            {adminInfo.task_plugin.author ? (
+              <DetailRow
+                label={t('Plugin author')}
+                value={
+                  <PluginAuthorLink
+                    author={adminInfo.task_plugin.author}
+                    showUrl
+                  />
+                }
+              />
+            ) : null}
+          </DetailSection>
+        ) : null}
+
+        {props.isRoot && other?.root_info ? (
+          <DetailSection label={t('Root Diagnostics')}>
+            {other.root_info.task_plugin ? (
+              <>
+                <DetailRow
+                  label={t('API Version')}
+                  value={String(other.root_info.task_plugin.api_version)}
+                  mono
+                />
+                <DetailRow
+                  label={t('Plugin Generation')}
+                  value={String(other.root_info.task_plugin.generation)}
+                  mono
+                />
+              </>
+            ) : null}
+            {other.root_info.upstream_task_id ? (
+              <DetailRow
+                label={t('Upstream Task ID')}
+                value={other.root_info.upstream_task_id}
+                mono
+              />
+            ) : null}
+            {other.root_info.node_name ? (
+              <DetailRow
+                label={t('Node Name')}
+                value={other.root_info.node_name}
+                mono
+              />
+            ) : null}
+          </DetailSection>
+        ) : null}
+
         {/* Top-up audit info (type=1, admin only) */}
         {showTopupAuditSection && (
           <DetailSection
@@ -1465,6 +1565,8 @@ export function DetailsDialog(props: DetailsDialogProps) {
               matchedTierLabel={other.matched_tier}
               requestRules={other.request_rules}
               hideCacheColumns={!hasAnyCacheTokens(other)}
+              usageSchema={billingUsageSchema}
+              usageFacts={other.usage_facts}
             />
           </DetailSection>
         )}

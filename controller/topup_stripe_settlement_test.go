@@ -85,7 +85,7 @@ func TestStripeWebhookRetriesUntilAtomicSettlementSucceeds(t *testing.T) {
 		Username: "stripe_retry_user",
 		Password: "password123",
 		Status:   common.UserStatusEnabled,
-		Quota:    common.MaxQuota - 50,
+		Quota:    common.MaxWalletQuota - 50,
 	}
 	require.NoError(t, db.Create(user).Error)
 	topUp := &model.TopUp{
