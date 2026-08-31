@@ -11,8 +11,8 @@ import (
 )
 
 var StartTime = time.Now().Unix() // unit: second
-var Version = "v0.10.7.5-dev1"     // this hard coding will be replaced automatically when building, no need to manually change
-var UpstreamVersion = "v1.0.0-rc.27"
+var Version = "v0.10.7.6-dev1"     // this hard coding will be replaced automatically when building, no need to manually change
+var UpstreamVersion = "v1.0.0-rc.30"
 var Commit = ""
 var SystemName = "New API"
 var Footer = ""
@@ -166,6 +166,16 @@ var BatchUpdateInterval int
 var RelayTimeout int // unit is second
 
 var RelayIdleConnTimeout int // unit is second
+
+// RelayResponseHeaderTimeout limits how long the relay transport waits for the
+// upstream response headers after the request has been fully written.
+// 0 disables it (previous behaviour: wait forever).
+//
+// Note this is NOT the same as RelayTimeout (http.Client.Timeout), which covers
+// the whole response read and therefore breaks legitimate long streaming calls.
+// ResponseHeaderTimeout only bounds the wait for the response headers; once the
+// headers arrive, streaming is unaffected.
+var RelayResponseHeaderTimeout int // unit is second
 var RelayMaxIdleConns int
 var RelayMaxIdleConnsPerHost int
 
