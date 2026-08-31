@@ -35,16 +35,17 @@ func Distribute() func(c *gin.Context) {
 	return func(c *gin.Context) {
 		var channel *model.Channel
 		constraints := service.GetChannelConstraints(c)
-		constraints.AddFilter(taskdto.ChannelFilter{
-			Kind:        taskdto.FilterRequestPath,
-			RequestPath: c.Request.URL.Path,
-		})
 		service.AppendTaskPluginIdentityFilter(c, c.GetString("expected_task_plugin_key"))
 		modelRequest, shouldSelectChannel, err := getModelRequest(c)
 		if err != nil {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		requestPath := requestPathForChannelSelection(c.Request.URL.Path, modelRequest.Model)
+		constraints.AddFilter(taskdto.ChannelFilter{
+			Kind:        taskdto.FilterRequestPath,
+			RequestPath: requestPath,
+		})
 		if pin, found, overridden := constraints.ResolvedPin(); found {
 			for _, lost := range overridden {
 				logger.LogWarn(c, fmt.Sprintf(
@@ -123,8 +124,6 @@ func Distribute() func(c *gin.Context) {
 						common.SetContextKey(c, constant.ContextKeyUsingGroup, usingGroup)
 					}
 				}
-				requestPath := requestPathForChannelSelection(c.Request.URL.Path, modelRequest.Model)
-
 				if preferredChannelID, found := service.GetPreferredChannelByAffinity(c, modelRequest.Model, usingGroup); found {
 					affinityUsable := false
 					preferred, err := model.CacheGetChannel(preferredChannelID)
