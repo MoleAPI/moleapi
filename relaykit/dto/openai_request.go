@@ -81,7 +81,7 @@ type GeneralOpenAIRequest struct {
 	ExtraBody json.RawMessage `json:"extra_body,omitempty"`
 	//xai
 	SearchParameters json.RawMessage `json:"search_parameters,omitempty"`
-	// claude
+	// OpenAI Chat web search.
 	WebSearchOptions *WebSearchOptions `json:"web_search_options,omitempty"`
 	// OpenRouter Params
 	Usage     json.RawMessage `json:"usage,omitempty"`
@@ -111,6 +111,9 @@ type GeneralOpenAIRequest struct {
 	ReasoningSplit json.RawMessage `json:"reasoning_split,omitempty"`
 	// vLLM
 	ThinkingTokenBudget json.RawMessage `json:"thinking_token_budget,omitempty"`
+
+	// Internal conversion state; never serialized to an upstream protocol.
+	ReasoningConversion *ReasoningConversionState `json:"-"`
 }
 
 func (r GeneralOpenAIRequest) MarshalJSON() ([]byte, error) {
@@ -269,6 +272,7 @@ type FunctionRequest struct {
 	Name        string `json:"name"`
 	Parameters  any    `json:"parameters,omitempty"`
 	Arguments   string `json:"arguments,omitempty"`
+	Strict      *bool  `json:"strict,omitempty"`
 }
 
 type StreamOptions struct {
@@ -316,7 +320,10 @@ type Message struct {
 	ReasoningDetails json.RawMessage `json:"reasoning_details,omitempty"`
 	ToolCalls        json.RawMessage `json:"tool_calls,omitempty"`
 	ToolCallId       string          `json:"tool_call_id,omitempty"`
-	parsedContent    []MediaContent
+	// Annotations is an official Chat response field. Keeping it on the shared
+	// message type also preserves annotations when clients replay assistant output.
+	Annotations   json.RawMessage `json:"annotations,omitempty"`
+	parsedContent []MediaContent
 	//parsedStringContent *string
 }
 
@@ -521,14 +528,14 @@ func (m *Message) ParseToolCalls() []ToolCallRequest {
 		return nil
 	}
 	var toolCalls []ToolCallRequest
-	if err := json.Unmarshal(m.ToolCalls, &toolCalls); err == nil {
+	if err := kitutil.Unmarshal(m.ToolCalls, &toolCalls); err == nil {
 		return toolCalls
 	}
 	return toolCalls
 }
 
 func (m *Message) SetToolCalls(toolCalls any) {
-	toolCallsJson, _ := json.Marshal(toolCalls)
+	toolCallsJson, _ := kitutil.Marshal(toolCalls)
 	m.ToolCalls = toolCallsJson
 }
 
@@ -596,6 +603,11 @@ func (m *Message) ParseContent() []MediaContent {
 		}}
 		m.parsedContent = contentList
 		return contentList
+	}
+
+	if content, ok := m.Content.([]MediaContent); ok {
+		m.parsedContent = content
+		return content
 	}
 
 	// 尝试解析为数组
@@ -718,7 +730,7 @@ func (m *Message) ParseContent() []MediaContent {
 	}
 
 	var stringContent string
-	if err := json.Unmarshal(m.Content, &stringContent); err == nil {
+	if err := kitutil.Unmarshal(m.Content, &stringContent); err == nil {
 		m.parsedStringContent = &stringContent
 		return stringContent
 	}
@@ -743,14 +755,14 @@ func (m *Message) SetNullContent() {
 }
 
 func (m *Message) SetStringContent(content string) {
-	jsonContent, _ := json.Marshal(content)
+	jsonContent, _ := kitutil.Marshal(content)
 	m.Content = jsonContent
 	m.parsedStringContent = &content
 	m.parsedContent = nil
 }
 
 func (m *Message) SetMediaContent(content []MediaContent) {
-	jsonContent, _ := json.Marshal(content)
+	jsonContent, _ := kitutil.Marshal(content)
 	m.Content = jsonContent
 	m.parsedContent = nil
 	m.parsedStringContent = nil
@@ -761,7 +773,7 @@ func (m *Message) IsStringContent() bool {
 		return true
 	}
 	var stringContent string
-	if err := json.Unmarshal(m.Content, &stringContent); err == nil {
+	if err := kitutil.Unmarshal(m.Content, &stringContent); err == nil {
 		m.parsedStringContent = &stringContent
 		return true
 	}
@@ -777,7 +789,7 @@ func (m *Message) ParseContent() []MediaContent {
 
 	// 先尝试解析为字符串
 	var stringContent string
-	if err := json.Unmarshal(m.Content, &stringContent); err == nil {
+	if err := kitutil.Unmarshal(m.Content, &stringContent); err == nil {
 		contentList = []MediaContent{{
 			Type: ContentTypeText,
 			Text: stringContent,
@@ -788,7 +800,7 @@ func (m *Message) ParseContent() []MediaContent {
 
 	// 尝试解析为数组
 	var arrayContent []map[string]interface{}
-	if err := json.Unmarshal(m.Content, &arrayContent); err == nil {
+	if err := kitutil.Unmarshal(m.Content, &arrayContent); err == nil {
 		for _, contentItem := range arrayContent {
 			contentType, ok := contentItem["type"].(string)
 			if !ok {
@@ -943,6 +955,9 @@ type OpenAIResponsesRequest struct {
 	ThinkingBudget json.RawMessage `json:"thinking_budget,omitempty"`
 	// perplexity
 	Preset json.RawMessage `json:"preset,omitempty"`
+
+	// Internal conversion state; never serialized to an upstream protocol.
+	ReasoningConversion *ReasoningConversionState `json:"-"`
 }
 
 func (r OpenAIResponsesRequest) MarshalJSON() ([]byte, error) {
