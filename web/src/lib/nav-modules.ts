@@ -18,7 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { getStatus } from '@/lib/api'
 
-export type ModuleAccess = { enabled: boolean; requireAuth: boolean }
+export type ModuleAccess = {
+  enabled: boolean
+  requireAuth: boolean
+  adminOnly: boolean
+}
 
 export type HeaderNavModule = 'rankings' | 'pricing'
 
@@ -35,8 +39,8 @@ export type HeaderNavModules = {
 const DEFAULT_HEADER_NAV_MODULES: HeaderNavModules = {
   home: true,
   console: true,
-  pricing: { enabled: true, requireAuth: false },
-  rankings: { enabled: true, requireAuth: false },
+  pricing: { enabled: true, requireAuth: false, adminOnly: false },
+  rankings: { enabled: true, requireAuth: false, adminOnly: false },
   docs: true,
   about: true,
 }
@@ -81,6 +85,7 @@ function parseAccess(raw: unknown, fallback: ModuleAccess): ModuleAccess {
     return {
       enabled: parseHeaderNavBoolean(raw, fallback.enabled),
       requireAuth: fallback.requireAuth,
+      adminOnly: fallback.adminOnly,
     }
   }
   if (raw && typeof raw === 'object') {
@@ -88,6 +93,7 @@ function parseAccess(raw: unknown, fallback: ModuleAccess): ModuleAccess {
     return {
       enabled: parseHeaderNavBoolean(r.enabled, fallback.enabled),
       requireAuth: parseHeaderNavBoolean(r.requireAuth, fallback.requireAuth),
+      adminOnly: parseHeaderNavBoolean(r.adminOnly, fallback.adminOnly),
     }
   }
   return { ...fallback }
@@ -181,7 +187,7 @@ export async function getFreshModuleAccess(
     cacheStatus(status)
     return getModuleAccessFromStatus(status, module)
   } catch {
-    return { enabled: false, requireAuth: true }
+    return { enabled: false, requireAuth: true, adminOnly: false }
   }
 }
 
