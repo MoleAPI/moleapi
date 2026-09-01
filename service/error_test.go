@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -123,8 +124,8 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 	require.Equal(t, message, newAPIError.Error())
 	publicError := newAPIError.ToOpenAIError()
 	require.Equal(t, "The upstream service is temporarily unavailable. Please try again later.", publicError.Message)
-	require.Equal(t, "new_api_error", publicError.Type)
-	require.Equal(t, types.ErrorCodeBadResponseStatusCode, publicError.Code)
+	require.Equal(t, "server_error", publicError.Type)
+	require.Equal(t, "upstream_unavailable", publicError.Code)
 	require.Empty(t, publicError.Metadata)
 }
 
@@ -160,23 +161,53 @@ func TestRelayErrorHandlerMasksUpstreamImageResultMessageForUsers(t *testing.T) 
 	require.NotNil(t, newAPIError)
 	require.Equal(t, message, newAPIError.Error())
 	require.Equal(t, "The upstream service is temporarily unavailable. Please try again later.", newAPIError.ToOpenAIError().Message)
-	require.Equal(t, "status_code=502, The upstream service is temporarily unavailable. Please try again later.", newAPIError.MaskSensitiveErrorWithStatusCode())
+	require.Equal(t, "status_code=503, The upstream service is temporarily unavailable. Please try again later.", newAPIError.MaskSensitiveErrorWithStatusCode())
 }
 
-func TestPublicUpstreamErrorMessageUsesStatusCodeOnly(t *testing.T) {
+func TestPublicUpstreamErrorClassifiesActionableAndPrivateFailures(t *testing.T) {
 	t.Parallel()
 
-	testCases := map[int]string{
-		http.StatusBadRequest:         "The upstream service rejected the request.",
-		http.StatusNotFound:           "The requested model or resource is unavailable.",
-		http.StatusRequestTimeout:     "The upstream service timed out. Please try again later.",
-		http.StatusTooManyRequests:    "The upstream service is busy. Please try again later.",
-		http.StatusBadGateway:         "The upstream service is temporarily unavailable. Please try again later.",
-		http.StatusServiceUnavailable: "The upstream service is temporarily unavailable. Please try again later.",
+	tests := []struct {
+		name       string
+		statusCode int
+		rawError   string
+		wantStatus int
+		wantType   string
+		wantCode   string
+		wantParam  string
+	}{
+		{name: "reasoning content", statusCode: 400, rawError: "reasoning_content is required for assistant tool call", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_reasoning_content", wantParam: "messages"},
+		{name: "thought signature", statusCode: 400, rawError: "missing_thought_signature", wantStatus: 400, wantType: "invalid_request_error", wantCode: "missing_thought_signature", wantParam: "messages"},
+		{name: "token parameter", statusCode: 400, rawError: "Unsupported parameter: max_tokens; use max_completion_tokens", wantStatus: 400, wantType: "invalid_request_error", wantCode: "unsupported_parameter", wantParam: "max_tokens"},
+		{name: "context length", statusCode: 400, rawError: "context_length_exceeded", wantStatus: 400, wantType: "invalid_request_error", wantCode: "context_length_exceeded", wantParam: "messages"},
+		{name: "provider credentials", statusCode: 401, rawError: "invalid provider key sk-secret", wantStatus: 503, wantType: "server_error", wantCode: "upstream_unavailable"},
+		{name: "rate limit", statusCode: 429, rawError: "account org-secret exhausted", wantStatus: 429, wantType: "rate_limit_error", wantCode: "rate_limit_exceeded"},
+		{name: "cloudflare timeout", statusCode: 524, rawError: "provider.example timed out", wantStatus: 504, wantType: "server_error", wantCode: "upstream_timeout"},
 	}
-	for statusCode, expected := range testCases {
-		require.Equal(t, expected, PublicUpstreamErrorMessage(statusCode))
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			statusCode, publicError := PublicUpstreamError(test.statusCode, test.rawError)
+			require.Equal(t, test.wantStatus, statusCode)
+			require.Equal(t, test.wantType, publicError.Type)
+			require.Equal(t, test.wantCode, publicError.Code)
+			require.Equal(t, test.wantParam, publicError.Param)
+			require.NotContains(t, publicError.Message, "secret")
+			require.NotContains(t, publicError.Message, "provider.example")
+		})
 	}
+}
+
+func TestSetPublicUpstreamErrorKeepsRawAdminDetail(t *testing.T) {
+	upstreamError := types.NewOpenAIError(errors.New("provider key sk-secret was rejected"), types.ErrorCodeBadResponseStatusCode, http.StatusUnauthorized)
+
+	SetPublicUpstreamError(context.Background(), upstreamError)
+
+	require.Equal(t, "status_code=401, provider key sk-secret was rejected", upstreamError.ErrorWithStatusCode())
+	require.Equal(t, http.StatusServiceUnavailable, upstreamError.PublicStatusCode())
+	require.Equal(t, "upstream_unavailable", upstreamError.ToOpenAIError().Code)
+	require.NotContains(t, upstreamError.ToOpenAIError().Message, "sk-secret")
+	require.Equal(t, "overloaded_error", upstreamError.ToClaudeError().Type)
 }
 
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {

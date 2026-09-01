@@ -117,7 +117,7 @@ func publicOpenAIStreamError(c *gin.Context, upstreamErr *types.NewAPIError) str
 		Error: upstreamErr.ToOpenAIError(),
 	})
 	if err != nil {
-		return `{"type":"error","error":{"message":"The upstream service is temporarily unavailable. Please try again later.","type":"new_api_error","code":"bad_response_status_code"}}`
+		return `{"type":"error","error":{"message":"The upstream service is temporarily unavailable. Please try again later.","type":"server_error","code":"upstream_unavailable"}}`
 	}
 	return string(payload)
 }

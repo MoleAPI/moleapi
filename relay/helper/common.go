@@ -127,7 +127,7 @@ func sanitizeUpstreamStreamError(c *gin.Context, data string) string {
 	if c != nil {
 		logger.LogWarn(c, "masked upstream stream error from user response: %s", common.LocalLogPreview(data))
 	}
-	return `{"type":"error","error":{"message":"The upstream service is temporarily unavailable. Please try again later.","type":"new_api_error","code":"bad_response_status_code"}}`
+	return `{"type":"error","error":{"message":"The upstream service is temporarily unavailable. Please try again later.","type":"server_error","code":"upstream_unavailable"}}`
 }
 
 func PingData(c *gin.Context) error {

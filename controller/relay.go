@@ -102,12 +102,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			case types.RelayFormatOpenAIRealtime:
 				helper.WssError(c, ws, newAPIError.ToOpenAIError())
 			case types.RelayFormatClaude:
-				c.JSON(newAPIError.StatusCode, gin.H{
-					"type":  "error",
-					"error": newAPIError.ToClaudeError(),
+				c.JSON(newAPIError.PublicStatusCode(), gin.H{
+					"type":       "error",
+					"error":      newAPIError.ToClaudeError(),
+					"request_id": requestId,
 				})
 			default:
-				c.JSON(newAPIError.StatusCode, gin.H{
+				c.JSON(newAPIError.PublicStatusCode(), gin.H{
 					"error": newAPIError.ToOpenAIError(),
 				})
 			}
@@ -205,6 +206,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
+			service.SetPublicUpstreamError(c, newAPIError)
 			break
 		}
 		addUsedChannel(c, channel.Id)
@@ -243,9 +245,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
-		if !types.IsSkipRetryError(newAPIError) {
-			service.SetPublicUpstreamError(c, newAPIError)
-		}
+		service.SetPublicUpstreamError(c, newAPIError)
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
 
@@ -710,10 +710,11 @@ func RelayMidjourney(c *gin.Context) {
 	relayInfo, err := relaycommon.GenRelayInfo(c, types.RelayFormatMjProxy, nil, nil)
 
 	if err != nil {
+		logger.LogError(c, "failed to generate Midjourney relay info: "+err.Error())
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"description": fmt.Sprintf("failed to generate relay info: %s", err.Error()),
-			"type":        "upstream_error",
-			"code":        4,
+			"description": "The request could not be processed. Please try again later.",
+			"type":        "server_error",
+			"code":        "internal_error",
 		})
 		return
 	}
@@ -736,16 +737,17 @@ func RelayMidjourney(c *gin.Context) {
 	if mjErr != nil {
 		statusCode := http.StatusBadRequest
 		if mjErr.Code == 30 {
-			mjErr.Result = "当前分组负载已饱和，请稍后再试，或升级账户以提升服务质量。"
 			statusCode = http.StatusTooManyRequests
 		}
-		c.JSON(statusCode, gin.H{
-			"description": fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result),
-			"type":        "upstream_error",
-			"code":        mjErr.Code,
+		rawError := strings.TrimSpace(mjErr.Description + " " + mjErr.Result)
+		publicStatus, publicError := service.PublicUpstreamError(statusCode, rawError)
+		c.JSON(publicStatus, gin.H{
+			"description": publicError.Message,
+			"type":        publicError.Type,
+			"code":        publicError.Code,
 		})
 		channelId := c.GetInt("channel_id")
-		logger.LogError(c, fmt.Sprintf("relay error (channel #%d, status code %d): %s", channelId, statusCode, fmt.Sprintf("%s %s", mjErr.Description, mjErr.Result)))
+		logger.LogError(c, fmt.Sprintf("relay error (channel #%d, status code %d): %s", channelId, statusCode, rawError))
 	}
 }
 
@@ -972,9 +974,6 @@ func executeTaskSubmissionWith(
 
 	if taskErr != nil {
 		diagnostics.failed(stage, "task_error", taskErr, false)
-		if !taskErr.LocalError {
-			taskErr.Message = service.PublicUpstreamErrorMessage(taskErr.StatusCode)
-		}
 		return nil, taskErr
 	}
 	if result == nil {
@@ -1129,8 +1128,14 @@ func respondTaskSubmissionError(c *gin.Context, taskErr *taskdto.TaskError) {
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）
 func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
 	if !taskErr.LocalError {
-		taskErr.Message = service.PublicUpstreamErrorMessage(taskErr.StatusCode)
-		taskErr.Code = string(types.ErrorCodeBadResponseStatusCode)
+		rawError := taskErr.Message
+		if taskErr.Error != nil {
+			rawError = taskErr.Error.Error()
+		}
+		statusCode, publicError := service.PublicUpstreamError(taskErr.StatusCode, rawError)
+		taskErr.StatusCode = statusCode
+		taskErr.Message = publicError.Message
+		taskErr.Code = fmt.Sprint(publicError.Code)
 		taskErr.Data = nil
 	} else if taskErr.StatusCode == http.StatusTooManyRequests {
 		taskErr.Message = "当前分组上游负载已饱和，请稍后再试"

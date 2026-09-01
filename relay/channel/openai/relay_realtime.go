@@ -61,7 +61,6 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 					errChan <- fmt.Errorf("error unmarshalling message: %v", err)
 					return
 				}
-
 				if realtimeEvent.Type == dto.RealtimeEventTypeSessionUpdate {
 					if realtimeEvent.Session != nil {
 						if realtimeEvent.Session.Tools != nil {
@@ -120,6 +119,30 @@ func OpenaiRealtimeHandler(c *gin.Context, info *relaycommon.RelayInfo) (*types.
 				if err != nil {
 					errChan <- fmt.Errorf("error unmarshalling message: %v", err)
 					return
+				}
+				if realtimeEvent.Type == dto.RealtimeEventTypeError {
+					rawError := string(message)
+					statusCode := 400
+					if realtimeEvent.Error != nil {
+						rawError = realtimeEvent.Error.Message + " " + fmt.Sprint(realtimeEvent.Error.Code)
+						errorType := realtimeEvent.Error.Type
+						if errorType == "server_error" || errorType == "api_error" || errorType == "overloaded_error" {
+							statusCode = 500
+						} else if errorType == "rate_limit_error" {
+							statusCode = 429
+						}
+					}
+					logger.LogWarn(c, "masked upstream realtime error from user response: "+common.LocalLogPreview(rawError))
+					if info.StreamStatus == nil {
+						info.StreamStatus = relaycommon.NewStreamStatus()
+					}
+					info.StreamStatus.RecordError(rawError)
+					_, publicError := service.PublicUpstreamError(statusCode, rawError)
+					message, err = common.Marshal(dto.RealtimeEvent{EventId: realtimeEvent.EventId, Type: dto.RealtimeEventTypeError, Error: &publicError})
+					if err != nil {
+						errChan <- fmt.Errorf("error marshalling public realtime error: %v", err)
+						return
+					}
 				}
 
 				if realtimeEvent.Type == dto.RealtimeEventTypeResponseDone {
