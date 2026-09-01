@@ -28,6 +28,25 @@ func TestTaskModel2DtoNormalizesLegacyAction(t *testing.T) {
 	assert.Equal(t, "firstTailGenerate", task.Action)
 }
 
+func TestTaskModel2DtoDoesNotTreatFailureReasonAsResultURL(t *testing.T) {
+	task := &model.Task{Status: model.TaskStatusFailure, FailReason: "provider secret"}
+
+	dtoTask := TaskModel2Dto(task)
+
+	assert.Empty(t, dtoTask.ResultURL)
+}
+
+func TestMidjourneyFailureViewMasksProviderDetails(t *testing.T) {
+	view := coverMidjourneyTaskDto(nil, &model.Midjourney{
+		Status:      "FAILURE",
+		FailReason:  "provider secret failure",
+		Description: "provider private description",
+	})
+
+	assert.Equal(t, "The task failed. Please check the request and try again.", view.FailReason)
+	assert.Equal(t, "The task failed. Please check the request and try again.", view.Description)
+}
+
 const mappingOrderSubmitPlugin = `
 export const meta = {apiVersion:1,key:"maporder",name:"Map Order",version:"1.0.0",author:{name:"Test"},models:["declared-model"],fetchMode:"per_task"};
 export function buildSubmitRequest(ctx) {

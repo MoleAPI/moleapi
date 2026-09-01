@@ -485,9 +485,13 @@ func videoFetchByIDRespBodyBuilder(c *gin.Context) (respBody []byte, taskResp *d
 	}
 
 	// 通用 TaskDto 格式
+	taskDTO := TaskModel2Dto(originTask)
+	if originTask.Status == model.TaskStatusFailure {
+		taskDTO.FailReason = service.PublicTaskFailureMessage(originTask.FailReason)
+	}
 	respBody, err = common.Marshal(dto.TaskResponse[any]{
 		Code: "success",
-		Data: TaskModel2Dto(originTask),
+		Data: taskDTO,
 	})
 	if err != nil {
 		taskResp = service.TaskErrorWrapper(err, "marshal_response_failed", http.StatusInternalServerError)
@@ -572,6 +576,10 @@ func tryRealtimeFetch(task *model.Task, isOpenAIVideoAPI bool) []byte {
 		"task_id":  task.TaskID,
 		"url":      task.GetResultURL(),
 	}
+	if task.Status == model.TaskStatusFailure {
+		out["url"] = ""
+		out["error"] = map[string]any{"code": "task_failed", "message": service.PublicTaskFailureMessage(task.FailReason)}
+	}
 	respBody, _ := common.Marshal(dto.TaskResponse[any]{
 		Code: "success",
 		Data: out,
@@ -619,6 +627,10 @@ func mapTaskStatusToSimple(status model.TaskStatus) string {
 }
 
 func TaskModel2Dto(task *model.Task) *dto.TaskDto {
+	resultURL := task.GetResultURL()
+	if task.Status == model.TaskStatusFailure {
+		resultURL = ""
+	}
 	return &dto.TaskDto{
 		ID:         task.ID,
 		CreatedAt:  task.CreatedAt,
@@ -632,7 +644,7 @@ func TaskModel2Dto(task *model.Task) *dto.TaskDto {
 		Action:     constant.NormalizeTaskAction(task.Action),
 		Status:     string(task.Status),
 		FailReason: task.FailReason,
-		ResultURL:  task.GetResultURL(),
+		ResultURL:  resultURL,
 		SubmitTime: task.SubmitTime,
 		StartTime:  task.StartTime,
 		FinishTime: task.FinishTime,

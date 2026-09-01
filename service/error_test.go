@@ -180,6 +180,8 @@ func TestPublicUpstreamErrorClassifiesActionableAndPrivateFailures(t *testing.T)
 		{name: "thought signature", statusCode: 400, rawError: "missing_thought_signature", wantStatus: 400, wantType: "invalid_request_error", wantCode: "missing_thought_signature", wantParam: "messages"},
 		{name: "token parameter", statusCode: 400, rawError: "Unsupported parameter: max_tokens; use max_completion_tokens", wantStatus: 400, wantType: "invalid_request_error", wantCode: "unsupported_parameter", wantParam: "max_tokens"},
 		{name: "context length", statusCode: 400, rawError: "context_length_exceeded", wantStatus: 400, wantType: "invalid_request_error", wantCode: "context_length_exceeded", wantParam: "messages"},
+		{name: "forbidden content", statusCode: 403, rawError: "content policy safety rejection", wantStatus: 422, wantType: "invalid_request_error", wantCode: "content_policy_violation"},
+		{name: "missing resource", statusCode: 404, rawError: "file not found", wantStatus: 404, wantType: "invalid_request_error", wantCode: "resource_not_found"},
 		{name: "provider credentials", statusCode: 401, rawError: "invalid provider key sk-secret", wantStatus: 503, wantType: "server_error", wantCode: "upstream_unavailable"},
 		{name: "rate limit", statusCode: 429, rawError: "account org-secret exhausted", wantStatus: 429, wantType: "rate_limit_error", wantCode: "rate_limit_exceeded"},
 		{name: "cloudflare timeout", statusCode: 524, rawError: "provider.example timed out", wantStatus: 504, wantType: "server_error", wantCode: "upstream_timeout"},
