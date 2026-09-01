@@ -153,6 +153,7 @@ func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIErro
 	message := strings.ToLower(rawError)
 	publicError := types.OpenAIError{Type: "invalid_request_error", Code: "invalid_request"}
 	clientRejected := statusCode == http.StatusBadRequest || statusCode == http.StatusUnprocessableEntity || statusCode == http.StatusUnavailableForLegalReasons
+	policyRejected := clientRejected || statusCode == http.StatusForbidden
 
 	switch {
 	case strings.Contains(message, "authentication_error") || strings.Contains(message, "invalid_api_key") || strings.Contains(message, "api key invalid") ||
@@ -223,7 +224,7 @@ func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIErro
 		publicError.Code = "context_length_exceeded"
 		publicError.Param = "messages"
 		return http.StatusBadRequest, publicError
-	case clientRejected && (strings.Contains(message, "content_policy") || strings.Contains(message, "content policy") || strings.Contains(message, "safety") || strings.Contains(message, "moderation") || strings.Contains(message, "image_unsafe")):
+	case policyRejected && (strings.Contains(message, "content_policy") || strings.Contains(message, "content policy") || strings.Contains(message, "safety") || strings.Contains(message, "moderation") || strings.Contains(message, "image_unsafe")):
 		publicError.Message = "The request was blocked by the provider's safety policy. Revise the content and try again."
 		publicError.Code = "content_policy_violation"
 		return http.StatusUnprocessableEntity, publicError
@@ -235,8 +236,11 @@ func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIErro
 		return statusCode, publicError
 	case http.StatusNotFound, http.StatusGone:
 		publicError.Message = "The requested model or resource is unavailable."
-		publicError.Code = "model_not_found"
-		publicError.Param = "model"
+		publicError.Code = "resource_not_found"
+		if strings.Contains(message, "model") {
+			publicError.Code = "model_not_found"
+			publicError.Param = "model"
+		}
 		return http.StatusNotFound, publicError
 	case http.StatusMethodNotAllowed:
 		publicError.Message = "The requested operation is not supported by this model."
@@ -249,7 +253,6 @@ func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIErro
 		return http.StatusGatewayTimeout, publicError
 	case http.StatusConflict:
 		publicError.Message = "The upstream service reported a conflict. Please try again."
-		publicError.Type = "conflict_error"
 		publicError.Code = "upstream_conflict"
 		return statusCode, publicError
 	case http.StatusRequestEntityTooLarge:
