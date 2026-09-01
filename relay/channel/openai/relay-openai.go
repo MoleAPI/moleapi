@@ -108,6 +108,21 @@ func sendStreamData(c *gin.Context, info *relaycommon.RelayInfo, data string, fo
 	return helper.ObjectData(c, lastStreamResponse)
 }
 
+func publicOpenAIStreamError(c *gin.Context, upstreamErr *types.NewAPIError) string {
+	service.SetPublicUpstreamError(c, upstreamErr)
+	payload, err := common.Marshal(struct {
+		Type  string            `json:"type"`
+		Error types.OpenAIError `json:"error"`
+	}{
+		Type:  "error",
+		Error: upstreamErr.ToOpenAIError(),
+	})
+	if err != nil {
+		return `{"type":"error","error":{"message":"The upstream service is temporarily unavailable. Please try again later.","type":"new_api_error","code":"bad_response_status_code"}}`
+	}
+	return string(payload)
+}
+
 func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
 		logger.LogError(c, "invalid response or response body")
@@ -133,6 +148,14 @@ func OaiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Re
 	isAudioModel := strings.Contains(strings.ToLower(model), "audio")
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+		var errorResponse dto.OpenAITextResponse
+		if err := common.UnmarshalJsonStr(data, &errorResponse); err == nil {
+			if openAIError := errorResponse.GetOpenAIError(); openAIError != nil && openAIError.Message != "" {
+				upstreamErr := types.WithOpenAIError(*openAIError, http.StatusBadGateway)
+				sr.Error(upstreamErr)
+				data = publicOpenAIStreamError(c, upstreamErr)
+			}
+		}
 		if lastStreamData != "" {
 			if err := HandleStreamFormat(c, info, lastStreamData, info.ChannelSetting.ForceFormat, info.ChannelSetting.ThinkingToContent); err != nil {
 				common.SysLog("error handling stream format: " + err.Error())

@@ -37,6 +37,7 @@ type Pricing struct {
 	AudioCompletionRatio   *float64                             `json:"audio_completion_ratio,omitempty"`
 	EnableGroup            []string                             `json:"enable_groups"`
 	SupportedEndpointTypes []constant.EndpointType              `json:"supported_endpoint_types"`
+	SupportedEndpoints     map[string]common.EndpointInfo       `json:"supported_endpoints,omitempty"`
 	BillingMode            string                               `json:"billing_mode,omitempty"`
 	BillingExpr            string                               `json:"billing_expr,omitempty"`
 	BillingUsageSchema     map[string]jsplugin.UsageFieldSchema `json:"billing_usage_schema,omitempty"`
@@ -322,6 +323,7 @@ func updatePricing() {
 	}
 
 	modelSupportEndpointTypes = make(map[string][]constant.EndpointType)
+	modelSupportedEndpoints := make(map[string]map[string]common.EndpointInfo)
 	for model, endpoints := range modelSupportEndpointsStr {
 		supportedEndpoints := make([]constant.EndpointType, 0)
 		for _, endpointStr := range endpoints {
@@ -331,9 +333,8 @@ func updatePricing() {
 		modelSupportEndpointTypes[model] = supportedEndpoints
 	}
 
-	// 构建全局 supportedEndpointMap（默认 + 自定义覆盖）
+	// 构建全局默认端点映射；模型自定义端点保留在各自模型中，避免同名端点互相覆盖。
 	supportedEndpointMap = make(map[string]common.EndpointInfo)
-	// 1. 默认端点
 	for _, endpoints := range modelSupportEndpointTypes {
 		for _, et := range endpoints {
 			if info, ok := common.GetDefaultEndpointInfo(et); ok {
@@ -343,17 +344,21 @@ func updatePricing() {
 			}
 		}
 	}
-	// 2. 自定义端点（models 表）覆盖默认
-	for _, meta := range metaMap {
+	for modelName, meta := range metaMap {
 		if strings.TrimSpace(meta.Endpoints) == "" {
 			continue
 		}
 		var raw map[string]interface{}
 		if err := common.Unmarshal([]byte(meta.Endpoints), &raw); err == nil {
+			endpointMap := modelSupportedEndpoints[modelName]
+			if endpointMap == nil {
+				endpointMap = make(map[string]common.EndpointInfo)
+				modelSupportedEndpoints[modelName] = endpointMap
+			}
 			for k, v := range raw {
 				switch val := v.(type) {
 				case string:
-					supportedEndpointMap[k] = common.EndpointInfo{Path: val, Method: "POST"}
+					endpointMap[k] = common.EndpointInfo{Path: val, Method: "POST"}
 				case map[string]interface{}:
 					ep := common.EndpointInfo{Method: "POST"}
 					if p, ok := val["path"].(string); ok {
@@ -362,7 +367,7 @@ func updatePricing() {
 					if m, ok := val["method"].(string); ok {
 						ep.Method = strings.ToUpper(m)
 					}
-					supportedEndpointMap[k] = ep
+					endpointMap[k] = ep
 				default:
 					// ignore unsupported types
 				}
@@ -377,6 +382,7 @@ func updatePricing() {
 			ModelName:              model,
 			EnableGroup:            groups.Items(),
 			SupportedEndpointTypes: modelSupportEndpointTypes[model],
+			SupportedEndpoints:     modelSupportedEndpoints[model],
 		}
 
 		// 补充模型元数据（描述、标签、供应商、状态）

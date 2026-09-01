@@ -85,6 +85,9 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 }
 
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
+	defer func() {
+		SetPublicUpstreamError(ctx, newApiErr)
+	}()
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 
 	responseBody, err := io.ReadAll(resp.Body)
@@ -118,7 +121,6 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {
 			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
-			setPublicUpstreamErrorMessage(ctx, newApiErr)
 			if showBodyWhenFail {
 				newApiErr.Err = buildErrWithBody(newApiErr.Error())
 			}
@@ -132,36 +134,43 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		logger.LogError(ctx, fmt.Sprintf("bad response status code %d with empty error message, body: %s", resp.StatusCode, responseBodyPreview))
 	}
 	newApiErr = types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
-	setPublicUpstreamErrorMessage(ctx, newApiErr)
 	if showBodyWhenFail {
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
 	}
 	return
 }
 
-func setPublicUpstreamErrorMessage(ctx context.Context, err *types.NewAPIError) {
+func SetPublicUpstreamError(ctx context.Context, err *types.NewAPIError) {
 	if err == nil {
 		return
 	}
-	message, ok := publicUpstreamErrorMessage(err.Error())
-	if !ok {
-		return
-	}
 	logger.LogWarn(ctx, fmt.Sprintf("masked upstream error from user response: %s", common.LocalLogPreview(err.Error())))
-	err.SetPublicMessage(message)
+	err.SetPublicMessage(PublicUpstreamErrorMessage(err.StatusCode))
 }
 
-func publicUpstreamErrorMessage(message string) (string, bool) {
-	lower := strings.ToLower(message)
-	if strings.Contains(lower, "no available channel for model") &&
-		strings.Contains(lower, "under group") &&
-		strings.Contains(lower, "(distributor)") {
-		return "Upstream service is temporarily unavailable. Please try again later.", true
+func PublicUpstreamErrorMessage(statusCode int) string {
+	switch statusCode {
+	case http.StatusBadRequest:
+		return "The upstream service rejected the request."
+	case http.StatusNotFound:
+		return "The requested model or resource is unavailable."
+	case http.StatusRequestTimeout, http.StatusGatewayTimeout:
+		return "The upstream service timed out. Please try again later."
+	case http.StatusConflict:
+		return "The upstream service reported a conflict. Please try again."
+	case http.StatusRequestEntityTooLarge:
+		return "The request is too large for the upstream service."
+	case http.StatusUnprocessableEntity:
+		return "The upstream service could not process the request."
+	case http.StatusTooManyRequests:
+		return "The upstream service is busy. Please try again later."
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return "The upstream service is temporarily unavailable. Please try again later."
 	}
-	if strings.Contains(message, "GPT Image response did not contain a valid b64_json result") {
-		return "Upstream image service is temporarily unavailable. Please try again later.", true
+	if statusCode >= http.StatusInternalServerError && statusCode <= 599 {
+		return "The upstream service is temporarily unavailable. Please try again later."
 	}
-	return "", false
+	return "The upstream request failed. Please try again later."
 }
 
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {

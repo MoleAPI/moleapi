@@ -55,6 +55,16 @@ export function getConfiguredGroupRatio(
   return typeof ratio === 'number' && Number.isFinite(ratio) ? ratio : 1
 }
 
+export function getModelEndpoint(
+  model: PricingModel,
+  fallback: Record<string, { path?: string; method?: string }>,
+  endpointType: string
+): { path?: string; method?: string } {
+  return (
+    model.supported_endpoints?.[endpointType] || fallback[endpointType] || {}
+  )
+}
+
 /**
  * Resolve the group ratio used by model square summary prices.
  *

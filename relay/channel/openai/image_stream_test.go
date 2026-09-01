@@ -561,8 +561,8 @@ func TestOpenaiImageHandlersReturnJSONError(t *testing.T) {
 }
 
 // TestOpenaiImageStreamHandlerRecordsUpstreamErrorEvent verifies that an error
-// event inside the SSE stream is recorded as a soft error while the payload is
-// still forwarded to the client.
+// event inside the SSE stream is retained for diagnostics without exposing the
+// upstream payload to the client.
 func TestOpenaiImageStreamHandlerRecordsUpstreamErrorEvent(t *testing.T) {
 	oldMode := gin.Mode()
 	gin.SetMode(gin.TestMode)
@@ -591,9 +591,25 @@ func TestOpenaiImageStreamHandlerRecordsUpstreamErrorEvent(t *testing.T) {
 	require.True(t, info.StreamStatus.HasErrors())
 	require.Equal(t, 1, info.StreamStatus.TotalErrorCount())
 	require.Contains(t, info.StreamStatus.Errors[0].Message, "INTERNAL_ERROR")
-	// The scanner strips the upstream "event: error" line; the event name is
-	// rebuilt from the JSON "type" field (upstream_error). The error message
-	// is still forwarded in the data: payload (stream ID 77).
-	require.Contains(t, recorder.Body.String(), `event: upstream_error`)
-	require.Contains(t, recorder.Body.String(), `stream ID 77`)
+	require.Contains(t, recorder.Body.String(), `event: error`)
+	require.Contains(t, recorder.Body.String(), `The upstream service is temporarily unavailable`)
+	require.NotContains(t, recorder.Body.String(), `stream ID 77`)
+}
+
+func TestOaiStreamHandlerDoesNotForwardUpstreamError(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+
+	body := "data: {\"error\":{\"message\":\"provider secret error\",\"type\":\"provider_error\",\"code\":\"secret_code\"}}\n\n"
+	c, recorder, resp, info := newImageTestContext(t, body, "text/event-stream", true)
+	info.RelayFormat = types.RelayFormatOpenAI
+
+	usage, err := OaiStreamHandler(c, info, resp)
+
+	require.Nil(t, err)
+	require.NotNil(t, usage)
+	require.Contains(t, recorder.Body.String(), "The upstream service is temporarily unavailable")
+	require.NotContains(t, recorder.Body.String(), "provider secret error")
+	require.NotContains(t, recorder.Body.String(), "secret_code")
 }

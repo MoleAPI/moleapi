@@ -387,3 +387,20 @@ func taskSubmissionRelayInfo(billing relaycommon.BillingSettler) *relaycommon.Re
 		ChannelMeta: &relaycommon.ChannelMeta{ChannelId: 1, ChannelType: constant.ChannelTypeTaskPlugin},
 	}
 }
+
+func TestRespondTaskErrorDoesNotExposeUpstreamMessage(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+
+	respondTaskError(c, &dto.TaskError{
+		Code:       "provider_error",
+		Message:    "provider secret error",
+		StatusCode: http.StatusBadGateway,
+		Error:      errors.New("provider secret error"),
+	})
+
+	assert.Equal(t, http.StatusBadGateway, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "The upstream service is temporarily unavailable")
+	assert.NotContains(t, recorder.Body.String(), "provider secret error")
+	assert.NotContains(t, recorder.Body.String(), "provider_error")
+}

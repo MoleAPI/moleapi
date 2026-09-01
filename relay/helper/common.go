@@ -1,9 +1,11 @@
 package helper
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
@@ -89,6 +91,7 @@ func ResponseChunkData(c *gin.Context, resp dto.ResponsesStreamResponse, data st
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
+	data = sanitizeUpstreamStreamError(c, data)
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("event: %s\n", resp.Type)})
 	c.Render(-1, common.CustomEvent{Data: fmt.Sprintf("data: %s", data)})
 	return FlushWriter(c)
@@ -103,8 +106,28 @@ func StringData(c *gin.Context, str string) error {
 		return fmt.Errorf("request context done: %w", c.Request.Context().Err())
 	}
 
-	c.Render(-1, common.CustomEvent{Data: "data: " + str})
+	c.Render(-1, common.CustomEvent{Data: "data: " + sanitizeUpstreamStreamError(c, str)})
 	return FlushWriter(c)
+}
+
+func sanitizeUpstreamStreamError(c *gin.Context, data string) string {
+	var payload struct {
+		Type  string          `json:"type"`
+		Error json.RawMessage `json:"error"`
+	}
+	if err := common.UnmarshalJsonStr(data, &payload); err != nil {
+		return data
+	}
+	payloadType := strings.ToLower(strings.TrimSpace(payload.Type))
+	errorData := strings.TrimSpace(string(payload.Error))
+	hasError := errorData != "" && errorData != "null" && errorData != "{}"
+	if !hasError && payloadType != "error" && payloadType != "upstream_error" && payloadType != "response.error" && payloadType != "response.failed" {
+		return data
+	}
+	if c != nil {
+		logger.LogWarn(c, "masked upstream stream error from user response: %s", common.LocalLogPreview(data))
+	}
+	return `{"type":"error","error":{"message":"The upstream service is temporarily unavailable. Please try again later.","type":"new_api_error","code":"bad_response_status_code"}}`
 }
 
 func PingData(c *gin.Context) error {
