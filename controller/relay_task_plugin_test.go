@@ -399,8 +399,9 @@ func TestRespondTaskErrorDoesNotExposeUpstreamMessage(t *testing.T) {
 		Error:      errors.New("provider secret error"),
 	})
 
-	assert.Equal(t, http.StatusBadGateway, recorder.Code)
+	assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), "The upstream service is temporarily unavailable")
+	assert.Contains(t, recorder.Body.String(), "upstream_unavailable")
 	assert.NotContains(t, recorder.Body.String(), "provider secret error")
 	assert.NotContains(t, recorder.Body.String(), "provider_error")
 }

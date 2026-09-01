@@ -992,6 +992,9 @@ func (channel *Channel) ValidateSettings() error {
 	if err := channel.applyCodingPlanPreset(channelOtherSettings); err != nil {
 		return err
 	}
+	if err := channelOtherSettings.ValidateToolLossPolicy(); err != nil {
+		return err
+	}
 	if constant.IsAdvancedCustomLikeChannelType(channel.Type) {
 		if channelOtherSettings.AdvancedCustom == nil {
 			return fmt.Errorf("advanced_custom is required")

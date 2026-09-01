@@ -97,6 +97,8 @@ type NewAPIError struct {
 	StatusCode     int
 	Metadata       json.RawMessage
 	publicMessage  string
+	publicError    *OpenAIError
+	publicStatus   int
 }
 
 // Unwrap enables errors.Is / errors.As to work with NewAPIError by exposing the underlying error.
@@ -168,13 +170,14 @@ func (e *NewAPIError) MaskSensitiveErrorWithStatusCode() string {
 		return ""
 	}
 	msg := e.MaskSensitiveError()
-	if e.StatusCode == 0 {
+	statusCode := e.PublicStatusCode()
+	if statusCode == 0 {
 		return msg
 	}
 	if msg == "" {
-		return fmt.Sprintf("status_code=%d", e.StatusCode)
+		return fmt.Sprintf("status_code=%d", statusCode)
 	}
-	return fmt.Sprintf("status_code=%d, %s", e.StatusCode, msg)
+	return fmt.Sprintf("status_code=%d, %s", statusCode, msg)
 }
 
 func (e *NewAPIError) SetMessage(message string) {
@@ -186,6 +189,9 @@ func (e *NewAPIError) SetMessage(message string) {
 		}
 	}
 	e.Err = errors.New(message)
+	if e.publicError != nil {
+		e.publicError.Message = e.publicMessage
+	}
 }
 
 func (e *NewAPIError) SetPublicMessage(message string) {
@@ -195,7 +201,30 @@ func (e *NewAPIError) SetPublicMessage(message string) {
 	e.publicMessage = message
 }
 
+func (e *NewAPIError) SetPublicError(statusCode int, publicError OpenAIError) {
+	if e == nil {
+		return
+	}
+	publicError.Metadata = nil
+	e.publicMessage = publicError.Message
+	e.publicError = &publicError
+	e.publicStatus = statusCode
+}
+
+func (e *NewAPIError) PublicStatusCode() int {
+	if e != nil && e.publicStatus != 0 {
+		return e.publicStatus
+	}
+	if e == nil {
+		return 0
+	}
+	return e.StatusCode
+}
+
 func (e *NewAPIError) ToOpenAIError() OpenAIError {
+	if e.publicError != nil {
+		return *e.publicError
+	}
 	if e.publicMessage != "" {
 		return OpenAIError{
 			Message: e.publicMessage,
@@ -236,6 +265,20 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 }
 
 func (e *NewAPIError) ToClaudeError() ClaudeError {
+	if e.publicError != nil {
+		errorType := e.publicError.Type
+		switch e.PublicStatusCode() {
+		case http.StatusTooManyRequests:
+			errorType = "rate_limit_error"
+		case http.StatusServiceUnavailable:
+			errorType = "overloaded_error"
+		default:
+			if e.PublicStatusCode() >= http.StatusInternalServerError {
+				errorType = "api_error"
+			}
+		}
+		return ClaudeError{Message: e.publicError.Message, Type: errorType}
+	}
 	if e.publicMessage != "" {
 		return ClaudeError{
 			Message: e.publicMessage,

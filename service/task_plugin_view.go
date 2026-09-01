@@ -23,6 +23,9 @@ func BuildTaskPluginView(task *model.Task) (dto.TaskView, error) {
 		UpdatedAt:  task.UpdatedAt,
 		FinishedAt: task.FinishTime,
 	}
+	if task.Status == model.TaskStatusFailure {
+		view.FailReason = PublicTaskFailureMessage(task.FailReason)
+	}
 	if len(task.Data) > 0 {
 		if err := common.Unmarshal(task.Data, &view.Data); err != nil {
 			return dto.TaskView{}, err

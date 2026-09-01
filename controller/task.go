@@ -51,6 +51,8 @@ func GetTask(c *gin.Context) {
 	failReason := task.FailReason
 	if task.Status == model.TaskStatusSuccess && taskFailReasonIsLegacyResultURL(task.FailReason) {
 		failReason = ""
+	} else if task.Status == model.TaskStatusFailure && c.GetInt("role") < common.RoleAdminUser {
+		failReason = service.PublicTaskFailureMessage(task.FailReason)
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"task_id":     task.TaskID,
@@ -422,6 +424,8 @@ func tasksToDto(tasks []*model.Task, fillUser bool, viewerRole int) []*dto.TaskD
 			if taskFailReasonIsLegacyResultURL(task.FailReason) {
 				item.FailReason = ""
 			}
+		} else if task.Status == model.TaskStatusFailure && viewerRole < common.RoleAdminUser {
+			item.FailReason = service.PublicTaskFailureMessage(task.FailReason)
 		}
 		if viewerRole >= common.RoleAdminUser {
 			adminInfo := &dto.TaskAdminInfo{}
