@@ -243,6 +243,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		newAPIError = service.NormalizeViolationFeeError(newAPIError)
 		relayInfo.LastError = newAPIError
+		if !types.IsSkipRetryError(newAPIError) {
+			service.SetPublicUpstreamError(c, newAPIError)
+		}
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
@@ -650,6 +653,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 			adminInfo["multi_key_index"] = common.GetContextKeyInt(c, constant.ContextKeyChannelMultiKeyIndex)
 		}
 		service.AppendChannelAffinityAdminInfo(c, adminInfo)
+		adminInfo["upstream_error"] = err.ErrorWithStatusCode()
 		other["admin_info"] = adminInfo
 		service.AppendTaskPluginContextAuditInfo(c, other)
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
@@ -904,10 +908,12 @@ func executeTaskSubmissionWith(
 		}
 
 		if !taskErr.LocalError {
+			upstreamErr := types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode)
+			service.SetPublicUpstreamError(c, upstreamErr)
 			processChannelError(c,
 				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
-				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
+				upstreamErr)
 		}
 
 		willRetry := shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry())
@@ -925,6 +931,9 @@ func executeTaskSubmissionWith(
 
 	if taskErr != nil {
 		diagnostics.failed(stage, "task_error", taskErr, false)
+		if !taskErr.LocalError {
+			taskErr.Message = service.PublicUpstreamErrorMessage(taskErr.StatusCode)
+		}
 		return nil, taskErr
 	}
 	if result == nil {
@@ -1078,7 +1087,11 @@ func respondTaskSubmissionError(c *gin.Context, taskErr *taskdto.TaskError) {
 
 // respondTaskError 统一输出 Task 错误响应（含 429 限流提示改写）
 func respondTaskError(c *gin.Context, taskErr *taskdto.TaskError) {
-	if taskErr.StatusCode == http.StatusTooManyRequests {
+	if !taskErr.LocalError {
+		taskErr.Message = service.PublicUpstreamErrorMessage(taskErr.StatusCode)
+		taskErr.Code = string(types.ErrorCodeBadResponseStatusCode)
+		taskErr.Data = nil
+	} else if taskErr.StatusCode == http.StatusTooManyRequests {
 		taskErr.Message = "当前分组上游负载已饱和，请稍后再试"
 	}
 	c.JSON(taskErr.StatusCode, taskErr)

@@ -196,6 +196,13 @@ func (e *NewAPIError) SetPublicMessage(message string) {
 }
 
 func (e *NewAPIError) ToOpenAIError() OpenAIError {
+	if e.publicMessage != "" {
+		return OpenAIError{
+			Message: e.publicMessage,
+			Type:    string(ErrorTypeNewAPIError),
+			Code:    ErrorCodeBadResponseStatusCode,
+		}
+	}
 	var result OpenAIError
 	switch e.errorType {
 	case ErrorTypeOpenAIError:
@@ -219,9 +226,6 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 			Code:    e.errorCode,
 		}
 	}
-	if e.publicMessage != "" {
-		result.Message = e.publicMessage
-	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)
 	}
@@ -232,6 +236,12 @@ func (e *NewAPIError) ToOpenAIError() OpenAIError {
 }
 
 func (e *NewAPIError) ToClaudeError() ClaudeError {
+	if e.publicMessage != "" {
+		return ClaudeError{
+			Message: e.publicMessage,
+			Type:    string(ErrorTypeNewAPIError),
+		}
+	}
 	var result ClaudeError
 	switch e.errorType {
 	case ErrorTypeOpenAIError:
@@ -250,9 +260,6 @@ func (e *NewAPIError) ToClaudeError() ClaudeError {
 			Message: e.Error(),
 			Type:    string(e.errorType),
 		}
-	}
-	if e.publicMessage != "" {
-		result.Message = e.publicMessage
 	}
 	if e.errorCode != ErrorCodeCountTokenFailed {
 		result.Message = kitutil.MaskSensitiveInfo(result.Message)

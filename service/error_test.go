@@ -106,6 +106,7 @@ func TestRelayErrorHandlerKeepsStructuredErrorMessage(t *testing.T) {
 
 	require.NotNil(t, newAPIError)
 	require.Equal(t, message, newAPIError.Error())
+	require.Equal(t, "The upstream service is temporarily unavailable. Please try again later.", newAPIError.ToOpenAIError().Message)
 }
 
 func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
@@ -120,6 +121,11 @@ func TestRelayErrorHandlerKeepsOpenAIErrorMessage(t *testing.T) {
 
 	require.NotNil(t, newAPIError)
 	require.Equal(t, message, newAPIError.Error())
+	publicError := newAPIError.ToOpenAIError()
+	require.Equal(t, "The upstream service is temporarily unavailable. Please try again later.", publicError.Message)
+	require.Equal(t, "new_api_error", publicError.Type)
+	require.Equal(t, types.ErrorCodeBadResponseStatusCode, publicError.Code)
+	require.Empty(t, publicError.Metadata)
 }
 
 func TestRelayErrorHandlerMasksUpstreamDistributorMessageForUsers(t *testing.T) {
@@ -134,11 +140,11 @@ func TestRelayErrorHandlerMasksUpstreamDistributorMessageForUsers(t *testing.T) 
 
 	require.NotNil(t, newAPIError)
 	require.Equal(t, message, newAPIError.Error())
-	require.Equal(t, "Upstream service is temporarily unavailable. Please try again later.", newAPIError.ToOpenAIError().Message)
-	require.Equal(t, "status_code=503, Upstream service is temporarily unavailable. Please try again later.", newAPIError.MaskSensitiveErrorWithStatusCode())
+	require.Equal(t, "The upstream service is temporarily unavailable. Please try again later.", newAPIError.ToOpenAIError().Message)
+	require.Equal(t, "status_code=503, The upstream service is temporarily unavailable. Please try again later.", newAPIError.MaskSensitiveErrorWithStatusCode())
 
 	newAPIError.SetMessage(message + " (request id: local)")
-	require.Equal(t, "Upstream service is temporarily unavailable. Please try again later. (request id: local)", newAPIError.ToOpenAIError().Message)
+	require.Equal(t, "The upstream service is temporarily unavailable. Please try again later. (request id: local)", newAPIError.ToOpenAIError().Message)
 }
 
 func TestRelayErrorHandlerMasksUpstreamImageResultMessageForUsers(t *testing.T) {
@@ -153,8 +159,24 @@ func TestRelayErrorHandlerMasksUpstreamImageResultMessageForUsers(t *testing.T) 
 
 	require.NotNil(t, newAPIError)
 	require.Equal(t, message, newAPIError.Error())
-	require.Equal(t, "Upstream image service is temporarily unavailable. Please try again later.", newAPIError.ToOpenAIError().Message)
-	require.Equal(t, "status_code=502, Upstream image service is temporarily unavailable. Please try again later.", newAPIError.MaskSensitiveErrorWithStatusCode())
+	require.Equal(t, "The upstream service is temporarily unavailable. Please try again later.", newAPIError.ToOpenAIError().Message)
+	require.Equal(t, "status_code=502, The upstream service is temporarily unavailable. Please try again later.", newAPIError.MaskSensitiveErrorWithStatusCode())
+}
+
+func TestPublicUpstreamErrorMessageUsesStatusCodeOnly(t *testing.T) {
+	t.Parallel()
+
+	testCases := map[int]string{
+		http.StatusBadRequest:         "The upstream service rejected the request.",
+		http.StatusNotFound:           "The requested model or resource is unavailable.",
+		http.StatusRequestTimeout:     "The upstream service timed out. Please try again later.",
+		http.StatusTooManyRequests:    "The upstream service is busy. Please try again later.",
+		http.StatusBadGateway:         "The upstream service is temporarily unavailable. Please try again later.",
+		http.StatusServiceUnavailable: "The upstream service is temporarily unavailable. Please try again later.",
+	}
+	for statusCode, expected := range testCases {
+		require.Equal(t, expected, PublicUpstreamErrorMessage(statusCode))
+	}
 }
 
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {
