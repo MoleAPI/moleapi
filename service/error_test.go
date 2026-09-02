@@ -168,17 +168,21 @@ func TestPublicUpstreamErrorClassifiesActionableAndPrivateFailures(t *testing.T)
 	t.Parallel()
 
 	tests := []struct {
-		name       string
-		statusCode int
-		rawError   string
-		wantStatus int
-		wantType   string
-		wantCode   string
-		wantParam  string
+		name        string
+		statusCode  int
+		rawError    string
+		wantStatus  int
+		wantType    string
+		wantCode    string
+		wantParam   string
+		wantMessage string
 	}{
 		{name: "reasoning content", statusCode: 400, rawError: "reasoning_content is required for assistant tool call", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_reasoning_content", wantParam: "messages"},
 		{name: "thought signature", statusCode: 400, rawError: "missing_thought_signature", wantStatus: 400, wantType: "invalid_request_error", wantCode: "missing_thought_signature", wantParam: "messages"},
 		{name: "token parameter", statusCode: 400, rawError: "Unsupported parameter: max_tokens; use max_completion_tokens", wantStatus: 400, wantType: "invalid_request_error", wantCode: "unsupported_parameter", wantParam: "max_tokens"},
+		{name: "required tool choice without tools", statusCode: 400, rawError: `Invalid request: {"detail":{"message":"Tools cannot be empty if tool choice is set to required."}}`, wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "tools", wantMessage: "The tools parameter cannot be empty when tool_choice is set to required."},
+		{name: "upstream requires stop array", statusCode: 400, rawError: "JSON parse error: Cannot construct instance of java.util.ArrayList: no String-argument constructor/factory method to deserialize from String value ('</block>') through reference chain: ChatCompletionRequest[\"stop\"]", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "stop", wantMessage: "The upstream service requires stop to be an array of strings for this model. Send stop as an array or remove it."},
+		{name: "unknown bad request stays private", statusCode: 400, rawError: "private backend parser failed at internal.example", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_request", wantMessage: "The upstream service rejected the request. Check the request parameters and model compatibility."},
 		{name: "context length", statusCode: 400, rawError: "context_length_exceeded", wantStatus: 400, wantType: "invalid_request_error", wantCode: "context_length_exceeded", wantParam: "messages"},
 		{name: "forbidden content", statusCode: 403, rawError: "content policy safety rejection", wantStatus: 422, wantType: "invalid_request_error", wantCode: "content_policy_violation"},
 		{name: "missing resource", statusCode: 404, rawError: "file not found", wantStatus: 404, wantType: "invalid_request_error", wantCode: "resource_not_found"},
@@ -194,8 +198,13 @@ func TestPublicUpstreamErrorClassifiesActionableAndPrivateFailures(t *testing.T)
 			require.Equal(t, test.wantType, publicError.Type)
 			require.Equal(t, test.wantCode, publicError.Code)
 			require.Equal(t, test.wantParam, publicError.Param)
+			if test.wantMessage != "" {
+				require.Equal(t, test.wantMessage, publicError.Message)
+			}
+			require.NotEqual(t, test.rawError, publicError.Message)
 			require.NotContains(t, publicError.Message, "secret")
 			require.NotContains(t, publicError.Message, "provider.example")
+			require.NotContains(t, publicError.Message, "internal.example")
 		})
 	}
 }

@@ -182,6 +182,18 @@ func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIErro
 		publicError.Code = "missing_required_parameter"
 		publicError.Param = "index"
 		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "tools cannot be empty") &&
+		(strings.Contains(message, "tool choice") || strings.Contains(message, "tool_choice")) && strings.Contains(message, "required"):
+		publicError.Message = "The tools parameter cannot be empty when tool_choice is set to required."
+		publicError.Code = "invalid_parameter_value"
+		publicError.Param = "tools"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "chatcompletionrequest[\"stop\"]") &&
+		strings.Contains(message, "arraylist") && strings.Contains(message, "deserialize from string value"):
+		publicError.Message = "The upstream service requires stop to be an array of strings for this model. Send stop as an array or remove it."
+		publicError.Code = "invalid_parameter_value"
+		publicError.Param = "stop"
+		return http.StatusBadRequest, publicError
 	case clientRejected && (strings.Contains(message, "missing_thought_signature") || strings.Contains(message, "thought_signature") || strings.Contains(message, "thought signature")):
 		publicError.Message = "The request is missing a required thought signature. Return the model's thought signature unchanged with the related tool call."
 		publicError.Code = "missing_thought_signature"
