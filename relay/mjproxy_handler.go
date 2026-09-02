@@ -164,6 +164,10 @@ func coverMidjourneyTaskDto(c *gin.Context, originTask *model.Midjourney) (midjo
 	midjourneyTask.FailReason = originTask.FailReason
 	midjourneyTask.Action = originTask.Action
 	midjourneyTask.Description = originTask.Description
+	if originTask.Status == "FAILURE" {
+		midjourneyTask.FailReason = service.PublicTaskFailureMessage(originTask.FailReason)
+		midjourneyTask.Description = service.PublicTaskFailureMessage(originTask.Description)
+	}
 	midjourneyTask.Prompt = originTask.Prompt
 	if originTask.Buttons != "" {
 		var buttons []dto.ActionButton

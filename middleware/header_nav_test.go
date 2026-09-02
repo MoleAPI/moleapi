@@ -36,7 +36,7 @@ func withHeaderNavModules(t *testing.T, raw string) {
 	})
 }
 
-func performHeaderNavRequest(t *testing.T, handler gin.HandlerFunc, authenticated bool) *httptest.ResponseRecorder {
+func performHeaderNavRequest(t *testing.T, handler gin.HandlerFunc, role int) *httptest.ResponseRecorder {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
@@ -46,7 +46,7 @@ func performHeaderNavRequest(t *testing.T, handler gin.HandlerFunc, authenticate
 	})
 
 	var accessToken string
-	if authenticated {
+	if role >= common.RoleCommonUser {
 		previousDB, previousRedis := model.DB, common.RedisEnabled
 		db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 		require.NoError(t, err)
@@ -61,7 +61,7 @@ func performHeaderNavRequest(t *testing.T, handler gin.HandlerFunc, authenticate
 		user := model.User{
 			Username:    "tester",
 			Password:    "unused-password-hash",
-			Role:        common.RoleCommonUser,
+			Role:        role,
 			Status:      common.UserStatusEnabled,
 			Group:       "default",
 			AuthVersion: 1,
@@ -72,7 +72,7 @@ func performHeaderNavRequest(t *testing.T, handler gin.HandlerFunc, authenticate
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/api/test", nil)
-	if authenticated {
+	if role >= common.RoleCommonUser {
 		request.Header.Set("Authorization", "Bearer "+accessToken)
 	}
 	router.ServeHTTP(recorder, request)
@@ -82,7 +82,7 @@ func performHeaderNavRequest(t *testing.T, handler gin.HandlerFunc, authenticate
 func TestHeaderNavModuleAuthAllowsDefaultPublicAccess(t *testing.T) {
 	withHeaderNavModules(t, "")
 
-	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("pricing"), false)
+	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("pricing"), common.RoleGuestUser)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 }
@@ -91,7 +91,7 @@ func TestHeaderNavModuleAuthRejectsDisabledPricing(t *testing.T) {
 	raw := `{"pricing":{"enabled":false,"requireAuth":false}}`
 	withHeaderNavModules(t, raw)
 
-	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("pricing"), false)
+	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("pricing"), common.RoleGuestUser)
 
 	require.Equal(t, http.StatusForbidden, recorder.Code)
 }
@@ -100,7 +100,7 @@ func TestHeaderNavModuleAuthRequiresLoginForPricing(t *testing.T) {
 	raw := `{"pricing":{"enabled":true,"requireAuth":true}}`
 	withHeaderNavModules(t, raw)
 
-	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("pricing"), false)
+	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("pricing"), common.RoleGuestUser)
 
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
@@ -109,16 +109,37 @@ func TestHeaderNavModuleAuthRequiresLoginForRankings(t *testing.T) {
 	raw := `{"rankings":{"enabled":true,"requireAuth":true}}`
 	withHeaderNavModules(t, raw)
 
-	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("rankings"), false)
+	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("rankings"), common.RoleGuestUser)
 
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
+}
+
+func TestHeaderNavModuleAuthRestrictsRankingsToAdmins(t *testing.T) {
+	withHeaderNavModules(t, `{"rankings":{"enabled":true,"requireAuth":true,"adminOnly":true}}`)
+
+	testCases := []struct {
+		name       string
+		role       int
+		statusCode int
+	}{
+		{name: "guest", role: common.RoleGuestUser, statusCode: http.StatusUnauthorized},
+		{name: "user", role: common.RoleCommonUser, statusCode: http.StatusForbidden},
+		{name: "admin", role: common.RoleAdminUser, statusCode: http.StatusOK},
+		{name: "root", role: common.RoleRootUser, statusCode: http.StatusOK},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("rankings"), testCase.role)
+			require.Equal(t, testCase.statusCode, recorder.Code)
+		})
+	}
 }
 
 func TestHeaderNavModuleAuthRejectsLegacyDisabledModule(t *testing.T) {
 	raw := `{"rankings":false}`
 	withHeaderNavModules(t, raw)
 
-	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("rankings"), false)
+	recorder := performHeaderNavRequest(t, HeaderNavModuleAuth("rankings"), common.RoleGuestUser)
 
 	require.Equal(t, http.StatusForbidden, recorder.Code)
 }
@@ -126,7 +147,7 @@ func TestHeaderNavModuleAuthRejectsLegacyDisabledModule(t *testing.T) {
 func TestHeaderNavModulePublicOrUserAuthAllowsDefaultPublicAccess(t *testing.T) {
 	withHeaderNavModules(t, "")
 
-	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), false)
+	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), common.RoleGuestUser)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 }
@@ -135,7 +156,7 @@ func TestHeaderNavModulePublicOrUserAuthRequiresLoginWhenDisabled(t *testing.T) 
 	raw := `{"pricing":{"enabled":false,"requireAuth":false}}`
 	withHeaderNavModules(t, raw)
 
-	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), false)
+	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), common.RoleGuestUser)
 
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
@@ -144,7 +165,7 @@ func TestHeaderNavModulePublicOrUserAuthAllowsLoggedInWhenDisabled(t *testing.T)
 	raw := `{"pricing":{"enabled":false,"requireAuth":false}}`
 	withHeaderNavModules(t, raw)
 
-	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), true)
+	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), common.RoleCommonUser)
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 }
@@ -153,7 +174,7 @@ func TestHeaderNavModulePublicOrUserAuthRequiresLoginWhenRequireAuth(t *testing.
 	raw := `{"pricing":{"enabled":true,"requireAuth":true}}`
 	withHeaderNavModules(t, raw)
 
-	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), false)
+	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), common.RoleGuestUser)
 
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
 }
@@ -162,7 +183,7 @@ func TestHeaderNavModulePublicOrUserAuthRequiresLoginForLegacyDisabledModule(t *
 	raw := `{"pricing":false}`
 	withHeaderNavModules(t, raw)
 
-	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), false)
+	recorder := performHeaderNavRequest(t, HeaderNavModulePublicOrUserAuth("pricing"), common.RoleGuestUser)
 
 	require.Equal(t, http.StatusUnauthorized, recorder.Code)
 }

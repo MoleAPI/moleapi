@@ -85,6 +85,9 @@ func ClaudeErrorWrapperLocal(err error, code string, statusCode int) *dto.Claude
 }
 
 func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFail bool) (newApiErr *types.NewAPIError) {
+	defer func() {
+		SetPublicUpstreamError(ctx, newApiErr)
+	}()
 	newApiErr = types.InitOpenAIError(types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
 
 	responseBody, err := io.ReadAll(resp.Body)
@@ -118,7 +121,6 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		oaiError := errResponse.TryToOpenAIError()
 		if oaiError != nil {
 			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
-			setPublicUpstreamErrorMessage(ctx, newApiErr)
 			if showBodyWhenFail {
 				newApiErr.Err = buildErrWithBody(newApiErr.Error())
 			}
@@ -132,36 +134,168 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		logger.LogError(ctx, fmt.Sprintf("bad response status code %d with empty error message, body: %s", resp.StatusCode, responseBodyPreview))
 	}
 	newApiErr = types.NewOpenAIError(errors.New(message), types.ErrorCodeBadResponseStatusCode, resp.StatusCode)
-	setPublicUpstreamErrorMessage(ctx, newApiErr)
 	if showBodyWhenFail {
 		newApiErr.Err = buildErrWithBody(newApiErr.Error())
 	}
 	return
 }
 
-func setPublicUpstreamErrorMessage(ctx context.Context, err *types.NewAPIError) {
+func SetPublicUpstreamError(ctx context.Context, err *types.NewAPIError) {
 	if err == nil {
 		return
 	}
-	message, ok := publicUpstreamErrorMessage(err.Error())
-	if !ok {
-		return
-	}
 	logger.LogWarn(ctx, fmt.Sprintf("masked upstream error from user response: %s", common.LocalLogPreview(err.Error())))
-	err.SetPublicMessage(message)
+	statusCode, publicError := PublicUpstreamError(err.StatusCode, err.Error()+" "+string(err.GetErrorCode()))
+	err.SetPublicError(statusCode, publicError)
 }
 
-func publicUpstreamErrorMessage(message string) (string, bool) {
-	lower := strings.ToLower(message)
-	if strings.Contains(lower, "no available channel for model") &&
-		strings.Contains(lower, "under group") &&
-		strings.Contains(lower, "(distributor)") {
-		return "Upstream service is temporarily unavailable. Please try again later.", true
+func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIError) {
+	message := strings.ToLower(rawError)
+	publicError := types.OpenAIError{Type: "invalid_request_error", Code: "invalid_request"}
+	clientRejected := statusCode == http.StatusBadRequest || statusCode == http.StatusUnprocessableEntity || statusCode == http.StatusUnavailableForLegalReasons
+	policyRejected := clientRejected || statusCode == http.StatusForbidden
+
+	switch {
+	case strings.Contains(message, "authentication_error") || strings.Contains(message, "invalid_api_key") || strings.Contains(message, "api key invalid") ||
+		strings.Contains(message, "insufficient balance") || strings.Contains(message, "credit balance") || strings.Contains(message, "account balance"):
+		publicError.Message = "The upstream service is temporarily unavailable. Please try again later."
+		publicError.Type = "server_error"
+		publicError.Code = "upstream_unavailable"
+		return http.StatusServiceUnavailable, publicError
+	case clientRejected && strings.Contains(message, "prompt_is_required"):
+		publicError.Message = "The prompt parameter is required."
+		publicError.Code = "missing_required_parameter"
+		publicError.Param = "prompt"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "task_id_is_required"):
+		publicError.Message = "The task_id parameter is required."
+		publicError.Code = "missing_required_parameter"
+		publicError.Param = "task_id"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "action_is_required"):
+		publicError.Message = "The action parameter is required."
+		publicError.Code = "missing_required_parameter"
+		publicError.Param = "action"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "index_is_required"):
+		publicError.Message = "The index parameter is required."
+		publicError.Code = "missing_required_parameter"
+		publicError.Param = "index"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (strings.Contains(message, "missing_thought_signature") || strings.Contains(message, "thought_signature") || strings.Contains(message, "thought signature")):
+		publicError.Message = "The request is missing a required thought signature. Return the model's thought signature unchanged with the related tool call."
+		publicError.Code = "missing_thought_signature"
+		publicError.Param = "messages"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (strings.Contains(message, "reasoning_content") || strings.Contains(message, "reasoning content") || strings.Contains(message, "thinking block")):
+		publicError.Message = "Invalid reasoning_content. Preserve the assistant reasoning_content returned with the previous tool call, or omit it when the model does not support it."
+		publicError.Code = "invalid_reasoning_content"
+		publicError.Param = "messages"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "max_completion_tokens") && strings.Contains(message, "max_tokens"),
+		clientRejected && strings.Contains(message, "unsupported parameter") && strings.Contains(message, "max_tokens"),
+		clientRejected && strings.Contains(message, "max_tokens") && strings.Contains(message, "not support"):
+		publicError.Message = "This model does not support max_tokens. Use max_completion_tokens instead."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "max_tokens"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "enable_thinking"):
+		publicError.Message = "This request does not support enable_thinking. Remove it or use a compatible model and mode."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "enable_thinking"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (strings.Contains(message, "only n=1") || strings.Contains(message, "only supports n = 1") || strings.Contains(message, "only supports n=1") || strings.Contains(message, "n must be 1")):
+		publicError.Message = "This model only supports n=1."
+		publicError.Code = "invalid_parameter_value"
+		publicError.Param = "n"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "size") && (strings.Contains(message, "required") || strings.Contains(message, "missing")):
+		publicError.Message = "The size parameter is required."
+		publicError.Code = "missing_required_parameter"
+		publicError.Param = "size"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "image") && (strings.Contains(message, "not support") || strings.Contains(message, "unsupported")):
+		publicError.Message = "This model does not support image input. Remove the image or use a vision-capable model."
+		publicError.Code = "unsupported_input"
+		publicError.Param = "messages"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (strings.Contains(message, "context_length_exceeded") || strings.Contains(message, "context length") || strings.Contains(message, "maximum context")):
+		publicError.Message = "The request exceeds the model's context length. Reduce the input or maximum output tokens."
+		publicError.Code = "context_length_exceeded"
+		publicError.Param = "messages"
+		return http.StatusBadRequest, publicError
+	case policyRejected && (strings.Contains(message, "content_policy") || strings.Contains(message, "content policy") || strings.Contains(message, "safety") || strings.Contains(message, "moderation") || strings.Contains(message, "image_unsafe")):
+		publicError.Message = "The request was blocked by the provider's safety policy. Revise the content and try again."
+		publicError.Code = "content_policy_violation"
+		return http.StatusUnprocessableEntity, publicError
 	}
-	if strings.Contains(message, "GPT Image response did not contain a valid b64_json result") {
-		return "Upstream image service is temporarily unavailable. Please try again later.", true
+
+	switch statusCode {
+	case http.StatusBadRequest:
+		publicError.Message = "The upstream service rejected the request. Check the request parameters and model compatibility."
+		return statusCode, publicError
+	case http.StatusNotFound, http.StatusGone:
+		publicError.Message = "The requested model or resource is unavailable."
+		publicError.Code = "resource_not_found"
+		if strings.Contains(message, "model") {
+			publicError.Code = "model_not_found"
+			publicError.Param = "model"
+		}
+		return http.StatusNotFound, publicError
+	case http.StatusMethodNotAllowed:
+		publicError.Message = "The requested operation is not supported by this model."
+		publicError.Code = "unsupported_operation"
+		return http.StatusBadRequest, publicError
+	case http.StatusRequestTimeout, http.StatusGatewayTimeout, 524:
+		publicError.Message = "The upstream service timed out. Please try again later."
+		publicError.Type = "server_error"
+		publicError.Code = "upstream_timeout"
+		return http.StatusGatewayTimeout, publicError
+	case http.StatusConflict:
+		publicError.Message = "The upstream service reported a conflict. Please try again."
+		publicError.Code = "upstream_conflict"
+		return statusCode, publicError
+	case http.StatusRequestEntityTooLarge:
+		publicError.Message = "The request is too large for the upstream service."
+		publicError.Code = "request_too_large"
+		return statusCode, publicError
+	case http.StatusUnprocessableEntity:
+		publicError.Message = "The upstream service could not process the request. Check the input format and parameters."
+		publicError.Code = "unprocessable_entity"
+		return statusCode, publicError
+	case http.StatusTooManyRequests:
+		publicError.Message = "The upstream service is busy. Please try again later."
+		publicError.Type = "rate_limit_error"
+		publicError.Code = "rate_limit_exceeded"
+		return statusCode, publicError
+	case http.StatusUnavailableForLegalReasons:
+		publicError.Message = "The request was blocked by the provider's safety policy. Revise the content and try again."
+		publicError.Code = "content_policy_violation"
+		return http.StatusUnprocessableEntity, publicError
+	case http.StatusUnauthorized, http.StatusPaymentRequired, http.StatusForbidden:
+		publicError.Message = "The upstream service is temporarily unavailable. Please try again later."
+		publicError.Type = "server_error"
+		publicError.Code = "upstream_unavailable"
+		return http.StatusServiceUnavailable, publicError
 	}
-	return "", false
+	if statusCode >= http.StatusInternalServerError && statusCode <= 599 {
+		publicError.Message = "The upstream service is temporarily unavailable. Please try again later."
+		publicError.Type = "server_error"
+		publicError.Code = "upstream_unavailable"
+		return http.StatusServiceUnavailable, publicError
+	}
+	publicError.Message = "The upstream request failed. Please try again later."
+	publicError.Type = "server_error"
+	publicError.Code = "upstream_error"
+	return http.StatusBadGateway, publicError
+}
+
+func PublicTaskFailureMessage(rawError string) string {
+	_, publicError := PublicUpstreamError(http.StatusBadRequest, rawError)
+	if publicError.Code == "invalid_request" {
+		return "The task failed. Please check the request and try again."
+	}
+	return publicError.Message
 }
 
 func ResetStatusCode(newApiErr *types.NewAPIError, statusCodeMappingStr string) {

@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 export type HeaderNavAccessConfig = {
   enabled: boolean
   requireAuth: boolean
+  adminOnly: boolean
 }
 
 export type HeaderNavModulesConfig = {
@@ -44,10 +45,12 @@ export const HEADER_NAV_DEFAULT: HeaderNavModulesConfig = {
   pricing: {
     enabled: true,
     requireAuth: false,
+    adminOnly: false,
   },
   rankings: {
     enabled: true,
     requireAuth: false,
+    adminOnly: false,
   },
   docs: true,
   about: true,
@@ -112,6 +115,7 @@ const parseAccessModule = (
     return {
       enabled: toBoolean(raw, fallback.enabled),
       requireAuth: fallback.requireAuth,
+      adminOnly: fallback.adminOnly,
     }
   }
   if (raw && typeof raw === 'object') {
@@ -119,6 +123,7 @@ const parseAccessModule = (
     return {
       enabled: toBoolean(record.enabled, fallback.enabled),
       requireAuth: toBoolean(record.requireAuth, fallback.requireAuth),
+      adminOnly: toBoolean(record.adminOnly, fallback.adminOnly),
     }
   }
   return { ...fallback }

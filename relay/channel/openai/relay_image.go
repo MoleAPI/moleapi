@@ -2,6 +2,7 @@ package openai
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -268,9 +269,10 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 		raw := common.StringToByteSlice(data)
 		lastStreamData = raw
 		if isOpenAIImageStreamErrorEvent(raw) {
-			// Record the error as a soft error; the scanner drives the final
-			// EndReason. HasErrors() flags the failure for logging/handling.
-			sr.Error(fmt.Errorf("%s", extractOpenAIImageStreamErrorMessage(raw)))
+			upstreamErr := types.NewOpenAIError(errors.New(extractOpenAIImageStreamErrorMessage(raw)), types.ErrorCodeBadResponseStatusCode, http.StatusBadGateway)
+			sr.Error(upstreamErr)
+			raw = common.StringToByteSlice(publicOpenAIStreamError(c, upstreamErr))
+			lastStreamData = raw
 		}
 		var chunk struct {
 			Type  string    `json:"type"`

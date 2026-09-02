@@ -77,6 +77,7 @@ import {
   getConfiguredGroupRatio,
   getDiscountPercent,
   getLocalizedModelDescription,
+  getModelEndpoint,
   isTokenBasedModel,
   replaceModelInPath,
 } from '../lib/model-helpers'
@@ -579,7 +580,7 @@ function ModelEndpointsSection(props: {
   const { t } = useTranslation()
   const endpoints = normalizeCatalogItems(props.model.supported_endpoint_types)
     .map((type) => {
-      const info = props.endpointMap[type] || {}
+      const info = getModelEndpoint(props.model, props.endpointMap, type)
       const path = info.path?.includes('{model}')
         ? replaceModelInPath(info.path, props.model.model_name || '')
         : info.path

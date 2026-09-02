@@ -105,7 +105,7 @@ func TestTaskLogDTOReplacesLegacyVideoURLWithAvailabilityFlag(t *testing.T) {
 	assert.Contains(t, string(encoded), "legacy_video_available")
 }
 
-func TestTaskLogDTOKeepsFailureReasonAndDoesNotMarkPluginTaskLegacy(t *testing.T) {
+func TestTaskLogDTOMasksFailureReasonForUsersAndDoesNotMarkPluginTaskLegacy(t *testing.T) {
 	failed := &model.Task{
 		TaskID:     "task_failed",
 		Platform:   "jimeng",
@@ -114,8 +114,11 @@ func TestTaskLogDTOKeepsFailureReasonAndDoesNotMarkPluginTaskLegacy(t *testing.T
 		FailReason: "provider rejected the request",
 	}
 	failedView := tasksToDto([]*model.Task{failed}, false, common.RoleCommonUser)[0]
-	assert.Equal(t, "provider rejected the request", failedView.FailReason)
+	assert.Equal(t, "The task failed. Please check the request and try again.", failedView.FailReason)
+	assert.Empty(t, failedView.ResultURL)
 	assert.False(t, failedView.LegacyVideoAvailable)
+	adminView := tasksToDto([]*model.Task{failed}, false, common.RoleAdminUser)[0]
+	assert.Equal(t, "provider rejected the request", adminView.FailReason)
 
 	pluginTask := &model.Task{
 		TaskID:     "task_plugin_video",

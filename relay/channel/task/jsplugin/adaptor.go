@@ -22,12 +22,12 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
-	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 )
@@ -771,6 +771,9 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	rendered.CreatedAt = host.CreatedAt
 	rendered.Model = host.Model
 	rendered.CompletedAt = host.CompletedAt
+	if task.Status == model.TaskStatusFailure {
+		rendered.Error = &kitdto.OpenAIVideoError{Code: "task_failed", Message: service.PublicTaskFailureMessage(task.FailReason)}
+	}
 	for key := range rendered.Metadata {
 		if strings.EqualFold(key, "url") {
 			delete(rendered.Metadata, key)

@@ -172,6 +172,36 @@ func TestPricingModelMetadataEndpointsCanProvideEndpointWithoutChannelInference(
 	assert.Equal(t, []constant.EndpointType{constant.EndpointTypeOpenAI}, byModel["metadata-only-model"])
 }
 
+func TestPricingCustomEndpointsStayWithTheirModel(t *testing.T) {
+	resetPricingEndpointTestTables(t)
+
+	insertPricingEndpointChannel(t, 105, constant.ChannelTypeOpenAI, dto.ChannelOtherSettings{})
+	insertPricingEndpointAbility(t, 105, "model-a")
+	insertPricingEndpointAbility(t, 105, "model-b")
+	require.NoError(t, DB.Create(&Model{
+		ModelName: "model-a",
+		Endpoints: `{"custom":{"path":"/v1/model-a","method":"get"}}`,
+		Status:    1,
+		NameRule:  NameRuleExact,
+	}).Error)
+	require.NoError(t, DB.Create(&Model{
+		ModelName: "model-b",
+		Endpoints: `{"custom":"/v1/model-b"}`,
+		Status:    1,
+		NameRule:  NameRuleExact,
+	}).Error)
+
+	pricingByModel := make(map[string]Pricing)
+	for _, pricing := range GetPricing() {
+		pricingByModel[pricing.ModelName] = pricing
+	}
+
+	assert.Equal(t, common.EndpointInfo{Path: "/v1/model-a", Method: "GET"}, pricingByModel["model-a"].SupportedEndpoints["custom"])
+	assert.Equal(t, common.EndpointInfo{Path: "/v1/model-b", Method: "POST"}, pricingByModel["model-b"].SupportedEndpoints["custom"])
+	_, leakedGlobally := GetSupportedEndpointMap()["custom"]
+	assert.False(t, leakedGlobally)
+}
+
 func TestPricingAdvancedCustomMissingConfigFallsBackToChannelType(t *testing.T) {
 	resetPricingEndpointTestTables(t)
 
