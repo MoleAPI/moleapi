@@ -265,6 +265,29 @@ test('details column wraps long raw content', async () => {
   assert.match(detailsHtml, /whitespace-normal/)
 })
 
+test('admin error details show the original upstream error without exposing it to users', async () => {
+  const errorLog = usageLogSchema.parse({
+    ...log,
+    type: 5,
+    content:
+      'status_code=400, The upstream service rejected the request. Check the request parameters and model compatibility.',
+    other: JSON.stringify({
+      admin_info: {
+        upstream_error: 'status_code=400, provider rejected temperature=2',
+      },
+    }),
+  })
+
+  const adminPreviewHtml = await renderCell('content', true, errorLog)
+  const userPreviewHtml = await renderCell('content', false, errorLog)
+  const adminDetailsHtml = await renderInlineDetails(errorLog)
+
+  assert.match(adminPreviewHtml, /provider rejected temperature=2/)
+  assert.match(adminDetailsHtml, /provider rejected temperature=2/)
+  assert.doesNotMatch(userPreviewHtml, /provider rejected temperature=2/)
+  assert.match(userPreviewHtml, /The upstream service rejected the request/)
+})
+
 test('expanded details show request summary, cache tokens, and billing calculation', async () => {
   const detailsHtml = await renderInlineDetails()
 

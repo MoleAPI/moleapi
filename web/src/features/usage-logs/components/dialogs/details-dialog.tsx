@@ -842,7 +842,10 @@ export function InlineLogDetails(props: { log: UsageLog; isAdmin: boolean }) {
   const { t } = useTranslation()
   const other = parseLogOther(props.log.other)
   const isConsume = props.log.type === 2
-  const detailText = renderLogContent(props.log, other, t) || props.log.content
+  const detailText =
+    props.isAdmin && other?.admin_info?.upstream_error
+      ? other.admin_info.upstream_error
+      : renderLogContent(props.log, other, t) || props.log.content
   const showTokens = other && isDisplayableType(props.log.type)
   const showBilling = other && isConsume && !isViolationFeeLog(other)
 
@@ -908,7 +911,9 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const { copiedText, copyToClipboard } = useCopyToClipboard({ notify: false })
   const other = parseLogOther(props.log.other)
   const details =
-    renderLogContent(props.log, other, t) || props.log.content || ''
+    props.isAdmin && other?.admin_info?.upstream_error
+      ? other.admin_info.upstream_error
+      : renderLogContent(props.log, other, t) || props.log.content || ''
   const typeConfig = getLogTypeConfig(props.log.type)
 
   const isViolation = isViolationFeeLog(other)
