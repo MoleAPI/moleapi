@@ -116,16 +116,14 @@ func RelayErrorHandler(ctx context.Context, resp *http.Response, showBodyWhenFai
 		return
 	}
 
-	if common.GetJsonType(errResponse.Error) == "object" {
-		// General format error (OpenAI, Anthropic, Gemini, etc.)
-		oaiError := errResponse.TryToOpenAIError()
-		if oaiError != nil {
-			newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
-			if showBodyWhenFail {
-				newApiErr.Err = buildErrWithBody(newApiErr.Error())
-			}
-			return
+	// General format error (OpenAI, Anthropic, Gemini, DashScope, etc.).
+	// Some providers put code/message at the top level instead of under error.
+	if oaiError := errResponse.TryToOpenAIError(); oaiError != nil {
+		newApiErr = types.WithOpenAIError(*oaiError, resp.StatusCode)
+		if showBodyWhenFail {
+			newApiErr.Err = buildErrWithBody(newApiErr.Error())
 		}
+		return
 	}
 	message := errResponse.ToMessage()
 	if message == "" {
@@ -145,25 +143,77 @@ func SetPublicUpstreamError(ctx context.Context, err *types.NewAPIError) {
 		return
 	}
 	logger.LogWarn(ctx, fmt.Sprintf("masked upstream error from user response: %s", common.LocalLogPreview(err.Error())))
-	statusCode, publicError := PublicUpstreamError(err.StatusCode, err.Error()+" "+string(err.GetErrorCode()))
+	rawError := err.Error()
+	switch relayError := err.RelayError.(type) {
+	case types.OpenAIError:
+		rawError += " " + relayError.Type
+	case types.ClaudeError:
+		rawError += " " + relayError.Type
+	}
+	statusCode, publicError := publicUpstreamError(err.StatusCode, rawError, string(err.GetErrorCode()))
 	err.SetPublicError(statusCode, publicError)
 }
 
 func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIError) {
-	message := strings.ToLower(rawError)
+	return publicUpstreamError(statusCode, rawError, "")
+}
+
+func publicUpstreamError(statusCode int, rawError string, upstreamCode string) (int, types.OpenAIError) {
+	message := strings.ToLower(rawError + " " + upstreamCode)
+	upstreamCode = strings.ToLower(strings.TrimSpace(upstreamCode))
 	publicError := types.OpenAIError{Type: "invalid_request_error", Code: "invalid_request"}
 	clientRejected := statusCode == http.StatusBadRequest || statusCode == http.StatusUnprocessableEntity || statusCode == http.StatusUnavailableForLegalReasons
 	policyRejected := clientRejected || statusCode == http.StatusForbidden
+	requestParam := ""
+	for _, param := range []string{
+		"max_completion_tokens", "max_tokens", "thinking_budget", "enable_thinking", "incremental_output", "enable_search",
+		"tool_choice", "response_format", "reasoning_effort", "temperature", "top_p", "top_k", "messages", "prompt",
+		"stop", "tools", "model", "file_id", "voice_id", "purpose",
+	} {
+		if strings.Contains(message, param) {
+			requestParam = param
+			break
+		}
+	}
 
 	switch {
 	case strings.Contains(message, "authentication_error") || strings.Contains(message, "invalid_api_key") || strings.Contains(message, "api key invalid") ||
 		strings.Contains(message, "api_key_invalid") || strings.Contains(message, "api key not valid") || strings.Contains(message, "billing_error") ||
 		strings.Contains(message, "failed_precondition") || strings.Contains(message, "spend limit") || strings.Contains(message, "usage limit") ||
-		strings.Contains(message, "quota_exceeded") || strings.Contains(message, "insufficient balance") || strings.Contains(message, "credit balance") || strings.Contains(message, "account balance"):
+		strings.Contains(message, "quota_exceeded") || strings.Contains(message, "insufficient balance") || strings.Contains(message, "credit balance") || strings.Contains(message, "account balance") ||
+		strings.Contains(message, "arrearage") || strings.Contains(message, "account_overdue") || strings.Contains(message, "exceeded_current_quota_error") ||
+		strings.Contains(message, "authfailure.") || strings.Contains(message, "workspace.accessdenied") || strings.Contains(message, "invalid_iam_token") ||
+		strings.Contains(message, "coding_plan_api_key_") || strings.Contains(message, "coding_plan_not_subscribed") || strings.Contains(message, "coding_plan_subscription_expired") ||
+		strings.Contains(message, "欠费") || strings.Contains(message, "余额不足") || strings.Contains(message, "套餐已到期") || strings.Contains(message, "无效的 api key"):
 		publicError.Message = "The upstream service is temporarily unavailable. Please try again later."
 		publicError.Type = "server_error"
 		publicError.Code = "upstream_unavailable"
 		return http.StatusServiceUnavailable, publicError
+	case clientRejected && strings.Contains(message, "enable_thinking") && strings.Contains(message, "non-streaming"):
+		publicError.Message = "Set enable_thinking=false for a non-streaming request, or set stream=true."
+		publicError.Code = "invalid_parameter_value"
+		publicError.Param = "enable_thinking"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "thinking_budget") && (strings.Contains(message, "positive integer") || strings.Contains(message, "not greater than")):
+		publicError.Message = "The thinking_budget parameter must be a positive integer within the model's supported limit."
+		publicError.Code = "invalid_parameter_value"
+		publicError.Param = "thinking_budget"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "incremental_output") && strings.Contains(message, "true"):
+		publicError.Message = "Set incremental_output=true when enable_thinking is enabled."
+		publicError.Code = "invalid_parameter_value"
+		publicError.Param = "incremental_output"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (strings.Contains(message, "only support stream mode") || strings.Contains(message, "only supports stream mode") || strings.Contains(message, "does not support synchronous calls") || strings.Contains(message, "does not support http call")):
+		publicError.Message = "This model only supports streaming requests. Set stream=true."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "stream"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "enable_search") && strings.Contains(message, "not support"):
+		publicError.Message = "This model does not support enable_search. Remove it or use a compatible model."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "enable_search"
+		return http.StatusBadRequest, publicError
 	case clientRejected && strings.Contains(message, "prompt_is_required"):
 		publicError.Message = "The prompt parameter is required."
 		publicError.Code = "missing_required_parameter"
@@ -300,6 +350,92 @@ func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIErro
 		publicError.Message = "The request exceeds the model's context length. Reduce the input or maximum output tokens."
 		publicError.Code = "context_length_exceeded"
 		publicError.Param = "messages"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (upstreamCode == "1261" || upstreamCode == "1039" || upstreamCode == "336007" || upstreamCode == "336103" ||
+		upstreamCode == "characters_too_long" || upstreamCode == "tokens_too_long" ||
+		strings.Contains(message, "input token length too long") || strings.Contains(message, "exceeded model token limit") || strings.Contains(message, "total message size") ||
+		strings.Contains(message, "range of input length")):
+		publicError.Message = "The request exceeds the model's context length. Reduce the input or maximum output tokens."
+		publicError.Code = "context_length_exceeded"
+		publicError.Param = "messages"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (upstreamCode == "1301" || upstreamCode == "1026" || upstreamCode == "1027" || upstreamCode == "content_filter" ||
+		upstreamCode == "image_url_unsafe" || upstreamCode == "system_unsafe" || upstreamCode == "user_setting_unsafe" || upstreamCode == "functions_unsafe" ||
+		upstreamCode == "taskpromptpolicyviolation" || upstreamCode == "auditsubmitillegal" || upstreamCode == "creationpolicyviolation" ||
+		strings.Contains(message, "content_filter") || strings.Contains(message, "considered high risk") || strings.Contains(message, "涉敏")):
+		publicError.Message = "The request was blocked by the provider's safety policy. Revise the content and try again."
+		publicError.Code = "content_policy_violation"
+		return http.StatusUnprocessableEntity, publicError
+	case clientRejected && (upstreamCode == "modelunavailable" || upstreamCode == "model_offline"):
+		publicError.Message = "The requested model is temporarily unavailable. Try another model or try again later."
+		publicError.Type = "server_error"
+		publicError.Code = "model_unavailable"
+		publicError.Param = "model"
+		return http.StatusServiceUnavailable, publicError
+	case clientRejected && (upstreamCode == "1211" || upstreamCode == "invalid_model" || upstreamCode == "modelnotfound" || upstreamCode == "model_not_found" ||
+		strings.Contains(message, "模型不存在")):
+		publicError.Message = "The requested model is unavailable or is not supported by this endpoint."
+		publicError.Code = "model_not_found"
+		publicError.Param = "model"
+		return http.StatusNotFound, publicError
+	case clientRejected && (upstreamCode == "1212" || upstreamCode == "unsupportedoperation" || upstreamCode == "method_not_supported" ||
+		upstreamCode == "actionoffline" || upstreamCode == "1221" || upstreamCode == "1222"):
+		publicError.Message = "The requested operation is not supported by this model or endpoint."
+		publicError.Code = "unsupported_operation"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (upstreamCode == "malformed_json" || upstreamCode == "336002"):
+		publicError.Message = "The request body is not valid JSON. Check its syntax and field types."
+		publicError.Code = "invalid_json"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (upstreamCode == "1213" || upstreamCode == "336006" || strings.HasPrefix(upstreamCode, "missingparameter") || strings.HasPrefix(upstreamCode, "fieldlacking")):
+		publicError.Message = "The request is missing a required parameter."
+		publicError.Code = "missing_required_parameter"
+		publicError.Param = requestParam
+		return http.StatusBadRequest, publicError
+	case clientRejected && (upstreamCode == "1210" || upstreamCode == "1214" || upstreamCode == "1215" || upstreamCode == "2013" || upstreamCode == "336001" ||
+		strings.HasPrefix(upstreamCode, "invalidparameter") || upstreamCode == "invalid_request_argument" ||
+		upstreamCode == "fieldinvalid" || upstreamCode == "fieldunwanted"):
+		publicError.Message = "A request parameter is invalid or unsupported. Check its value and model compatibility."
+		publicError.Code = "invalid_parameter_value"
+		publicError.Param = requestParam
+		if requestParam != "" {
+			publicError.Message = fmt.Sprintf("The %s parameter is invalid or unsupported. Check its value and model compatibility.", requestParam)
+		}
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "file size is too large"):
+		publicError.Message = "The uploaded file is too large for the upstream service."
+		publicError.Code = "request_too_large"
+		publicError.Param = "file"
+		return http.StatusRequestEntityTooLarge, publicError
+	case clientRejected && strings.Contains(message, "file size is zero"):
+		publicError.Message = "The uploaded file is empty."
+		publicError.Code = "invalid_file"
+		publicError.Param = "file"
+		return http.StatusBadRequest, publicError
+	case clientRejected && requestParam != "" && (strings.Contains(message, "invalid") || strings.Contains(message, "must be") || strings.Contains(message, "not supported") ||
+		strings.Contains(message, "out of range") || strings.Contains(message, "range of")):
+		publicError.Message = fmt.Sprintf("The %s parameter is invalid or unsupported. Check its value and model compatibility.", requestParam)
+		publicError.Code = "invalid_parameter_value"
+		publicError.Param = requestParam
+		return http.StatusBadRequest, publicError
+	case clientRejected && (upstreamCode == "invalid_image_url" || upstreamCode == "invalid_image_generation_refer_image" || upstreamCode == "imageformatinvalid"):
+		publicError.Message = "The image input is invalid or uses an unsupported format."
+		publicError.Code = "invalid_image"
+		publicError.Param = "image"
+		return http.StatusBadRequest, publicError
+	case clientRejected && upstreamCode == "1042":
+		publicError.Message = "The input contains too many invalid or invisible characters. Clean the input and try again."
+		publicError.Code = "invalid_input"
+		publicError.Param = "input"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (upstreamCode == "2037" || upstreamCode == "2048"):
+		publicError.Message = "The audio duration is outside the supported range."
+		publicError.Code = "invalid_audio_duration"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (upstreamCode == "20132" || upstreamCode == "2039"):
+		publicError.Message = "The voice cloning parameters are invalid. Check file_id and voice_id."
+		publicError.Code = "invalid_parameter_value"
+		publicError.Param = "voice_id"
 		return http.StatusBadRequest, publicError
 	case clientRejected && (strings.Contains(message, "malformed_function_call") || strings.Contains(message, "malformed_tool_call")):
 		publicError.Message = "The model produced a malformed tool call. Retry the request or simplify the tool definitions."
