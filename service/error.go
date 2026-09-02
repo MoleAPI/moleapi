@@ -157,7 +157,9 @@ func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIErro
 
 	switch {
 	case strings.Contains(message, "authentication_error") || strings.Contains(message, "invalid_api_key") || strings.Contains(message, "api key invalid") ||
-		strings.Contains(message, "insufficient balance") || strings.Contains(message, "credit balance") || strings.Contains(message, "account balance"):
+		strings.Contains(message, "api_key_invalid") || strings.Contains(message, "api key not valid") || strings.Contains(message, "billing_error") ||
+		strings.Contains(message, "failed_precondition") || strings.Contains(message, "spend limit") || strings.Contains(message, "usage limit") ||
+		strings.Contains(message, "quota_exceeded") || strings.Contains(message, "insufficient balance") || strings.Contains(message, "credit balance") || strings.Contains(message, "account balance"):
 		publicError.Message = "The upstream service is temporarily unavailable. Please try again later."
 		publicError.Type = "server_error"
 		publicError.Code = "upstream_unavailable"
@@ -193,6 +195,69 @@ func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIErro
 		publicError.Message = "The upstream service requires stop to be an array of strings for this model. Send stop as an array or remove it."
 		publicError.Code = "invalid_parameter_value"
 		publicError.Param = "stop"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (strings.Contains(message, "invalid service_tier argument") || strings.Contains(message, "invalid_service_tier")):
+		publicError.Message = "The selected service_tier is unavailable. Choose a supported tier or remove service_tier."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "service_tier"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "parameter_unknown"):
+		publicError.Message = "The request contains an unsupported parameter. Remove the unrecognized parameter and try again."
+		publicError.Code = "unknown_parameter"
+		return http.StatusBadRequest, publicError
+	case (clientRejected || statusCode == http.StatusRequestedRangeNotSatisfiable) && strings.Contains(message, "out_of_range"):
+		publicError.Message = "A request parameter is outside the supported range. Check the parameter values and limits."
+		publicError.Code = "invalid_parameter_value"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (strings.Contains(message, "previous_response_not_found") ||
+		(strings.Contains(message, "previous_response_id") && strings.Contains(message, "cannot be resolved"))):
+		publicError.Message = "The previous_response_id could not be resolved. Send the full input context and remove previous_response_id."
+		publicError.Code = "previous_response_not_found"
+		publicError.Param = "previous_response_id"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "websocket_connection_limit_reached"):
+		publicError.Message = "The upstream WebSocket session expired. Open a new connection and continue."
+		publicError.Code = "websocket_connection_limit_reached"
+		return http.StatusBadRequest, publicError
+	case clientRejected && (strings.Contains(message, "does not support assistant message prefill") || strings.Contains(message, "conversation must end with a user message")):
+		publicError.Message = "This model does not support assistant message prefill. End the conversation with a user message."
+		publicError.Code = "unsupported_input"
+		publicError.Param = "messages"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "thinking") && strings.Contains(message, "blocks") && strings.Contains(message, "cannot be modified"):
+		publicError.Message = "Thinking blocks in the latest assistant message must be returned exactly as received."
+		publicError.Code = "invalid_thinking_block"
+		publicError.Param = "messages"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "thinking.type.enabled") && strings.Contains(message, "not supported"):
+		publicError.Message = "This model does not support thinking.type=enabled. Use adaptive thinking with output_config.effort."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "thinking.type"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "adaptive thinking is not supported"):
+		publicError.Message = "This model does not support adaptive thinking. Use thinking.type=enabled with budget_tokens."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "thinking.type"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "thinking.type.disabled") && strings.Contains(message, "not supported"):
+		publicError.Message = "This model does not support disabling thinking. Remove the thinking parameter."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "thinking.type"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "tool_choice") && strings.Contains(message, "not supported for this model"):
+		publicError.Message = "This model does not support forced tool choice. Use tool_choice=auto or tool_choice=none."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "tool_choice"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "signature") && strings.Contains(message, "bound to a different conversation"):
+		publicError.Message = "A thinking block belongs to a different conversation. Remove it or resend the original unchanged conversation history."
+		publicError.Code = "invalid_thinking_block"
+		publicError.Param = "messages"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "block_binding") && strings.Contains(message, "extra inputs are not permitted"):
+		publicError.Message = "thinking.block_binding requires the provider's matching beta feature. Remove block_binding when that feature is unavailable."
+		publicError.Code = "unsupported_parameter"
+		publicError.Param = "thinking.block_binding"
 		return http.StatusBadRequest, publicError
 	case clientRejected && (strings.Contains(message, "missing_thought_signature") || strings.Contains(message, "thought_signature") || strings.Contains(message, "thought signature")):
 		publicError.Message = "The request is missing a required thought signature. Return the model's thought signature unchanged with the related tool call."
@@ -236,10 +301,36 @@ func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIErro
 		publicError.Code = "context_length_exceeded"
 		publicError.Param = "messages"
 		return http.StatusBadRequest, publicError
-	case policyRejected && (strings.Contains(message, "content_policy") || strings.Contains(message, "content policy") || strings.Contains(message, "safety") || strings.Contains(message, "moderation") || strings.Contains(message, "image_unsafe")):
+	case clientRejected && (strings.Contains(message, "malformed_function_call") || strings.Contains(message, "malformed_tool_call")):
+		publicError.Message = "The model produced a malformed tool call. Retry the request or simplify the tool definitions."
+		publicError.Code = "malformed_tool_call"
+		publicError.Param = "tools"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "unexpected_tool_call"):
+		publicError.Message = "The model called a tool that was not declared. Add the tool to the request or retry without tool use."
+		publicError.Code = "unexpected_tool_call"
+		publicError.Param = "tools"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "too_many_tool_calls"):
+		publicError.Message = "The model produced too many tool calls. Retry with fewer or simpler tools."
+		publicError.Code = "too_many_tool_calls"
+		publicError.Param = "tools"
+		return http.StatusBadRequest, publicError
+	case clientRejected && strings.Contains(message, "no_image"):
+		publicError.Message = "The model could not generate an image. Revise the prompt and try again."
+		publicError.Code = "no_image"
+		return http.StatusBadRequest, publicError
+	case policyRejected && (strings.Contains(message, "content_policy") || strings.Contains(message, "content policy") || strings.Contains(message, "safety") || strings.Contains(message, "moderation") ||
+		strings.Contains(message, "image_unsafe") || strings.Contains(message, "recitation") || strings.Contains(message, "prohibited_content") ||
+		strings.Contains(message, "content_blocked") || strings.Contains(message, "blocklist") || strings.Contains(message, "spii") ||
+		strings.Contains(message, "image_other") || message == "language" || strings.HasSuffix(message, " language")):
 		publicError.Message = "The request was blocked by the provider's safety policy. Revise the content and try again."
 		publicError.Code = "content_policy_violation"
 		return http.StatusUnprocessableEntity, publicError
+	case statusCode == http.StatusNotImplemented && strings.Contains(message, "unimplemented"):
+		publicError.Message = "The requested operation is not supported by this model."
+		publicError.Code = "unsupported_operation"
+		return http.StatusBadRequest, publicError
 	}
 
 	switch statusCode {
