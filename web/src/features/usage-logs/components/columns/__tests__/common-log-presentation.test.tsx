@@ -283,6 +283,7 @@ test('admin error details show the original upstream error without exposing it t
   const adminDetailsHtml = await renderInlineDetails(errorLog)
 
   assert.match(adminPreviewHtml, /provider rejected temperature=2/)
+  assert.match(adminPreviewHtml, /whitespace-normal/)
   assert.match(adminDetailsHtml, /provider rejected temperature=2/)
   assert.doesNotMatch(userPreviewHtml, /provider rejected temperature=2/)
   assert.match(userPreviewHtml, /The upstream service rejected the request/)
