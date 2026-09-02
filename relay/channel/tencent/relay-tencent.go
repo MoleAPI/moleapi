@@ -144,10 +144,10 @@ func tencentHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Resp
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
-	if tencentSb.Response.Error.Code != 0 {
+	if code := fmt.Sprint(tencentSb.Response.Error.Code); tencentSb.Response.Error.Code != nil && code != "" && code != "0" {
 		return nil, types.WithOpenAIError(types.OpenAIError{
 			Message: tencentSb.Response.Error.Message,
-			Code:    tencentSb.Response.Error.Code,
+			Code:    code,
 		}, resp.StatusCode)
 	}
 	fullTextResponse := responseTencent2OpenAI(&tencentSb.Response)

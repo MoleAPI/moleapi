@@ -22,6 +22,8 @@ type OpenAIErrorWithStatusCode struct {
 
 type GeneralErrorResponse struct {
 	Error    json.RawMessage `json:"error"`
+	Code     any             `json:"code,omitempty"`
+	Type     string          `json:"type,omitempty"`
 	Message  string          `json:"message"`
 	Msg      string          `json:"msg"`
 	Err      string          `json:"err"`
@@ -45,6 +47,9 @@ func (e GeneralErrorResponse) TryToOpenAIError() *types.OpenAIError {
 		if err == nil && openAIError.Message != "" {
 			return &openAIError
 		}
+	}
+	if e.Message != "" && e.Code != nil {
+		return &types.OpenAIError{Message: e.Message, Type: e.Type, Code: e.Code}
 	}
 	return nil
 }

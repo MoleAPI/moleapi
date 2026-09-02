@@ -180,6 +180,13 @@ func TestPublicUpstreamErrorClassifiesActionableAndPrivateFailures(t *testing.T)
 		{name: "reasoning content", statusCode: 400, rawError: "reasoning_content is required for assistant tool call", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_reasoning_content", wantParam: "messages"},
 		{name: "thought signature", statusCode: 400, rawError: "missing_thought_signature", wantStatus: 400, wantType: "invalid_request_error", wantCode: "missing_thought_signature", wantParam: "messages"},
 		{name: "token parameter", statusCode: 400, rawError: "Unsupported parameter: max_tokens; use max_completion_tokens", wantStatus: 400, wantType: "invalid_request_error", wantCode: "unsupported_parameter", wantParam: "max_tokens"},
+		{name: "dashscope non streaming thinking", statusCode: 400, rawError: "parameter.enable_thinking must be set to false for non-streaming calls", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "enable_thinking", wantMessage: "Set enable_thinking=false for a non-streaming request, or set stream=true."},
+		{name: "dashscope thinking budget", statusCode: 400, rawError: "The thinking_budget parameter must be a positive integer and not greater than 8192", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "thinking_budget"},
+		{name: "dashscope stream only", statusCode: 400, rawError: "This model only support stream mode, please enable the stream parameter to access the model.", wantStatus: 400, wantType: "invalid_request_error", wantCode: "unsupported_parameter", wantParam: "stream"},
+		{name: "dashscope incremental output", statusCode: 400, rawError: "The incremental_output parameter must be true when enable_thinking is true", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "incremental_output"},
+		{name: "dashscope search unsupported", statusCode: 400, rawError: "This model does not support enable_search", wantStatus: 400, wantType: "invalid_request_error", wantCode: "unsupported_parameter", wantParam: "enable_search"},
+		{name: "kimi token limit", statusCode: 400, rawError: "Invalid request: Your request exceeded model token limit: 262144", wantStatus: 400, wantType: "invalid_request_error", wantCode: "context_length_exceeded", wantParam: "messages"},
+		{name: "kimi file too large", statusCode: 400, rawError: "File size is too large, max file size is 100MB", wantStatus: 413, wantType: "invalid_request_error", wantCode: "request_too_large", wantParam: "file"},
 		{name: "required tool choice without tools", statusCode: 400, rawError: `Invalid request: {"detail":{"message":"Tools cannot be empty if tool choice is set to required."}}`, wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "tools", wantMessage: "The tools parameter cannot be empty when tool_choice is set to required."},
 		{name: "upstream requires stop array", statusCode: 400, rawError: "JSON parse error: Cannot construct instance of java.util.ArrayList: no String-argument constructor/factory method to deserialize from String value ('</block>') through reference chain: ChatCompletionRequest[\"stop\"]", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "stop", wantMessage: "The upstream service requires stop to be an array of strings for this model. Send stop as an array or remove it."},
 		{name: "service tier", statusCode: 400, rawError: "Invalid service_tier argument: The requested service tier is not allowed for this project.", wantStatus: 400, wantType: "invalid_request_error", wantCode: "unsupported_parameter", wantParam: "service_tier"},
@@ -227,6 +234,69 @@ func TestPublicUpstreamErrorClassifiesActionableAndPrivateFailures(t *testing.T)
 			require.NotContains(t, publicError.Message, "internal.example")
 		})
 	}
+}
+
+func TestSetPublicUpstreamErrorClassifiesDomesticProviderCodes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		statusCode   int
+		message      string
+		code         any
+		upstreamType string
+		wantStatus   int
+		wantType     string
+		wantCode     string
+		wantParam    string
+	}{
+		{name: "zhipu model missing", statusCode: 400, message: "模型不存在，请检查模型代码", code: 1211, wantStatus: 404, wantType: "invalid_request_error", wantCode: "model_not_found", wantParam: "model"},
+		{name: "zhipu missing field", statusCode: 400, message: "未正常接收到 max_tokens 参数", code: 1213, wantStatus: 400, wantType: "invalid_request_error", wantCode: "missing_required_parameter", wantParam: "max_tokens"},
+		{name: "zhipu content safety", statusCode: 400, message: "系统检测到输入或生成内容可能包含不安全或敏感内容", code: 1301, wantStatus: 422, wantType: "invalid_request_error", wantCode: "content_policy_violation"},
+		{name: "baidu malformed json", statusCode: 400, message: "Invalid Argument", code: "malformed_json", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_json"},
+		{name: "baidu context limit", statusCode: 400, message: "Prompt tokens too long", code: "tokens_too_long", wantStatus: 400, wantType: "invalid_request_error", wantCode: "context_length_exceeded", wantParam: "messages"},
+		{name: "baidu legacy context limit", statusCode: 400, message: "Prompt tokens too long", code: 336103, wantStatus: 400, wantType: "invalid_request_error", wantCode: "context_length_exceeded", wantParam: "messages"},
+		{name: "baidu invalid image", statusCode: 400, message: "the image width and height are not within the allowed range", code: "invalid_image_url", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_image", wantParam: "image"},
+		{name: "kimi content filter", statusCode: 400, message: "The request was rejected because it was considered high risk", code: nil, upstreamType: "content_filter", wantStatus: 422, wantType: "invalid_request_error", wantCode: "content_policy_violation"},
+		{name: "minimax invalid characters", statusCode: 400, message: "invalid characters", code: 1042, wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_input", wantParam: "input"},
+		{name: "minimax audio duration", statusCode: 400, message: "audio duration invalid", code: 2037, wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_audio_duration"},
+		{name: "minimax voice cloning", statusCode: 400, message: "voice cloning parameters invalid", code: 20132, wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "voice_id"},
+		{name: "tencent parameter", statusCode: 400, message: "Temperature must be 2 or less", code: "InvalidParameter.Temperature", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "temperature"},
+		{name: "volcengine parameter", statusCode: 400, message: "The specified parameter top_p is invalid", code: "InvalidParameter.TopP", wantStatus: 400, wantType: "invalid_request_error", wantCode: "invalid_parameter_value", wantParam: "top_p"},
+		{name: "tencent credentials stay private", statusCode: 400, message: "credential sk-secret could not be validated", code: "AuthFailure.SignatureFailure", wantStatus: 503, wantType: "server_error", wantCode: "upstream_unavailable"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			upstreamError := types.WithOpenAIError(types.OpenAIError{Message: test.message, Type: test.upstreamType, Code: test.code}, test.statusCode)
+
+			SetPublicUpstreamError(context.Background(), upstreamError)
+
+			publicError := upstreamError.ToOpenAIError()
+			require.Equal(t, test.message, upstreamError.Error())
+			require.Equal(t, test.wantStatus, upstreamError.PublicStatusCode())
+			require.Equal(t, test.wantType, publicError.Type)
+			require.Equal(t, test.wantCode, publicError.Code)
+			require.Equal(t, test.wantParam, publicError.Param)
+			require.NotEqual(t, test.message, publicError.Message)
+			require.NotContains(t, publicError.Message, "sk-secret")
+		})
+	}
+}
+
+func TestRelayErrorHandlerPreservesTopLevelProviderCode(t *testing.T) {
+	resp := &http.Response{
+		StatusCode: http.StatusBadRequest,
+		Body:       io.NopCloser(strings.NewReader(`{"code":"InvalidParameter.Temperature","message":"Temperature must be 2 or less","type":"invalid_request_error"}`)),
+	}
+
+	upstreamError := RelayErrorHandler(context.Background(), resp, false)
+
+	require.NotNil(t, upstreamError)
+	require.Equal(t, "Temperature must be 2 or less", upstreamError.Error())
+	require.Equal(t, types.ErrorCode("InvalidParameter.Temperature"), upstreamError.GetErrorCode())
+	require.Equal(t, http.StatusBadRequest, upstreamError.PublicStatusCode())
+	require.Equal(t, "temperature", upstreamError.ToOpenAIError().Param)
 }
 
 func TestSetPublicUpstreamErrorKeepsRawAdminDetail(t *testing.T) {

@@ -150,7 +150,10 @@ func baiduHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Respon
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
 	if baiduResponse.ErrorMsg != "" {
-		return types.NewError(fmt.Errorf("%s", baiduResponse.ErrorMsg), types.ErrorCodeBadResponseBody), nil
+		return types.WithOpenAIError(types.OpenAIError{
+			Message: baiduResponse.ErrorMsg,
+			Code:    baiduResponse.ErrorCode,
+		}, baiduErrorStatus(baiduResponse.ErrorCode)), nil
 	}
 	fullTextResponse := responseBaidu2OpenAI(&baiduResponse)
 	jsonResponse, err := json.Marshal(fullTextResponse)
@@ -175,7 +178,10 @@ func baiduEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 		return types.NewError(err, types.ErrorCodeBadResponseBody), nil
 	}
 	if baiduResponse.ErrorMsg != "" {
-		return types.NewError(fmt.Errorf("%s", baiduResponse.ErrorMsg), types.ErrorCodeBadResponseBody), nil
+		return types.WithOpenAIError(types.OpenAIError{
+			Message: baiduResponse.ErrorMsg,
+			Code:    baiduResponse.ErrorCode,
+		}, baiduErrorStatus(baiduResponse.ErrorCode)), nil
 	}
 	fullTextResponse := embeddingResponseBaidu2OpenAI(&baiduResponse)
 	jsonResponse, err := json.Marshal(fullTextResponse)
@@ -186,6 +192,19 @@ func baiduEmbeddingHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *ht
 	c.Writer.WriteHeader(resp.StatusCode)
 	_, err = c.Writer.Write(jsonResponse)
 	return nil, &fullTextResponse.Usage
+}
+
+func baiduErrorStatus(errorCode int) int {
+	switch errorCode {
+	case 17:
+		return http.StatusTooManyRequests
+	case 100, 110, 111:
+		return http.StatusUnauthorized
+	case 336000, 336100:
+		return http.StatusServiceUnavailable
+	default:
+		return http.StatusBadRequest
+	}
 }
 
 func getBaiduAccessToken(apiKey string) (string, error) {

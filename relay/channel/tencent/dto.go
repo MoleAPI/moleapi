@@ -44,7 +44,7 @@ type TencentChatRequest struct {
 }
 
 type TencentError struct {
-	Code    int    `json:"Code"`
+	Code    any    `json:"Code"`
 	Message string `json:"Message"`
 }
 
