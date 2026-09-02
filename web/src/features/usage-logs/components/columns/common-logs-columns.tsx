@@ -858,7 +858,7 @@ export function useCommonLogsColumns(
                 <span
                   key={`${segment.text}-${segment.muted ? 'muted' : ''}-${segment.danger ? 'danger' : ''}`}
                   className={cn(
-                    'min-w-0 break-all sm:wrap-break-word',
+                    'min-w-0 break-all whitespace-normal sm:wrap-break-word',
                     segments.length > 1 ? 'line-clamp-1' : 'line-clamp-2',
                     segment.muted && 'text-muted-foreground/60',
                     segment.danger && 'text-red-600 dark:text-red-400'
