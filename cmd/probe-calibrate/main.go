@@ -61,6 +61,7 @@ func main() {
 	level := flag.String("level", levelAll, "challenge level: basic, standard, advanced, or all")
 	dryRun := flag.Bool("dry-run", false, "print challenges without calling a model")
 	maxOutput := flag.Int("max-output", 64, "maximum output tokens per request")
+	timeout := flag.Int("timeout", 60, "request timeout in seconds")
 	reasoningEffort := flag.String("reasoning-effort", "", "optional reasoning effort such as none or low")
 	disableThinking := flag.Bool("disable-thinking", false, "send enable_thinking=false for compatible models")
 	flag.Parse()
@@ -71,6 +72,10 @@ func main() {
 	}
 	if *maxOutput < 1 || *maxOutput > 512 {
 		fmt.Fprintln(os.Stderr, "max-output must be between 1 and 512")
+		os.Exit(2)
+	}
+	if *timeout < 1 || *timeout > 600 {
+		fmt.Fprintln(os.Stderr, "timeout must be between 1 and 600 seconds")
 		os.Exit(2)
 	}
 	*level = strings.ToLower(strings.TrimSpace(*level))
@@ -93,7 +98,7 @@ func main() {
 		return
 	}
 
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: time.Duration(*timeout) * time.Second}
 	for _, model := range models {
 		runModel(client, endpoint, apiKey, model, challenges, *maxOutput, *reasoningEffort, *disableThinking)
 	}
@@ -321,12 +326,14 @@ func runModel(client *http.Client, endpoint string, apiKey string, model string,
 			target.Total++
 		}
 
+		startedAt := time.Now()
 		content, usage, err := callModel(client, endpoint, apiKey, model, item.Prompt, maxOutput, reasoningEffort, disableThinking)
+		latency := time.Since(startedAt).Round(time.Millisecond)
 		if err != nil {
 			for _, target := range targets {
 				target.RequestErrors++
 			}
-			fmt.Printf("%-16s request_error=%q\n", item.ID, truncate(err.Error(), 200))
+			fmt.Printf("%-16s request_error=%q latency=%s\n", item.ID, truncate(err.Error(), 200), latency)
 			continue
 		}
 		extracted, found, exact := extractAnswer(content)
@@ -353,7 +360,7 @@ func runModel(client *http.Client, endpoint string, apiKey string, model string,
 		}
 		totalPromptTokens += usage.PromptTokens
 		totalCompletionTokens += usage.CompletionTokens
-		fmt.Printf("%-16s correct=%-5t exact=%-5t expected=%-12s got=%q tokens=%d+%d finish=%s\n", item.ID, correct, exact, item.Answer, truncate(content, 80), usage.PromptTokens, usage.CompletionTokens, usage.FinishReason)
+		fmt.Printf("%-16s correct=%-5t exact=%-5t expected=%-12s got=%q tokens=%d+%d finish=%s latency=%s\n", item.ID, correct, exact, item.Answer, truncate(content, 80), usage.PromptTokens, usage.CompletionTokens, usage.FinishReason, latency)
 	}
 	for _, level := range []string{levelBasic, levelStandard, levelAdvanced} {
 		if result := levelResults[level]; result != nil {
