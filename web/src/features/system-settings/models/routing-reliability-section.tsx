@@ -18,12 +18,14 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { useMemo, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
 
+import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -44,6 +46,14 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
 import { getChannelSuccessMetrics } from '@/features/dashboard/api'
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
@@ -346,17 +356,17 @@ export function RoutingReliabilitySection({
   switch (channelTestMode) {
     case 'auto_ban_only':
       channelTestModeDescription = t(
-        'Periodically checks only channels with auto-disable enabled, excluding manually disabled channels.'
+        'Checks only non-manually-disabled channels that have both scheduled model checks and per-channel auto-disable enabled.'
       )
       break
     case 'passive_recovery':
       channelTestModeDescription = t(
-        'Does not check healthy channels. It only rechecks auto-disabled channels and restores them after they recover.'
+        'Checks only auto-disabled channels with scheduled model checks enabled; healthy and manually disabled channels are skipped.'
       )
       break
     default:
       channelTestModeDescription = t(
-        'Periodically checks all channels except manually disabled ones to detect failures and recover channels automatically.'
+        'Checks enabled and auto-disabled channels that have scheduled model checks enabled, allowing both monitoring and recovery.'
       )
   }
   const autoDisableParsed = useMemo(
@@ -473,10 +483,12 @@ export function RoutingReliabilitySection({
                 render={({ field }) => (
                   <SettingsSwitchItem>
                     <SettingsSwitchContent>
-                      <FormLabel>{t('Scheduled channel tests')}</FormLabel>
+                      <FormLabel>
+                        {t('Enable scheduled model checks')}
+                      </FormLabel>
                       <FormDescription>
                         {t(
-                          'Automatically probe all channels in the background'
+                          'Master switch for every channel with scheduled model checks enabled.'
                         )}
                       </FormDescription>
                     </SettingsSwitchContent>
@@ -569,7 +581,7 @@ export function RoutingReliabilitySection({
                     </Select>
                     <FormDescription>
                       {t(
-                        'Intelligence checks use short rotating questions and require three consecutive misses before disabling a channel.'
+                        'Intelligence and custom checks require three consecutive misses before disabling a calibrated channel.'
                       )}
                     </FormDescription>
                     <FormMessage />
@@ -637,7 +649,7 @@ export function RoutingReliabilitySection({
                       <FormLabel>{t('Re-enable on success')}</FormLabel>
                       <FormDescription>
                         {t(
-                          'Bring channels back online after successful checks'
+                          'Only auto-disabled channels in the scheduled scope can recover; manually disabled channels never recover. A health failure needs one successful check, while an intelligence or custom degradation needs two consecutive successes.'
                         )}
                       </FormDescription>
                     </SettingsSwitchContent>
@@ -700,16 +712,57 @@ export function RoutingReliabilitySection({
                         models: probeOverview.total_models,
                       })}
                     </p>
-                    <div className='mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto'>
-                      {probeOverview.items.map((item) => (
-                        <span
-                          key={`${item.channel_id}-${item.model}`}
-                          className='bg-background rounded border px-1.5 py-0.5 text-[11px]'
-                        >
-                          {item.channel_name} · {item.model}
-                        </span>
-                      ))}
-                    </div>
+                    {probeOverview.items.length > 0 ? (
+                      <div className='mt-2 max-h-64 overflow-auto rounded-md border'>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead scope='col'>
+                                {t('Channel ID')}
+                              </TableHead>
+                              <TableHead scope='col'>{t('Channel')}</TableHead>
+                              <TableHead scope='col'>{t('Model')}</TableHead>
+                              <TableHead scope='col' className='text-right'>
+                                {t('Actions')}
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {probeOverview.items.map((item) => (
+                              <TableRow
+                                key={`${item.channel_id}-${item.model}`}
+                              >
+                                <TableCell>#{item.channel_id}</TableCell>
+                                <TableCell>{item.channel_name}</TableCell>
+                                <TableCell>{item.model}</TableCell>
+                                <TableCell className='text-right'>
+                                  <Button
+                                    variant='link'
+                                    size='sm'
+                                    render={
+                                      <Link
+                                        to='/channels'
+                                        search={{
+                                          page: 1,
+                                          filter: String(item.channel_id),
+                                          status: [],
+                                        }}
+                                      />
+                                    }
+                                  >
+                                    {t('Manage')}
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <p className='text-muted-foreground mt-2 text-xs'>
+                        {t('No data available')}
+                      </p>
+                    )}
                   </>
                 ) : (
                   <p className='text-muted-foreground mt-0.5 text-xs'>
@@ -727,6 +780,11 @@ export function RoutingReliabilitySection({
           <div className='flex min-w-0 flex-col gap-4'>
             <div className='flex flex-col gap-1'>
               <h4 className='text-sm font-medium'>{t('Auto-disable rules')}</h4>
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'Status codes and failure keywords use OR logic: matching either one can trigger auto-disable.'
+                )}
+              </p>
             </div>
             <div className='grid min-w-0 gap-6 lg:grid-cols-2'>
               <FormField
@@ -737,7 +795,9 @@ export function RoutingReliabilitySection({
                     <SettingsSwitchContent>
                       <FormLabel>{t('Disable on failure')}</FormLabel>
                       <FormDescription>
-                        {t('Automatically disable channels when tests fail')}
+                        {t(
+                          'Master switch. A channel must also have per-channel auto-disable enabled; any matching status code, failure keyword, scheduled-test timeout, or three consecutive intelligence/custom misses can disable it.'
+                        )}
                       </FormDescription>
                     </SettingsSwitchContent>
                     <FormControl>
@@ -767,7 +827,7 @@ export function RoutingReliabilitySection({
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Automatically disable channels exceeding this response time'
+                        'During scheduled checks, disable channels exceeding this response time; 0 disables this rule.'
                       )}
                     </FormDescription>
                     <FormMessage />
