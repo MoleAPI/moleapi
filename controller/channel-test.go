@@ -46,6 +46,9 @@ type testResult struct {
 	latencyMs   int64
 }
 
+// ponytail: probes get one fixed ceiling; add a setting only if real model data shows 90 seconds is too short.
+const automaticChannelTestTimeout = 90 * time.Second
+
 type channelProbeSpec struct {
 	Mode           string
 	Source         string
@@ -1136,6 +1139,11 @@ type channelTestSummary struct {
 
 func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
 	summary := channelTestSummary{}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	testCtx, cancel := context.WithTimeout(ctx, automaticChannelTestTimeout)
+	defer cancel()
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 	probeState := channelprobe.StateFromOtherInfo(channel.OtherInfo)
 	probeModels := channelTestModels(channel)
@@ -1150,7 +1158,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	}
 	blockedModelBefore := probeState.BlockedModel
 	tik := time.Now()
-	result := testChannel(ctx, channel, testUserID, testModel, "", shouldUseStreamForAutomaticChannelTest(channel), probe)
+	result := testChannel(testCtx, channel, testUserID, testModel, "", shouldUseStreamForAutomaticChannelTest(channel), probe)
 	milliseconds := time.Since(tik).Milliseconds()
 	if ctx.Err() != nil {
 		return summary
