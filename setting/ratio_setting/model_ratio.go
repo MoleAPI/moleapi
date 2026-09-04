@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	hostreasoning "github.com/QuantumNous/new-api/setting/reasoning"
 	"github.com/QuantumNous/new-api/types"
 )
 
@@ -759,6 +760,21 @@ func GetAudioRatioCopy() map[string]float64 {
 
 func GetAudioCompletionRatioCopy() map[string]float64 {
 	return audioCompletionRatioMap.ReadAll()
+}
+
+// RoutingMatchModelName returns the name used for channel-ability and token-limit
+// fallback matching: strip @ modifiers and legacy aliases first, then apply
+// wildcard normalization.
+func RoutingMatchModelName(name string) string {
+	return FormatMatchingModelName(hostreasoning.BaseModelName(name))
+}
+
+// HasConfiguredModelRatio reports whether name has an explicit ratio entry
+// after wildcard normalization. Self-use fallback does not count.
+func HasConfiguredModelRatio(name string) bool {
+	name = FormatMatchingModelName(name)
+	_, ok := modelRatioMap.Get(name)
+	return ok
 }
 
 // 转换模型名，减少渠道必须配置各种带参数模型
