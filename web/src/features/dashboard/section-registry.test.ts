@@ -49,8 +49,8 @@ test('channel success rate follows model analytics and is admin-only', () => {
   )
 
   assert.equal(
-    adminTitles.indexOf('Channel Success Rate'),
+    adminTitles.indexOf('Channel Reliability'),
     adminTitles.indexOf('Model Call Analytics') + 1
   )
-  assert.equal(userTitles.includes('Channel Success Rate'), false)
+  assert.equal(userTitles.includes('Channel Reliability'), false)
 })

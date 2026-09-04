@@ -42,7 +42,7 @@ const DASHBOARD_SECTIONS = [
   },
   {
     id: 'channels',
-    titleKey: 'Channel Success Rate',
+    titleKey: 'Channel Reliability',
     adminOnly: true,
     build: () => null,
   },

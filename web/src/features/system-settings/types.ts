@@ -296,6 +296,9 @@ export type ModelSettings = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
+  'monitor_setting.channel_test_type': 'hi' | 'intelligence' | 'custom'
+  'monitor_setting.channel_test_custom_prompt': string
+  'monitor_setting.channel_test_custom_answer': string
   'monitor_setting.channel_test_mode':
     | 'scheduled_all'
     | 'auto_ban_only'

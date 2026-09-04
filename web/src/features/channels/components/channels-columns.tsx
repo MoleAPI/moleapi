@@ -71,6 +71,7 @@ import {
   parseModelsList,
   parseGroupsList,
   parseChannelSettings,
+  parseChannelOtherSettings,
   channelsQueryKeys,
   handleUpdateChannelField,
   handleUpdateTagField,
@@ -80,6 +81,8 @@ import {
 } from '../lib'
 import {
   getChannelSuccessStats,
+  getChannelProbeStats,
+  type ChannelProbeMetric,
   type ChannelSuccessMetric,
   type ChannelSuccessStats,
 } from '../lib/channel-success'
@@ -599,18 +602,49 @@ function getSuccessRateVariant(
   return 'success'
 }
 
+function getProbeStatusVariant(
+  status: 'pending' | 'healthy' | 'degraded'
+): StatusBadgeProps['variant'] {
+  if (status === 'healthy') return 'success'
+  if (status === 'degraded') return 'danger'
+  return 'neutral'
+}
+
 function ChannelSuccessCell({
   channel,
   channelSuccessById,
+  channelProbeById,
+  probeMode,
 }: {
   channel: Channel
   channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
+  channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
+  probeMode?: 'hi' | 'intelligence' | 'custom'
 }) {
   const { t } = useTranslation()
   const stats = getChannelSuccessStats(channel, channelSuccessById)
+  const probeStats =
+    probeMode === 'hi'
+      ? undefined
+      : getChannelProbeStats(channel, channelProbeById)
+  const probeDisabled = isTagAggregateRow(channel)
+    ? channel.children.every(
+        (child) =>
+          parseChannelOtherSettings(child.settings).channel_probe_enabled ===
+          false
+      )
+    : parseChannelOtherSettings(channel.settings).channel_probe_enabled ===
+      false
 
-  if (!stats) {
+  if (!stats && !probeStats && !probeDisabled) {
     return <span className='text-muted-foreground text-xs'>-</span>
+  }
+
+  const degradedCount =
+    probeStats?.items.filter((item) => item.status === 'degraded').length ?? 0
+  let probeLabel = probeStats ? t(probeStats.status) : ''
+  if (probeStats?.status === 'degraded') {
+    probeLabel = t('Degraded {{count}}', { count: degradedCount })
   }
 
   return (
@@ -618,22 +652,61 @@ function ChannelSuccessCell({
       <Tooltip>
         <TooltipTrigger
           render={
-            <StatusBadge
-              label={formatUptimePct(stats.success_rate)}
-              variant={getSuccessRateVariant(stats)}
-              size='sm'
-              copyable={false}
-              className='-ml-1.5 font-mono tabular-nums'
-            />
+            <div className='-ml-1.5 flex items-center gap-1'>
+              {stats && (
+                <StatusBadge
+                  label={formatUptimePct(stats.success_rate)}
+                  variant={getSuccessRateVariant(stats)}
+                  size='sm'
+                  copyable={false}
+                  className='font-mono tabular-nums'
+                />
+              )}
+              {probeStats && (
+                <StatusBadge
+                  label={probeLabel}
+                  variant={getProbeStatusVariant(probeStats.status)}
+                  size='sm'
+                  copyable={false}
+                />
+              )}
+              {probeDisabled && (
+                <StatusBadge
+                  label={t('Disabled')}
+                  variant='neutral'
+                  size='sm'
+                  copyable={false}
+                />
+              )}
+            </div>
           }
         />
         <TooltipContent side='top'>
-          <div className='space-y-1 text-xs'>
-            <div>{t('Success rate')}</div>
-            <div className='text-muted-foreground font-mono'>
-              {stats.success_count.toLocaleString()} /{' '}
-              {stats.request_count.toLocaleString()} {t('Requests')}
-            </div>
+          <div className='max-h-72 space-y-2 overflow-y-auto text-xs'>
+            {stats && (
+              <div>
+                <div>{t('Success rate')}</div>
+                <div className='text-muted-foreground font-mono'>
+                  {stats.success_count.toLocaleString()} /{' '}
+                  {stats.request_count.toLocaleString()} {t('Requests')}
+                </div>
+              </div>
+            )}
+            {probeStats?.items.map((item) => (
+              <div
+                key={`${item.channel_id}-${item.model}`}
+                className='border-t pt-1.5'
+              >
+                <div className='font-medium'>{item.model}</div>
+                <div className='text-muted-foreground'>
+                  {t(item.status)}
+                  {item.level ? ` · ${t(item.level)}` : ''}
+                  {item.recent_total > 0
+                    ? ` · ${item.recent_pass}/${item.recent_total}`
+                    : ''}
+                </div>
+              </div>
+            ))}
           </div>
         </TooltipContent>
       </Tooltip>
@@ -648,6 +721,8 @@ export function useChannelsColumns(
   options: {
     enableSelection?: boolean
     channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
+    channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
+    probeMode?: 'hi' | 'intelligence' | 'custom'
   } = {}
 ): ColumnDef<Channel>[] {
   const { t } = useTranslation()
@@ -1197,18 +1272,20 @@ export function useChannelsColumns(
         size: 180,
       },
 
-      // Success Rate column
+      // Reliability column
       {
         id: 'success_rate',
-        header: t('Success rate'),
+        header: t('Reliability'),
         meta: { mobileHidden: true },
         cell: ({ row }) => (
           <ChannelSuccessCell
             channel={row.original}
             channelSuccessById={options.channelSuccessById}
+            channelProbeById={options.channelProbeById}
+            probeMode={options.probeMode}
           />
         ),
-        size: 120,
+        size: 180,
         enableSorting: false,
       },
 
@@ -1258,6 +1335,13 @@ export function useChannelsColumns(
         meta: { pinned: 'right' as const },
       },
     ],
-    [enableSelection, t, sensitiveVisible, options.channelSuccessById]
+    [
+      enableSelection,
+      t,
+      sensitiveVisible,
+      options.channelSuccessById,
+      options.channelProbeById,
+      options.probeMode,
+    ]
   )
 }

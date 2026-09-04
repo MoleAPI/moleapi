@@ -18,10 +18,16 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
 import { VChart } from '@visactor/react-vchart'
-import { Activity, AlertCircle, ChartNoAxesCombined } from 'lucide-react'
+import {
+  Activity,
+  AlertCircle,
+  ChartNoAxesCombined,
+  ShieldCheck,
+} from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { StatusBadge } from '@/components/status-badge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
   Empty,
@@ -35,7 +41,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { getChannelSuccessMetrics } from '@/features/dashboard/api'
 import { getDashboardChartColors } from '@/features/dashboard/lib/charts'
-import type { ChannelSuccessSummary } from '@/features/dashboard/types'
+import type {
+  ChannelProbeOverview,
+  ChannelSuccessSummary,
+} from '@/features/dashboard/types'
 import {
   formatUptimePct,
   getSuccessRateColor,
@@ -69,6 +78,7 @@ export function ChannelSuccessCharts() {
     () => metricsQuery.data?.data.channels ?? [],
     [metricsQuery.data]
   )
+  const probeOverview = metricsQuery.data?.data.probe_overview
   const chartSpec = useMemo(
     () =>
       buildChannelChartSpec(
@@ -87,7 +97,7 @@ export function ChannelSuccessCharts() {
           </IconBadge>
           <div className='min-w-0'>
             <h2 className='text-sm font-semibold'>
-              {t('Channel Success Rate')}
+              {t('Channel Reliability')}
             </h2>
             <p className='text-muted-foreground mt-0.5 text-xs'>
               {t('Calculated from upstream attempts, including retries.')}
@@ -123,6 +133,9 @@ export function ChannelSuccessCharts() {
       )}
       {!metricsQuery.isError && metricsQuery.isLoading && (
         <ChannelSuccessLoading />
+      )}
+      {!metricsQuery.isError && !metricsQuery.isLoading && probeOverview && (
+        <ChannelProbeSummary overview={probeOverview} />
       )}
       {!metricsQuery.isError &&
         !metricsQuery.isLoading &&
@@ -177,6 +190,92 @@ export function ChannelSuccessCharts() {
           </div>
         )}
     </section>
+  )
+}
+
+function ChannelProbeSummary({ overview }: { overview: ChannelProbeOverview }) {
+  const { t } = useTranslation()
+  const degraded = overview.items.filter((item) => item.status === 'degraded')
+
+  return (
+    <div className='border-b p-3 sm:p-4'>
+      <div className='mb-3 flex items-center gap-2'>
+        <ShieldCheck className='text-muted-foreground size-4' />
+        <h3 className='text-xs font-semibold'>
+          {t('Intelligence monitoring')}
+        </h3>
+        <StatusBadge
+          label={overview.enabled ? t(overview.mode) : t('Disabled')}
+          variant={overview.enabled ? 'info' : 'neutral'}
+          size='sm'
+          copyable={false}
+        />
+      </div>
+      {overview.mode === 'hi' ? (
+        <p className='text-muted-foreground text-xs'>
+          {t(
+            '{{count}} channels use connectivity checks. Select intelligence or custom probes in routing reliability settings to track model quality.',
+            { count: overview.enabled_channels }
+          )}
+        </p>
+      ) : (
+        <div className='grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,1fr)]'>
+          <div className='grid grid-cols-3 gap-2'>
+            <ProbeCount
+              label={t('Healthy')}
+              value={overview.healthy}
+              tone='text-emerald-600'
+            />
+            <ProbeCount
+              label={t('Degraded')}
+              value={overview.degraded}
+              tone='text-destructive'
+            />
+            <ProbeCount
+              label={t('Pending')}
+              value={overview.pending}
+              tone='text-muted-foreground'
+            />
+          </div>
+          <div className='bg-muted/30 max-h-28 overflow-y-auto rounded-md px-3 py-2 text-xs'>
+            {degraded.length === 0 ? (
+              <span className='text-muted-foreground'>
+                {overview.pending > 0
+                  ? t('Calibration is still in progress.')
+                  : t('No degraded models detected.')}
+              </span>
+            ) : (
+              degraded.map((item) => (
+                <div
+                  key={`${item.channel_id}-${item.model}`}
+                  className='flex justify-between gap-3 py-0.5'
+                >
+                  <span className='min-w-0 truncate'>
+                    {item.channel_name} · {item.model}
+                  </span>
+                  <span className='text-destructive shrink-0'>
+                    {item.recent_pass}/{item.recent_total}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProbeCount(props: { label: string; value: number; tone: string }) {
+  return (
+    <div className='bg-muted/30 rounded-md px-3 py-2'>
+      <div
+        className={`font-mono text-lg font-semibold tabular-nums ${props.tone}`}
+      >
+        {props.value}
+      </div>
+      <div className='text-muted-foreground text-[11px]'>{props.label}</div>
+    </div>
   )
 }
 

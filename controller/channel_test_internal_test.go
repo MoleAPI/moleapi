@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
+	"github.com/QuantumNous/new-api/pkg/channelprobe"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
@@ -277,12 +278,60 @@ func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
 	other := buildTestLogOther(ctx, info, priceData, usage, &billingexpr.TieredResult{
 		MatchedTier:  "base",
 		RequestRules: requestRules,
+	}, newChannelProbeSpec(channelprobe.ModeHi, "manual", "", "", "", 1), channelprobe.Evaluation{Mode: channelprobe.ModeHi, Outcome: channelprobe.OutcomePass})
+
+	fields := other.Snapshot()
+	require.Equal(t, "tiered_expr", fields["billing_mode"])
+	require.Equal(t, "base", fields["matched_tier"])
+	require.Equal(t, requestRules, fields["request_rules"])
+	require.NotEmpty(t, fields["expr_b64"])
+}
+
+func TestExtractTestResponseTextSkipsReasoningBlocks(t *testing.T) {
+	body := []byte(`{"output":[{"type":"reasoning","content":[]},{"type":"message","content":[{"type":"output_text","text":"ANSWER:42"}]}]}`)
+	assert.Equal(t, "ANSWER:42", extractTestResponseText(body))
+}
+
+func TestBuildIntelligenceProbeUsesGPT5CompletionBudget(t *testing.T) {
+	request := buildTestRequest(
+		"gpt-5.6-sol",
+		"",
+		&model.Channel{},
+		false,
+		newChannelProbeSpec(channelprobe.ModeIntelligence, "manual", "", "", channelprobe.LevelAdvanced, 42),
+	)
+	chatRequest, ok := request.(*dto.GeneralOpenAIRequest)
+	require.True(t, ok)
+	require.NotNil(t, chatRequest.MaxCompletionTokens)
+	assert.Equal(t, uint(512), *chatRequest.MaxCompletionTokens)
+	assert.Nil(t, chatRequest.MaxTokens)
+}
+
+func TestBuildChannelProbeOverviewUsesExistingChannelJSON(t *testing.T) {
+	probeState, err := channelprobe.StateIntoOtherInfo(`{"status_reason":"kept"}`, channelprobe.State{Models: map[string]channelprobe.ModelState{
+		"model-a": {
+			StableLevel: channelprobe.LevelStandard,
+			Status:      channelprobe.StatusHealthy,
+			Recent:      []channelprobe.Sample{{Outcome: channelprobe.OutcomePass}},
+		},
+	}})
+	require.NoError(t, err)
+	disabled := false
+	disabledSettings, err := common.Marshal(dto.ChannelOtherSettings{ChannelProbeEnabled: &disabled})
+	require.NoError(t, err)
+	disabledSettingsText := string(disabledSettings)
+
+	overview := buildChannelProbeOverview([]*model.Channel{
+		{Id: 1, Name: "primary", Models: "model-a,model-b", OtherInfo: probeState, Status: common.ChannelStatusEnabled},
+		{Id: 2, Name: "off", Models: "model-c", OtherSettings: disabledSettingsText, Status: common.ChannelStatusEnabled},
 	})
 
-	require.Equal(t, "tiered_expr", other["billing_mode"])
-	require.Equal(t, "base", other["matched_tier"])
-	require.Equal(t, requestRules, other["request_rules"])
-	require.NotEmpty(t, other["expr_b64"])
+	assert.Equal(t, 1, overview.EnabledChannels)
+	assert.Equal(t, 2, overview.TotalModels)
+	assert.Equal(t, 1, overview.Healthy)
+	assert.Equal(t, 1, overview.Pending)
+	require.Len(t, overview.Items, 2)
+	assert.Equal(t, channelprobe.LevelStandard, overview.Items[0].Level)
 }
 
 func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {

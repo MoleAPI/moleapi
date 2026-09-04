@@ -38,7 +38,11 @@ import {
   updateAllChannelsBalance,
 } from '../api'
 import { CHANNEL_STATUS, ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
-import type { ChannelTestResponse, CopyChannelParams } from '../types'
+import type {
+  ChannelTestProbe,
+  ChannelTestResponse,
+  CopyChannelParams,
+} from '../types'
 
 // ============================================================================
 // Query Keys
@@ -272,23 +276,36 @@ export async function handleTestChannel(
     testModel?: string
     endpointType?: string
     stream?: boolean
+    testType?: 'hi' | 'intelligence' | 'custom'
+    prompt?: string
+    expectedAnswer?: string
     silent?: boolean
   },
   onTestComplete?: (
     success: boolean,
     responseTime?: number,
     error?: string,
-    errorCode?: string
+    errorCode?: string,
+    probe?: ChannelTestProbe
   ) => void
 ): Promise<void> {
   const payload =
-    options && (options.testModel || options.endpointType || options.stream)
+    options &&
+    (options.testModel ||
+      options.endpointType ||
+      options.stream ||
+      options.testType)
       ? {
           ...(options.testModel ? { model: options.testModel } : {}),
           ...(options.endpointType
             ? { endpoint_type: options.endpointType }
             : {}),
           ...(options.stream ? { stream: true } : {}),
+          ...(options.testType ? { test_type: options.testType } : {}),
+          ...(options.prompt ? { prompt: options.prompt } : {}),
+          ...(options.expectedAnswer
+            ? { expected_answer: options.expectedAnswer }
+            : {}),
         }
       : undefined
 
@@ -297,7 +314,11 @@ export async function handleTestChannel(
     const responseTime = getChannelTestResponseTime(response)
     const duration = formatChannelTestDuration(responseTime)
     const target = getChannelTestLabel(options)
-    if (response.success) {
+    const probePassed =
+      !response.probe ||
+      response.probe.outcome === 'pass' ||
+      response.probe.outcome === 'completed'
+    if (response.success && probePassed) {
       if (!options?.silent) {
         toast.success(
           i18next.t('{{target}} test succeeded', { target }),
@@ -310,9 +331,13 @@ export async function handleTestChannel(
             : undefined
         )
       }
-      onTestComplete?.(true, responseTime)
+      onTestComplete?.(true, responseTime, undefined, undefined, response.probe)
     } else {
-      const errorMsg = response.message || i18next.t(ERROR_MESSAGES.TEST_FAILED)
+      const errorMsg =
+        response.message ||
+        (response.probe
+          ? i18next.t('Probe answer did not match')
+          : i18next.t(ERROR_MESSAGES.TEST_FAILED))
       if (!options?.silent) {
         toast.error(i18next.t('{{target}} test failed', { target }), {
           description: response.error_code
@@ -320,7 +345,13 @@ export async function handleTestChannel(
             : errorMsg,
         })
       }
-      onTestComplete?.(false, responseTime, errorMsg, response.error_code)
+      onTestComplete?.(
+        false,
+        responseTime,
+        errorMsg,
+        response.error_code,
+        response.probe
+      )
     }
   } catch (_error: unknown) {
     const err = _error as { response?: { data?: { message?: string } } }

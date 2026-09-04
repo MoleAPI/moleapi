@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,7 +9,9 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -119,4 +122,46 @@ func TestDistributeUsesNormalizedPlaygroundPathForChannelSelection(t *testing.T)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, 341, common.GetContextKeyInt(ctx, constant.ContextKeyChannelId))
+}
+
+func distributorTaskPluginSource(key string, channelType int) string {
+	return fmt.Sprintf(`
+export const meta = {
+  apiVersion: 1,
+  key: %q,
+  name: %q,
+  version: "1.0.0",
+  author: {name: "Test"},
+  channelTypes: [%d],
+  models: ["task-model"],
+  fetchMode: "per_task",
+};
+export function buildSubmitRequest() { return {}; }
+export function parseSubmitResponse() { return {taskId: "task"}; }
+export function buildQueryRequest() { return {}; }
+export function parseTaskResult() { return {status: "SUCCESS"}; }
+`, key, key, channelType)
+}
+
+func TestNoAvailableChannelMessageNamesClaimingTaskPlugin(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	registry := jsplugin.NewRegistry()
+	plugin, err := registry.Register(distributorTaskPluginSource("claimer", constant.ChannelTypeKling), jsplugin.Options{})
+	require.NoError(t, err)
+
+	pinned, _ := gin.CreateTestContext(nil)
+	pinned.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	pinned.Request.Header.Set("Accept-Language", "en")
+	pinned.Set(jsplugin.ContextKeyPinnedPlugin, jsplugin.PinnedPlugin{Generation: registry.Generation(), Plugin: plugin})
+	message := noAvailableChannelMessage(pinned, "default", "kling-v1")
+	assert.Contains(t, message, `"claimer"`)
+	assert.Contains(t, message, "disable or override")
+	assert.Contains(t, message, "kling-v1")
+
+	plain, _ := gin.CreateTestContext(nil)
+	plain.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	plain.Request.Header.Set("Accept-Language", "en")
+	generic := noAvailableChannelMessage(plain, "default", "gpt-4o")
+	assert.NotContains(t, generic, "task plugin")
+	assert.Contains(t, generic, "gpt-4o")
 }

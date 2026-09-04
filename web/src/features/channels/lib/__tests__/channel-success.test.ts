@@ -21,7 +21,10 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
 
 import type { Channel } from '../../types'
-import { getChannelSuccessStats } from '../channel-success'
+import {
+  getChannelProbeStats,
+  getChannelSuccessStats,
+} from '../channel-success'
 
 describe('channel success stats', () => {
   test('returns a single channel success rate', () => {
@@ -79,5 +82,36 @@ describe('channel success stats', () => {
       success_count: 25,
       success_rate: 62.5,
     })
+  })
+})
+
+describe('channel probe stats', () => {
+  test('degraded model takes precedence in a channel summary', () => {
+    const items = [
+      {
+        channel_id: 7,
+        channel_name: 'primary',
+        model: 'model-a',
+        status: 'healthy' as const,
+        recent_pass: 5,
+        recent_total: 5,
+      },
+      {
+        channel_id: 7,
+        channel_name: 'primary',
+        model: 'model-b',
+        status: 'degraded' as const,
+        recent_pass: 2,
+        recent_total: 5,
+      },
+    ]
+
+    assert.deepEqual(
+      getChannelProbeStats({ id: 7 } as Channel, new Map([[7, items]])),
+      {
+        status: 'degraded',
+        items,
+      }
+    )
   })
 })

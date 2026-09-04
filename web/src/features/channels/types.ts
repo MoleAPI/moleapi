@@ -108,6 +108,8 @@ export interface ChannelOtherSettings {
   upstream_model_update_ignored_models?: string[]
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
+  channel_probe_enabled?: boolean
+  channel_probe_models?: string[]
   coding_plan_provider?: string
   advanced_custom?: AdvancedCustomConfig
 }
@@ -191,11 +193,20 @@ export interface ChannelTestResponse {
   message?: string
   error_code?: string
   time?: number
+  probe?: {
+    mode: 'hi' | 'intelligence' | 'custom'
+    question_id?: string
+    question_kind?: string
+    level?: 'basic' | 'standard' | 'advanced'
+    outcome: 'pass' | 'wrong' | 'no_answer' | 'completed'
+  }
   data?: {
     response_time?: number
     error?: string
   }
 }
+
+export type ChannelTestProbe = NonNullable<ChannelTestResponse['probe']>
 
 export interface ChannelBalanceResponse {
   success: boolean

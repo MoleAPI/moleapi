@@ -43,6 +43,7 @@ import { LOG_TYPE_ALL_VALUE } from '../../constants'
 import type { UsageLog } from '../../data/schema'
 import {
   formatModelName,
+  getMatchedRequestRuleMultiplier,
   getTieredBillingSummary,
   hasAnyCacheTokens,
   getImageTokenBreakdown,
@@ -98,6 +99,24 @@ function getEffectiveGroupRatio(other: LogOtherData | null): number | null {
 function getPriceRatioSuffix(other: LogOtherData): string {
   const ratio = getEffectiveGroupRatio(other)
   return ratio == null ? '' : ` · ${formatRatioCompact(ratio)}`
+}
+
+function getTieredPriceRatioSuffix(
+  other: LogOtherData,
+  t: (key: string) => string
+): string {
+  const parts: string[] = []
+  const requestRuleMultiplier = getMatchedRequestRuleMultiplier(other)
+  if (requestRuleMultiplier != null) {
+    parts.push(
+      `${t('Conditional multipliers')} ${formatRatioCompact(requestRuleMultiplier)}x`
+    )
+  }
+  const groupRatio = getEffectiveGroupRatio(other)
+  if (groupRatio != null) {
+    parts.push(`${t('Group Ratio')} ${formatRatioCompact(groupRatio)}x`)
+  }
+  return parts.map((part) => ` · ${part}`).join('')
 }
 
 function buildDetailSegments(
@@ -182,7 +201,7 @@ function buildTypeDetailSegments(
       if (baseEntries.length > 0) {
         const tierLabel = tieredSummary.tier.label || t('Default')
         segments.push({
-          text: `${tierLabel} · ${formatPriceList(baseEntries, true)}${getPriceRatioSuffix(other)}`,
+          text: `${tierLabel} · ${formatPriceList(baseEntries, true)}${getTieredPriceRatioSuffix(other, t)}`,
         })
       }
 
@@ -197,7 +216,7 @@ function buildTypeDetailSegments(
         })
       if (cacheEntries.length > 0) {
         segments.push({
-          text: `${t('Cache')} ${formatPriceList(cacheEntries, false)}${getPriceRatioSuffix(other)}`,
+          text: `${t('Cache')} ${formatPriceList(cacheEntries, false)}${getTieredPriceRatioSuffix(other, t)}`,
           muted: true,
         })
       }
@@ -214,7 +233,7 @@ function buildTypeDetailSegments(
             ].includes(entry.field)
         )
         .map((entry) => ({
-          text: `${t(entry.shortLabel)} ${formatPrice(entry.price)}${getPriceRatioSuffix(other)}`,
+          text: `${t(entry.shortLabel)} ${formatPrice(entry.price)}${getTieredPriceRatioSuffix(other, t)}`,
           muted: true,
         }))
       for (const entry of otherEntries) {
@@ -760,15 +779,16 @@ export function useCommonLogsColumns(
               {completionTokens.toLocaleString()}
             </span>
             {cacheReadTokens > 0 || cacheWriteTokens > 0 ? (
-              <div className='text-muted-foreground/60 flex flex-nowrap items-center gap-1.5 !text-[8px] leading-none'>
+              <div className='text-muted-foreground/60 flex flex-nowrap items-center gap-1 !text-[8px] leading-none'>
+                <span className='shrink-0'>{t('Cache')}:</span>
                 {cacheReadTokens > 0 ? (
                   <span className='shrink-0'>
-                    {t('Cache Read')} {cacheReadTokens.toLocaleString()}
+                    {t('Read')} {cacheReadTokens.toLocaleString()}
                   </span>
                 ) : null}
                 {cacheWriteTokens > 0 ? (
                   <span className='shrink-0'>
-                    {t('Cache Write')} {cacheWriteTokens.toLocaleString()}
+                    {t('Write')} {cacheWriteTokens.toLocaleString()}
                   </span>
                 ) : null}
               </div>
@@ -776,7 +796,7 @@ export function useCommonLogsColumns(
           </div>
         )
       },
-      size: 145,
+      size: 118,
     },
     {
       accessorKey: 'use_time',
@@ -859,7 +879,6 @@ export function useCommonLogsColumns(
                   key={`${segment.text}-${segment.muted ? 'muted' : ''}-${segment.danger ? 'danger' : ''}`}
                   className={cn(
                     'min-w-0 break-all whitespace-normal sm:wrap-break-word',
-                    segments.length > 1 ? 'line-clamp-1' : 'line-clamp-2',
                     segment.muted && 'text-muted-foreground/60',
                     segment.danger && 'text-red-600 dark:text-red-400'
                   )}
@@ -871,7 +890,7 @@ export function useCommonLogsColumns(
           )
         } else if (log.content) {
           detailPreview = (
-            <span className='text-muted-foreground line-clamp-2 break-all whitespace-normal sm:wrap-break-word'>
+            <span className='text-muted-foreground break-all whitespace-normal sm:wrap-break-word'>
               {log.content}
             </span>
           )
@@ -884,7 +903,7 @@ export function useCommonLogsColumns(
         )
       },
       enableSorting: false,
-      size: 190,
+      size: 360,
     }
   )
 
