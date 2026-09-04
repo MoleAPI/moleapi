@@ -353,6 +353,21 @@ export interface TieredBillingSummary {
   priceEntries: Array<{ field: string; shortLabel: string; price: number }>
 }
 
+export function getMatchedRequestRuleMultiplier(
+  other: LogOtherData | null | undefined
+): number | null {
+  const matchedRules = other?.request_rules?.filter((rule) => rule.matched)
+  if (!matchedRules?.length) return null
+
+  let multiplier = 1
+  for (const rule of matchedRules) {
+    if (!Number.isFinite(rule.multiplier) || rule.multiplier < 0) return null
+    multiplier *= rule.multiplier
+    if (!Number.isFinite(multiplier)) return null
+  }
+  return multiplier
+}
+
 /**
  * Whether the request payload reports any cache-related token usage. Used to
  * suppress cache pricing rows from the tiered breakdown when the request did

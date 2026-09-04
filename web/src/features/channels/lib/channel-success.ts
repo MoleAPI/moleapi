@@ -32,6 +32,22 @@ export type ChannelSuccessStats = {
   success_rate: number
 }
 
+export type ChannelProbeMetric = {
+  channel_id: number
+  channel_name: string
+  model: string
+  level?: 'basic' | 'standard' | 'advanced' | 'custom'
+  status: 'pending' | 'healthy' | 'degraded'
+  recent_pass: number
+  recent_total: number
+  last_test_at?: number
+}
+
+export type ChannelProbeStats = {
+  status: 'pending' | 'healthy' | 'degraded'
+  items: ChannelProbeMetric[]
+}
+
 export function getChannelSuccessStats(
   channel: Channel,
   metrics?: ReadonlyMap<number, ChannelSuccessMetric>
@@ -64,4 +80,23 @@ export function getChannelSuccessStats(
     success_count: successCount,
     success_rate: (successCount / requestCount) * 100,
   }
+}
+
+export function getChannelProbeStats(
+  channel: Channel,
+  metrics?: ReadonlyMap<number, ChannelProbeMetric[]>
+): ChannelProbeStats | undefined {
+  if (!metrics) return undefined
+  const items = isTagAggregateRow(channel)
+    ? channel.children.flatMap((child) => metrics.get(child.id) ?? [])
+    : (metrics.get(channel.id) ?? [])
+  if (items.length === 0) return undefined
+
+  let status: ChannelProbeStats['status'] = 'pending'
+  if (items.some((item) => item.status === 'degraded')) {
+    status = 'degraded'
+  } else if (items.every((item) => item.status === 'healthy')) {
+    status = 'healthy'
+  }
+  return { status, items }
 }

@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
 import { useMemo, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -44,6 +45,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
+import { getChannelSuccessMetrics } from '@/features/dashboard/api'
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
 
 import {
@@ -69,6 +71,8 @@ const channelTestModes = [
   'passive_recovery',
 ] as const
 type ChannelTestMode = (typeof channelTestModes)[number]
+const channelTestTypes = ['hi', 'intelligence', 'custom'] as const
+type ChannelTestType = (typeof channelTestTypes)[number]
 const MAX_CHANNEL_TEST_CONCURRENCY = 32
 
 const createRoutingReliabilitySchema = (
@@ -97,6 +101,9 @@ const createRoutingReliabilitySchema = (
             MAX_CHANNEL_TEST_CONCURRENCY,
             t('Channel test concurrency must be between 1 and 32')
           ),
+        channel_test_type: z.enum(channelTestTypes),
+        channel_test_custom_prompt: z.string().max(4000),
+        channel_test_custom_answer: z.string().max(500),
         channel_test_mode: z.enum(channelTestModes),
       }),
     })
@@ -126,6 +133,22 @@ const createRoutingReliabilitySchema = (
           }),
         })
       }
+      if (values.monitor_setting.channel_test_type === 'custom') {
+        if (!values.monitor_setting.channel_test_custom_prompt.trim()) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['monitor_setting', 'channel_test_custom_prompt'],
+            message: t('Custom prompt is required'),
+          })
+        }
+        if (!values.monitor_setting.channel_test_custom_answer.trim()) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['monitor_setting', 'channel_test_custom_answer'],
+            message: t('Expected answer is required'),
+          })
+        }
+      }
     })
 
 type RoutingReliabilitySchema = ReturnType<
@@ -146,6 +169,9 @@ type RoutingReliabilitySectionProps = {
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.channel_test_concurrency': number
+    'monitor_setting.channel_test_type': ChannelTestType
+    'monitor_setting.channel_test_custom_prompt': string
+    'monitor_setting.channel_test_custom_answer': string
     'monitor_setting.channel_test_mode': ChannelTestMode
   }
 }
@@ -165,6 +191,9 @@ type NormalizedRoutingReliabilityValues = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
+  'monitor_setting.channel_test_type': ChannelTestType
+  'monitor_setting.channel_test_custom_prompt': string
+  'monitor_setting.channel_test_custom_answer': string
   'monitor_setting.channel_test_mode': ChannelTestMode
 }
 
@@ -173,6 +202,11 @@ function normalizeChannelTestMode(value?: string): ChannelTestMode {
     return value
   }
   return 'scheduled_all'
+}
+
+function normalizeChannelTestType(value?: string): ChannelTestType {
+  if (value === 'intelligence' || value === 'custom') return value
+  return 'hi'
 }
 
 const buildFormDefaults = (
@@ -194,6 +228,13 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_minutes'],
     channel_test_concurrency:
       defaults['monitor_setting.channel_test_concurrency'],
+    channel_test_type: normalizeChannelTestType(
+      defaults['monitor_setting.channel_test_type']
+    ),
+    channel_test_custom_prompt:
+      defaults['monitor_setting.channel_test_custom_prompt'] ?? '',
+    channel_test_custom_answer:
+      defaults['monitor_setting.channel_test_custom_answer'] ?? '',
     channel_test_mode: normalizeChannelTestMode(
       defaults['monitor_setting.channel_test_mode']
     ),
@@ -222,6 +263,13 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_minutes'],
   'monitor_setting.channel_test_concurrency':
     defaults['monitor_setting.channel_test_concurrency'],
+  'monitor_setting.channel_test_type': normalizeChannelTestType(
+    defaults['monitor_setting.channel_test_type']
+  ),
+  'monitor_setting.channel_test_custom_prompt':
+    defaults['monitor_setting.channel_test_custom_prompt'] ?? '',
+  'monitor_setting.channel_test_custom_answer':
+    defaults['monitor_setting.channel_test_custom_answer'] ?? '',
   'monitor_setting.channel_test_mode': normalizeChannelTestMode(
     defaults['monitor_setting.channel_test_mode']
   ),
@@ -249,6 +297,11 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_minutes,
   'monitor_setting.channel_test_concurrency':
     values.monitor_setting.channel_test_concurrency,
+  'monitor_setting.channel_test_type': values.monitor_setting.channel_test_type,
+  'monitor_setting.channel_test_custom_prompt':
+    values.monitor_setting.channel_test_custom_prompt,
+  'monitor_setting.channel_test_custom_answer':
+    values.monitor_setting.channel_test_custom_answer,
   'monitor_setting.channel_test_mode': values.monitor_setting.channel_test_mode,
 })
 
@@ -281,6 +334,14 @@ export function RoutingReliabilitySection({
   const autoDisableStatusCodes = form.watch('AutomaticDisableStatusCodes')
   const autoRetryStatusCodes = form.watch('AutomaticRetryStatusCodes')
   const channelTestMode = form.watch('monitor_setting.channel_test_mode')
+  const channelTestType = form.watch('monitor_setting.channel_test_type')
+  const probeOverviewQuery = useQuery({
+    queryKey: ['channel-success-metrics', 24],
+    queryFn: () => getChannelSuccessMetrics(24),
+    staleTime: 60 * 1000,
+    retry: false,
+  })
+  const probeOverview = probeOverviewQuery.data?.data.probe_overview
   let channelTestModeDescription: string
   switch (channelTestMode) {
     case 'auto_ban_only':
@@ -484,6 +545,40 @@ export function RoutingReliabilitySection({
 
               <FormField
                 control={form.control}
+                name='monitor_setting.channel_test_type'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Probe type')}</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='hi'>{t('Hi check')}</SelectItem>
+                          <SelectItem value='intelligence'>
+                            {t('Intelligence check')}
+                          </SelectItem>
+                          <SelectItem value='custom'>
+                            {t('Custom prompt check')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t(
+                        'Intelligence checks use short rotating questions and require three consecutive misses before disabling a channel.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name='monitor_setting.auto_test_channel_minutes'
                 render={({ field }) => (
                   <FormItem>
@@ -555,6 +650,75 @@ export function RoutingReliabilitySection({
                   </SettingsSwitchItem>
                 )}
               />
+
+              {channelTestType === 'custom' && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name='monitor_setting.channel_test_custom_prompt'
+                    render={({ field }) => (
+                      <FormItem className='lg:col-span-2'>
+                        <FormLabel>{t('Custom prompt')}</FormLabel>
+                        <FormControl>
+                          <Textarea rows={4} maxLength={4000} {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Sent once for each scheduled model probe.')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='monitor_setting.channel_test_custom_answer'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Expected answer')}</FormLabel>
+                        <FormControl>
+                          <Input maxLength={500} {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Compared after ignoring spaces and letter case.')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+
+              <div className='bg-muted/25 rounded-md border px-3 py-2 lg:col-span-3'>
+                <div className='text-sm font-medium'>
+                  {t('Current scheduled targets')}
+                </div>
+                {probeOverview ? (
+                  <>
+                    <p className='text-muted-foreground mt-0.5 text-xs'>
+                      {t('{{channels}} channels · {{models}} models', {
+                        channels: probeOverview.enabled_channels,
+                        models: probeOverview.total_models,
+                      })}
+                    </p>
+                    <div className='mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto'>
+                      {probeOverview.items.map((item) => (
+                        <span
+                          key={`${item.channel_id}-${item.model}`}
+                          className='bg-background rounded border px-1.5 py-0.5 text-[11px]'
+                        >
+                          {item.channel_name} · {item.model}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className='text-muted-foreground mt-0.5 text-xs'>
+                    {probeOverviewQuery.isLoading
+                      ? t('Loading...')
+                      : t('Unable to load scheduled targets.')}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 

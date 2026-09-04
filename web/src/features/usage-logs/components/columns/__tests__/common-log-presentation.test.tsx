@@ -72,6 +72,28 @@ const log = usageLogSchema.parse({
   }),
 })
 
+const peakTieredLog = usageLogSchema.parse({
+  ...log,
+  quota: 1_095,
+  prompt_tokens: 1_299,
+  completion_tokens: 168,
+  other: JSON.stringify({
+    billing_mode: 'tiered_expr',
+    expr_b64: Buffer.from(
+      'tier("base", p * 0.67 + c * 1.34) * (hour("Asia/Shanghai") >= 14 ? 2 : 1)'
+    ).toString('base64'),
+    matched_tier: 'base',
+    group_ratio: 1,
+    request_rules: [
+      {
+        cond: 'hour("Asia/Shanghai") >= 14',
+        multiplier: 2,
+        matched: true,
+      },
+    ],
+  }),
+})
+
 function TestCell(props: {
   columnId: string
   isAdmin?: boolean
@@ -173,12 +195,12 @@ test('type, channel, token, group, and model use colored rounded labels', async 
   assert.match(modelHtml, /ring-current\/15/)
 })
 
-test('cache uses explicit words and numeric cost stays unboxed', async () => {
+test('token cache summary stays compact and numeric cost stays unboxed', async () => {
   const tokensHtml = await renderCell('prompt_tokens')
   const costHtml = await renderCell('quota')
 
-  assert.match(tokensHtml, /Cache Read[^<]*240/)
-  assert.match(tokensHtml, /Cache Write[^<]*80/)
+  assert.match(tokensHtml, /Cache.*Read.*240.*Write.*80/)
+  assert.doesNotMatch(tokensHtml, /Cache Read|Cache Write/)
   assert.match(tokensHtml, /!\s*text-\[14px\]|!text-\[14px\]/)
   assert.match(tokensHtml, /!\s*text-\[8px\]|!text-\[8px\]/)
   assert.doesNotMatch(tokensHtml, /[↓↑]/)
@@ -217,7 +239,7 @@ test('details preview keeps pricing first and omits neutral multiplier', async (
   assert.match(detailsHtml, /\$0\.14 \/ \$0\.56\/M · 1\.0/)
   assert.match(detailsHtml, /flex-col/)
   assert.match(detailsHtml, /Cache \$0\.014 \/ \$0\.175 · 1\.0/)
-  assert.match(detailsHtml, /line-clamp-1/)
+  assert.doesNotMatch(detailsHtml, /line-clamp/)
   assert.doesNotMatch(detailsHtml, /1\.0x/)
   assert.doesNotMatch(detailsHtml, /whitespace-nowrap/)
 })
@@ -261,7 +283,7 @@ test('details column wraps long raw content', async () => {
 
   assert.match(detailsHtml, /provider_error_/)
   assert.match(detailsHtml, /break-all/)
-  assert.match(detailsHtml, /line-clamp-2/)
+  assert.doesNotMatch(detailsHtml, /line-clamp/)
   assert.match(detailsHtml, /whitespace-normal/)
 })
 
@@ -415,11 +437,31 @@ test('dynamic billing details use compact ratio formatting for media pricing log
   assert.match(detailsHtml, /Audio Out/)
   assert.match(detailsHtml, /0\.3x/)
   assert.doesNotMatch(detailsHtml, /1\.0000x/)
-  assert.match(previewHtml, /standard · \$2 \/ \$8\/M · 0\.3/)
-  assert.match(previewHtml, /Image In \$3\/M · 0\.3/)
-  assert.match(previewHtml, /Audio In \$10\/M · 0\.3/)
+  assert.match(previewHtml, /standard · \$2 \/ \$8\/M · Group Ratio 0\.3x/)
+  assert.match(previewHtml, /Image In \$3\/M · Group Ratio 0\.3x/)
+  assert.match(previewHtml, /Audio In \$10\/M · Group Ratio 0\.3x/)
   assert.match(previewHtml, /flex-col/)
   assert.doesNotMatch(previewHtml, /1\.0x/)
+})
+
+test('details preview labels the matched conditional and group multipliers', async () => {
+  const previewHtml = await renderCell('content', false, peakTieredLog)
+
+  assert.match(
+    previewHtml,
+    /base · \$0\.67 \/ \$1\.34\/M · Conditional multipliers 2\.0x · Group Ratio 1\.0x/
+  )
+})
+
+test('expanded details include the matched conditional multiplier in the summary and calculation', async () => {
+  const detailsHtml = await renderInlineDetails(peakTieredLog)
+
+  assert.match(detailsHtml, /Conditional multipliers/)
+  assert.match(detailsHtml, /2\.0x · Matched/)
+  assert.match(
+    detailsHtml,
+    /\(Input .* \+ Output .*\) × 2\.0 Conditional multipliers × 1\.0 default Group/
+  )
 })
 
 test('desktop common logs keep full values on one horizontally scrollable row', async () => {
@@ -443,7 +485,7 @@ test('desktop common logs keep full values on one horizontally scrollable row', 
   assert.match(layoutHtml, /data-has-stream-column="true"/)
   assert.match(layoutHtml, /data-use-time-count="1"/)
   assert.match(layoutHtml, /prompt_tokens\|use_time\|is_stream\|quota/)
-  assert.match(layoutHtml, />1447</)
+  assert.match(layoutHtml, />1590</)
   assert.match(timeHtml, /font-mono/)
   assert.doesNotMatch(timeHtml, /font-mono[^"]*truncate/)
   assert.doesNotMatch(timeHtml, /data-slot="status-badge"/)

@@ -392,10 +392,11 @@ type RecordConsumeLogParams struct {
 	IsStream         bool      `json:"is_stream"`
 	Group            string    `json:"group"`
 	Other            *LogOther `json:"other"`
+	AlwaysRecord     bool      `json:"-"`
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
-	if !common.LogConsumeEnabled {
+	if !common.LogConsumeEnabled && !params.AlwaysRecord {
 		return
 	}
 	logger.LogInfo(c, fmt.Sprintf("record consume log: userId=%d, params=%s", userId, common.GetJsonString(params)))

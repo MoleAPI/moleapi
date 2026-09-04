@@ -6,30 +6,23 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/pkg/channelprobe"
 )
 
-type challenge struct {
-	ID     string
-	Kind   string
-	Level  string
-	Prompt string
-	Answer string
-}
+type challenge = channelprobe.Challenge
 
 const (
 	levelAll      = "all"
-	levelBasic    = "basic"
-	levelStandard = "standard"
-	levelAdvanced = "advanced"
+	levelBasic    = channelprobe.LevelBasic
+	levelStandard = channelprobe.LevelStandard
+	levelAdvanced = channelprobe.LevelAdvanced
 )
 
 type chatResponse struct {
@@ -105,187 +98,7 @@ func main() {
 }
 
 func generateChallenges(count int, seed int64, level string) []challenge {
-	rng := rand.New(rand.NewSource(seed))
-	generators := []struct {
-		level    string
-		generate func(*rand.Rand, int) challenge
-	}{
-		{level: levelStandard, generate: arithmeticChallenge},
-		{level: levelAdvanced, generate: orderingChallenge},
-		{level: levelAdvanced, generate: sequenceChallenge},
-		{level: levelBasic, generate: tableChallenge},
-		{level: levelAdvanced, generate: navigationChallenge},
-		{level: levelStandard, generate: conditionalChallenge},
-	}
-	if level != levelAll {
-		filtered := generators[:0]
-		for _, generator := range generators {
-			if generator.level == level {
-				filtered = append(filtered, generator)
-			}
-		}
-		generators = filtered
-	}
-	challenges := make([]challenge, 0, count)
-	for i := range count {
-		generator := generators[i%len(generators)]
-		item := generator.generate(rng, i+1)
-		item.Level = generator.level
-		challenges = append(challenges, item)
-	}
-	return challenges
-}
-
-func arithmeticChallenge(rng *rand.Rand, index int) challenge {
-	a, b := rng.Intn(70)+20, rng.Intn(8)+3
-	c, d, e := rng.Intn(80)+10, rng.Intn(7)+2, rng.Intn(40)+5
-	answer := ((a*b)-c)*d + e
-	return challenge{
-		ID:     fmt.Sprintf("arithmetic-%02d", index),
-		Kind:   "arithmetic",
-		Prompt: fmt.Sprintf("Compute exactly: ((%d × %d) − %d) × %d + %d. Do not explain. Reply with ANSWER: followed by the integer.", a, b, c, d, e),
-		Answer: strconv.Itoa(answer),
-	}
-}
-
-func orderingChallenge(rng *rand.Rand, index int) challenge {
-	names := []string{"Kiro", "Luma", "Navi", "Pavo", "Reni", "Sola"}
-	rng.Shuffle(len(names), func(i, j int) { names[i], names[j] = names[j], names[i] })
-	clues := make([]string, 0, len(names)-1)
-	for i := 0; i < len(names)-1; i++ {
-		if rng.Intn(2) == 0 {
-			clues = append(clues, fmt.Sprintf("%s is immediately before %s", names[i], names[i+1]))
-		} else {
-			clues = append(clues, fmt.Sprintf("%s is immediately after %s", names[i+1], names[i]))
-		}
-	}
-	rng.Shuffle(len(clues), func(i, j int) { clues[i], clues[j] = clues[j], clues[i] })
-	targetPosition := rng.Intn(len(names))
-	return challenge{
-		ID:     fmt.Sprintf("ordering-%02d", index),
-		Kind:   "ordering",
-		Prompt: fmt.Sprintf("Six people stand in one line. %s. Who is in position %d counting from the front? Do not explain. Reply with ANSWER: followed by the name.", strings.Join(clues, "; "), targetPosition+1),
-		Answer: names[targetPosition],
-	}
-}
-
-func sequenceChallenge(rng *rand.Rand, index int) challenge {
-	letters := []string{"A", "B", "C", "D", "E", "F", "G", "H"}
-	rng.Shuffle(len(letters), func(i, j int) { letters[i], letters[j] = letters[j], letters[i] })
-	items := append([]string(nil), letters[:6]...)
-	start := strings.Join(items, "")
-	rotation := rng.Intn(3) + 1
-	items = append(append([]string(nil), items[rotation:]...), items[:rotation]...)
-	for i, j := 0, len(items)-1; i < j; i, j = i+1, j-1 {
-		items[i], items[j] = items[j], items[i]
-	}
-	swapA, swapB := rng.Intn(3), rng.Intn(3)+3
-	items[swapA], items[swapB] = items[swapB], items[swapA]
-	return challenge{
-		ID:     fmt.Sprintf("sequence-%02d", index),
-		Kind:   "sequence",
-		Prompt: fmt.Sprintf("Start with the sequence %s. Rotate it left by %d positions, reverse the whole sequence, then swap positions %d and %d (positions start at 1). Do not explain. Reply with ANSWER: followed by the final sequence without spaces.", start, rotation, swapA+1, swapB+1),
-		Answer: strings.Join(items, ""),
-	}
-}
-
-func tableChallenge(rng *rand.Rand, index int) challenge {
-	types := []string{"red", "blue"}
-	rows := make([]string, 0, 6)
-	sum := 0
-	targetType := types[rng.Intn(len(types))]
-	parity := rng.Intn(2)
-	for i := range 6 {
-		kind := types[rng.Intn(len(types))]
-		value := rng.Intn(40) + 10
-		rows = append(rows, fmt.Sprintf("R%d=%s/%d", i+1, kind, value))
-		if kind == targetType && value%2 == parity {
-			sum += value
-		}
-	}
-	parityName := "even"
-	if parity == 1 {
-		parityName = "odd"
-	}
-	return challenge{
-		ID:     fmt.Sprintf("table-%02d", index),
-		Kind:   "table",
-		Prompt: fmt.Sprintf("Rows are written as name=color/value: %s. Sum the values of only the %s rows whose value is %s. If none match, use 0. Do not explain. Reply with ANSWER: followed by the integer.", strings.Join(rows, ", "), targetType, parityName),
-		Answer: strconv.Itoa(sum),
-	}
-}
-
-func navigationChallenge(rng *rand.Rand, index int) challenge {
-	directions := []string{"N", "E", "S", "W"}
-	direction := rng.Intn(4)
-	startDirection := directions[direction]
-	x, y := 0, 0
-	steps := make([]string, 0, 7)
-	for i := range 7 {
-		if i%2 == 1 {
-			if rng.Intn(2) == 0 {
-				direction = (direction + 3) % 4
-				steps = append(steps, "turn left")
-			} else {
-				direction = (direction + 1) % 4
-				steps = append(steps, "turn right")
-			}
-			continue
-		}
-		distance := rng.Intn(4) + 1
-		switch direction {
-		case 0:
-			y += distance
-		case 1:
-			x += distance
-		case 2:
-			y -= distance
-		case 3:
-			x -= distance
-		}
-		steps = append(steps, fmt.Sprintf("move %d", distance))
-	}
-	return challenge{
-		ID:     fmt.Sprintf("navigation-%02d", index),
-		Kind:   "navigation",
-		Prompt: fmt.Sprintf("Begin at (0,0) facing %s. North increases y and east increases x. Perform in order: %s. Do not explain. Reply as ANSWER:x,y,direction using the actual coordinates and N/E/S/W, without angle brackets.", startDirection, strings.Join(steps, "; ")),
-		Answer: fmt.Sprintf("%d,%d,%s", x, y, directions[direction]),
-	}
-}
-
-func conditionalChallenge(rng *rand.Rand, index int) challenge {
-	numbers := make([]int, 7)
-	shown := make([]string, len(numbers))
-	threshold := rng.Intn(15) + 15
-	kept := make([]int, 0, len(numbers))
-	for i := range numbers {
-		numbers[i] = rng.Intn(30) + 2
-		shown[i] = strconv.Itoa(numbers[i])
-		value := numbers[i] * 3
-		if numbers[i]%2 == 0 {
-			value = numbers[i] / 2
-		} else {
-			value++
-		}
-		if value > threshold {
-			kept = append(kept, value)
-		}
-	}
-	sort.Ints(kept)
-	answerParts := make([]string, len(kept))
-	for i, value := range kept {
-		answerParts[i] = strconv.Itoa(value)
-	}
-	answer := "NONE"
-	if len(answerParts) > 0 {
-		answer = strings.Join(answerParts, ",")
-	}
-	return challenge{
-		ID:     fmt.Sprintf("conditional-%02d", index),
-		Kind:   "conditional",
-		Prompt: fmt.Sprintf("Transform [%s]: replace each even number n with n/2, and each odd n with 3n+1. Keep only results greater than %d and sort ascending. Do not explain. Reply with ANSWER: followed by the comma-separated values, or reply ANSWER:NONE.", strings.Join(shown, ","), threshold),
-		Answer: answer,
-	}
+	return channelprobe.GenerateChallenges(count, seed, level)
 }
 
 func splitModels(value string) []string {
@@ -446,24 +259,11 @@ type chatResponseUsage struct {
 }
 
 func extractAnswer(content string) (answer string, found bool, exact bool) {
-	trimmed := strings.TrimSpace(content)
-	for _, line := range strings.Split(trimmed, "\n") {
-		line = strings.TrimSpace(strings.Trim(line, "`"))
-		if len(line) >= len("ANSWER:") && strings.EqualFold(line[:len("ANSWER:")], "ANSWER:") {
-			value := strings.TrimSpace(line[len("ANSWER:"):])
-			return value, value != "", trimmed == line
-		}
-	}
-	if trimmed == "" {
-		return "", false, false
-	}
-	return trimmed, true, false
+	return channelprobe.ExtractAnswer(content)
 }
 
 func normalizeAnswer(value string) string {
-	value = strings.TrimSpace(strings.Trim(value, "`\"'"))
-	value = strings.ReplaceAll(value, " ", "")
-	return strings.ToUpper(value)
+	return channelprobe.NormalizeAnswer(value)
 }
 
 func truncate(value string, limit int) string {

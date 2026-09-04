@@ -61,6 +61,7 @@ import {
   getChannelTypeIcon,
   getChannelTypeLabel,
 } from '../lib'
+import type { ChannelProbeMetric } from '../lib/channel-success'
 import type { Channel, ChannelSortBy } from '../types'
 import { ChannelCard } from './channel-card'
 import { useChannelsColumns } from './channels-columns'
@@ -320,11 +321,22 @@ export function ChannelsTable() {
       ),
     [channelSuccessData]
   )
+  const channelProbeById = useMemo(() => {
+    const grouped = new Map<number, ChannelProbeMetric[]>()
+    for (const item of channelSuccessData?.data.probe_overview?.items ?? []) {
+      const current = grouped.get(item.channel_id) ?? []
+      current.push(item)
+      grouped.set(item.channel_id, current)
+    }
+    return grouped
+  }, [channelSuccessData])
 
   // Columns configuration
   const columns = useChannelsColumns({
     enableSelection: batchMode,
     channelSuccessById,
+    channelProbeById,
+    probeMode: channelSuccessData?.data.probe_overview?.mode,
   })
 
   // React Table instance

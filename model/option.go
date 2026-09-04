@@ -249,6 +249,15 @@ func validateOptionValue(key string, value string) error {
 	if key == operation_setting.ChannelTestConcurrencyOptionKey {
 		return operation_setting.ValidateChannelTestConcurrency(value)
 	}
+	if key == operation_setting.ChannelTestTypeOptionKey {
+		return operation_setting.ValidateChannelTestType(value)
+	}
+	if key == operation_setting.ChannelTestCustomPromptOptionKey {
+		return operation_setting.ValidateChannelTestText(value, operation_setting.MaxChannelTestPromptLength)
+	}
+	if key == operation_setting.ChannelTestCustomAnswerOptionKey {
+		return operation_setting.ValidateChannelTestText(value, operation_setting.MaxChannelTestAnswerLength)
+	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
 	}
