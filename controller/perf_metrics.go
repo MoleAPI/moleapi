@@ -146,9 +146,13 @@ func buildChannelProbeOverview(channels []*model.Channel) channelProbeOverview {
 		if enabled != nil && !*enabled {
 			continue
 		}
+		models := channelTestModels(channel)
+		if len(models) == 0 {
+			continue
+		}
 		overview.EnabledChannels++
 		state := channelprobe.StateFromOtherInfo(channel.OtherInfo)
-		for _, modelName := range channelTestModels(channel) {
+		for _, modelName := range models {
 			modelState, ok := state.Models[modelName]
 			status := modelState.Status
 			if !ok || status == "" {

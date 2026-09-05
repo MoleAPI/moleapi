@@ -1139,6 +1139,10 @@ type channelTestSummary struct {
 
 func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
 	summary := channelTestSummary{}
+	probeModels := channelTestModels(channel)
+	if len(probeModels) == 0 {
+		return summary
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -1146,7 +1150,6 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	defer cancel()
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 	probeState := channelprobe.StateFromOtherInfo(channel.OtherInfo)
-	probeModels := channelTestModels(channel)
 	testModel := probeState.SelectModel(probeModels)
 	monitorSetting := operation_setting.GetMonitorSetting()
 	testType := monitorSetting.ChannelTestType
@@ -1229,11 +1232,15 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 func channelTestModels(channel *model.Channel) []string {
 	settings := channel.GetOtherSettings()
 	models := settings.ChannelProbeModels
-	if len(models) == 0 && channel.TestModel != nil {
+	if len(models) == 0 && channel.TestModel != nil && strings.TrimSpace(*channel.TestModel) != "" {
 		models = []string{*channel.TestModel}
 	}
 	if len(models) == 0 {
 		models = channel.GetModels()
+	}
+	available := make(map[string]struct{})
+	for _, modelName := range channel.GetModels() {
+		available[strings.TrimSpace(modelName)] = struct{}{}
 	}
 	normalized := make([]string, 0, len(models))
 	seen := make(map[string]struct{}, len(models))
@@ -1242,16 +1249,18 @@ func channelTestModels(channel *model.Channel) []string {
 		if modelName == "" {
 			continue
 		}
+		if _, ok := available[modelName]; !ok {
+			continue
+		}
 		if _, ok := seen[modelName]; ok {
 			continue
 		}
 		seen[modelName] = struct{}{}
 		normalized = append(normalized, modelName)
 	}
-	if len(normalized) > 0 {
-		return normalized
-	}
-	return []string{"gpt-4o-mini"}
+	// ponytail: an empty intersection pauses probes without changing saved settings;
+	// restoring an eligible model resumes testing on the next scheduled cycle.
+	return normalized
 }
 
 // runChannelTestWorkers executes independent channel tests with bounded
@@ -1390,12 +1399,10 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 		mode = operation_setting.GetMonitorSetting().ChannelTestMode
 	}
 	selected := selectChannelsForAutomaticTest(channels, mode)
-	if !notify {
-		selected = lo.Filter(selected, func(channel *model.Channel, _ int) bool {
-			enabled := channel.GetOtherSettings().ChannelProbeEnabled
-			return enabled == nil || *enabled
-		})
-	}
+	selected = lo.Filter(selected, func(channel *model.Channel, _ int) bool {
+		enabled := channel.GetOtherSettings().ChannelProbeEnabled
+		return len(channelTestModels(channel)) > 0 && (notify || enabled == nil || *enabled)
+	})
 	allowDisable := mode != operation_setting.ChannelTestModePassiveRecovery
 	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
 	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report)

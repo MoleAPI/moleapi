@@ -20,6 +20,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -343,6 +344,57 @@ func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, 2, userID)
+}
+
+func TestChannelTestModelsOnlyUsesModelsStillInChannel(t *testing.T) {
+	tests := []struct {
+		name      string
+		models    string
+		probes    []string
+		testModel *string
+		want      []string
+	}{
+		{name: "partial removal keeps configured order", models: "a,c", probes: []string{"c", "b", "a", "c"}, want: []string{"c", "a"}},
+		{name: "all selected models removed pauses without fallback", models: "c", probes: []string{"a", "b"}},
+		{name: "empty channel pauses", probes: []string{"a"}},
+		{name: "blank entries do not cause fallback", models: "a", probes: []string{" "}},
+		{name: "removed legacy test model pauses", models: "b", testModel: lo.ToPtr("a")},
+		{name: "blank legacy test model uses channel models", models: "a,b", testModel: lo.ToPtr(" "), want: []string{"a", "b"}},
+		{name: "no explicit selection uses channel models", models: " a ,b,a", want: []string{"a", "b"}},
+		{name: "valid legacy test model", models: "a,b", testModel: lo.ToPtr("b"), want: []string{"b"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			settings, err := common.Marshal(dto.ChannelOtherSettings{ChannelProbeModels: tt.probes})
+			require.NoError(t, err)
+			channel := &model.Channel{Models: tt.models, TestModel: tt.testModel, OtherSettings: string(settings)}
+			assert.Equal(t, tt.want, append([]string(nil), channelTestModels(channel)...))
+		})
+	}
+}
+
+func TestRemovedProbeModelsPauseWithoutRequestsAndResumeWhenRestored(t *testing.T) {
+	channel := &model.Channel{
+		Id: 1, Status: common.ChannelStatusEnabled, Models: "replacement",
+		OtherSettings: `{"channel_probe_enabled":true,"channel_probe_models":["removed"]}`,
+		OtherInfo:     `{"channel_probe":{"blocked_model":"removed"}}`,
+	}
+	settingsBefore, stateBefore := channel.OtherSettings, channel.OtherInfo
+	// A paused channel must return before any upstream request or database access.
+	assert.Equal(t, channelTestSummary{}, testChannelForHealthCheck(context.Background(), channel, 0, true, 1))
+	assert.Equal(t, settingsBefore, channel.OtherSettings)
+	assert.Equal(t, stateBefore, channel.OtherInfo)
+	overview := buildChannelProbeOverview([]*model.Channel{channel})
+	assert.Zero(t, overview.EnabledChannels)
+	assert.Zero(t, overview.TotalModels)
+	assert.Empty(t, overview.Items)
+
+	channel.Models = "replacement,removed"
+	assert.Equal(t, []string{"removed"}, channelTestModels(channel))
+	overview = buildChannelProbeOverview([]*model.Channel{channel})
+	assert.Equal(t, 1, overview.EnabledChannels)
+	require.Len(t, overview.Items, 1)
+	assert.Equal(t, "removed", overview.Items[0].Model)
 }
 
 func TestSelectChannelsForAutomaticTestPassiveRecoveryOnlyUsesAutoDisabled(t *testing.T) {
