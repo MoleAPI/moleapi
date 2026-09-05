@@ -447,10 +447,7 @@ function ChannelReliabilityCell({
   probeMode?: 'hi' | 'intelligence' | 'custom'
 }) {
   const { t } = useTranslation()
-  const probeStats =
-    probeMode === 'hi'
-      ? undefined
-      : getChannelProbeStats(channel, channelProbeById)
+  const probeStats = getChannelProbeStats(channel, channelProbeById)
   const probeDisabled = isTagAggregateRow(channel)
     ? channel.children.every(
         (child) =>
@@ -460,7 +457,12 @@ function ChannelReliabilityCell({
     : parseChannelOtherSettings(channel.settings).channel_probe_enabled ===
       false
 
-  if (!probeStats && !probeDisabled) {
+  if (probeDisabled) {
+    return <span className='text-muted-foreground text-xs'>-</span>
+  }
+
+  if (!probeStats) {
+    if (probeMode === 'hi') return <StatusBadge label={t('Pending')} variant='neutral' size='sm' copyable={false} />
     return <span className='text-muted-foreground text-xs'>-</span>
   }
 
@@ -481,14 +483,6 @@ function ChannelReliabilityCell({
                 <StatusBadge
                   label={probeLabel}
                   variant={getProbeStatusVariant(probeStats.status)}
-                  size='sm'
-                  copyable={false}
-                />
-              )}
-              {probeDisabled && (
-                <StatusBadge
-                  label={t('Disabled')}
-                  variant='neutral'
                   size='sm'
                   copyable={false}
                 />
