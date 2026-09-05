@@ -1193,11 +1193,11 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	}
 	if stateChange.Degraded {
 		err := fmt.Errorf("model %s failed three consecutive %s probes", testModel, result.probe.Mode)
-		newAPIError = types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusServiceUnavailable)
+		newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusServiceUnavailable)
 		shouldBanChannel = common.AutomaticDisableChannelEnabled
 	}
 
-	if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
+	if common.AutomaticDisableChannelEnabled && !shouldBanChannel && result.probe.Mode == channelprobe.ModeHi {
 		if milliseconds > disableThreshold {
 			err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
 			newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)

@@ -234,6 +234,9 @@ func (s *State) Apply(model string, evaluation Evaluation, testedAt int64, laten
 	state := s.modelState(model)
 	if state.StableLevel != "" && ((evaluation.Mode == ModeCustom && state.StableLevel != ModeCustom) ||
 		(evaluation.Mode == ModeIntelligence && state.StableLevel == ModeCustom)) {
+		if s.BlockedModel == model {
+			s.BlockedModel = ""
+		}
 		state = ModelState{Status: StatusPending}
 	}
 	wasDegraded := state.Status == StatusDegraded
@@ -293,6 +296,9 @@ func (s *State) Apply(model string, evaluation Evaluation, testedAt int64, laten
 	if evaluation.Outcome == OutcomePass {
 		state.ConsecutivePasses++
 		state.ConsecutiveFailure = 0
+		if state.Status == StatusPending {
+			state.Status = StatusHealthy
+		}
 		if wasDegraded && state.ConsecutivePasses >= 2 {
 			state.Status = StatusHealthy
 			s.BlockedModel = ""
