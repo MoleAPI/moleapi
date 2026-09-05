@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 import { defineConfig, loadEnv } from '@rsbuild/core'
@@ -9,6 +10,16 @@ import { tanstackRouter } from '@tanstack/router-plugin/rspack'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 export default defineConfig(({ envMode }) => {
+  const frontendCommit =
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    process.env.COMMIT_SHA ||
+    (() => {
+      try {
+        return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+      } catch {
+        return 'unknown'
+      }
+    })()
   const env = loadEnv({ mode: envMode, prefixes: ['VITE_'] })
   const publicVars = {
     ...env.publicVars,
@@ -80,6 +91,7 @@ export default defineConfig(({ envMode }) => {
     },
     html: {
       template: './index.html',
+      meta: { 'frontend-commit': frontendCommit },
     },
     server: {
       host: '0.0.0.0',
