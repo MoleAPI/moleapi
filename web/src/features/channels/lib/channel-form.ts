@@ -620,7 +620,13 @@ export function transformChannelToFormDefaults(
     model_mapping: channel.model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,
-    test_model: channel.test_model || '',
+    test_model:
+      channel.test_model ||
+      (channel.models || '')
+        .split(/[\n,]/)
+        .map((model) => model.trim())
+        .find(Boolean) ||
+      '',
     auto_ban: channel.auto_ban ?? 1,
     channel_probe_enabled: channelProbeEnabled,
     channel_probe_models: channelProbeModels,

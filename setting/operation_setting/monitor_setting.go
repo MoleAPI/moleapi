@@ -23,6 +23,7 @@ const (
 	ChannelTestModeScheduledAll    = "scheduled_all"
 	ChannelTestModeAutoBanOnly     = "auto_ban_only"
 	ChannelTestModePassiveRecovery = "passive_recovery"
+	ChannelTestModeScheduledProbes = "scheduled_probes"
 
 	ChannelTestConcurrencyOptionKey  = "monitor_setting.channel_test_concurrency"
 	ChannelTestTypeOptionKey         = "monitor_setting.channel_test_type"
@@ -64,7 +65,7 @@ func GetMonitorSetting() *MonitorSetting {
 		}
 	}
 	switch monitorSetting.ChannelTestMode {
-	case ChannelTestModeAutoBanOnly, ChannelTestModePassiveRecovery:
+	case ChannelTestModeAutoBanOnly, ChannelTestModePassiveRecovery, ChannelTestModeScheduledProbes:
 	default:
 		monitorSetting.ChannelTestMode = ChannelTestModeScheduledAll
 	}

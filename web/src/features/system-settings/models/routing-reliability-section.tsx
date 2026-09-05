@@ -79,6 +79,7 @@ const channelTestModes = [
   'scheduled_all',
   'auto_ban_only',
   'passive_recovery',
+  'scheduled_probes',
 ] as const
 type ChannelTestMode = (typeof channelTestModes)[number]
 const channelTestTypes = ['hi', 'intelligence', 'custom'] as const
@@ -524,6 +525,7 @@ export function RoutingReliabilitySection({
                           value: 'passive_recovery',
                           label: t('Check channels awaiting recovery only'),
                         },
+                        { value: 'scheduled_probes', label: t('Check scheduled probe channels only') },
                       ]}
                       value={field.value}
                       onValueChange={field.onChange}
@@ -544,6 +546,7 @@ export function RoutingReliabilitySection({
                           <SelectItem value='passive_recovery'>
                             {t('Check channels awaiting recovery only')}
                           </SelectItem>
+                          <SelectItem value='scheduled_probes'>{t('Check scheduled probe channels only')}</SelectItem>
                         </SelectGroup>
                       </SelectContent>
                     </Select>

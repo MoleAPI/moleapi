@@ -1424,6 +1424,10 @@ func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*m
 		if mode == operation_setting.ChannelTestModePassiveRecovery && channel.Status != common.ChannelStatusAutoDisabled {
 			continue
 		}
+		if mode == operation_setting.ChannelTestModeScheduledProbes {
+			enabled := channel.GetOtherSettings().ChannelProbeEnabled
+			if enabled != nil && !*enabled { continue }
+		}
 		selected = append(selected, channel)
 	}
 	return selected

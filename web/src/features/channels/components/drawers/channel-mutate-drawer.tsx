@@ -136,6 +136,7 @@ import {
   getPrefillGroups,
   getTaskPluginOptions,
   refreshCodexCredential,
+  testChannel,
 } from '../../api'
 import {
   ADD_MODE_OPTIONS,
@@ -1182,12 +1183,11 @@ export function ChannelMutateDrawer({
 
   // Transform models to multi-select options
   const modelOptions = useMemo(() => {
-    const allModels = new Set([...allModelsList, ...currentModelsArray])
-    return [...allModels].map((model) => ({
+    return currentModelsArray.map((model) => ({
       value: model,
       label: model,
     }))
-  }, [allModelsList, currentModelsArray])
+  }, [currentModelsArray])
 
   const modelMappingGuardrail = useMemo<ModelMappingGuardrail>(() => {
     if (!currentModelMapping?.trim()) {
@@ -1783,6 +1783,11 @@ export function ChannelMutateDrawer({
       }
 
       await channelMutation.mutateAsync(data)
+      if (isEditing && channelId && data.channel_probe_enabled !== false) {
+        void testChannel(channelId, {
+          model: data.test_model || parseModelsString(data.models || '')[0],
+        })
+      }
     },
     [
       isEditing,
