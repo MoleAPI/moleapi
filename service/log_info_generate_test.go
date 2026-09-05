@@ -4,6 +4,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,17 +15,18 @@ func TestAppendStreamStatusKeepsErrorDetailsAdminOnly(t *testing.T) {
 	status.SetEndReason(relaycommon.StreamEndReasonScannerErr, errors.New("private end error"))
 	status.RecordError("private upstream error")
 	info := &relaycommon.RelayInfo{IsStream: true, StreamStatus: status}
-	other := map[string]interface{}{}
+	other := model.NewLogOther()
 
 	appendStreamStatus(info, other)
+	stored := other.Snapshot()
 
-	streamStatus, ok := other["stream_status"].(map[string]interface{})
+	streamStatus, ok := stored["stream_status"].(map[string]interface{})
 	require.True(t, ok)
 	assert.Equal(t, "error", streamStatus["status"])
 	assert.Equal(t, 1, streamStatus["error_count"])
 	assert.NotContains(t, streamStatus, "end_error")
 	assert.NotContains(t, streamStatus, "errors")
-	adminInfo, ok := other["admin_info"].(map[string]interface{})
+	adminInfo, ok := stored["admin_info"].(map[string]interface{})
 	require.True(t, ok)
 	streamError, ok := adminInfo["stream_error"].(map[string]interface{})
 	require.True(t, ok)

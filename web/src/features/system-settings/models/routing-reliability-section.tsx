@@ -17,12 +17,15 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { useMemo, useRef } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
 
+import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -43,7 +46,16 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import { Switch } from '@/components/ui/switch'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 import { Textarea } from '@/components/ui/textarea'
+import { getChannelSuccessMetrics } from '@/features/dashboard/api'
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
 
 import {
@@ -69,6 +81,8 @@ const channelTestModes = [
   'passive_recovery',
 ] as const
 type ChannelTestMode = (typeof channelTestModes)[number]
+const channelTestTypes = ['hi', 'intelligence', 'custom'] as const
+type ChannelTestType = (typeof channelTestTypes)[number]
 const MAX_CHANNEL_TEST_CONCURRENCY = 32
 
 const createRoutingReliabilitySchema = (
@@ -97,6 +111,9 @@ const createRoutingReliabilitySchema = (
             MAX_CHANNEL_TEST_CONCURRENCY,
             t('Channel test concurrency must be between 1 and 32')
           ),
+        channel_test_type: z.enum(channelTestTypes),
+        channel_test_custom_prompt: z.string().max(4000),
+        channel_test_custom_answer: z.string().max(500),
         channel_test_mode: z.enum(channelTestModes),
       }),
     })
@@ -126,6 +143,22 @@ const createRoutingReliabilitySchema = (
           }),
         })
       }
+      if (values.monitor_setting.channel_test_type === 'custom') {
+        if (!values.monitor_setting.channel_test_custom_prompt.trim()) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['monitor_setting', 'channel_test_custom_prompt'],
+            message: t('Custom prompt is required'),
+          })
+        }
+        if (!values.monitor_setting.channel_test_custom_answer.trim()) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['monitor_setting', 'channel_test_custom_answer'],
+            message: t('Expected answer is required'),
+          })
+        }
+      }
     })
 
 type RoutingReliabilitySchema = ReturnType<
@@ -146,6 +179,9 @@ type RoutingReliabilitySectionProps = {
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.channel_test_concurrency': number
+    'monitor_setting.channel_test_type': ChannelTestType
+    'monitor_setting.channel_test_custom_prompt': string
+    'monitor_setting.channel_test_custom_answer': string
     'monitor_setting.channel_test_mode': ChannelTestMode
   }
 }
@@ -165,6 +201,9 @@ type NormalizedRoutingReliabilityValues = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
+  'monitor_setting.channel_test_type': ChannelTestType
+  'monitor_setting.channel_test_custom_prompt': string
+  'monitor_setting.channel_test_custom_answer': string
   'monitor_setting.channel_test_mode': ChannelTestMode
 }
 
@@ -173,6 +212,11 @@ function normalizeChannelTestMode(value?: string): ChannelTestMode {
     return value
   }
   return 'scheduled_all'
+}
+
+function normalizeChannelTestType(value?: string): ChannelTestType {
+  if (value === 'intelligence' || value === 'custom') return value
+  return 'hi'
 }
 
 const buildFormDefaults = (
@@ -194,6 +238,13 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_minutes'],
     channel_test_concurrency:
       defaults['monitor_setting.channel_test_concurrency'],
+    channel_test_type: normalizeChannelTestType(
+      defaults['monitor_setting.channel_test_type']
+    ),
+    channel_test_custom_prompt:
+      defaults['monitor_setting.channel_test_custom_prompt'] ?? '',
+    channel_test_custom_answer:
+      defaults['monitor_setting.channel_test_custom_answer'] ?? '',
     channel_test_mode: normalizeChannelTestMode(
       defaults['monitor_setting.channel_test_mode']
     ),
@@ -222,6 +273,13 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_minutes'],
   'monitor_setting.channel_test_concurrency':
     defaults['monitor_setting.channel_test_concurrency'],
+  'monitor_setting.channel_test_type': normalizeChannelTestType(
+    defaults['monitor_setting.channel_test_type']
+  ),
+  'monitor_setting.channel_test_custom_prompt':
+    defaults['monitor_setting.channel_test_custom_prompt'] ?? '',
+  'monitor_setting.channel_test_custom_answer':
+    defaults['monitor_setting.channel_test_custom_answer'] ?? '',
   'monitor_setting.channel_test_mode': normalizeChannelTestMode(
     defaults['monitor_setting.channel_test_mode']
   ),
@@ -249,6 +307,11 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_minutes,
   'monitor_setting.channel_test_concurrency':
     values.monitor_setting.channel_test_concurrency,
+  'monitor_setting.channel_test_type': values.monitor_setting.channel_test_type,
+  'monitor_setting.channel_test_custom_prompt':
+    values.monitor_setting.channel_test_custom_prompt,
+  'monitor_setting.channel_test_custom_answer':
+    values.monitor_setting.channel_test_custom_answer,
   'monitor_setting.channel_test_mode': values.monitor_setting.channel_test_mode,
 })
 
@@ -281,21 +344,29 @@ export function RoutingReliabilitySection({
   const autoDisableStatusCodes = form.watch('AutomaticDisableStatusCodes')
   const autoRetryStatusCodes = form.watch('AutomaticRetryStatusCodes')
   const channelTestMode = form.watch('monitor_setting.channel_test_mode')
+  const channelTestType = form.watch('monitor_setting.channel_test_type')
+  const probeOverviewQuery = useQuery({
+    queryKey: ['channel-success-metrics', 24],
+    queryFn: () => getChannelSuccessMetrics(24),
+    staleTime: 60 * 1000,
+    retry: false,
+  })
+  const probeOverview = probeOverviewQuery.data?.data.probe_overview
   let channelTestModeDescription: string
   switch (channelTestMode) {
     case 'auto_ban_only':
       channelTestModeDescription = t(
-        'Periodically checks only channels with auto-disable enabled, excluding manually disabled channels.'
+        'Checks only non-manually-disabled channels that have both scheduled model checks and per-channel auto-disable enabled.'
       )
       break
     case 'passive_recovery':
       channelTestModeDescription = t(
-        'Does not check healthy channels. It only rechecks auto-disabled channels and restores them after they recover.'
+        'Checks only auto-disabled channels with scheduled model checks enabled; healthy and manually disabled channels are skipped.'
       )
       break
     default:
       channelTestModeDescription = t(
-        'Periodically checks all channels except manually disabled ones to detect failures and recover channels automatically.'
+        'Checks enabled and auto-disabled channels that have scheduled model checks enabled, allowing both monitoring and recovery.'
       )
   }
   const autoDisableParsed = useMemo(
@@ -412,10 +483,12 @@ export function RoutingReliabilitySection({
                 render={({ field }) => (
                   <SettingsSwitchItem>
                     <SettingsSwitchContent>
-                      <FormLabel>{t('Scheduled channel tests')}</FormLabel>
+                      <FormLabel>
+                        {t('Enable scheduled model checks')}
+                      </FormLabel>
                       <FormDescription>
                         {t(
-                          'Automatically probe all channels in the background'
+                          'Master switch for every channel with scheduled model checks enabled.'
                         )}
                       </FormDescription>
                     </SettingsSwitchContent>
@@ -484,6 +557,40 @@ export function RoutingReliabilitySection({
 
               <FormField
                 control={form.control}
+                name='monitor_setting.channel_test_type'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Probe type')}</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='hi'>{t('Hi check')}</SelectItem>
+                          <SelectItem value='intelligence'>
+                            {t('Intelligence check')}
+                          </SelectItem>
+                          <SelectItem value='custom'>
+                            {t('Custom prompt check')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t(
+                        'Intelligence and custom checks require three consecutive misses before disabling a calibrated channel.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
                 name='monitor_setting.auto_test_channel_minutes'
                 render={({ field }) => (
                   <FormItem>
@@ -542,7 +649,7 @@ export function RoutingReliabilitySection({
                       <FormLabel>{t('Re-enable on success')}</FormLabel>
                       <FormDescription>
                         {t(
-                          'Bring channels back online after successful checks'
+                          'Only auto-disabled channels in the scheduled scope can recover; manually disabled channels never recover. A health failure needs one successful check, while an intelligence or custom degradation needs two consecutive successes.'
                         )}
                       </FormDescription>
                     </SettingsSwitchContent>
@@ -555,6 +662,116 @@ export function RoutingReliabilitySection({
                   </SettingsSwitchItem>
                 )}
               />
+
+              {channelTestType === 'custom' && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name='monitor_setting.channel_test_custom_prompt'
+                    render={({ field }) => (
+                      <FormItem className='lg:col-span-2'>
+                        <FormLabel>{t('Custom prompt')}</FormLabel>
+                        <FormControl>
+                          <Textarea rows={4} maxLength={4000} {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Sent once for each scheduled model probe.')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='monitor_setting.channel_test_custom_answer'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Expected answer')}</FormLabel>
+                        <FormControl>
+                          <Input maxLength={500} {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Compared after ignoring spaces and letter case.')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
+
+              <div className='bg-muted/25 rounded-md border px-3 py-2 lg:col-span-3'>
+                <div className='text-sm font-medium'>
+                  {t('Current scheduled targets')}
+                </div>
+                {probeOverview ? (
+                  <>
+                    <p className='text-muted-foreground mt-0.5 text-xs'>
+                      {t('{{channels}} channels · {{models}} models', {
+                        channels: probeOverview.enabled_channels,
+                        models: probeOverview.total_models,
+                      })}
+                    </p>
+                    {probeOverview.items.length > 0 ? (
+                      <div className='mt-2 max-h-64 overflow-auto rounded-md border'>
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead scope='col'>
+                                {t('Channel ID')}
+                              </TableHead>
+                              <TableHead scope='col'>{t('Channel')}</TableHead>
+                              <TableHead scope='col'>{t('Model')}</TableHead>
+                              <TableHead scope='col' className='text-right'>
+                                {t('Actions')}
+                              </TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {probeOverview.items.map((item) => (
+                              <TableRow
+                                key={`${item.channel_id}-${item.model}`}
+                              >
+                                <TableCell>#{item.channel_id}</TableCell>
+                                <TableCell>{item.channel_name}</TableCell>
+                                <TableCell>{item.model}</TableCell>
+                                <TableCell className='text-right'>
+                                  <Button
+                                    variant='link'
+                                    size='sm'
+                                    render={
+                                      <Link
+                                        to='/channels'
+                                        search={{
+                                          page: 1,
+                                          filter: String(item.channel_id),
+                                          status: [],
+                                        }}
+                                      />
+                                    }
+                                  >
+                                    {t('Manage')}
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <p className='text-muted-foreground mt-2 text-xs'>
+                        {t('No data available')}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <p className='text-muted-foreground mt-0.5 text-xs'>
+                    {probeOverviewQuery.isLoading
+                      ? t('Loading...')
+                      : t('Unable to load scheduled targets.')}
+                  </p>
+                )}
+              </div>
             </div>
           </div>
 
@@ -563,6 +780,11 @@ export function RoutingReliabilitySection({
           <div className='flex min-w-0 flex-col gap-4'>
             <div className='flex flex-col gap-1'>
               <h4 className='text-sm font-medium'>{t('Auto-disable rules')}</h4>
+              <p className='text-muted-foreground text-xs'>
+                {t(
+                  'Status codes and failure keywords use OR logic: matching either one can trigger auto-disable.'
+                )}
+              </p>
             </div>
             <div className='grid min-w-0 gap-6 lg:grid-cols-2'>
               <FormField
@@ -573,7 +795,9 @@ export function RoutingReliabilitySection({
                     <SettingsSwitchContent>
                       <FormLabel>{t('Disable on failure')}</FormLabel>
                       <FormDescription>
-                        {t('Automatically disable channels when tests fail')}
+                        {t(
+                          'Master switch. A channel must also have per-channel auto-disable enabled; any matching status code, failure keyword, scheduled-test timeout, or three consecutive intelligence/custom misses can disable it.'
+                        )}
                       </FormDescription>
                     </SettingsSwitchContent>
                     <FormControl>
@@ -603,7 +827,7 @@ export function RoutingReliabilitySection({
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Automatically disable channels exceeding this response time'
+                        'During scheduled checks, disable channels exceeding this response time; 0 disables this rule.'
                       )}
                     </FormDescription>
                     <FormMessage />

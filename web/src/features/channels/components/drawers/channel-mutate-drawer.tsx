@@ -755,6 +755,8 @@ export function ChannelMutateDrawer({
   const currentWeight = form.watch('weight')
   const currentTestModel = form.watch('test_model')
   const currentAutoBan = form.watch('auto_ban')
+  const currentChannelProbeEnabled = form.watch('channel_probe_enabled')
+  const currentChannelProbeModels = form.watch('channel_probe_models')
   const currentTag = form.watch('tag')
   const currentRemark = form.watch('remark')
   const currentStatusCodeMapping = form.watch('status_code_mapping')
@@ -1037,6 +1039,8 @@ export function ChannelMutateDrawer({
     currentPriority ||
     currentWeight ||
     currentTestModel?.trim() ||
+    currentChannelProbeEnabled === false ||
+    currentChannelProbeModels?.trim() ||
     (currentAutoBan ?? 1) !== 1
   )
   const internalNotesConfigured = Boolean(
@@ -3944,6 +3948,65 @@ export function ChannelMutateDrawer({
                                       }
                                     />
                                   </FormControl>
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name='channel_probe_enabled'
+                              render={({ field }) => (
+                                <FormItem className='flex items-center justify-between'>
+                                  <div className='space-y-0.5'>
+                                    <FormLabel>
+                                      {t('Scheduled probe')}
+                                    </FormLabel>
+                                    <FormDescription>
+                                      {t(
+                                        'Include this channel in scheduled reliability tests.'
+                                      )}
+                                    </FormDescription>
+                                  </div>
+                                  <FormControl>
+                                    <Switch
+                                      checked={field.value !== false}
+                                      onCheckedChange={field.onChange}
+                                    />
+                                  </FormControl>
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name='channel_probe_models'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>
+                                    {t('Scheduled probe models')}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <MultiSelect
+                                      options={modelOptions}
+                                      selected={String(field.value || '')
+                                        .split(',')
+                                        .map((model) => model.trim())
+                                        .filter(Boolean)}
+                                      onChange={(values) =>
+                                        field.onChange(values.join(','))
+                                      }
+                                      placeholder={t(
+                                        'Use test model or channel models'
+                                      )}
+                                      maxVisibleChips={6}
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    {t(
+                                      'Leave empty to use the test model, then fall back to all channel models.'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
                                 </FormItem>
                               )}
                             />

@@ -66,6 +66,29 @@ export interface ChannelSuccessSummary {
 
 export interface ChannelSuccessData {
   channels: ChannelSuccessSummary[]
+  probe_overview: ChannelProbeOverview
+}
+
+export interface ChannelProbeOverviewItem {
+  channel_id: number
+  channel_name: string
+  model: string
+  level?: 'basic' | 'standard' | 'advanced' | 'custom'
+  status: 'pending' | 'healthy' | 'degraded'
+  recent_pass: number
+  recent_total: number
+  last_test_at?: number
+}
+
+export interface ChannelProbeOverview {
+  enabled: boolean
+  mode: 'hi' | 'intelligence' | 'custom'
+  enabled_channels: number
+  total_models: number
+  healthy: number
+  degraded: number
+  pending: number
+  items: ChannelProbeOverviewItem[]
 }
 
 export interface AdminBusinessMetrics {

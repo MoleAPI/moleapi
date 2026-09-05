@@ -155,7 +155,21 @@ export interface LogOtherData {
       original: number
       clamped: number
     }
+    // Reject / intercept reason (admin only)
+    reject_reason?: string
     task_plugin?: TaskPluginInfo
+    channel_probe?: {
+      mode?: 'hi' | 'intelligence' | 'custom'
+      source?: 'manual' | 'scheduled'
+      seed?: number
+      outcome?: 'pass' | 'wrong' | 'no_answer' | 'completed' | 'request_error'
+      question_id?: string
+      question_kind?: string
+      level?: 'basic' | 'standard' | 'advanced'
+      expected_answer?: string
+      actual_answer?: string
+      fallback_reason?: string
+    }
   }
   root_info?: {
     task_plugin?: TaskPluginRuntimeInfo
@@ -256,8 +270,6 @@ export interface LogOtherData {
   violation_fee_code?: string
   violation_fee_marker?: string
   fee_quota?: number
-  // Reject / intercept reason (admin)
-  reject_reason?: string
   // Task-related fields (for refund logs, type=6)
   is_task?: boolean
   task_id?: string

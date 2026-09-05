@@ -100,3 +100,18 @@ func TestSaveStatusStateFromSingleKeySnapshotPreservesUnownedColumns(t *testing.
 	assert.Equal(t, "manual operation", otherInfo["status_reason"])
 	assert.Equal(t, float64(1234), otherInfo["status_time"])
 }
+
+func TestChannelProbeStateUsesExistingOtherInfoWithoutLoadingKeys(t *testing.T) {
+	setupChannelStatusTest(t)
+
+	channel := Channel{Name: "probe-state", Key: "secret", OtherInfo: `{"status_reason":"kept"}`}
+	require.NoError(t, DB.Create(&channel).Error)
+	channel.OtherInfo = `{"status_reason":"kept","channel_probe":{"next_model_index":1}}`
+	require.NoError(t, channel.SaveOtherInfo())
+
+	channels, err := GetAllChannelsWithoutKey()
+	require.NoError(t, err)
+	require.Len(t, channels, 1)
+	assert.Empty(t, channels[0].Key)
+	assert.Contains(t, channels[0].OtherInfo, "channel_probe")
+}

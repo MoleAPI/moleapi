@@ -201,7 +201,7 @@ const SECTION_META: Record<DashboardSectionId, { titleKey: string }> = {
     titleKey: 'Model Call Analytics',
   },
   channels: {
-    titleKey: 'Channel Success Rate',
+    titleKey: 'Channel Reliability',
   },
   flow: {
     titleKey: 'Flow',

@@ -223,6 +223,8 @@ export const channelFormSchema = z
     weight: z.number().optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
+    channel_probe_enabled: z.boolean().optional(),
+    channel_probe_models: z.string().optional(),
     status: z.number(),
     status_code_mapping: z
       .string()
@@ -446,6 +448,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   weight: 0,
   test_model: '',
   auto_ban: 1,
+  channel_probe_enabled: true,
+  channel_probe_models: '',
   status: CHANNEL_STATUS.ENABLED,
   status_code_mapping: '',
   tag: '',
@@ -551,6 +555,8 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateCheckEnabled = false
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
+  let channelProbeEnabled = true
+  let channelProbeModels = ''
   let codingPlanProvider = ''
   let advancedCustom = ''
 
@@ -577,6 +583,10 @@ export function transformChannelToFormDefaults(
         parsed.upstream_model_update_ignored_models
       )
         ? parsed.upstream_model_update_ignored_models.join(',')
+        : ''
+      channelProbeEnabled = parsed.channel_probe_enabled !== false
+      channelProbeModels = Array.isArray(parsed.channel_probe_models)
+        ? parsed.channel_probe_models.join(',')
         : ''
       codingPlanProvider = parsed.coding_plan_provider || ''
       if (parsed.advanced_custom) {
@@ -612,6 +622,8 @@ export function transformChannelToFormDefaults(
     weight: channel.weight || 0,
     test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
+    channel_probe_enabled: channelProbeEnabled,
+    channel_probe_models: channelProbeModels,
     status: channel.status,
     status_code_mapping: channel.status_code_mapping || '',
     tag: channel.tag || '',
@@ -776,6 +788,25 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
 
   settingsObj.disable_task_polling_sleep =
     formData.disable_task_polling_sleep === true
+
+  if (formData.channel_probe_enabled === false) {
+    settingsObj.channel_probe_enabled = false
+  } else {
+    delete settingsObj.channel_probe_enabled
+  }
+  const probeModels = [
+    ...new Set(
+      String(formData.channel_probe_models || '')
+        .split(',')
+        .map((model) => model.trim())
+        .filter(Boolean)
+    ),
+  ]
+  if (probeModels.length > 0) {
+    settingsObj.channel_probe_models = probeModels
+  } else {
+    delete settingsObj.channel_probe_models
+  }
 
   // Upstream model update settings (for model-fetchable channel types)
   if (MODEL_FETCHABLE_TYPES.has(formData.type)) {

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -8,8 +9,11 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
@@ -119,4 +123,72 @@ func TestDistributeUsesNormalizedPlaygroundPathForChannelSelection(t *testing.T)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.Equal(t, 341, common.GetContextKeyInt(ctx, constant.ContextKeyChannelId))
+}
+
+func distributorTaskPluginSource(key string, channelType int) string {
+	return fmt.Sprintf(`
+export const meta = {
+  apiVersion: 1,
+  key: %q,
+  name: %q,
+  version: "1.0.0",
+  author: {name: "Test"},
+  channelTypes: [%d],
+  models: ["task-model"],
+  fetchMode: "per_task",
+};
+export function buildSubmitRequest() { return {}; }
+export function parseSubmitResponse() { return {taskId: "task"}; }
+export function buildQueryRequest() { return {}; }
+export function parseTaskResult() { return {status: "SUCCESS"}; }
+`, key, key, channelType)
+}
+
+func TestTokenModelLimitAllowsLegacyAliasAndModifierVariant(t *testing.T) {
+	aliasOnly := map[string]bool{"claude-3-7-sonnet-thinking": true}
+	assert.True(t, tokenModelLimitAllows(aliasOnly, "claude-3-7-sonnet-thinking"))
+	assert.False(t, tokenModelLimitAllows(aliasOnly, "claude-3-7-sonnet"))
+
+	baseOnly := map[string]bool{"claude-3-7-sonnet": true}
+	assert.True(t, tokenModelLimitAllows(baseOnly, "claude-3-7-sonnet@thinking:on"))
+	assert.True(t, tokenModelLimitAllows(baseOnly, "claude-3-7-sonnet-thinking"))
+
+	wildcard := map[string]bool{"gemini-2.5-flash-thinking-*": true}
+	assert.True(t, tokenModelLimitAllows(wildcard, "gemini-2.5-flash-thinking-8192"))
+}
+
+func TestTokenModelLimitAllowsExemptAtNameByFullName(t *testing.T) {
+	settings := model_setting.GetGlobalSettings()
+	original := append([]string(nil), settings.ThinkingModelBlacklist...)
+	t.Cleanup(func() { settings.ThinkingModelBlacklist = original })
+	settings.ThinkingModelBlacklist = append(original, "re:.*@sha256:.*")
+
+	fullOnly := map[string]bool{"opaque@sha256:deadbeef": true}
+	assert.True(t, tokenModelLimitAllows(fullOnly, "opaque@sha256:deadbeef"))
+
+	baseOnly := map[string]bool{"opaque": true}
+	assert.False(t, tokenModelLimitAllows(baseOnly, "opaque@sha256:deadbeef"))
+}
+
+func TestNoAvailableChannelMessageNamesClaimingTaskPlugin(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	registry := jsplugin.NewRegistry()
+	plugin, err := registry.Register(distributorTaskPluginSource("claimer", constant.ChannelTypeKling), jsplugin.Options{})
+	require.NoError(t, err)
+
+	pinned, _ := gin.CreateTestContext(nil)
+	pinned.Request = httptest.NewRequest(http.MethodPost, "/v1/videos", nil)
+	pinned.Request.Header.Set("Accept-Language", "en")
+	pinned.Set(jsplugin.ContextKeyPinnedPlugin, jsplugin.PinnedPlugin{Generation: registry.Generation(), Plugin: plugin})
+	message := noAvailableChannelMessage(pinned, "default", "kling-v1")
+	assert.Contains(t, message, `"claimer"`)
+	assert.Contains(t, message, "disable or override")
+	assert.Contains(t, message, "kling-v1")
+
+	plain, _ := gin.CreateTestContext(nil)
+	plain.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	plain.Request.Header.Set("Accept-Language", "en")
+	generic := noAvailableChannelMessage(plain, "default", "gpt-4o")
+	assert.NotContains(t, generic, "task plugin")
+	assert.Contains(t, generic, "gpt-4o")
 }

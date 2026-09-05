@@ -53,6 +53,7 @@ import {
   getParamOverrideActionLabel,
   parseAuditLine,
   decodeBillingExprB64,
+  getMatchedRequestRuleMultiplier,
   getTieredBillingSummary,
   hasAnyCacheTokens,
   isViolationFeeLog,
@@ -357,6 +358,9 @@ function BillingBreakdown(props: {
   const isAnthropicUsage = usesAnthropicUsageSemantic(other)
   const isTieredExpr = other.billing_mode === 'tiered_expr'
   const tieredSummary = getTieredBillingSummary(other)
+  const requestRuleMultiplier = isTieredExpr
+    ? getMatchedRequestRuleMultiplier(other)
+    : null
 
   const rows: Array<{ label: string; value: string }> = []
   const priceOpts = { digitsLarge: 4, digitsSmall: 6, abbreviate: false }
@@ -423,6 +427,13 @@ function BillingBreakdown(props: {
         value: `${fmtPrice(baseInputUSD * other.completion_ratio)}/M`,
       })
     }
+  }
+
+  if (requestRuleMultiplier != null) {
+    rows.push({
+      label: t('Conditional multipliers'),
+      value: `${formatRatio(requestRuleMultiplier)}x · ${t('Matched')}`,
+    })
   }
 
   const userGR = other.user_group_ratio
@@ -673,6 +684,10 @@ function BillingBreakdown(props: {
   }
 
   if (calculationParts.length > 0) {
+    const requestRuleRatioText =
+      requestRuleMultiplier == null
+        ? ''
+        : ` × ${formatRatio(requestRuleMultiplier)} ${t('Conditional multipliers')}`
     let ratioText = ''
     if (effectiveGR != null && Number.isFinite(effectiveGR)) {
       const groupName = other.group || log.group
@@ -682,12 +697,12 @@ function BillingBreakdown(props: {
       ratioText = ` × ${formatRatio(effectiveGR)} ${ratioLabel}`
     }
     const calculation =
-      ratioText && calculationParts.length > 1
+      (requestRuleRatioText || ratioText) && calculationParts.length > 1
         ? `(${calculationParts.join(' + ')})`
         : calculationParts.join(' + ')
     rows.push({
       label: t('Calculation'),
-      value: `${calculation}${ratioText} = ${formatLogQuota(log.quota)}`,
+      value: `${calculation}${requestRuleRatioText}${ratioText} = ${formatLogQuota(log.quota)}`,
     })
   }
 
@@ -936,6 +951,7 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const showAdminIp =
     !!props.log.ip && (showTiming || (props.isAdmin && isTopup))
   const adminInfo = other?.admin_info
+  const channelProbe = props.isAdmin ? adminInfo?.channel_probe : undefined
   const topupAuditFields =
     isTopup && props.isAdmin && adminInfo
       ? ([
@@ -1241,14 +1257,67 @@ export function DetailsDialog(props: DetailsDialogProps) {
           </DetailSection>
         )}
 
+        {channelProbe && (
+          <DetailSection label={t('Channel probe')}>
+            <DetailRow
+              label={t('Probe type')}
+              value={t(channelProbe.mode ?? 'hi')}
+            />
+            <DetailRow
+              label={t('Source')}
+              value={t(channelProbe.source ?? '')}
+            />
+            <DetailRow
+              label={t('Outcome')}
+              value={t(channelProbe.outcome ?? '')}
+            />
+            {channelProbe.level && (
+              <DetailRow label={t('Level')} value={t(channelProbe.level)} />
+            )}
+            {channelProbe.question_kind && (
+              <DetailRow
+                label={t('Question type')}
+                value={t(channelProbe.question_kind)}
+              />
+            )}
+            {channelProbe.question_id && (
+              <DetailRow
+                label={t('Question ID')}
+                value={channelProbe.question_id}
+                mono
+              />
+            )}
+            {channelProbe.expected_answer && (
+              <DetailRow
+                label={t('Expected answer')}
+                value={channelProbe.expected_answer}
+                mono
+              />
+            )}
+            {channelProbe.actual_answer && (
+              <DetailRow
+                label={t('Actual answer')}
+                value={channelProbe.actual_answer}
+                mono
+              />
+            )}
+            {channelProbe.fallback_reason && (
+              <DetailRow
+                label={t('Fallback reason')}
+                value={channelProbe.fallback_reason}
+              />
+            )}
+          </DetailSection>
+        )}
+
         {/* Reject reason (admin only) */}
-        {props.isAdmin && other?.reject_reason && (
+        {props.isAdmin && adminInfo?.reject_reason && (
           <DetailSection
             icon={<AlertTriangle className='size-3.5' aria-hidden='true' />}
             label={t('Reject Reason')}
             variant='danger'
           >
-            <p className='text-xs wrap-break-word'>{other.reject_reason}</p>
+            <p className='text-xs wrap-break-word'>{adminInfo.reject_reason}</p>
           </DetailSection>
         )}
 
