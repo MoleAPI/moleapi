@@ -218,6 +218,21 @@ func TestOpenAIChatTokenLimitCompatibility(t *testing.T) {
 	}
 }
 
+func TestOpenAIChatTokenLimitPreservesUnknownModels(t *testing.T) {
+	for _, modelName := range []string{"gpt-4.1", "custom-model"} {
+		t.Run(modelName, func(t *testing.T) {
+			request := &dto.GeneralOpenAIRequest{
+				Model:    modelName,
+				Messages: []dto.Message{{Role: "user", Content: "hi"}},
+			}
+			require.NoError(t, common.UnmarshalJsonStr(`{"max_completion_tokens":100}`, request))
+
+			encoded := convertChatCompatibilityRequest(t, request, constant.ChannelTypeOpenAI, nil)
+			assert.JSONEq(t, `{"model":"`+modelName+`","messages":[{"role":"user","content":"hi"}],"max_completion_tokens":100}`, string(encoded))
+		})
+	}
+}
+
 func TestDirectOpenAIResponsesKeepsExistingParameters(t *testing.T) {
 	const body = `{"model":"gpt-6-astra","input":"hi","max_output_tokens":100,"temperature":0.2,"top_p":0.8,"top_logprobs":5,"include":["message.output_text.logprobs"],"reasoning":{"effort":"high"}}`
 	var request dto.OpenAIResponsesRequest

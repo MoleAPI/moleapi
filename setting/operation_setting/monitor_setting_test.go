@@ -71,6 +71,10 @@ func TestGetMonitorSettingNormalizesLegacyScheduledProbeMode(t *testing.T) {
 	assert.Equal(t, ChannelTestModeAutoDetect, setting.ChannelTestMode)
 }
 
+func TestNormalizeChannelTestModePreservesPassiveRecovery(t *testing.T) {
+	assert.Equal(t, ChannelTestModePassiveRecovery, NormalizeChannelTestMode(ChannelTestModePassiveRecovery))
+}
+
 func TestNormalizeChannelTestModeSupportsThreeModes(t *testing.T) {
 	assert.Equal(t, ChannelTestModeScheduledAll, NormalizeChannelTestMode(ChannelTestModeScheduledAll))
 	assert.Equal(t, ChannelTestModeAutoDetect, NormalizeChannelTestMode(ChannelTestModeAutoDetect))
