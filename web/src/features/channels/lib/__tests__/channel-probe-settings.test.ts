@@ -49,8 +49,26 @@ describe('channel probe settings', () => {
         multi_key_polling_index: 0,
         multi_key_mode: 'random',
       },
-    } as Channel)
+    } as unknown as Channel)
     expect(defaults.channel_probe_enabled).toBe(false)
     expect(defaults.channel_probe_models).toBe('model-a,model-b')
+  })
+
+  test('defaults scheduled probes to the first channel model when omitted', () => {
+    const defaults = transformChannelToFormDefaults({
+      ...CHANNEL_FORM_DEFAULT_VALUES,
+      id: 2,
+      models: 'model-a,model-b',
+      group: 'default',
+      settings: '{}',
+      channel_info: {
+        is_multi_key: false,
+        multi_key_size: 0,
+        multi_key_polling_index: 0,
+        multi_key_mode: 'random',
+      },
+    } as unknown as Channel)
+
+    expect(defaults.channel_probe_models).toBe('model-a')
   })
 })

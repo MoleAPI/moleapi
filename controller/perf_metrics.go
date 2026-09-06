@@ -3,6 +3,7 @@ package controller
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/channelprobe"
@@ -104,7 +105,7 @@ func GetChannelSuccessMetrics(c *gin.Context) {
 		"success": true,
 		"data": gin.H{
 			"channels":       result.Channels,
-			"probe_overview": buildChannelProbeOverview(channels),
+			"probe_overview": buildChannelProbeOverview(channels, c.Query("channel_test_mode")),
 		},
 	})
 }
@@ -123,6 +124,7 @@ type channelProbeOverviewItem struct {
 type channelProbeOverview struct {
 	Enabled         bool                       `json:"enabled"`
 	Mode            string                     `json:"mode"`
+	ChannelTestMode string                     `json:"channel_test_mode"`
 	EnabledChannels int                        `json:"enabled_channels"`
 	TotalModels     int                        `json:"total_models"`
 	Healthy         int                        `json:"healthy"`
@@ -131,19 +133,20 @@ type channelProbeOverview struct {
 	Items           []channelProbeOverviewItem `json:"items"`
 }
 
-func buildChannelProbeOverview(channels []*model.Channel) channelProbeOverview {
+func buildChannelProbeOverview(channels []*model.Channel, requestedMode string) channelProbeOverview {
 	monitorSetting := operation_setting.GetMonitorSetting()
-	overview := channelProbeOverview{
-		Enabled: monitorSetting.AutoTestChannelEnabled,
-		Mode:    monitorSetting.ChannelTestType,
-		Items:   make([]channelProbeOverviewItem, 0),
+	mode := monitorSetting.ChannelTestMode
+	if strings.TrimSpace(requestedMode) != "" {
+		mode = operation_setting.NormalizeChannelTestMode(requestedMode)
 	}
-	for _, channel := range selectChannelsForAutomaticTest(channels, monitorSetting.ChannelTestMode) {
+	overview := channelProbeOverview{
+		Enabled:         monitorSetting.AutoTestChannelEnabled,
+		Mode:            monitorSetting.ChannelTestType,
+		ChannelTestMode: mode,
+		Items:           make([]channelProbeOverviewItem, 0),
+	}
+	for _, channel := range selectChannelsForAutomaticTest(channels, mode) {
 		if channel == nil {
-			continue
-		}
-		enabled := channel.GetOtherSettings().ChannelProbeEnabled
-		if enabled != nil && !*enabled {
 			continue
 		}
 		models := channelTestModels(channel)

@@ -172,6 +172,7 @@ import {
   getChannelTypeIcon,
   getKeyPromptForType,
   parseModelsString,
+  parseChannelOtherSettings,
   formatModelsArray,
   extractRedirectModels,
   extractMappingSourceModels,
@@ -287,7 +288,6 @@ const SENSITIVE_FORM_FIELDS = [
   'key_mode',
   'param_override',
   'header_override',
-  'settings',
   'setting',
   'advanced_custom',
   'is_enterprise_account',
@@ -1189,6 +1189,14 @@ export function ChannelMutateDrawer({
     }))
   }, [currentModelsArray])
 
+  const scheduledProbeModels = useMemo(() => {
+    const configured = parseModelsString(currentChannelProbeModels || '')
+    if (configured.length > 0) {
+      return configured.filter((model) => currentModelsArray.includes(model))
+    }
+    return currentModelsArray.slice(0, 1)
+  }, [currentChannelProbeModels, currentModelsArray])
+
   const modelMappingGuardrail = useMemo<ModelMappingGuardrail>(() => {
     if (!currentModelMapping?.trim()) {
       return createEmptyModelMappingGuardrail()
@@ -1622,6 +1630,11 @@ export function ChannelMutateDrawer({
     setOpen(null)
   }, [channelId, queryClient, onOpenChange, setOpen])
 
+  const currentScheduledProbeEnabled =
+    parseChannelOtherSettings(
+      channelData?.data?.settings ?? currentRow?.settings
+    ).channel_probe_enabled !== false
+
   // Show missing models confirmation dialog
   const confirmMissingModelMappings = useCallback(
     (missingModels: string[]): Promise<MissingModelsAction> => {
@@ -1782,11 +1795,22 @@ export function ChannelMutateDrawer({
         }
       }
 
+      const shouldRunImmediateProbe =
+        isEditing &&
+        channelId != null &&
+        !currentScheduledProbeEnabled &&
+        data.channel_probe_enabled !== false
+
       await channelMutation.mutateAsync(data)
-      if (isEditing && channelId && data.channel_probe_enabled !== false) {
-        void testChannel(channelId, {
-          model: data.test_model || parseModelsString(data.models || '')[0],
-        })
+      if (shouldRunImmediateProbe && channelId != null) {
+        try {
+          await testChannel(channelId, { scheduled: true })
+          await queryClient.invalidateQueries({
+            queryKey: ['channel-success-metrics'],
+          })
+        } catch {
+          toast.error(t('Failed to test channel'))
+        }
       }
     },
     [
@@ -1796,6 +1820,9 @@ export function ChannelMutateDrawer({
       confirmMissingModelMappings,
       confirmStatusCodeRisk,
       channelMutation,
+      channelId,
+      currentScheduledProbeEnabled,
+      queryClient,
       t,
     ]
   )
@@ -3993,22 +4020,19 @@ export function ChannelMutateDrawer({
                                   <FormControl>
                                     <MultiSelect
                                       options={modelOptions}
-                                      selected={String(field.value || '')
-                                        .split(',')
-                                        .map((model) => model.trim())
-                                        .filter(Boolean)}
+                                      selected={scheduledProbeModels}
                                       onChange={(values) =>
                                         field.onChange(values.join(','))
                                       }
                                       placeholder={t(
-                                        'Use test model or channel models'
+                                        'Select models from this channel'
                                       )}
                                       maxVisibleChips={6}
                                     />
                                   </FormControl>
                                   <FormDescription>
                                     {t(
-                                      'Leave empty to use the test model, then fall back to all channel models.'
+                                      'Defaults to the first channel model; choose more models from this channel when needed.'
                                     )}
                                   </FormDescription>
                                   <FormMessage />

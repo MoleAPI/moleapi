@@ -14,6 +14,10 @@ func requestOpenAI2Ali(request dto.GeneralOpenAIRequest, upstreamModelName strin
 	if modelName == "" {
 		modelName = request.Model
 	}
+	if request.MaxTokens == nil && request.MaxCompletionTokens != nil {
+		request.MaxTokens = request.MaxCompletionTokens
+		request.MaxCompletionTokens = nil
+	}
 	if !dto.IsQwenThinkingBudgetModel(modelName) {
 		request.ThinkingBudget = nil
 	}

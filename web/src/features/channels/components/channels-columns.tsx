@@ -440,11 +440,11 @@ function ChannelSuccessRateCell({
 function ChannelReliabilityCell({
   channel,
   channelProbeById,
-  probeMode,
+  probeEnabled,
 }: {
   channel: Channel
   channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
-  probeMode?: 'hi' | 'intelligence' | 'custom'
+  probeEnabled?: boolean
 }) {
   const { t } = useTranslation()
   const probeStats = getChannelProbeStats(channel, channelProbeById)
@@ -462,7 +462,16 @@ function ChannelReliabilityCell({
   }
 
   if (!probeStats) {
-    if (probeMode === 'hi') return <StatusBadge label={t('Pending')} variant='neutral' size='sm' copyable={false} />
+    if (probeEnabled) {
+      return (
+        <StatusBadge
+          label={t('Pending')}
+          variant='neutral'
+          size='sm'
+          copyable={false}
+        />
+      )
+    }
     return <span className='text-muted-foreground text-xs'>-</span>
   }
 
@@ -522,7 +531,7 @@ export function useChannelsColumns(
     enableSelection?: boolean
     channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
     channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
-    probeMode?: 'hi' | 'intelligence' | 'custom'
+    probeEnabled?: boolean
   } = {}
 ): ColumnDef<Channel>[] {
   const { t } = useTranslation()
@@ -1097,7 +1106,7 @@ export function useChannelsColumns(
           <ChannelReliabilityCell
             channel={row.original}
             channelProbeById={options.channelProbeById}
-            probeMode={options.probeMode}
+            probeEnabled={options.probeEnabled}
           />
         ),
         size: 140,
@@ -1156,7 +1165,7 @@ export function useChannelsColumns(
       sensitiveVisible,
       options.channelSuccessById,
       options.channelProbeById,
-      options.probeMode,
+      options.probeEnabled,
     ]
   )
 }

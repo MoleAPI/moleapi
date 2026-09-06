@@ -51,9 +51,27 @@ const SENSITIVE_UPDATE_FIELDS = [
   'param_override',
   'header_override',
   'setting',
-  'settings',
   'other',
 ] satisfies (keyof Channel)[]
+
+function mergeChannelProbeSettings(
+  currentSettings: string | null | undefined,
+  updatedSettings: string | undefined
+): string | undefined {
+  if (typeof updatedSettings !== 'string') return updatedSettings
+  try {
+    const current = JSON.parse(currentSettings || '{}')
+    const updated = JSON.parse(updatedSettings)
+    if (!isRecord(current) || !isRecord(updated)) return updatedSettings
+    for (const key of ['channel_probe_enabled', 'channel_probe_models']) {
+      if (key in updated) current[key] = updated[key]
+      else delete current[key]
+    }
+    return JSON.stringify(current)
+  } catch {
+    return updatedSettings
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
@@ -103,6 +121,10 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
           for (const field of SENSITIVE_UPDATE_FIELDS) {
             delete payload[field]
           }
+          payload.settings = mergeChannelProbeSettings(
+            props.currentRow.settings,
+            payload.settings
+          )
         }
         const payloadWithKeyMode =
           canEditSensitive &&

@@ -77,9 +77,8 @@ const numericString = z.string().refine((value) => {
 
 const channelTestModes = [
   'scheduled_all',
-  'auto_ban_only',
-  'passive_recovery',
-  'scheduled_probes',
+  'auto_detect',
+  'auto_disable',
 ] as const
 type ChannelTestMode = (typeof channelTestModes)[number]
 const channelTestTypes = ['hi', 'intelligence', 'custom'] as const
@@ -209,9 +208,14 @@ type NormalizedRoutingReliabilityValues = {
 }
 
 function normalizeChannelTestMode(value?: string): ChannelTestMode {
-  if (value === 'auto_ban_only' || value === 'passive_recovery') {
-    return value
-  }
+  if (value === 'auto_detect' || value === 'scheduled_probes')
+    return 'auto_detect'
+  if (
+    value === 'auto_disable' ||
+    value === 'auto_ban_only' ||
+    value === 'passive_recovery'
+  )
+    return 'auto_disable'
   return 'scheduled_all'
 }
 
@@ -347,27 +351,27 @@ export function RoutingReliabilitySection({
   const channelTestMode = form.watch('monitor_setting.channel_test_mode')
   const channelTestType = form.watch('monitor_setting.channel_test_type')
   const probeOverviewQuery = useQuery({
-    queryKey: ['channel-success-metrics', 24],
-    queryFn: () => getChannelSuccessMetrics(24),
+    queryKey: ['channel-success-metrics', 24, channelTestMode],
+    queryFn: () => getChannelSuccessMetrics(24, channelTestMode),
     staleTime: 60 * 1000,
     retry: false,
   })
   const probeOverview = probeOverviewQuery.data?.data.probe_overview
   let channelTestModeDescription: string
   switch (channelTestMode) {
-    case 'auto_ban_only':
+    case 'auto_detect':
       channelTestModeDescription = t(
-        'Checks only non-manually-disabled channels that have both scheduled model checks and per-channel auto-disable enabled.'
+        'Checks only non-manually-disabled channels with automatic detection enabled.'
       )
       break
-    case 'passive_recovery':
+    case 'auto_disable':
       channelTestModeDescription = t(
-        'Checks only auto-disabled channels with scheduled model checks enabled; healthy and manually disabled channels are skipped.'
+        'Checks only non-manually-disabled channels with automatic disable enabled.'
       )
       break
     default:
       channelTestModeDescription = t(
-        'Checks enabled and auto-disabled channels that have scheduled model checks enabled, allowing both monitoring and recovery.'
+        'Checks all non-manually-disabled channels.'
       )
   }
   const autoDisableParsed = useMemo(
@@ -513,19 +517,16 @@ export function RoutingReliabilitySection({
                       items={[
                         {
                           value: 'scheduled_all',
-                          label: t('Actively check all channels'),
+                          label: t('Check all channels'),
                         },
                         {
-                          value: 'auto_ban_only',
-                          label: t(
-                            'Actively check auto-disable-enabled channels'
-                          ),
+                          value: 'auto_detect',
+                          label: t('Check auto-detection channels'),
                         },
                         {
-                          value: 'passive_recovery',
-                          label: t('Check channels awaiting recovery only'),
+                          value: 'auto_disable',
+                          label: t('Check auto-disable channels'),
                         },
-                        { value: 'scheduled_probes', label: t('Check scheduled probe channels only') },
                       ]}
                       value={field.value}
                       onValueChange={field.onChange}
@@ -538,15 +539,14 @@ export function RoutingReliabilitySection({
                       <SelectContent alignItemWithTrigger={false}>
                         <SelectGroup>
                           <SelectItem value='scheduled_all'>
-                            {t('Actively check all channels')}
+                            {t('Check all channels')}
                           </SelectItem>
-                          <SelectItem value='auto_ban_only'>
-                            {t('Actively check auto-disable-enabled channels')}
+                          <SelectItem value='auto_detect'>
+                            {t('Check auto-detection channels')}
                           </SelectItem>
-                          <SelectItem value='passive_recovery'>
-                            {t('Check channels awaiting recovery only')}
+                          <SelectItem value='auto_disable'>
+                            {t('Check auto-disable channels')}
                           </SelectItem>
-                          <SelectItem value='scheduled_probes'>{t('Check scheduled probe channels only')}</SelectItem>
                         </SelectGroup>
                       </SelectContent>
                     </Select>
@@ -607,11 +607,9 @@ export function RoutingReliabilitySection({
                       />
                     </FormControl>
                     <FormDescription>
-                      {channelTestMode === 'passive_recovery'
-                        ? t(
-                            'How frequently the system checks auto-disabled channels for recovery'
-                          )
-                        : t('How frequently the system tests all channels')}
+                      {t(
+                        'How frequently the system runs scheduled channel checks'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

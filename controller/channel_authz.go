@@ -1,6 +1,39 @@
 package controller
 
-import "github.com/QuantumNous/new-api/model"
+import (
+	"reflect"
+	"strings"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+)
+
+func channelSettingsOnlyChangeProbeSettings(updated, origin string) bool {
+	parseSettings := func(raw string) (map[string]any, bool) {
+		settings := make(map[string]any)
+		if strings.TrimSpace(raw) == "" {
+			return settings, true
+		}
+		if err := common.UnmarshalJsonStr(raw, &settings); err != nil || settings == nil {
+			return nil, false
+		}
+		return settings, true
+	}
+
+	updatedSettings, ok := parseSettings(updated)
+	if !ok {
+		return false
+	}
+	originSettings, ok := parseSettings(origin)
+	if !ok {
+		return false
+	}
+	for _, key := range []string{"channel_probe_enabled", "channel_probe_models"} {
+		delete(updatedSettings, key)
+		delete(originSettings, key)
+	}
+	return reflect.DeepEqual(updatedSettings, originSettings)
+}
 
 func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, requestData map[string]any) bool {
 	if _, ok := requestData["type"]; ok && channel.Type != origin.Type {
@@ -27,7 +60,9 @@ func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, re
 	if _, ok := requestData["other"]; ok && channel.Other != origin.Other {
 		return true
 	}
-	if _, ok := requestData["settings"]; ok && channel.OtherSettings != origin.OtherSettings {
+	if _, ok := requestData["settings"]; ok &&
+		channel.OtherSettings != origin.OtherSettings &&
+		!channelSettingsOnlyChangeProbeSettings(channel.OtherSettings, origin.OtherSettings) {
 		return true
 	}
 	if _, ok := requestData["key_mode"]; ok && channel.KeyMode != nil {

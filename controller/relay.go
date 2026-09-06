@@ -674,7 +674,7 @@ func processChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		other.SetPublic("error_code", err.GetErrorCode())
 		other.SetPublic("status_code", err.StatusCode)
 		service.AppendRelayLogAdminInfo(c, relayInfo, other)
-		other.SetAdmin("upstream_error", err.ErrorWithStatusCode())
+		other.SetAdmin("upstream_error", common.LogDetailPreview(err.ErrorWithStatusCode()))
 		service.AppendTaskPluginContextAuditInfo(c, other)
 		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
 		if startTime.IsZero() {

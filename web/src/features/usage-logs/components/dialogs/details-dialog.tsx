@@ -63,6 +63,7 @@ import {
   getReasoningEffortVariant,
   renderAuditContent,
   renderLogContent,
+  sanitizeLogDetail,
 } from '../../lib/format'
 import {
   getLogTypeConfig,
@@ -859,8 +860,10 @@ export function InlineLogDetails(props: { log: UsageLog; isAdmin: boolean }) {
   const isConsume = props.log.type === 2
   const detailText =
     props.isAdmin && other?.admin_info?.upstream_error
-      ? other.admin_info.upstream_error
-      : renderLogContent(props.log, other, t) || props.log.content
+      ? sanitizeLogDetail(other.admin_info.upstream_error)
+      : sanitizeLogDetail(
+          renderLogContent(props.log, other, t) || props.log.content || ''
+        )
   const showTokens = other && isDisplayableType(props.log.type)
   const showBilling = other && isConsume && !isViolationFeeLog(other)
 
@@ -927,8 +930,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
   const other = parseLogOther(props.log.other)
   const details =
     props.isAdmin && other?.admin_info?.upstream_error
-      ? other.admin_info.upstream_error
-      : renderLogContent(props.log, other, t) || props.log.content || ''
+      ? sanitizeLogDetail(other.admin_info.upstream_error)
+      : sanitizeLogDetail(
+          renderLogContent(props.log, other, t) || props.log.content || ''
+        )
   const typeConfig = getLogTypeConfig(props.log.type)
 
   const isViolation = isViolationFeeLog(other)

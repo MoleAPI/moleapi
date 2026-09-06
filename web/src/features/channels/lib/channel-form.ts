@@ -597,6 +597,13 @@ export function transformChannelToFormDefaults(
       console.error('Failed to parse channel settings:', error)
     }
   }
+  if (!channelProbeModels) {
+    channelProbeModels =
+      (channel.models || '')
+        .split(/[\n,]/)
+        .map((model) => model.trim())
+        .find(Boolean) || ''
+  }
   if (!advancedCustom && channel.type === CHANNEL_TYPE_CODING_PLAN) {
     const config = buildCodingPlanAdvancedCustomConfig(
       codingPlanProvider || channel.base_url || ''
@@ -811,7 +818,12 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
   if (probeModels.length > 0) {
     settingsObj.channel_probe_models = probeModels
   } else {
-    delete settingsObj.channel_probe_models
+    const firstModel = String(formData.models || '')
+      .split(/[\n,]/)
+      .map((model) => model.trim())
+      .find(Boolean)
+    if (firstModel) settingsObj.channel_probe_models = [firstModel]
+    else delete settingsObj.channel_probe_models
   }
 
   // Upstream model update settings (for model-fetchable channel types)

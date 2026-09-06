@@ -50,6 +50,7 @@ import {
   parseLogOther,
   isViolationFeeLog,
   renderLogContent,
+  sanitizeLogDetail,
 } from '../../lib/format'
 import {
   isDisplayableLogType,
@@ -101,22 +102,34 @@ function getPriceRatioSuffix(other: LogOtherData): string {
   return ratio == null ? '' : ` · ${formatRatioCompact(ratio)}`
 }
 
-function getTieredPriceRatioSuffix(
-  other: LogOtherData,
-  t: (key: string) => string
-): string {
-  const parts: string[] = []
-  const requestRuleMultiplier = getMatchedRequestRuleMultiplier(other)
-  if (requestRuleMultiplier != null) {
-    parts.push(
-      `${t('Conditional multipliers')} ${formatRatioCompact(requestRuleMultiplier)}x`
-    )
-  }
+function getTieredPreviewRatioSuffix(other: LogOtherData): string {
   const groupRatio = getEffectiveGroupRatio(other)
-  if (groupRatio != null) {
-    parts.push(`${t('Group Ratio')} ${formatRatioCompact(groupRatio)}x`)
+  const hasGroupRatio = groupRatio != null
+  const requestRuleMultiplier = getMatchedRequestRuleMultiplier(other)
+  const parts: string[] = []
+
+  if (
+    groupRatio != null &&
+    (requestRuleMultiplier == null || groupRatio !== 1)
+  ) {
+    parts.push(formatRatioCompact(groupRatio))
   }
-  return parts.map((part) => ` · ${part}`).join('')
+
+  if (requestRuleMultiplier != null && requestRuleMultiplier !== 1) {
+    parts.push(formatRatioCompact(requestRuleMultiplier))
+  }
+
+  if (parts.length === 0) {
+    if (hasGroupRatio) {
+      return ` · ${formatRatioCompact(groupRatio ?? 1)}`
+    }
+    if (requestRuleMultiplier != null) {
+      return ` · ${formatRatioCompact(requestRuleMultiplier)}`
+    }
+    return ''
+  }
+
+  return ` · ${parts.join(' × ')}`
 }
 
 function buildDetailSegments(
@@ -127,7 +140,7 @@ function buildDetailSegments(
 ): DetailSegment[] {
   const upstreamError = isAdmin ? other?.admin_info?.upstream_error : undefined
   const segments: DetailSegment[] = upstreamError
-    ? [{ text: upstreamError, danger: true }]
+    ? [{ text: sanitizeLogDetail(upstreamError), danger: true }]
     : buildTypeDetailSegments(log, other, t)
   const adminSegments: DetailSegment[] = []
   // Quota saturation is a rare, admin-only anomaly marker; surface it first
@@ -198,48 +211,15 @@ function buildTypeDetailSegments(
       const baseEntries = tieredSummary.priceEntries
         .filter((entry) => ['inputPrice', 'outputPrice'].includes(entry.field))
         .map((entry) => formatPriceCompact(entry.price))
-      if (baseEntries.length > 0) {
-        const tierLabel = tieredSummary.tier.label || t('Default')
+      const compactEntries =
+        baseEntries.length > 0
+          ? baseEntries
+          : tieredSummary.priceEntries
+              .slice(0, 2)
+              .map((entry) => formatPriceCompact(entry.price))
+      if (compactEntries.length > 0) {
         segments.push({
-          text: `${tierLabel} · ${formatPriceList(baseEntries, true)}${getTieredPriceRatioSuffix(other, t)}`,
-        })
-      }
-
-      const cacheEntries = tieredSummary.priceEntries
-        .filter((entry) =>
-          ['cacheReadPrice', 'cacheCreatePrice', 'cacheCreate1hPrice'].includes(
-            entry.field
-          )
-        )
-        .map((entry) => {
-          return formatPriceCompact(entry.price)
-        })
-      if (cacheEntries.length > 0) {
-        segments.push({
-          text: `${t('Cache')} ${formatPriceList(cacheEntries, false)}${getTieredPriceRatioSuffix(other, t)}`,
-          muted: true,
-        })
-      }
-
-      const otherEntries = tieredSummary.priceEntries
-        .filter(
-          (entry) =>
-            ![
-              'inputPrice',
-              'outputPrice',
-              'cacheReadPrice',
-              'cacheCreatePrice',
-              'cacheCreate1hPrice',
-            ].includes(entry.field)
-        )
-        .map((entry) => ({
-          text: `${t(entry.shortLabel)} ${formatPrice(entry.price)}${getTieredPriceRatioSuffix(other, t)}`,
-          muted: true,
-        }))
-      for (const entry of otherEntries) {
-        segments.push({
-          text: entry.text,
-          muted: entry.muted,
+          text: `${formatPriceList(compactEntries, true)}${getTieredPreviewRatioSuffix(other)}`,
         })
       }
     } else {
@@ -873,12 +853,12 @@ export function useCommonLogsColumns(
         let detailPreview = <span className='text-muted-foreground/40'>—</span>
         if (segments.length > 0) {
           detailPreview = (
-            <span className='flex max-w-full min-w-0 flex-col gap-0.5 leading-snug'>
+            <span className='line-clamp-5 max-h-24 max-w-full min-w-0 overflow-hidden leading-snug'>
               {segments.map((segment) => (
                 <span
                   key={`${segment.text}-${segment.muted ? 'muted' : ''}-${segment.danger ? 'danger' : ''}`}
                   className={cn(
-                    'min-w-0 break-all whitespace-normal sm:wrap-break-word',
+                    'block min-w-0 break-all whitespace-normal sm:wrap-break-word',
                     segment.muted && 'text-muted-foreground/60',
                     segment.danger && 'text-red-600 dark:text-red-400'
                   )}
@@ -891,7 +871,7 @@ export function useCommonLogsColumns(
         } else if (log.content) {
           detailPreview = (
             <span className='text-muted-foreground break-all whitespace-normal sm:wrap-break-word'>
-              {log.content}
+              {sanitizeLogDetail(log.content)}
             </span>
           )
         }
@@ -903,7 +883,7 @@ export function useCommonLogsColumns(
         )
       },
       enableSorting: false,
-      size: 360,
+      size: 240,
     }
   )
 

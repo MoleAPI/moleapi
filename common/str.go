@@ -7,12 +7,14 @@ import (
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 	"unsafe"
 
 	"github.com/samber/lo"
 )
 
 const LocalLogContentLimit = 2048
+const LogDetailContentLimit = 4096
 
 // LocalLogPreview limits log-only content unless debug logging is enabled.
 func LocalLogPreview(content string) string {
@@ -20,6 +22,18 @@ func LocalLogPreview(content string) string {
 		return content
 	}
 	return fmt.Sprintf("%s... [truncated, original_length=%d, limit=%d]", content[:LocalLogContentLimit], len(content), LocalLogContentLimit)
+}
+
+// LogDetailPreview bounds content persisted in an operator-visible log field.
+func LogDetailPreview(content string) string {
+	if len(content) <= LogDetailContentLimit {
+		return content
+	}
+	prefix := content[:LogDetailContentLimit]
+	for !utf8.ValidString(prefix) {
+		prefix = prefix[:len(prefix)-1]
+	}
+	return fmt.Sprintf("%s... [truncated, original_length=%d, limit=%d]", prefix, len(content), LogDetailContentLimit)
 }
 
 func GetStringIfEmpty(str string, defaultValue string) string {
