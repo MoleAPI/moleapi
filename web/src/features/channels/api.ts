@@ -226,6 +226,7 @@ export async function testChannel(
     model?: string
     endpoint_type?: string
     stream?: boolean
+    scheduled?: boolean
     test_type?: 'hi' | 'intelligence' | 'custom'
     prompt?: string
     expected_answer?: string

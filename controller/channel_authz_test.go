@@ -61,6 +61,25 @@ func TestChannelHasSensitiveChanges(t *testing.T) {
 		assert.True(t, channelHasSensitiveChanges(&updated, origin, map[string]any{"header_override": newHeaderOverride}))
 	})
 
+	t.Run("scheduled probe settings are non-sensitive", func(t *testing.T) {
+		origin.OtherSettings = `{"disable_task_polling_sleep":false}`
+		updated := PatchChannel{Channel: *origin}
+		updated.OtherSettings = `{"disable_task_polling_sleep":false,"channel_probe_enabled":false,"channel_probe_models":["gpt-4o"]}`
+
+		assert.False(t, channelHasSensitiveChanges(&updated, origin, map[string]any{
+			"settings": updated.OtherSettings,
+		}))
+	})
+
+	t.Run("other settings changes remain sensitive", func(t *testing.T) {
+		updated := PatchChannel{Channel: *origin}
+		updated.OtherSettings = `{"disable_task_polling_sleep":true,"channel_probe_enabled":false}`
+
+		assert.True(t, channelHasSensitiveChanges(&updated, origin, map[string]any{
+			"settings": updated.OtherSettings,
+		}))
+	})
+
 	t.Run("omitted sensitive fields do not use zero values", func(t *testing.T) {
 		updated := PatchChannel{}
 		updated.Id = origin.Id

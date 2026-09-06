@@ -325,13 +325,13 @@ func TestBuildChannelProbeOverviewUsesExistingChannelJSON(t *testing.T) {
 	overview := buildChannelProbeOverview([]*model.Channel{
 		{Id: 1, Name: "primary", Models: "model-a,model-b", OtherInfo: probeState, Status: common.ChannelStatusEnabled},
 		{Id: 2, Name: "off", Models: "model-c", OtherSettings: disabledSettingsText, Status: common.ChannelStatusEnabled},
-	})
+	}, operation_setting.ChannelTestModeAutoDetect)
 
 	assert.Equal(t, 1, overview.EnabledChannels)
-	assert.Equal(t, 2, overview.TotalModels)
+	assert.Equal(t, 1, overview.TotalModels)
 	assert.Equal(t, 1, overview.Healthy)
-	assert.Equal(t, 1, overview.Pending)
-	require.Len(t, overview.Items, 2)
+	assert.Equal(t, 0, overview.Pending)
+	require.Len(t, overview.Items, 1)
 	assert.Equal(t, channelprobe.LevelStandard, overview.Items[0].Level)
 }
 
@@ -358,10 +358,10 @@ func TestChannelTestModelsOnlyUsesModelsStillInChannel(t *testing.T) {
 		{name: "all selected models removed pauses without fallback", models: "c", probes: []string{"a", "b"}},
 		{name: "empty channel pauses", probes: []string{"a"}},
 		{name: "blank entries do not cause fallback", models: "a", probes: []string{" "}},
-		{name: "removed legacy test model pauses", models: "b", testModel: lo.ToPtr("a")},
-		{name: "blank legacy test model uses channel models", models: "a,b", testModel: lo.ToPtr(" "), want: []string{"a", "b"}},
-		{name: "no explicit selection uses channel models", models: " a ,b,a", want: []string{"a", "b"}},
-		{name: "valid legacy test model", models: "a,b", testModel: lo.ToPtr("b"), want: []string{"b"}},
+		{name: "legacy test model does not replace first channel model", models: "b", testModel: lo.ToPtr("a"), want: []string{"b"}},
+		{name: "blank legacy test model uses first channel model", models: "a,b", testModel: lo.ToPtr(" "), want: []string{"a"}},
+		{name: "no explicit selection uses first channel model", models: " a ,b,a", want: []string{"a"}},
+		{name: "legacy test model does not override first channel model", models: "a,b", testModel: lo.ToPtr("b"), want: []string{"a"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -384,24 +384,42 @@ func TestRemovedProbeModelsPauseWithoutRequestsAndResumeWhenRestored(t *testing.
 	assert.Equal(t, channelTestSummary{}, testChannelForHealthCheck(context.Background(), channel, 0, true, 1))
 	assert.Equal(t, settingsBefore, channel.OtherSettings)
 	assert.Equal(t, stateBefore, channel.OtherInfo)
-	overview := buildChannelProbeOverview([]*model.Channel{channel})
+	overview := buildChannelProbeOverview([]*model.Channel{channel}, "")
 	assert.Zero(t, overview.EnabledChannels)
 	assert.Zero(t, overview.TotalModels)
 	assert.Empty(t, overview.Items)
 
 	channel.Models = "replacement,removed"
 	assert.Equal(t, []string{"removed"}, channelTestModels(channel))
-	overview = buildChannelProbeOverview([]*model.Channel{channel})
+	overview = buildChannelProbeOverview([]*model.Channel{channel}, "")
 	assert.Equal(t, 1, overview.EnabledChannels)
 	require.Len(t, overview.Items, 1)
 	assert.Equal(t, "removed", overview.Items[0].Model)
 }
 
-func TestSelectChannelsForAutomaticTestPassiveRecoveryOnlyUsesAutoDisabled(t *testing.T) {
+func TestSelectChannelsForAutomaticTestAutoDisableUsesEligibleChannels(t *testing.T) {
+	autoBanEnabled := 1
+	autoBanDisabled := 0
+	channels := []*model.Channel{
+		{Id: 1, Status: common.ChannelStatusEnabled, AutoBan: &autoBanEnabled},
+		{Id: 2, Status: common.ChannelStatusAutoDisabled, AutoBan: &autoBanEnabled},
+		{Id: 3, Status: common.ChannelStatusEnabled, AutoBan: &autoBanDisabled},
+		{Id: 4, Status: common.ChannelStatusManuallyDisabled, AutoBan: &autoBanEnabled},
+	}
+
+	selected := selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModeAutoDisable)
+
+	require.Len(t, selected, 2)
+	require.Equal(t, 1, selected[0].Id)
+	require.Equal(t, 2, selected[1].Id)
+}
+
+func TestSelectChannelsForAutomaticTestPassiveRecoveryUsesAutoDisabledChannels(t *testing.T) {
 	channels := []*model.Channel{
 		{Id: 1, Status: common.ChannelStatusEnabled},
 		{Id: 2, Status: common.ChannelStatusAutoDisabled},
-		{Id: 3, Status: common.ChannelStatusManuallyDisabled},
+		{Id: 3, Status: common.ChannelStatusAutoDisabled, OtherSettings: `{"channel_probe_enabled":false}`},
+		{Id: 4, Status: common.ChannelStatusManuallyDisabled},
 	}
 
 	selected := selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModePassiveRecovery)
@@ -424,22 +442,54 @@ func TestSelectChannelsForAutomaticTestScheduledSkipsManualDisabled(t *testing.T
 	require.Equal(t, 2, selected[1].Id)
 }
 
-func TestSelectChannelsForAutomaticTestAutoBanOnlyUsesEligibleChannels(t *testing.T) {
-	autoBanEnabled := 1
-	autoBanDisabled := 0
+func TestSelectChannelsForAutomaticTestAutoDetectUsesChannelToggle(t *testing.T) {
 	channels := []*model.Channel{
-		{Id: 1, Status: common.ChannelStatusEnabled, AutoBan: &autoBanEnabled},
-		{Id: 2, Status: common.ChannelStatusEnabled, AutoBan: &autoBanDisabled},
-		{Id: 3, Status: common.ChannelStatusAutoDisabled, AutoBan: &autoBanEnabled},
-		{Id: 4, Status: common.ChannelStatusManuallyDisabled, AutoBan: &autoBanEnabled},
-		{Id: 5, Status: common.ChannelStatusEnabled},
+		{Id: 1, Status: common.ChannelStatusEnabled, OtherSettings: `{"channel_probe_enabled":true}`},
+		{Id: 2, Status: common.ChannelStatusEnabled, OtherSettings: `{"channel_probe_enabled":false}`},
+		{Id: 3, Status: common.ChannelStatusAutoDisabled, OtherSettings: `{"channel_probe_enabled":true}`},
+		{Id: 4, Status: common.ChannelStatusManuallyDisabled, OtherSettings: `{"channel_probe_enabled":true}`},
 	}
 
-	selected := selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModeAutoBanOnly)
+	selected := selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModeAutoDetect)
 
 	require.Len(t, selected, 2)
 	require.Equal(t, 1, selected[0].Id)
 	require.Equal(t, 3, selected[1].Id)
+}
+
+func TestSelectChannelsForAutomaticTestAllIgnoresChannelDetectionToggle(t *testing.T) {
+	channels := []*model.Channel{
+		{Id: 1, Status: common.ChannelStatusEnabled, OtherSettings: `{"channel_probe_enabled":false}`},
+		{Id: 2, Status: common.ChannelStatusAutoDisabled},
+		{Id: 3, Status: common.ChannelStatusManuallyDisabled},
+	}
+
+	selected := selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModeScheduledAll)
+
+	require.Len(t, selected, 2)
+	require.Equal(t, 1, selected[0].Id)
+	require.Equal(t, 2, selected[1].Id)
+}
+
+func TestChannelStatusFilterAutoMatchesEitherAutomaticSetting(t *testing.T) {
+	autoBan := 1
+	autoBanOff := 0
+	tests := []struct {
+		name    string
+		channel *model.Channel
+		want    bool
+	}{
+		{name: "automatic detection defaults on", channel: &model.Channel{}, want: true},
+		{name: "automatic detection off", channel: &model.Channel{OtherSettings: `{"channel_probe_enabled":false}`}, want: false},
+		{name: "automatic disable on", channel: &model.Channel{AutoBan: &autoBan}, want: true},
+		{name: "neither setting", channel: &model.Channel{AutoBan: &autoBanOff, OtherSettings: `{"channel_probe_enabled":false}`}, want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			assert.Equal(t, test.want, channelHasAutomaticSettings(test.channel))
+		})
+	}
+	assert.Equal(t, channelStatusFilterAuto, parseStatusFilter("auto"))
 }
 
 func TestRunChannelTestWorkersHonorsConfiguredConcurrency(t *testing.T) {
@@ -563,4 +613,20 @@ func TestTestAllChannelsRejectsExistingActiveTask(t *testing.T) {
 	require.Equal(t, http.StatusConflict, recorder.Code)
 	require.Contains(t, recorder.Body.String(), existing.TaskID)
 	require.Contains(t, recorder.Body.String(), "已有通道测试任务正在运行或等待中")
+}
+
+func TestChannelHealthCheckCountsLocalErrorsAsFailed(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	channel := &model.Channel{
+		Type:   constant.ChannelTypeMidjourney,
+		Key:    "test-key",
+		Status: common.ChannelStatusEnabled,
+		Models: "model-a",
+	}
+	require.NoError(t, db.Create(channel).Error)
+
+	summary := testChannelForHealthCheck(context.Background(), channel, 0, true, 1)
+
+	assert.Equal(t, channelTestSummary{Tested: 1, Failed: 1}, summary)
 }

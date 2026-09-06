@@ -83,6 +83,11 @@ export interface ChannelProbeOverviewItem {
 export interface ChannelProbeOverview {
   enabled: boolean
   mode: 'hi' | 'intelligence' | 'custom'
+  channel_test_mode:
+    | 'scheduled_all'
+    | 'auto_detect'
+    | 'auto_disable'
+    | 'passive_recovery'
   enabled_channels: number
   total_models: number
   healthy: number

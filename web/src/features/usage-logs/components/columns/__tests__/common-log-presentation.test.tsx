@@ -233,13 +233,12 @@ test('timing and stream render as separate pill columns', async () => {
   assert.match(streamHtml, /300 t\/s/)
 })
 
-test('details preview keeps pricing first and omits neutral multiplier', async () => {
+test('details preview keeps non-tiered pricing compact', async () => {
   const detailsHtml = await renderCell('content')
 
   assert.match(detailsHtml, /\$0\.14 \/ \$0\.56\/M · 1\.0/)
-  assert.match(detailsHtml, /flex-col/)
+  assert.match(detailsHtml, /line-clamp-5/)
   assert.match(detailsHtml, /Cache \$0\.014 \/ \$0\.175 · 1\.0/)
-  assert.doesNotMatch(detailsHtml, /line-clamp/)
   assert.doesNotMatch(detailsHtml, /1\.0x/)
   assert.doesNotMatch(detailsHtml, /whitespace-nowrap/)
 })
@@ -270,6 +269,37 @@ test('per-call details append group multiplier after the price', async () => {
   const detailsHtml = await renderCell('content', false, perCallLog)
 
   assert.match(detailsHtml, /Per-call · \$0\.02 · 0\.3/)
+})
+
+test('tiered details preview collapses to one compact summary line', async () => {
+  const tieredCacheLog = usageLogSchema.parse({
+    ...peakTieredLog,
+    other: JSON.stringify({
+      billing_mode: 'tiered_expr',
+      expr_b64: Buffer.from(
+        'tier("standard", p * 0.2 + c * 1.2 + cr * 0.02 + cc * 0.25) * (hour("Asia/Shanghai") >= 14 ? 2 : 1)'
+      ).toString('base64'),
+      matched_tier: 'standard',
+      cache_tokens: 120,
+      cache_creation_tokens: 40,
+      group_ratio: 1,
+      request_rules: [
+        {
+          cond: 'hour("Asia/Shanghai") >= 14',
+          multiplier: 2,
+          matched: true,
+        },
+      ],
+    }),
+  })
+
+  const detailsHtml = await renderCell('content', false, tieredCacheLog)
+
+  assert.match(detailsHtml, /\$0\.2 \/ \$1\.2\/M · 2\.0/)
+  assert.doesNotMatch(detailsHtml, /standard/)
+  assert.doesNotMatch(detailsHtml, /Cache/)
+  assert.doesNotMatch(detailsHtml, /Conditional multipliers/)
+  assert.doesNotMatch(detailsHtml, /Group Ratio/)
 })
 
 test('details column wraps long raw content', async () => {
@@ -309,6 +339,17 @@ test('admin error details show the original upstream error without exposing it t
   assert.match(adminDetailsHtml, /provider rejected temperature=2/)
   assert.doesNotMatch(userPreviewHtml, /provider rejected temperature=2/)
   assert.match(userPreviewHtml, /The upstream service rejected the request/)
+})
+
+test('log detail text removes encoded data and caps its size', async () => {
+  const { MAX_LOG_DETAIL_LENGTH, sanitizeLogDetail } =
+    await import('../../../lib/format')
+  const encodedImage = `data:image/png;base64,${'A'.repeat(300)}`
+  const sanitized = sanitizeLogDetail(`${encodedImage}\n${'x'.repeat(5000)}`)
+
+  assert.doesNotMatch(sanitized, /data:image\/png;base64/)
+  assert.match(sanitized, /\[image data omitted\]/)
+  assert.ok([...sanitized].length < MAX_LOG_DETAIL_LENGTH + 32)
 })
 
 test('expanded details show request summary, cache tokens, and billing calculation', async () => {
@@ -418,6 +459,13 @@ test('dynamic billing details use compact ratio formatting for media pricing log
       ).toString('base64'),
       matched_tier: 'standard',
       group_ratio: 0.3,
+      request_rules: [
+        {
+          cond: 'header("x-priority") == "high"',
+          multiplier: 2,
+          matched: true,
+        },
+      ],
       request_path: '/v1/chat/completions',
       request_conversion: ['OpenAI Compatible'],
       image_input_tokens: 20,
@@ -436,21 +484,23 @@ test('dynamic billing details use compact ratio formatting for media pricing log
   assert.match(detailsHtml, /Audio In/)
   assert.match(detailsHtml, /Audio Out/)
   assert.match(detailsHtml, /0\.3x/)
+  assert.match(detailsHtml, /2\.0x/)
   assert.doesNotMatch(detailsHtml, /1\.0000x/)
-  assert.match(previewHtml, /standard · \$2 \/ \$8\/M · Group Ratio 0\.3x/)
-  assert.match(previewHtml, /Image In \$3\/M · Group Ratio 0\.3x/)
-  assert.match(previewHtml, /Audio In \$10\/M · Group Ratio 0\.3x/)
-  assert.match(previewHtml, /flex-col/)
+  assert.match(previewHtml, /\$2 \/ \$8\/M · 0\.3 × 2\.0/)
+  assert.doesNotMatch(previewHtml, /standard/)
+  assert.doesNotMatch(previewHtml, /Image In/)
+  assert.doesNotMatch(previewHtml, /Audio In/)
+  assert.match(previewHtml, /line-clamp-5/)
   assert.doesNotMatch(previewHtml, /1\.0x/)
 })
 
-test('details preview labels the matched conditional and group multipliers', async () => {
+test('tiered details preview uses the matched multiplier only', async () => {
   const previewHtml = await renderCell('content', false, peakTieredLog)
 
-  assert.match(
-    previewHtml,
-    /base · \$0\.67 \/ \$1\.34\/M · Conditional multipliers 2\.0x · Group Ratio 1\.0x/
-  )
+  assert.match(previewHtml, /\$0\.67 \/ \$1\.34\/M · 2\.0/)
+  assert.doesNotMatch(previewHtml, /base/)
+  assert.doesNotMatch(previewHtml, /Conditional multipliers/)
+  assert.doesNotMatch(previewHtml, /Group Ratio/)
 })
 
 test('expanded details include the matched conditional multiplier in the summary and calculation', async () => {
@@ -485,7 +535,7 @@ test('desktop common logs keep full values on one horizontally scrollable row', 
   assert.match(layoutHtml, /data-has-stream-column="true"/)
   assert.match(layoutHtml, /data-use-time-count="1"/)
   assert.match(layoutHtml, /prompt_tokens\|use_time\|is_stream\|quota/)
-  assert.match(layoutHtml, />1590</)
+  assert.match(layoutHtml, />1470</)
   assert.match(timeHtml, /font-mono/)
   assert.doesNotMatch(timeHtml, /font-mono[^"]*truncate/)
   assert.doesNotMatch(timeHtml, /data-slot="status-badge"/)

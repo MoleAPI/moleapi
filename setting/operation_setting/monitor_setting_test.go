@@ -43,7 +43,7 @@ func TestGetMonitorSetting_ChannelTestEnabledEnvCanEnableDisabledConfig(t *testi
 	assert.Equal(t, float64(12), setting.AutoTestChannelMinutes)
 }
 
-func TestGetMonitorSettingPreservesAutoBanOnlyMode(t *testing.T) {
+func TestGetMonitorSettingNormalizesLegacyAutoBanMode(t *testing.T) {
 	orig := monitorSetting
 	t.Cleanup(func() { monitorSetting = orig })
 
@@ -54,7 +54,31 @@ func TestGetMonitorSettingPreservesAutoBanOnlyMode(t *testing.T) {
 	setting := GetMonitorSetting()
 
 	require.NotNil(t, setting)
-	assert.Equal(t, ChannelTestModeAutoBanOnly, setting.ChannelTestMode)
+	assert.Equal(t, ChannelTestModeAutoDisable, setting.ChannelTestMode)
+}
+
+func TestGetMonitorSettingNormalizesLegacyScheduledProbeMode(t *testing.T) {
+	orig := monitorSetting
+	t.Cleanup(func() { monitorSetting = orig })
+
+	t.Setenv("CHANNEL_TEST_ENABLED", "")
+	t.Setenv("CHANNEL_TEST_FREQUENCY", "")
+	monitorSetting = MonitorSetting{ChannelTestMode: ChannelTestModeScheduledProbes}
+
+	setting := GetMonitorSetting()
+
+	require.NotNil(t, setting)
+	assert.Equal(t, ChannelTestModeAutoDetect, setting.ChannelTestMode)
+}
+
+func TestNormalizeChannelTestModePreservesPassiveRecovery(t *testing.T) {
+	assert.Equal(t, ChannelTestModePassiveRecovery, NormalizeChannelTestMode(ChannelTestModePassiveRecovery))
+}
+
+func TestNormalizeChannelTestModeSupportsThreeModes(t *testing.T) {
+	assert.Equal(t, ChannelTestModeScheduledAll, NormalizeChannelTestMode(ChannelTestModeScheduledAll))
+	assert.Equal(t, ChannelTestModeAutoDetect, NormalizeChannelTestMode(ChannelTestModeAutoDetect))
+	assert.Equal(t, ChannelTestModeAutoDisable, NormalizeChannelTestMode(ChannelTestModeAutoDisable))
 }
 
 func TestGetMonitorSettingNormalizesChannelTestConcurrency(t *testing.T) {
