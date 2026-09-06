@@ -129,7 +129,11 @@ export function ChannelsTable() {
           const stored = localStorage.getItem(
             CHANNELS_STATUS_FILTER_STORAGE_KEY
           )
-          return stored === 'enabled' || stored === 'disabled' ? [stored] : []
+          return stored === 'enabled' ||
+            stored === 'disabled' ||
+            stored === 'auto'
+            ? [stored]
+            : []
         },
       },
       { columnId: 'type', searchKey: 'type', type: 'array' },
@@ -336,7 +340,7 @@ export function ChannelsTable() {
     enableSelection: batchMode,
     channelSuccessById,
     channelProbeById,
-    probeMode: channelSuccessData?.data.probe_overview?.mode,
+    probeEnabled: channelSuccessData?.data.probe_overview?.enabled,
   })
 
   // React Table instance

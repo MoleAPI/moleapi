@@ -20,7 +20,11 @@ type MonitorSetting struct {
 }
 
 const (
-	ChannelTestModeScheduledAll    = "scheduled_all"
+	ChannelTestModeScheduledAll = "scheduled_all"
+	ChannelTestModeAutoDetect   = "auto_detect"
+	ChannelTestModeAutoDisable  = "auto_disable"
+
+	// Legacy values remain accepted so existing saved settings keep their meaning.
 	ChannelTestModeAutoBanOnly     = "auto_ban_only"
 	ChannelTestModePassiveRecovery = "passive_recovery"
 	ChannelTestModeScheduledProbes = "scheduled_probes"
@@ -64,14 +68,23 @@ func GetMonitorSetting() *MonitorSetting {
 			monitorSetting.AutoTestChannelEnabled = parsed
 		}
 	}
-	switch monitorSetting.ChannelTestMode {
-	case ChannelTestModeAutoBanOnly, ChannelTestModePassiveRecovery, ChannelTestModeScheduledProbes:
-	default:
-		monitorSetting.ChannelTestMode = ChannelTestModeScheduledAll
-	}
+	monitorSetting.ChannelTestMode = NormalizeChannelTestMode(monitorSetting.ChannelTestMode)
 	monitorSetting.ChannelTestConcurrency = NormalizeChannelTestConcurrency(monitorSetting.ChannelTestConcurrency)
 	monitorSetting.ChannelTestType = NormalizeChannelTestType(monitorSetting.ChannelTestType)
 	return &monitorSetting
+}
+
+func NormalizeChannelTestMode(value string) string {
+	switch strings.TrimSpace(value) {
+	case ChannelTestModeAutoDetect, ChannelTestModeScheduledProbes:
+		return ChannelTestModeAutoDetect
+	case ChannelTestModeAutoDisable, ChannelTestModeAutoBanOnly, ChannelTestModePassiveRecovery:
+		return ChannelTestModeAutoDisable
+	case ChannelTestModeScheduledAll:
+		return ChannelTestModeScheduledAll
+	default:
+		return ChannelTestModeScheduledAll
+	}
 }
 
 func NormalizeChannelTestType(value string) string {

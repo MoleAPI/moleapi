@@ -28,6 +28,21 @@ import { formatLogQuota } from '@/lib/format'
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
 
+export const MAX_LOG_DETAIL_LENGTH = 4096
+
+const inlineImageDataPattern =
+  /data:image\/[a-z0-9.+-]+;base64,[a-z0-9+/=_-]+/gi
+const longEncodedDataPattern = /[a-z0-9+/]{256,}={0,2}/gi
+
+export function sanitizeLogDetail(value: string): string {
+  const sanitized = value
+    .replace(inlineImageDataPattern, '[image data omitted]')
+    .replace(longEncodedDataPattern, '[encoded data omitted]')
+  const chars = Array.from(sanitized)
+  if (chars.length <= MAX_LOG_DETAIL_LENGTH) return sanitized
+  return `${chars.slice(0, MAX_LOG_DETAIL_LENGTH).join('')}... [truncated]`
+}
+
 export { normalizeTierLabel }
 
 const PARAM_OVERRIDE_ACTION_MAP: Record<string, string> = {

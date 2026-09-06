@@ -1007,6 +1007,7 @@ type channelTestRequest struct {
 	Model          string `json:"model"`
 	EndpointType   string `json:"endpoint_type"`
 	Stream         bool   `json:"stream"`
+	Scheduled      bool   `json:"scheduled"`
 	TestType       string `json:"test_type"`
 	Prompt         string `json:"prompt"`
 	ExpectedAnswer string `json:"expected_answer"`
@@ -1040,6 +1041,7 @@ func TestChannel(c *gin.Context) {
 		Level:        c.Query("level"),
 	}
 	request.Stream, _ = strconv.ParseBool(c.Query("stream"))
+	request.Scheduled, _ = strconv.ParseBool(c.Query("scheduled"))
 	request.ExpectedAnswer = c.Query("expected_answer")
 	if c.Request.Method == http.MethodPost {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
@@ -1068,11 +1070,29 @@ func TestChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	tik := time.Now()
 	requestCtx := context.Background()
 	if c.Request != nil {
 		requestCtx = c.Request.Context()
 	}
+	if request.Scheduled {
+		disableThreshold := int64(common.ChannelDisableThreshold * 1000)
+		if disableThreshold == 0 {
+			disableThreshold = 10000000
+		}
+		summary := testChannelForHealthCheck(
+			requestCtx,
+			channel,
+			testUserID,
+			true,
+			disableThreshold,
+		)
+		c.JSON(http.StatusOK, gin.H{
+			"success": summary.Tested > 0 && summary.Failed == 0,
+			"data":    summary,
+		})
+		return
+	}
+	tik := time.Now()
 	result := testChannel(requestCtx, channel, testUserID, request.Model, request.EndpointType, request.Stream, probe)
 	if result.localErr != nil {
 		recordChannelTestFailure(channel, testUserID, result)
@@ -1232,11 +1252,11 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 func channelTestModels(channel *model.Channel) []string {
 	settings := channel.GetOtherSettings()
 	models := settings.ChannelProbeModels
-	if len(models) == 0 && channel.TestModel != nil && strings.TrimSpace(*channel.TestModel) != "" {
-		models = []string{*channel.TestModel}
-	}
 	if len(models) == 0 {
-		models = channel.GetModels()
+		channelModels := channel.GetModels()
+		if len(channelModels) > 0 {
+			models = []string{channelModels[0]}
+		}
 	}
 	available := make(map[string]struct{})
 	for _, modelName := range channel.GetModels() {
@@ -1400,12 +1420,10 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	}
 	selected := selectChannelsForAutomaticTest(channels, mode)
 	selected = lo.Filter(selected, func(channel *model.Channel, _ int) bool {
-		enabled := channel.GetOtherSettings().ChannelProbeEnabled
-		return len(channelTestModels(channel)) > 0 && (notify || enabled == nil || *enabled)
+		return len(channelTestModels(channel)) > 0
 	})
-	allowDisable := mode != operation_setting.ChannelTestModePassiveRecovery
 	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
-	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report)
+	summary := performChannelTests(ctx, selected, testUserID, true, concurrency, report)
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 	}
@@ -1413,20 +1431,20 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 }
 
 func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*model.Channel {
+	mode = operation_setting.NormalizeChannelTestMode(mode)
 	selected := make([]*model.Channel, 0, len(channels))
 	for _, channel := range channels {
 		if channel.Status == common.ChannelStatusManuallyDisabled {
 			continue
 		}
-		if mode == operation_setting.ChannelTestModeAutoBanOnly && !channel.GetAutoBan() {
+		if mode == operation_setting.ChannelTestModeAutoDisable && !channel.GetAutoBan() {
 			continue
 		}
-		if mode == operation_setting.ChannelTestModePassiveRecovery && channel.Status != common.ChannelStatusAutoDisabled {
-			continue
-		}
-		if mode == operation_setting.ChannelTestModeScheduledProbes {
+		if mode == operation_setting.ChannelTestModeAutoDetect {
 			enabled := channel.GetOtherSettings().ChannelProbeEnabled
-			if enabled != nil && !*enabled { continue }
+			if enabled != nil && !*enabled {
+				continue
+			}
 		}
 		selected = append(selected, channel)
 	}

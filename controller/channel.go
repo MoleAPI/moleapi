@@ -54,12 +54,16 @@ type OpenAIModelsResponse struct {
 	Success bool          `json:"success"`
 }
 
+const channelStatusFilterAuto = -2
+
 func parseStatusFilter(statusParam string) int {
 	switch strings.ToLower(statusParam) {
 	case "enabled", "1":
 		return common.ChannelStatusEnabled
 	case "disabled", "0":
 		return 0
+	case "auto":
+		return channelStatusFilterAuto
 	default:
 		return -1
 	}
@@ -78,6 +82,10 @@ func applyChannelStatusFilter(query *gorm.DB, statusFilter int) *gorm.DB {
 	}
 	if statusFilter == 0 {
 		return query.Where("status != ?", common.ChannelStatusEnabled)
+	}
+	if statusFilter == channelStatusFilterAuto {
+		// A missing channel_probe_enabled setting means automatic detection is enabled.
+		return query.Where("auto_ban = ? OR (settings IS NULL OR (settings NOT LIKE ? AND settings NOT LIKE ?))", 1, "%\"channel_probe_enabled\":false%", "%\"channel_probe_enabled\": false%")
 	}
 	return query
 }
@@ -106,7 +114,7 @@ func GetAllChannels(c *gin.Context) {
 	enableTagMode, _ := strconv.ParseBool(c.Query("tag_mode"))
 	groupFilter := model.NormalizeChannelGroupFilter(c.Query("group"))
 	statusParam := c.Query("status")
-	// statusFilter: -1 all, 1 enabled, 0 disabled (include auto & manual)
+	// statusFilter: -1 all, 1 enabled, 0 disabled, -2 automatic detection or disable
 	statusFilter := parseStatusFilter(statusParam)
 	// type filter
 	typeStr := c.Query("type")
@@ -320,13 +328,16 @@ func SearchChannels(c *gin.Context) {
 		channelData = channels
 	}
 
-	if statusFilter == common.ChannelStatusEnabled || statusFilter == 0 {
+	if statusFilter == common.ChannelStatusEnabled || statusFilter == 0 || statusFilter == channelStatusFilterAuto {
 		filtered := make([]*model.Channel, 0, len(channelData))
 		for _, ch := range channelData {
 			if statusFilter == common.ChannelStatusEnabled && ch.Status != common.ChannelStatusEnabled {
 				continue
 			}
 			if statusFilter == 0 && ch.Status == common.ChannelStatusEnabled {
+				continue
+			}
+			if statusFilter == channelStatusFilterAuto && !channelHasAutomaticSettings(ch) {
 				continue
 			}
 			filtered = append(filtered, ch)
@@ -393,6 +404,14 @@ func SearchChannels(c *gin.Context) {
 		},
 	})
 	return
+}
+
+func channelHasAutomaticSettings(channel *model.Channel) bool {
+	if channel.GetAutoBan() {
+		return true
+	}
+	enabled := channel.GetOtherSettings().ChannelProbeEnabled
+	return enabled == nil || *enabled
 }
 
 func GetChannel(c *gin.Context) {
