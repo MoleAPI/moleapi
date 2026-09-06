@@ -1225,7 +1225,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		}
 	}
 
-	if newAPIError == nil {
+	if result.localErr == nil && newAPIError == nil {
 		summary.Succeeded++
 	} else {
 		summary.Failed++
@@ -1423,7 +1423,8 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 		return len(channelTestModels(channel)) > 0
 	})
 	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
-	summary := performChannelTests(ctx, selected, testUserID, true, concurrency, report)
+	allowDisable := operation_setting.NormalizeChannelTestMode(mode) != operation_setting.ChannelTestModePassiveRecovery
+	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report)
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 	}
@@ -1437,14 +1438,17 @@ func selectChannelsForAutomaticTest(channels []*model.Channel, mode string) []*m
 		if channel.Status == common.ChannelStatusManuallyDisabled {
 			continue
 		}
-		if mode == operation_setting.ChannelTestModeAutoDisable && !channel.GetAutoBan() {
+		if mode == operation_setting.ChannelTestModePassiveRecovery && channel.Status != common.ChannelStatusAutoDisabled {
 			continue
 		}
-		if mode == operation_setting.ChannelTestModeAutoDetect {
+		if mode == operation_setting.ChannelTestModeAutoDetect || mode == operation_setting.ChannelTestModePassiveRecovery {
 			enabled := channel.GetOtherSettings().ChannelProbeEnabled
 			if enabled != nil && !*enabled {
 				continue
 			}
+		}
+		if mode == operation_setting.ChannelTestModeAutoDisable && !channel.GetAutoBan() {
+			continue
 		}
 		selected = append(selected, channel)
 	}

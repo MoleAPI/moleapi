@@ -38,7 +38,7 @@ export function sanitizeLogDetail(value: string): string {
   const sanitized = value
     .replace(inlineImageDataPattern, '[image data omitted]')
     .replace(longEncodedDataPattern, '[encoded data omitted]')
-  const chars = Array.from(sanitized)
+  const chars = [...sanitized]
   if (chars.length <= MAX_LOG_DETAIL_LENGTH) return sanitized
   return `${chars.slice(0, MAX_LOG_DETAIL_LENGTH).join('')}... [truncated]`
 }

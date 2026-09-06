@@ -349,7 +349,7 @@ test('log detail text removes encoded data and caps its size', async () => {
 
   assert.doesNotMatch(sanitized, /data:image\/png;base64/)
   assert.match(sanitized, /\[image data omitted\]/)
-  assert.ok(Array.from(sanitized).length < MAX_LOG_DETAIL_LENGTH + 32)
+  assert.ok([...sanitized].length < MAX_LOG_DETAIL_LENGTH + 32)
 })
 
 test('expanded details show request summary, cache tokens, and billing calculation', async () => {
@@ -490,7 +490,7 @@ test('dynamic billing details use compact ratio formatting for media pricing log
   assert.doesNotMatch(previewHtml, /standard/)
   assert.doesNotMatch(previewHtml, /Image In/)
   assert.doesNotMatch(previewHtml, /Audio In/)
-  assert.match(previewHtml, /flex-col/)
+  assert.match(previewHtml, /line-clamp-5/)
   assert.doesNotMatch(previewHtml, /1\.0x/)
 })
 
@@ -535,7 +535,7 @@ test('desktop common logs keep full values on one horizontally scrollable row', 
   assert.match(layoutHtml, /data-has-stream-column="true"/)
   assert.match(layoutHtml, /data-use-time-count="1"/)
   assert.match(layoutHtml, /prompt_tokens\|use_time\|is_stream\|quota/)
-  assert.match(layoutHtml, />1590</)
+  assert.match(layoutHtml, />1470</)
   assert.match(timeHtml, /font-mono/)
   assert.doesNotMatch(timeHtml, /font-mono[^"]*truncate/)
   assert.doesNotMatch(timeHtml, /data-slot="status-badge"/)

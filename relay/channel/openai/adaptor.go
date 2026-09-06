@@ -409,9 +409,6 @@ func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayIn
 			request.MaxCompletionTokens = request.MaxTokens
 			request.MaxTokens = nil
 		}
-	} else if request.MaxTokens == nil && request.MaxCompletionTokens != nil {
-		request.MaxTokens = request.MaxCompletionTokens
-		request.MaxCompletionTokens = nil
 	}
 	if !capabilities.SupportsTemperature {
 		request.Temperature = nil

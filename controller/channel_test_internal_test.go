@@ -414,6 +414,20 @@ func TestSelectChannelsForAutomaticTestAutoDisableUsesEligibleChannels(t *testin
 	require.Equal(t, 2, selected[1].Id)
 }
 
+func TestSelectChannelsForAutomaticTestPassiveRecoveryUsesAutoDisabledChannels(t *testing.T) {
+	channels := []*model.Channel{
+		{Id: 1, Status: common.ChannelStatusEnabled},
+		{Id: 2, Status: common.ChannelStatusAutoDisabled},
+		{Id: 3, Status: common.ChannelStatusAutoDisabled, OtherSettings: `{"channel_probe_enabled":false}`},
+		{Id: 4, Status: common.ChannelStatusManuallyDisabled},
+	}
+
+	selected := selectChannelsForAutomaticTest(channels, operation_setting.ChannelTestModePassiveRecovery)
+
+	require.Len(t, selected, 1)
+	require.Equal(t, 2, selected[0].Id)
+}
+
 func TestSelectChannelsForAutomaticTestScheduledSkipsManualDisabled(t *testing.T) {
 	channels := []*model.Channel{
 		{Id: 1, Status: common.ChannelStatusEnabled},
@@ -599,4 +613,20 @@ func TestTestAllChannelsRejectsExistingActiveTask(t *testing.T) {
 	require.Equal(t, http.StatusConflict, recorder.Code)
 	require.Contains(t, recorder.Body.String(), existing.TaskID)
 	require.Contains(t, recorder.Body.String(), "已有通道测试任务正在运行或等待中")
+}
+
+func TestChannelHealthCheckCountsLocalErrorsAsFailed(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	channel := &model.Channel{
+		Type:   constant.ChannelTypeMidjourney,
+		Key:    "test-key",
+		Status: common.ChannelStatusEnabled,
+		Models: "model-a",
+	}
+	require.NoError(t, db.Create(channel).Error)
+
+	summary := testChannelForHealthCheck(context.Background(), channel, 0, true, 1)
+
+	assert.Equal(t, channelTestSummary{Tested: 1, Failed: 1}, summary)
 }

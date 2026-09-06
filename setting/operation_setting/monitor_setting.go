@@ -78,8 +78,10 @@ func NormalizeChannelTestMode(value string) string {
 	switch strings.TrimSpace(value) {
 	case ChannelTestModeAutoDetect, ChannelTestModeScheduledProbes:
 		return ChannelTestModeAutoDetect
-	case ChannelTestModeAutoDisable, ChannelTestModeAutoBanOnly, ChannelTestModePassiveRecovery:
+	case ChannelTestModeAutoDisable, ChannelTestModeAutoBanOnly:
 		return ChannelTestModeAutoDisable
+	case ChannelTestModePassiveRecovery:
+		return ChannelTestModePassiveRecovery
 	case ChannelTestModeScheduledAll:
 		return ChannelTestModeScheduledAll
 	default:
