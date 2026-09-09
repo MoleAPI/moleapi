@@ -29,7 +29,7 @@ const (
 
 func normalizeLocale(locale string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(locale)) {
-	case "", "zh", "zh-cn":
+	case "", "zh", "zh-cn", "zh-hans", "zh-tw", "zh-hant":
 		return "zh", true
 	case "en":
 		return "en", true
@@ -38,6 +38,30 @@ func normalizeLocale(locale string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func localizedDescriptionLocale(locale string) (string, bool) {
+	language, ok := normalizeLocale(locale)
+	return language, ok && language != "en"
+}
+
+func applyLocalizedModelDescription(metadata *model.Model, locale, description string) error {
+	translations := modelDescriptionTranslations(metadata.DescriptionI18N)
+	if translations == nil {
+		translations = map[string]string{}
+	}
+	description = strings.TrimSpace(description)
+	if description == "" {
+		delete(translations, locale)
+	} else {
+		translations[locale] = description
+	}
+	raw, err := marshalModelDescriptionTranslations(translations)
+	if err != nil {
+		return err
+	}
+	metadata.DescriptionI18N = raw
+	return nil
 }
 
 func getUpstreamBase() string {
