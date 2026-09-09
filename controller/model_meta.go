@@ -18,48 +18,49 @@ import (
 
 // GetAllModelsMeta 获取模型列表（分页）
 func GetAllModelsMeta(c *gin.Context) {
-
-	pageInfo := common.GetPageQuery(c)
-	status := c.Query("status")
-	syncOfficial := c.Query("sync_official")
-	modelsMeta, total, err := model.SearchModels("", "", status, syncOfficial, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	// 批量填充附加字段，提升列表接口性能
-	enrichModels(modelsMeta)
-
-	// 统计供应商计数（全部数据，不受分页影响）
-	vendorCounts, _ := model.GetVendorModelCounts()
-
-	pageInfo.SetTotal(int(total))
-	pageInfo.SetItems(modelsMeta)
-	common.ApiSuccess(c, gin.H{
-		"items":         modelsMeta,
-		"total":         total,
-		"page":          pageInfo.GetPage(),
-		"page_size":     pageInfo.GetPageSize(),
-		"vendor_counts": vendorCounts,
-	})
+	listModelsMeta(c, "", "")
 }
 
 // SearchModelsMeta 搜索模型列表
 func SearchModelsMeta(c *gin.Context) {
+	listModelsMeta(c, c.Query("keyword"), c.Query("vendor"))
+}
 
-	keyword := c.Query("keyword")
-	vendor := c.Query("vendor")
-	status := c.Query("status")
-	syncOfficial := c.Query("sync_official")
+func listModelsMeta(c *gin.Context, keyword, vendor string) {
+	squareState := model.ModelSquareState(c.Query("square_state"))
+	switch squareState {
+	case "", model.ModelSquareVisible, model.ModelSquareUnavailable, model.ModelSquareHidden, model.ModelSquarePartial:
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid model square state"})
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
-
-	modelsMeta, total, err := model.SearchModels(keyword, vendor, status, syncOfficial, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	offset, limit := pageInfo.GetStartIdx(), pageInfo.GetPageSize()
+	if squareState != "" {
+		offset, limit = 0, -1
+	}
+	search := model.SearchModels
+	if c.Query("include_channel_models") == "true" {
+		search = model.SearchModelsWithChannels
+	}
+	modelsMeta, total, err := search(keyword, vendor, c.Query("status"), c.Query("sync_official"), offset, limit)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	// 批量填充附加字段，提升列表接口性能
 	enrichModels(modelsMeta)
+	if squareState != "" {
+		filtered := make([]*model.Model, 0, len(modelsMeta))
+		for _, metadata := range modelsMeta {
+			if metadata.SquareState == squareState {
+				filtered = append(filtered, metadata)
+			}
+		}
+		total = int64(len(filtered))
+		start := min((pageInfo.GetPage()-1)*pageInfo.GetPageSize(), len(filtered))
+		end := min(start+pageInfo.GetPageSize(), len(filtered))
+		modelsMeta = filtered[start:end]
+	}
 	vendorCounts, _ := model.GetVendorModelCounts()
 	pageInfo.SetTotal(int(total))
 	pageInfo.SetItems(modelsMeta)
@@ -190,12 +191,27 @@ func DeleteModelMeta(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	if err := model.DB.Delete(&model.Model{}, id).Error; err != nil {
+	removeFromChannels, err := strconv.ParseBool(c.DefaultQuery("remove_from_channels", "false"))
+	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	model.RefreshPricing()
-	common.ApiSuccess(c, nil)
+	removePricing, err := strconv.ParseBool(c.DefaultQuery("remove_pricing", "false"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if removePricing && c.GetInt("role") != common.RoleRootUser {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Model pricing is managed by a super administrator."})
+		return
+	}
+	result, err := model.DeleteModelMetadata([]int{id}, removeFromChannels, removePricing)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "model.delete", map[string]any{"model_ids": []int{id}, "remove_from_channels": removeFromChannels, "remove_pricing": removePricing, "updated_channels": result.UpdatedChannels})
+	common.ApiSuccess(c, result)
 }
 
 type modelDescriptionExportItem struct {
@@ -572,6 +588,72 @@ func ImportModelDescriptions(c *gin.Context) {
 func enrichModels(models []*model.Model) {
 	if len(models) == 0 {
 		return
+	}
+	configured, err := model.GetConfiguredModelChannels()
+	if err == nil {
+		connections, connErr := model.GetModelConnections()
+		if connErr == nil && model.FillModelSquareStates(models, configured, connections) == nil {
+			for _, metadata := range models {
+				if metadata == nil {
+					continue
+				}
+				metadata.HasMetadata = metadata.Id > 0
+				channelIDs := map[int]struct{}{}
+				for name, ids := range configured {
+					if metadata.MatchesName(name) {
+						for _, id := range ids {
+							channelIDs[id] = struct{}{}
+						}
+					}
+				}
+				metadata.ConfiguredChannelCount = len(channelIDs)
+				channels := map[int]model.BoundChannel{}
+				groups, names, endpoints, quotas := map[string]bool{}, map[string]bool{}, map[string]bool{}, map[int]bool{}
+				for _, connection := range connections {
+					if !metadata.MatchesName(connection.Model) {
+						continue
+					}
+					names[connection.Model], groups[connection.Group] = true, true
+					channels[connection.ChannelId] = model.BoundChannel{Name: connection.ChannelName, Type: connection.ChannelType}
+					for _, endpoint := range model.GetModelSupportEndpointTypes(connection.Model) {
+						endpoints[string(endpoint)] = true
+					}
+					for _, quota := range model.GetModelQuotaTypes(connection.Model) {
+						quotas[quota] = true
+					}
+				}
+				metadata.BoundChannels, metadata.EnableGroups, metadata.SupportedEndpoints, metadata.QuotaTypes, metadata.MatchedModels = nil, nil, nil, nil, nil
+				for _, channel := range channels {
+					metadata.BoundChannels = append(metadata.BoundChannels, channel)
+				}
+				for group := range groups {
+					metadata.EnableGroups = append(metadata.EnableGroups, group)
+				}
+				for endpoint := range endpoints {
+					metadata.SupportedEndpoints = append(metadata.SupportedEndpoints, endpoint)
+				}
+				for quota := range quotas {
+					metadata.QuotaTypes = append(metadata.QuotaTypes, quota)
+				}
+				sort.Slice(metadata.BoundChannels, func(i, j int) bool {
+					if metadata.BoundChannels[i].Name == metadata.BoundChannels[j].Name {
+						return metadata.BoundChannels[i].Type < metadata.BoundChannels[j].Type
+					}
+					return metadata.BoundChannels[i].Name < metadata.BoundChannels[j].Name
+				})
+				sort.Strings(metadata.EnableGroups)
+				sort.Strings(metadata.SupportedEndpoints)
+				sort.Ints(metadata.QuotaTypes)
+				if metadata.NameRule != model.NameRuleExact {
+					for name := range names {
+						metadata.MatchedModels = append(metadata.MatchedModels, name)
+					}
+					sort.Strings(metadata.MatchedModels)
+					metadata.MatchedCount = len(names)
+				}
+			}
+			return
+		}
 	}
 
 	// 1) 拆分精确与规则匹配

@@ -1082,24 +1082,30 @@ func DeleteUser(c *gin.Context) {
 }
 
 func DeleteSelf(c *gin.Context) {
-	id := c.GetInt("id")
-	user, _ := model.GetUserById(id, false)
-
-	if user.Role == common.RoleRootUser {
-		common.ApiErrorI18n(c, i18n.MsgUserCannotDeleteRootUser)
+	setAuthNoStore(c)
+	succeeded := false
+	defer func() {
+		recordUserSecurityAudit(c, c.GetInt("id"), "user.account_delete", map[string]any{"success": succeeded})
+	}()
+	if middleware.RequireSecurityProof(c, service.VerificationOperation{Scope: service.VerificationScopeAccountDelete}) == nil {
 		return
 	}
-
-	err := model.DeleteUserById(id)
-	if err != nil {
-		common.ApiError(c, err)
+	identity, ok := middleware.GetSessionAuthIdentity(c)
+	if !ok {
+		writeSecurityOperationError(c, service.ErrAuthTokenInvalid)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-	})
-	return
+	if err := model.DeleteUserForSession(identity); err != nil {
+		if errors.Is(err, model.ErrCannotDeleteRootUser) {
+			common.ApiErrorI18n(c, i18n.MsgUserCannotDeleteRootUser)
+			return
+		}
+		writeSecurityOperationError(c, err)
+		return
+	}
+	succeeded = true
+	service.ClearRefreshCookie(c)
+	c.JSON(http.StatusOK, gin.H{"success": true, "message": "", "data": gin.H{}})
 }
 
 func CreateUser(c *gin.Context) {
