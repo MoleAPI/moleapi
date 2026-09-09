@@ -1,6 +1,8 @@
 package model
 
 import (
+	"errors"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -16,33 +18,46 @@ const (
 	NameRuleSuffix
 )
 
+type ModelSquareState string
+
+const (
+	ModelSquareVisible     ModelSquareState = "visible"
+	ModelSquareUnavailable ModelSquareState = "unavailable"
+	ModelSquareHidden      ModelSquareState = "hidden"
+	ModelSquarePartial     ModelSquareState = "partial"
+)
+
 type BoundChannel struct {
 	Name string `json:"name"`
 	Type int    `json:"type"`
 }
 
 type Model struct {
-	Id              int            `json:"id"`
-	ModelName       string         `json:"model_name" gorm:"size:128;not null;uniqueIndex:uk_model_name_delete_at,priority:1"`
-	Description     string         `json:"description,omitempty" gorm:"type:text"`
-	DescriptionI18N JSONValue      `json:"description_i18n,omitempty" gorm:"column:description_i18n;type:text"`
-	Icon            string         `json:"icon,omitempty" gorm:"type:varchar(128)"`
-	Tags            string         `json:"tags,omitempty" gorm:"type:varchar(255)"`
-	VendorID        int            `json:"vendor_id,omitempty" gorm:"index"`
-	Endpoints       string         `json:"endpoints,omitempty" gorm:"type:text"`
-	Status          int            `json:"status" gorm:"default:1"`
-	SyncOfficial    int            `json:"sync_official" gorm:"default:1"`
-	CreatedTime     int64          `json:"created_time" gorm:"bigint"`
-	UpdatedTime     int64          `json:"updated_time" gorm:"bigint"`
-	DeletedAt       gorm.DeletedAt `json:"-" gorm:"index;uniqueIndex:uk_model_name_delete_at,priority:2"`
+	Id                 int            `json:"id"`
+	ModelName          string         `json:"model_name" gorm:"size:128;not null;uniqueIndex:uk_model_name_delete_at,priority:1"`
+	Description        string         `json:"description,omitempty" gorm:"type:text"`
+	DescriptionI18N    JSONValue      `json:"description_i18n,omitempty" gorm:"column:description_i18n;type:text"`
+	Icon               string         `json:"icon,omitempty" gorm:"type:varchar(128)"`
+	Tags               string         `json:"tags,omitempty" gorm:"type:varchar(255)"`
+	VendorID           int            `json:"vendor_id,omitempty" gorm:"index"`
+	Endpoints          string         `json:"endpoints,omitempty" gorm:"type:text"`
+	SupportedEndpoints []string       `json:"supported_endpoints,omitempty" gorm:"-"`
+	Status             int            `json:"status" gorm:"default:1"`
+	SyncOfficial       int            `json:"sync_official" gorm:"default:1"`
+	CreatedTime        int64          `json:"created_time" gorm:"bigint"`
+	UpdatedTime        int64          `json:"updated_time" gorm:"bigint"`
+	DeletedAt          gorm.DeletedAt `json:"-" gorm:"index;uniqueIndex:uk_model_name_delete_at,priority:2"`
 
 	BoundChannels []BoundChannel `json:"bound_channels,omitempty" gorm:"-"`
 	EnableGroups  []string       `json:"enable_groups,omitempty" gorm:"-"`
 	QuotaTypes    []int          `json:"quota_types,omitempty" gorm:"-"`
 	NameRule      int            `json:"name_rule" gorm:"default:0"`
 
-	MatchedModels []string `json:"matched_models,omitempty" gorm:"-"`
-	MatchedCount  int      `json:"matched_count,omitempty" gorm:"-"`
+	MatchedModels          []string         `json:"matched_models,omitempty" gorm:"-"`
+	MatchedCount           int              `json:"matched_count,omitempty" gorm:"-"`
+	HasMetadata            bool             `json:"has_metadata" gorm:"-"`
+	ConfiguredChannelCount int              `json:"configured_channel_count" gorm:"-"`
+	SquareState            ModelSquareState `json:"square_state" gorm:"-"`
 }
 
 func (mi *Model) Insert() error {
@@ -85,6 +100,108 @@ func (mi *Model) Update() error {
 
 func (mi *Model) Delete() error {
 	return DB.Delete(mi).Error
+}
+
+type ModelDeleteResult struct {
+	DeletedCount    int `json:"deleted_count"`
+	UpdatedChannels int `json:"updated_channels"`
+}
+
+// DeleteModelMetadata removes selected metadata and, when requested, exact
+// model names from channel configurations. The operation is transactional so
+// channels, abilities, pricing, and metadata cannot diverge.
+func DeleteModelMetadata(ids []int, removeFromChannels, removePricing bool) (ModelDeleteResult, error) {
+	result := ModelDeleteResult{}
+	if len(ids) == 0 || len(ids) > 1000 {
+		return result, errors.New("select between 1 and 1000 models")
+	}
+	selected := make(map[int]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			return result, errors.New("invalid model ID")
+		}
+		selected[id] = struct{}{}
+	}
+	modelIDs := make([]int, 0, len(selected))
+	for id := range selected {
+		modelIDs = append(modelIDs, id)
+	}
+	sort.Ints(modelIDs)
+	names := make(map[string]struct{}, len(modelIDs))
+	deleteRecords := func(tx *gorm.DB) error {
+		var records []Model
+		if err := lockForUpdate(tx).Where("id IN ?", modelIDs).Order("id").Find(&records).Error; err != nil {
+			return err
+		}
+		if len(records) != len(modelIDs) {
+			return errors.New("selected models changed; reload before deleting")
+		}
+		for _, record := range records {
+			if removeFromChannels && record.NameRule != NameRuleExact {
+				return errors.New("only exact-match models can be removed from channels")
+			}
+			names[record.ModelName] = struct{}{}
+		}
+		if removeFromChannels {
+			var channels []Channel
+			if err := lockForUpdate(tx).Select("id", "models", "status", "group", "priority", "weight", "tag").Order("id").Find(&channels).Error; err != nil {
+				return err
+			}
+			for _, channel := range channels {
+				models := channel.GetModels()
+				remaining := make([]string, 0, len(models))
+				for _, name := range models {
+					if _, remove := names[strings.TrimSpace(name)]; !remove {
+						remaining = append(remaining, name)
+					}
+				}
+				if len(remaining) == len(models) {
+					continue
+				}
+				channel.Models = strings.Join(remaining, ",")
+				if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Update("models", channel.Models).Error; err != nil {
+					return err
+				}
+				if err := channel.UpdateAbilities(tx); err != nil {
+					return err
+				}
+				result.UpdatedChannels++
+			}
+		}
+		if err := tx.Where("id IN ?", modelIDs).Delete(&Model{}).Error; err != nil {
+			return err
+		}
+		result.DeletedCount = len(records)
+		return nil
+	}
+	var err error
+	if removePricing {
+		metadataMutationMu.Lock()
+		defer metadataMutationMu.Unlock()
+		err = mutateModelPricingOptions(func(tx *gorm.DB, values map[string]map[string]any) error {
+			if err := lockMetadataMutation(tx); err != nil {
+				return err
+			}
+			if err := deleteRecords(tx); err != nil {
+				return err
+			}
+			for _, entries := range values {
+				for name := range names {
+					delete(entries, name)
+				}
+			}
+			return nil
+		})
+	} else {
+		err = metadataTransaction(deleteRecords)
+	}
+	if err != nil {
+		return ModelDeleteResult{}, err
+	}
+	if result.UpdatedChannels > 0 {
+		InitChannelCache()
+	}
+	return result, nil
 }
 
 func GetVendorModelCounts() (map[int64]int64, error) {

@@ -84,6 +84,13 @@ func auditOperatorInfo(c *gin.Context) map[string]interface{} {
 	}
 }
 
+func auditAdminInfo(c *gin.Context) *model.AuditAdminInfo {
+	return &model.AuditAdminInfo{
+		AdminID: c.GetInt("id"), AdminUsername: c.GetString("username"),
+		AdminRole: c.GetInt("role"), AuthMethod: auditAuthMethod(c),
+	}
+}
+
 func auditAuthMethod(c *gin.Context) string {
 	if c.GetBool("use_access_token") {
 		return "access_token"
@@ -113,12 +120,41 @@ func recordManageAuditFor(c *gin.Context, targetUserId int, action string, param
 	if _, ok := params["target_user_id"]; !ok && targetUserId > 0 && targetUserId != operatorUserId {
 		params["target_user_id"] = targetUserId
 	}
-	model.RecordOperationAuditLog(operatorUserId, auditContentEN(action, params), c.ClientIP(), action, params, auditOperatorInfo(c), nil)
+	model.RecordOperationAuditLog(operatorUserId, c.GetInt("role"), auditContentEN(action, params), c.ClientIP(), action, params, auditAdminInfo(c), nil, c)
 	markAuditLogged(c)
 }
 
 // recordUserSecurityAudit 记录普通用户自己的安全敏感操作（如 passkey 绑定/解绑）。
 // 这类日志没有管理员操作者，不写 admin_info；同时不依赖 AdminAuth/RootAuth 的兜底。
 func recordUserSecurityAudit(c *gin.Context, userId int, action string, params map[string]interface{}) {
-	model.RecordOperationAuditLog(userId, auditContentEN(action, params), c.ClientIP(), action, params, nil, nil)
+	if code := c.GetString("security_error_code"); code != "" {
+		if params == nil {
+			params = map[string]interface{}{}
+		}
+		params["code"] = code
+	}
+	var auditInfo *model.AuditRequestInfo
+	if success, ok := params["success"].(bool); ok {
+		auditInfo = &model.AuditRequestInfo{Method: c.Request.Method, Route: c.FullPath(), Path: c.FullPath(), Status: c.Writer.Status(), Success: success}
+	}
+	model.RecordOperationAuditLog(userId, c.GetInt("role"), auditContentEN(action, params), c.ClientIP(), action, params, nil, auditInfo, c)
+}
+
+func tokenAuditParams(c *gin.Context) model.AuditFields {
+	params, ok := common.GetContextKeyType[model.AuditFields](c, constant.ContextKeyTokenAuditParams)
+	if !ok {
+		params = model.AuditFields{}
+		common.SetContextKey(c, constant.ContextKeyTokenAuditParams, params)
+	}
+	return params
+}
+
+func tokenBatchAuditParams(c *gin.Context, ids []int) model.AuditFields {
+	params := tokenAuditParams(c)
+	params["total"] = len(ids)
+	params["requested_ids"] = append([]int{}, ids[:min(len(ids), 100)]...)
+	if len(ids) > 100 {
+		params["requested_ids_truncated"] = true
+	}
+	return params
 }

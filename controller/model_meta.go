@@ -89,6 +89,32 @@ func GetModelMeta(c *gin.Context) {
 	common.ApiSuccess(c, &m)
 }
 
+func BatchDeleteModelMeta(c *gin.Context) {
+	var request struct {
+		ModelIDs           []int `json:"model_ids"`
+		RemoveFromChannels bool  `json:"remove_from_channels"`
+		RemovePricing      bool  `json:"remove_pricing"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &request); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if request.RemovePricing && c.GetInt("role") != common.RoleRootUser {
+		c.JSON(http.StatusForbidden, gin.H{"success": false, "message": "Model pricing is managed by a super administrator."})
+		return
+	}
+	result, err := model.DeleteModelMetadata(request.ModelIDs, request.RemoveFromChannels, request.RemovePricing)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	recordManageAudit(c, "model.delete_batch", map[string]any{
+		"model_ids": request.ModelIDs, "remove_from_channels": request.RemoveFromChannels,
+		"remove_pricing": request.RemovePricing, "updated_channels": result.UpdatedChannels,
+	})
+	common.ApiSuccess(c, result)
+}
+
 // CreateModelMeta 新建模型
 func CreateModelMeta(c *gin.Context) {
 	var m model.Model

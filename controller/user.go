@@ -27,6 +27,10 @@ import (
 	"gorm.io/gorm"
 )
 
+type twoFALoginFlowPayload struct {
+	AuthVersion int64 `json:"auth_version"`
+}
+
 type LoginRequest struct {
 	Username          string `json:"username"`
 	Password          string `json:"password"`
@@ -169,14 +173,10 @@ func loginMethodFromContext(c *gin.Context) string {
 func recordLoginAudit(user *model.User, c *gin.Context) {
 	method := loginMethodFromContext(c)
 	ip := c.ClientIP()
-	extra := map[string]interface{}{
-		"login_method": method,
-		"user_agent":   c.Request.UserAgent(),
-	}
 	content := fmt.Sprintf("Logged in successfully via %s", method)
-	model.RecordLoginLog(user.Id, user.Username, content, ip, "login", map[string]interface{}{
+	model.RecordLoginLog(user.Id, user.Role, user.Username, content, ip, "login", map[string]any{
 		"method": method,
-	}, extra)
+	}, model.AuditOther{LoginMethod: method, UserAgent: c.Request.UserAgent()}, c)
 }
 
 // setupLogin creates a server-controlled login Session and returns the shared
@@ -216,19 +216,21 @@ func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin
 		writeAuthSessionError(c, err)
 		return
 	}
+	writeLoginResponse(c, currentUser, bundle)
+}
+
+func writeLoginResponse(c *gin.Context, user *model.User, bundle *service.AuthBundle) {
+	c.Set("login_method", bundle.Session.LoginMethod)
 	model.UpdateUserLastLoginAt(user.Id)
 	service.WriteRefreshCookie(c, bundle.RefreshToken)
 	setAuthNoStore(c)
 	recordLoginAudit(user, c)
 	c.JSON(http.StatusOK, gin.H{
-		"message": "",
-		"success": true,
+		"message": "", "success": true,
 		"data": gin.H{
-			"access_token":      bundle.AccessToken,
-			"token_type":        bundle.TokenType,
-			"access_expires_at": bundle.AccessExpiresAt,
-			"session":           bundle.Session,
-			"user":              buildSelfUserData(currentUser),
+			"access_token": bundle.AccessToken, "token_type": bundle.TokenType,
+			"access_expires_at": bundle.AccessExpiresAt, "session": bundle.Session,
+			"user": buildSelfUserData(user),
 		},
 	})
 }
@@ -424,34 +426,6 @@ func GetUser(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    user,
-	})
-	return
-}
-
-func GenerateAccessToken(c *gin.Context) {
-	id := c.GetInt("id")
-	// get rand int 28-32
-	randI := common.GetRandomInt(4)
-	key, err := common.GenerateRandomKey(29 + randI)
-	if err != nil {
-		common.ApiErrorI18n(c, i18n.MsgGenerateFailed)
-		common.SysLog("failed to generate key: " + err.Error())
-		return
-	}
-	if model.DB.Where("access_token = ?", key).First(&model.User{}).RowsAffected != 0 {
-		common.ApiErrorI18n(c, i18n.MsgUuidDuplicate)
-		return
-	}
-
-	if err := model.UpdateUserAccessToken(id, key); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
-		"data":    key,
 	})
 	return
 }
@@ -1412,51 +1386,6 @@ func ManageUser(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"data":    clearUser,
-	})
-	return
-}
-
-type emailBindRequest struct {
-	Email string `json:"email"`
-	Code  string `json:"code"`
-}
-
-func EmailBind(c *gin.Context) {
-	var req emailBindRequest
-	if err := common.DecodeJson(c.Request.Body, &req); err != nil {
-		common.ApiError(c, errors.New("invalid request body"))
-		return
-	}
-	email := req.Email
-	email = model.NormalizeEmail(email)
-	code := req.Code
-	if !common.VerifyCodeWithKey(email, code, common.EmailVerificationPurpose) {
-		common.ApiErrorI18n(c, i18n.MsgUserVerificationCodeError)
-		return
-	}
-	user := model.User{
-		Id: c.GetInt("id"),
-	}
-	if user.Id == 0 {
-		c.JSON(http.StatusUnauthorized, gin.H{"success": false, "message": "not authenticated"})
-		return
-	}
-	err := user.FillUserById()
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if err := model.BindEmailToUser(&user, email); err != nil {
-		if errors.Is(err, model.ErrEmailAlreadyTaken) {
-			common.ApiErrorI18n(c, i18n.MsgUserEmailAlreadyTaken)
-			return
-		}
-		common.ApiError(c, err)
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{
-		"success": true,
-		"message": "",
 	})
 	return
 }

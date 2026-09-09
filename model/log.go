@@ -204,7 +204,7 @@ func recordLogWithQuota(userId int, logType int, content string, quota int, othe
 }
 
 // RecordLogWithAdminInfo 记录操作日志，并将管理员相关信息存入 Other.admin_info，
-func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo map[string]interface{}) {
+func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo *AuditAdminInfo, operation *AuditOperation, request ...*gin.Context) {
 	if logType == LogTypeConsume && !common.LogConsumeEnabled {
 		return
 	}
@@ -216,10 +216,28 @@ func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo m
 		Type:      logType,
 		Content:   content,
 	}
-	if len(adminInfo) > 0 {
-		other := NewLogOther()
-		other.MergeAdmin(adminInfo)
-		log.Other = other.JSONString()
+	if logType == LogTypeManage {
+		var c *gin.Context
+		if len(request) > 0 {
+			c = request[0]
+		}
+		actorRole := 0
+		if c != nil {
+			actorRole = c.GetInt("role")
+		}
+		RecordAuditLog(c, AuditLog{UserId: userId, Username: username, ActorRole: actorRole, Category: AuditCategoryOperation, Content: content, Other: AuditOther{AdminInfo: adminInfo, Op: operation}, Success: true})
+		return
+	}
+	if len(request) > 0 && request[0] != nil {
+		log.RequestId = request[0].GetString(common.RequestIdKey)
+	}
+	if adminInfo != nil || operation != nil {
+		data, err := common.Marshal(AuditOther{AdminInfo: adminInfo, Op: operation})
+		if err != nil {
+			common.SysError("failed to encode log admin info: " + err.Error())
+			return
+		}
+		log.Other = string(data)
 	}
 	if err := createLog(log); err != nil {
 		common.SysLog("failed to record log: " + err.Error())
@@ -252,7 +270,7 @@ func RecordLogWithQuotaAndOperation(userId int, logType int, content string, quo
 // username 由调用方传入（登录流程已持有用户对象），避免额外的数据库查询。
 // content 为英文兜底文本（用于导出）；action+params 供前端本地化渲染。
 // extra 可携带 login_method、user_agent 等附加信息（普通用户可见）。
-func RecordLoginLog(userId int, username string, content string, ip string, action string, params map[string]interface{}, extra map[string]interface{}) {
+func RecordLegacyLoginLog(userId int, username string, content string, ip string, action string, params map[string]interface{}, extra map[string]interface{}) {
 	other := NewLogOther()
 	other.MergePublic(extra)
 	other.SetPublic("op", buildOpField(action, params))
@@ -276,7 +294,7 @@ func RecordLoginLog(userId int, username string, content string, ip string, acti
 // action+params 写入 Other.op，供前端本地化渲染（普通用户可见，不含敏感信息）。
 // adminInfo 存放操作者身份（写入 Other.admin_info，普通用户查询时剥离）；
 // auditInfo 存放路由/方法/结果等中间件兜底信息（写入 Other.audit_info，普通用户查询时剥离）。
-func RecordOperationAuditLog(logUserId int, content string, ip string, action string, params map[string]interface{}, adminInfo map[string]interface{}, auditInfo map[string]interface{}) {
+func RecordLegacyOperationAuditLog(logUserId int, content string, ip string, action string, params map[string]interface{}, adminInfo map[string]interface{}, auditInfo map[string]interface{}) {
 	username, _ := GetUsernameById(logUserId, false)
 	other := NewLogOther()
 	other.SetPublic("op", buildOpField(action, params))

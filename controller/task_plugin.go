@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"net/http"
 	"net/url"
 	"sort"
 	"strings"
@@ -13,7 +15,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
@@ -31,6 +32,9 @@ type taskPluginUploadRequest struct {
 	Remark       string `json:"remark"`
 	Force        bool   `json:"force"`
 	SourceSha256 string `json:"sourceSha256"`
+	// Icon carries the sidecar icon.svg / icon.png as a data URI. It is optional
+	// and stored separately from the source so the JavaScript stays readable.
+	Icon string `json:"icon"`
 }
 
 func UploadTaskPlugin(c *gin.Context) {
@@ -60,6 +64,13 @@ func UploadTaskPlugin(c *gin.Context) {
 		common.ApiErrorMsg(c, err.Error())
 		return
 	}
+	icon := strings.TrimSpace(request.Icon)
+	if icon != "" {
+		if _, _, err = jsplugin.DecodeIconDataURI(icon); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	}
 	enabled := true
 	if request.Enabled != nil {
 		enabled = *request.Enabled
@@ -73,7 +84,7 @@ func UploadTaskPlugin(c *gin.Context) {
 	plugin := model.TaskPlugin{
 		Key: loaded.Meta.Key, APIVersion: loaded.Meta.APIVersion, Version: loaded.Meta.Version,
 		Source: request.Source, SourceHash: fmt.Sprintf("%x", sha256.Sum256([]byte(request.Source))),
-		Enabled: enabled, Remark: request.Remark,
+		Icon: icon, Enabled: enabled, Remark: request.Remark,
 	}
 	if err = model.SaveTaskPlugin(&plugin); err != nil {
 		common.ApiError(c, err)
@@ -83,7 +94,7 @@ func UploadTaskPlugin(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, taskPluginDetail{Plugin: &plugin, Meta: loaded.Meta, Source: plugin.Source, Layer: "override"})
+	common.ApiSuccess(c, taskPluginDetail{Plugin: &plugin, Meta: loaded.Meta, Source: plugin.Source, Layer: "override", HasIcon: plugin.HasIcon()})
 }
 
 func GetTaskPluginVersions(c *gin.Context) {
@@ -101,6 +112,7 @@ type taskPluginListItem struct {
 	Enabled       bool           `json:"enabled"`
 	Active        bool           `json:"active"`
 	SourceHash    string         `json:"source_hash"`
+	HasIcon       bool           `json:"has_icon"`
 	Remark        string         `json:"remark"`
 	RuntimeStatus string         `json:"runtime_status"`
 	RuntimeError  string         `json:"runtime_error,omitempty"`
@@ -156,9 +168,7 @@ func ListTaskPlugins(c *gin.Context) {
 
 	runtimeErrors := jsplugin.DefaultRegistry.RoutingErrors()
 	taskPluginSyncState.Lock()
-	for key, message := range taskPluginSyncState.errors {
-		runtimeErrors[key] = message
-	}
+	maps.Copy(runtimeErrors, taskPluginSyncState.errors)
 	taskPluginSyncState.Unlock()
 
 	items := make([]taskPluginListItem, 0, len(keys))
@@ -180,10 +190,9 @@ func ListTaskPlugins(c *gin.Context) {
 			item.Enabled = row.Enabled
 			item.Active = row.Active
 			item.SourceHash = row.SourceHash
+			item.HasIcon = row.HasIcon()
 			item.Remark = row.Remark
-			if !constant.TaskPluginOverrideEnabled {
-				item.RuntimeStatus = "disabled_fallback"
-			} else if message := runtimeErrors[key]; message != "" {
+			if message := runtimeErrors[key]; message != "" {
 				item.RuntimeStatus = "compile_failed"
 				item.RuntimeError = message
 			} else if runtimeMeta, ok := override[key]; ok {
@@ -202,6 +211,7 @@ func ListTaskPlugins(c *gin.Context) {
 			item.Source = "factory"
 			item.Meta = factoryMeta
 			item.Enabled = !setting.IsTaskPluginFactoryDisabled(key)
+			_, _, item.HasIcon = plugins.Icon(key)
 			source, sourceErr := plugins.Source(key)
 			if sourceErr == nil {
 				item.SourceHash = fmt.Sprintf("%x", sha256.Sum256([]byte(source)))
@@ -224,7 +234,12 @@ func ListTaskPlugins(c *gin.Context) {
 		}
 		items = append(items, item)
 	}
-	sort.Slice(items, func(i, j int) bool { return items[i].Meta.Key < items[j].Meta.Key })
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Meta.SortPriority != items[j].Meta.SortPriority {
+			return items[i].Meta.SortPriority > items[j].Meta.SortPriority
+		}
+		return items[i].Meta.Key < items[j].Meta.Key
+	})
 	common.ApiSuccess(c, items)
 }
 
@@ -233,9 +248,7 @@ func GetTaskPluginRuntime(c *gin.Context) {
 	pluginErrors := routingStatus.Errors
 
 	taskPluginSyncState.Lock()
-	for key, message := range taskPluginSyncState.errors {
-		pluginErrors[key] = message
-	}
+	maps.Copy(pluginErrors, taskPluginSyncState.errors)
 	lastRebuild := taskPluginSyncState.lastRebuild
 	lastDatabaseRevision := lastRebuild.DatabaseRevision
 	taskPluginSyncState.Unlock()
@@ -276,10 +289,43 @@ func GetTaskPluginRuntime(c *gin.Context) {
 }
 
 type taskPluginDetail struct {
-	Plugin *model.TaskPlugin `json:"plugin,omitempty"`
-	Meta   jsplugin.Meta     `json:"meta"`
-	Source string            `json:"source"`
-	Layer  string            `json:"layer"`
+	Plugin  *model.TaskPlugin `json:"plugin,omitempty"`
+	Meta    jsplugin.Meta     `json:"meta"`
+	Source  string            `json:"source"`
+	Layer   string            `json:"layer"`
+	HasIcon bool              `json:"has_icon"`
+}
+
+// GetTaskPluginIcon serves a plugin logo as an image. The active override wins
+// (or the requested ?version=), then the factory sidecar. Data icons are only
+// ever drawn through <img>, and the nosniff header keeps a browser from
+// treating an SVG response as a document.
+func GetTaskPluginIcon(c *gin.Context) {
+	key := c.Param("key")
+	icon := ""
+	plugin, err := model.GetTaskPluginVersion(key, c.Query("version"))
+	if err == nil {
+		icon = plugin.Icon
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		common.ApiError(c, err)
+		return
+	}
+	if icon == "" && c.Query("version") == "" {
+		icon = plugins.IconDataURI(key)
+	}
+	if icon == "" {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	mediaType, data, err := jsplugin.DecodeIconDataURI(icon)
+	if err != nil {
+		c.AbortWithStatus(http.StatusNotFound)
+		return
+	}
+	c.Header("Cache-Control", "private, max-age=3600")
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	c.Data(http.StatusOK, mediaType, data)
 }
 
 func GetTaskPlugin(c *gin.Context) {
@@ -292,7 +338,7 @@ func GetTaskPlugin(c *gin.Context) {
 			common.ApiErrorMsg(c, compileErr.Error())
 			return
 		}
-		common.ApiSuccess(c, taskPluginDetail{Plugin: plugin, Meta: loaded.Meta, Source: plugin.Source, Layer: "override"})
+		common.ApiSuccess(c, taskPluginDetail{Plugin: plugin, Meta: loaded.Meta, Source: plugin.Source, Layer: "override", HasIcon: plugin.HasIcon()})
 		return
 	}
 	if !errors.Is(err, gorm.ErrRecordNotFound) || version != "" {
@@ -309,7 +355,8 @@ func GetTaskPlugin(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, taskPluginDetail{Meta: loaded.Meta, Source: source, Layer: "factory"})
+	_, _, hasIcon := plugins.Icon(key)
+	common.ApiSuccess(c, taskPluginDetail{Meta: loaded.Meta, Source: source, Layer: "factory", HasIcon: hasIcon})
 }
 
 type taskPluginDryRunRequest struct {
@@ -593,15 +640,34 @@ func GetTaskPluginOptions(c *gin.Context) {
 				continue
 			}
 			seen[meta.Key] = true
+			hasIcon := false
+			if layer == 0 {
+				if row, rowErr := model.GetTaskPluginVersion(meta.Key, ""); rowErr == nil {
+					hasIcon = row.HasIcon()
+				}
+			} else {
+				_, _, hasIcon = plugins.Icon(meta.Key)
+			}
 			options = append(options, gin.H{
-				"key":         meta.Key,
-				"name":        meta.Name,
-				"models":      meta.Models,
-				"usageSchema": meta.UsageSchema,
+				"key":          meta.Key,
+				"name":         meta.Name,
+				"icon":         meta.Icon,
+				"hasIcon":      hasIcon,
+				"baseUrl":      meta.BaseURL,
+				"sortPriority": meta.SortPriority,
+				"website":      meta.Website,
+				"models":       meta.Models,
+				"usageSchema":  meta.UsageSchema,
 			})
 		}
 	}
-	sort.Slice(options, func(i, j int) bool { return options[i]["key"].(string) < options[j]["key"].(string) })
+	sort.Slice(options, func(i, j int) bool {
+		left, right := options[i]["sortPriority"].(int), options[j]["sortPriority"].(int)
+		if left != right {
+			return left > right
+		}
+		return options[i]["key"].(string) < options[j]["key"].(string)
+	})
 	common.ApiSuccess(c, options)
 }
 
@@ -728,9 +794,7 @@ func syncTaskPluginsOnceContext(ctx context.Context) error {
 		}
 	}
 	pluginErrors := jsplugin.DefaultRegistry.RoutingErrors()
-	for key, message := range taskPluginSyncState.errors {
-		pluginErrors[key] = message
-	}
+	maps.Copy(pluginErrors, taskPluginSyncState.errors)
 	pluginErrorCount := len(pluginErrors)
 	status := "success"
 	if pluginErrorCount > 0 {

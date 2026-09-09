@@ -438,10 +438,11 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	case "TelegramOAuthEnabled":
-		if option.Value == "true" && common.TelegramBotToken == "" {
+		if option.Value == "true" && !system_setting.GetTelegramSettings().IsConfigured() {
 			c.JSON(http.StatusOK, gin.H{
 				"success": false,
-				"message": "无法启用 Telegram OAuth，请先填入 Telegram Bot Token！",
+				"code":    "TELEGRAM_OAUTH_NOT_CONFIGURED",
+				"message": "Telegram OAuth is not configured or enabled. Please contact your administrator.",
 			})
 			return
 		}
@@ -645,7 +646,7 @@ func UpdateOption(c *gin.Context) {
 		return
 	}
 	// 出于安全考虑只记录被修改的配置项名称，不记录配置值（可能含密钥等敏感信息）。
-	recordManageAudit(c, "option.update", map[string]interface{}{
+	recordManageAudit(c, "option.update", map[string]any{
 		"key": option.Key,
 	})
 	c.JSON(http.StatusOK, gin.H{
