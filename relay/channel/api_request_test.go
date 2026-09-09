@@ -71,6 +71,21 @@ func TestAPIRequestForwardsOpenCodeSessionHeaders(t *testing.T) {
 	require.Equal(t, "request-456", headers.Get("x-opencode-request"))
 }
 
+func TestAPIRequestAddsStableOpenCodeSessionHeader(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{UserId: 7, TokenId: 11, ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	first := http.Header{}
+	SetupApiRequestHeader(info, c, &first)
+	second := http.Header{}
+	SetupApiRequestHeader(info, c, &second)
+
+	require.NotEmpty(t, first.Get("x-opencode-session"))
+	require.Equal(t, first.Get("x-opencode-session"), second.Get("x-opencode-session"))
+}
+
 func TestNewTaskAPIRequestInheritsClientCancellation(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)

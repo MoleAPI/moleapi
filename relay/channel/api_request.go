@@ -2,6 +2,8 @@ package channel
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -49,7 +51,17 @@ func ApplyUpstreamBodyMetadata(req *http.Request, body io.Reader) {
 }
 
 func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Header) {
-	for _, name := range []string{"x-opencode-session", "x-opencode-request", "x-opencode-project", "x-opencode-client"} {
+	openCodeSession := strings.TrimSpace(c.Request.Header.Get("x-opencode-session"))
+	if openCodeSession == "" && info != nil {
+		project := strings.TrimSpace(c.Request.Header.Get("x-opencode-project"))
+		seed := fmt.Sprintf("%d:%d:%s", info.UserId, info.TokenId, project)
+		digest := sha256.Sum256([]byte(seed))
+		openCodeSession = "new-api-" + hex.EncodeToString(digest[:16])
+	}
+	if openCodeSession != "" {
+		req.Set("x-opencode-session", openCodeSession)
+	}
+	for _, name := range []string{"x-opencode-request", "x-opencode-project", "x-opencode-client"} {
 		if value := strings.TrimSpace(c.Request.Header.Get(name)); value != "" {
 			req.Set(name, value)
 		}
