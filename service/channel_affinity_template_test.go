@@ -34,6 +34,15 @@ func TestApplyChannelAffinityOverrideTemplate_NoTemplate(t *testing.T) {
 	require.Equal(t, base, merged)
 }
 
+func TestGetChannelAffinitySessionSeed(t *testing.T) {
+	ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{CacheKey: "new-api:channel_affinity:v1:rule:model:group:key"})
+
+	require.Equal(t, "new-api:channel_affinity:v1:rule:model:group:key|channel:42", GetChannelAffinitySessionSeed(ctx, 42))
+	require.NotEqual(t, GetChannelAffinitySessionSeed(ctx, 42), GetChannelAffinitySessionSeed(ctx, 43))
+	require.Empty(t, GetChannelAffinitySessionSeed(ctx, 0))
+	require.Empty(t, GetChannelAffinitySessionSeed(buildChannelAffinityTemplateContextForTest(channelAffinityMeta{}), 42))
+}
+
 func TestApplyChannelAffinityOverrideTemplate_MergeTemplate(t *testing.T) {
 	ctx := buildChannelAffinityTemplateContextForTest(channelAffinityMeta{
 		RuleName: "rule-with-template",

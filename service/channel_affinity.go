@@ -386,6 +386,19 @@ func getChannelAffinityMeta(c *gin.Context) (channelAffinityMeta, bool) {
 	return meta, true
 }
 
+// GetChannelAffinitySessionSeed returns the stable, non-secret input used to
+// derive a generated upstream session ID for the selected channel.
+func GetChannelAffinitySessionSeed(c *gin.Context, channelID int) string {
+	if c == nil || channelID <= 0 {
+		return ""
+	}
+	meta, ok := getChannelAffinityMeta(c)
+	if !ok || strings.TrimSpace(meta.CacheKey) == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s|channel:%d", meta.CacheKey, channelID)
+}
+
 func GetChannelAffinityStatsContext(c *gin.Context) (ChannelAffinityStatsContext, bool) {
 	if c == nil {
 		return ChannelAffinityStatsContext{}, false

@@ -2,8 +2,6 @@ package channel
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -54,9 +52,11 @@ func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Hea
 	openCodeSession := strings.TrimSpace(c.Request.Header.Get("x-opencode-session"))
 	if openCodeSession == "" && info != nil {
 		project := strings.TrimSpace(c.Request.Header.Get("x-opencode-project"))
-		seed := fmt.Sprintf("%d:%d:%s", info.UserId, info.TokenId, project)
-		digest := sha256.Sum256([]byte(seed))
-		openCodeSession = "new-api-" + hex.EncodeToString(digest[:16])
+		seed := service.GetChannelAffinitySessionSeed(c, info.ChannelId)
+		if seed == "" {
+			seed = fmt.Sprintf("user:%d|token:%d|project:%s", info.UserId, info.TokenId, project)
+		}
+		openCodeSession = "new-api-" + common2.GenerateHMAC(seed)[:32]
 	}
 	if openCodeSession != "" {
 		req.Set("x-opencode-session", openCodeSession)
