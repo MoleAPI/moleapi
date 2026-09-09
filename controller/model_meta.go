@@ -57,8 +57,15 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 			}
 		}
 		total = int64(len(filtered))
-		start := min((pageInfo.GetPage()-1)*pageInfo.GetPageSize(), len(filtered))
-		end := min(start+pageInfo.GetPageSize(), len(filtered))
+		// Avoid integer overflow when a client supplies an extremely large page.
+		page, pageSize := pageInfo.GetPage(), pageInfo.GetPageSize()
+		start := len(filtered)
+		if page <= 1 {
+			start = 0
+		} else if page-1 <= len(filtered)/pageSize {
+			start = (page - 1) * pageSize
+		}
+		end := min(start+pageSize, len(filtered))
 		modelsMeta = filtered[start:end]
 	}
 	vendorCounts, _ := model.GetVendorModelCounts()
