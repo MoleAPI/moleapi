@@ -30,7 +30,9 @@ func TestGetSystemRedirectedModelName(t *testing.T) {
 }
 
 func TestIsImageGenerationModelIncludesGPTImage2(t *testing.T) {
-	assert.True(t, IsImageGenerationModel("gpt-image-2"))
+	for _, model := range []string{"gpt-image-2", "gpt-image-2.5-flare", "gpt-image-2.5-sunburst"} {
+		assert.True(t, IsImageGenerationModel(model), model)
+	}
 }
 
 func TestGetEndpointTypesByChannelTypeIncludesResponsesForOpenAITextModels(t *testing.T) {
@@ -45,4 +47,8 @@ func TestGetEndpointTypesByChannelTypeIncludesResponsesForOpenAITextModels(t *te
 		constant.EndpointTypeImageGeneration,
 		constant.EndpointTypeOpenAI,
 	}, GetEndpointTypesByChannelType(constant.ChannelTypeOpenAI, "gpt-image-2"))
+	assert.Equal(t, []constant.EndpointType{
+		constant.EndpointTypeImageGeneration,
+		constant.EndpointTypeOpenAI,
+	}, GetEndpointTypesByChannelType(constant.ChannelTypeOpenAI, "gpt-image-2.5-flare"))
 }

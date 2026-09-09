@@ -39,3 +39,16 @@ test('renders large generated image markdown as an image', async () => {
   assert.match(markup, /src="data:image\/png;base64,/)
   assert.doesNotMatch(markup, /!\[generated image\]/)
 })
+
+test('normalizes HTML-escaped whitespace in generated image data', async () => {
+  const i18n = i18next.createInstance()
+  await i18n.use(initReactI18next).init({ lng: 'en' })
+  const markup = renderToStaticMarkup(
+    <I18nextProvider i18n={i18n}>
+      <Response>{'![generated image](data:image/png;base64,iVBORw0KGgoAAAANSUhE &#x20;\niVBORw0KGgo=)'}</Response>
+    </I18nextProvider>
+  )
+
+  assert.match(markup, /<img /)
+  assert.match(markup, /src="data:image\/png;base64,iVBORw0KGgoAAAANSUhEiVBORw0KGgo="/)
+})

@@ -245,6 +245,8 @@ export type TierCondition = {
 }
 
 export type ParsedTier = {
+  billingUnit?: 'token' | 'request'
+  fixedPrice?: number
   label: string
   conditions: TierCondition[]
   [field: string]: unknown
@@ -295,7 +297,7 @@ export function parseTiersFromExpr(exprStr: string): ParsedTier[] {
       `((?:(?:p|c|len)\\s*(?:<|<=|>|>=)\\s*[\\d.eE+]+)` +
       `(?:\\s*&&\\s*(?:p|c|len)\\s*(?:<|<=|>|>=)\\s*[\\d.eE+]+)*)`
     const tierRe = new RegExp(
-      `(?:${condGroup}\\s*\\?\\s*)?tier\\("([^"]*)",\\s*([^)]+)\\)`,
+      `(?:${condGroup}\\s*\\?\\s*)?tier\\("([^"]*)",\\s*(?:fixed\\(([\\d.eE+-]+)\\)|([^)]+))\\)`,
       'g'
     )
     const tiers: ParsedTier[] = []
@@ -315,7 +317,9 @@ export function parseTiersFromExpr(exprStr: string): ParsedTier[] {
           }
         }
       }
-      const tier = parseTierBody(m[3]) as ParsedTier
+      const tier = m[3] !== undefined
+        ? ({ label: m[2], conditions, billingUnit: 'request', fixedPrice: Number(m[3]) } as ParsedTier)
+        : (parseTierBody(m[4]) as ParsedTier)
       tier.label = m[2]
       tier.conditions = conditions
       tiers.push(tier)

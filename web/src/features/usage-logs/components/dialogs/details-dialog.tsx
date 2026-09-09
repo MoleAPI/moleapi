@@ -593,7 +593,9 @@ function BillingBreakdown(props: {
     )
 
     for (const entry of tieredSummary.priceEntries) {
-      if (entry.field === 'inputPrice') {
+      if (entry.field === 'fixedPrice') {
+        calculationParts.push(`${t('Per-call')} ${fmtPrice(entry.price)}`)
+      } else if (entry.field === 'inputPrice') {
         addTokenTerm(t('Input'), tieredInputTokens, entry.price)
       } else if (entry.field === 'outputPrice') {
         addTokenTerm(t('Output'), tieredOutputTokens, entry.price)

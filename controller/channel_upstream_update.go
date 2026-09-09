@@ -420,7 +420,7 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		if plan, ok := constant.ChannelSpecialBases[baseURL]; ok && plan.OpenAIBaseURL != "" {
 			url = fmt.Sprintf("%s/v1/models", plan.OpenAIBaseURL)
 		} else {
-			url = fmt.Sprintf("%s/v1/models", baseURL)
+			url = fmt.Sprintf("%s/api/v3/models", baseURL)
 		}
 	case constant.ChannelTypeMoonshot:
 		if plan, ok := constant.ChannelSpecialBases[baseURL]; ok && plan.OpenAIBaseURL != "" {
@@ -498,7 +498,7 @@ func fetchAdvancedCustomUpstreamModelIDs(channel *model.Channel, baseURL string)
 
 func updateChannelUpstreamModelSettings(channel *model.Channel, settings dto.ChannelOtherSettings, updateModels bool) error {
 	channel.SetOtherSettings(settings)
-	updates := map[string]interface{}{
+	updates := map[string]any{
 		"settings": channel.OtherSettings,
 	}
 	if updateModels {
@@ -889,7 +889,7 @@ func ApplyChannelUpstreamModelUpdates(c *gin.Context) {
 		refreshChannelRuntimeCache()
 	}
 
-	recordManageAudit(c, "channel.upstream_apply", map[string]interface{}{
+	recordManageAudit(c, "channel.upstream_apply", map[string]any{
 		"id": channel.Id,
 	})
 	c.JSON(http.StatusOK, gin.H{
@@ -1092,7 +1092,7 @@ func ApplyAllChannelUpstreamModelUpdates(c *gin.Context) {
 		refreshChannelRuntimeCache()
 	}
 
-	recordManageAudit(c, "channel.upstream_apply_all", map[string]interface{}{
+	recordManageAudit(c, "channel.upstream_apply_all", map[string]any{
 		"count": len(results),
 	})
 	c.JSON(http.StatusOK, gin.H{
@@ -1133,7 +1133,7 @@ func DetectAllChannelUpstreamModelUpdates(c *gin.Context) {
 		return
 	}
 
-	recordManageAudit(c, "channel.upstream_detect_all", map[string]interface{}{
+	recordManageAudit(c, "channel.upstream_detect_all", map[string]any{
 		"task_id": task.TaskID,
 	})
 	c.JSON(http.StatusOK, gin.H{

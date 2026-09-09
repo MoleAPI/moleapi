@@ -162,13 +162,13 @@ func RebuildToolPriceIndex() {
 	}
 
 	for key, price := range merged {
-		colonIdx := strings.IndexByte(key, ':')
-		if colonIdx < 0 {
+		before, after, ok := strings.Cut(key, ":")
+		if !ok {
 			idx.defaults[key] = price
 			continue
 		}
-		toolName := key[:colonIdx]
-		modelPart := key[colonIdx+1:]
+		toolName := before
+		modelPart := after
 		prefix := strings.TrimSuffix(modelPart, "*")
 		idx.prefixes[toolName] = append(idx.prefixes[toolName], prefixEntry{prefix: prefix, price: price})
 	}
@@ -259,7 +259,9 @@ func GetImageGenerationToolPrice(mainModel, imageModel, quality, size string) fl
 		prices = [3][2]float64{{0.005, 0.006}, {0.011, 0.015}, {0.036, 0.052}}
 	case imageModel == "gpt-image-1.5", strings.HasPrefix(imageModel, "gpt-image-1.5-"), imageModel == "chatgpt-image-latest":
 		prices = [3][2]float64{{0.009, 0.013}, {0.034, 0.05}, {0.133, 0.2}}
-	case imageModel == "gpt-image-2", strings.HasPrefix(imageModel, "gpt-image-2-"):
+	case imageModel == "gpt-image-2", strings.HasPrefix(imageModel, "gpt-image-2-"),
+		imageModel == "gpt-image-2.5-flare", strings.HasPrefix(imageModel, "gpt-image-2.5-flare-"),
+		imageModel == "gpt-image-2.5-sunburst", strings.HasPrefix(imageModel, "gpt-image-2.5-sunburst-"):
 		prices = [3][2]float64{{0.006, 0.005}, {0.053, 0.041}, {0.211, 0.165}}
 	case imageModel == "", imageModel == "gpt-image-1", strings.HasPrefix(imageModel, "gpt-image-1-"):
 		prices = [3][2]float64{{0.011, 0.016}, {0.042, 0.063}, {0.167, 0.25}}

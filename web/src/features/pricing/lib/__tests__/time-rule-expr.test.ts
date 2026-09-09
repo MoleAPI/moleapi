@@ -23,6 +23,7 @@ import {
   MATCH_EQ,
   MATCH_GTE,
   MATCH_RANGE,
+  parseTiersFromExpr,
   type RequestCondition,
   type RequestRuleGroup,
   type TimeCondition,
@@ -214,5 +215,22 @@ describe('time range round-trip stability', () => {
     const parsed = tryParseRequestRuleExpr(expr)
     expect(parsed).not.toBeNull()
     expect(buildRequestRuleExpr(parsed ?? [])).toBe(expr)
+  })
+})
+
+describe('fixed per-request tier parsing', () => {
+  test('parses fixed price leaves without treating them as token prices', () => {
+    const tiers = parseTiersFromExpr(
+      'len <= 32000 ? tier("short", fixed(0.01)) : tier("long", p * 2 + c * 8)'
+    )
+    expect(tiers).toEqual([
+      {
+        label: 'short',
+        conditions: [{ var: 'len', op: '<=', value: 32000 }],
+        billingUnit: 'request',
+        fixedPrice: 0.01,
+      },
+      expect.objectContaining({ label: 'long' }),
+    ])
   })
 })

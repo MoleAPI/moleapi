@@ -17,6 +17,13 @@ type requestContextAdaptor struct {
 	url string
 }
 
+type openCodeHeaderAdaptor struct{ requestContextAdaptor }
+
+func (openCodeHeaderAdaptor) SetupRequestHeader(c *gin.Context, headers *http.Header, info *relaycommon.RelayInfo) error {
+	SetupApiRequestHeader(info, c, headers)
+	return nil
+}
+
 func (a requestContextAdaptor) GetRequestURL(_ *relaycommon.RelayInfo) (string, error) {
 	return a.url, nil
 }
@@ -40,6 +47,43 @@ func TestAPIRequestInheritsClientCancellation(t *testing.T) {
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
 	_, err := DoApiRequest(requestContextAdaptor{url: server.URL}, c, info, strings.NewReader("{}"))
 	require.Error(t, err)
+}
+
+func TestAPIRequestForwardsOpenCodeSessionHeaders(t *testing.T) {
+	received := make(chan http.Header, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received <- r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
+	c.Request.Header.Set("x-opencode-session", "session-123")
+	c.Request.Header.Set("x-opencode-request", "request-456")
+
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+	_, err := DoApiRequest(openCodeHeaderAdaptor{requestContextAdaptor{url: server.URL}}, c, info, strings.NewReader("{}"))
+	require.NoError(t, err)
+	headers := <-received
+	require.Equal(t, "session-123", headers.Get("x-opencode-session"))
+	require.Equal(t, "request-456", headers.Get("x-opencode-request"))
+}
+
+func TestAPIRequestAddsStableOpenCodeSessionHeader(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	info := &relaycommon.RelayInfo{UserId: 7, TokenId: 11, ChannelMeta: &relaycommon.ChannelMeta{}}
+
+	first := http.Header{}
+	SetupApiRequestHeader(info, c, &first)
+	second := http.Header{}
+	SetupApiRequestHeader(info, c, &second)
+
+	require.NotEmpty(t, first.Get("x-opencode-session"))
+	require.Equal(t, first.Get("x-opencode-session"), second.Get("x-opencode-session"))
 }
 
 func TestNewTaskAPIRequestInheritsClientCancellation(t *testing.T) {
