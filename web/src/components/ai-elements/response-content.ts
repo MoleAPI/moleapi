@@ -26,6 +26,18 @@ const FENCE_START_PATTERN = /^(`{3,}|~{3,})([^\n]*)$/
 const FENCE_END_PATTERN = /^(`{3,}|~{3,})\s*$/
 const SECTION_HEADING_PATTERN = /^#{2,6}\s+\d+\.\s+/
 const MARKDOWN_EXAMPLE_LANGUAGES = new Set(['markdown', 'md', 'mdx'])
+const DATA_IMAGE_PATTERN = /(\]\(data:image\/(?:gif|png|jpe?g|webp|avif|bmp);base64,)([^)]*)/gi
+
+function normalizeDataImageSources(input: string): string {
+  return input.replaceAll(DATA_IMAGE_PATTERN, (_, prefix: string, payload: string) => {
+    // Some providers HTML-escape line wrapping as `&#x20;`; markdown parsers
+    // reject that whitespace before the image renderer gets a chance to run.
+    const normalizedPayload = payload
+      .replaceAll(/&#(?:x20|32);/gi, '')
+      .replaceAll(/[\t\r\n ]+/g, '')
+    return prefix + normalizedPayload
+  })
+}
 
 type MarkdownExampleFence = {
   contentLines: string[]
@@ -158,10 +170,14 @@ export function stripCustomTags(input: unknown): string {
 
 export function getMarkdownContent(children: ReactNode): string {
   if (Array.isArray(children)) {
-    return normalizeMarkdownExampleFences(stripCustomTags(children.join('')))
+    return normalizeDataImageSources(
+      normalizeMarkdownExampleFences(stripCustomTags(children.join('')))
+    )
   }
 
-  return normalizeMarkdownExampleFences(stripCustomTags(children))
+  return normalizeDataImageSources(
+    normalizeMarkdownExampleFences(stripCustomTags(children))
+  )
 }
 
 export function getNodeKey(node: ParsedNode, index: number): string {

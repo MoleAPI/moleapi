@@ -49,6 +49,11 @@ func ApplyUpstreamBodyMetadata(req *http.Request, body io.Reader) {
 }
 
 func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Header) {
+	for _, name := range []string{"x-opencode-session", "x-opencode-request", "x-opencode-project", "x-opencode-client"} {
+		if value := strings.TrimSpace(c.Request.Header.Get(name)); value != "" {
+			req.Set(name, value)
+		}
+	}
 	if info.RelayMode == constant.RelayModeAudioTranscription || info.RelayMode == constant.RelayModeAudioTranslation {
 		// multipart/form-data
 	} else if info.RelayMode == constant.RelayModeRealtime {
