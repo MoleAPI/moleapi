@@ -99,6 +99,8 @@ func TestImageGenerationToolPriceUsesImageModelNotMainlineModel(t *testing.T) {
 		{"gpt-image-1.5", "low", "1024x1536", 13},
 		{"chatgpt-image-latest", "high", "1024x1024", 133},
 		{"gpt-image-2-2026-04-21", "medium", "1536x1024", 41},
+		{"gpt-image-2.5-flare", "medium", "1536x1024", 41},
+		{"gpt-image-2.5-sunburst-2026-09-08", "high", "1024x1024", 211},
 		{"future-image-model", "high", "1024x1024", 150},
 		{"gpt-image-2", "auto", "auto", 150},
 	}
