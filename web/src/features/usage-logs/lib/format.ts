@@ -365,7 +365,12 @@ export function resolveMatchedTier(
 export interface TieredBillingSummary {
   tiers: ParsedTier[]
   tier: ParsedTier
-  priceEntries: Array<{ field: string; shortLabel: string; price: number }>
+  priceEntries: Array<{
+    field: string
+    shortLabel: string
+    price: number
+    unit?: 'request'
+  }>
 }
 
 export function getMatchedRequestRuleMultiplier(
@@ -410,6 +415,22 @@ export function getTieredBillingSummary(
   const tiers = parseTiersFromExpr(exprStr)
   const tier = resolveMatchedTier(tiers, other.matched_tier)
   if (!tier) return null
+
+  if (
+    other.billing_unit === 'request' &&
+    typeof other.fixed_price === 'number' &&
+    Number.isFinite(other.fixed_price) &&
+    other.fixed_price >= 0
+  ) {
+    const fixedPrice = other.fixed_price
+    return {
+      tiers,
+      tier,
+      priceEntries: [
+        { field: 'fixedPrice', shortLabel: 'Per-call', price: fixedPrice, unit: 'request' },
+      ],
+    }
+  }
 
   const cacheTokensPresent = hasAnyCacheTokens(other)
 

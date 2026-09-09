@@ -86,6 +86,7 @@ export type DynamicPricingSummary = {
   primaryEntries: DynamicPriceEntry[]
   secondaryEntries: DynamicPriceEntry[]
   isTaskUsage: boolean
+  isMixedBilling?: boolean
 }
 
 export function getTaskUsageQuantityUnitLabelKey(
@@ -244,6 +245,27 @@ export function getDynamicPriceEntries(
 ): DynamicPriceEntry[] {
   if (!tier) return []
 
+  if (
+    !isTaskPricingTier(tier) &&
+    tier.billingUnit === 'request' &&
+    typeof tier.fixedPrice === 'number' &&
+    Number.isFinite(tier.fixedPrice) &&
+    tier.fixedPrice >= 0
+  ) {
+    return [
+      {
+        key: 'fixed',
+        field: 'fixedPrice',
+        label: 'Price per request',
+        shortLabel: 'Per-call',
+        labelKind: 'i18n',
+        value: tier.fixedPrice,
+        formatted: formatTaskUsageUnitPrice(tier.fixedPrice, options),
+        unit: 'request',
+      },
+    ]
+  }
+
   if (isTaskPricingTier(tier) && options.usageSchema) {
     const usageEntries: DynamicPriceEntry[] = getTaskNumberFields(
       options.usageSchema
@@ -318,6 +340,22 @@ export function getDynamicPricingSummary(
     ...options,
     usageSchema: model.billing_usage_schema,
   })
+  let isMixedBilling = false
+  if (!isTaskUsage) {
+    const tokenTier = tiers.find(
+      (item) => !isTaskPricingTier(item) && item.billingUnit !== 'request'
+    )
+    const requestTier = tiers.find(
+      (item) => !isTaskPricingTier(item) && item.billingUnit === 'request'
+    )
+    if (tokenTier && requestTier) {
+      isMixedBilling = true
+      entries = [
+        ...getDynamicPriceEntries(tokenTier, options),
+        ...getDynamicPriceEntries(requestTier, options),
+      ]
+    }
+  }
   if (isTaskUsage) {
     const priceRanges = new Map<string, { min: number; max: number }>()
     for (const [field] of getTaskNumberFields(model.billing_usage_schema)) {
@@ -355,11 +393,18 @@ export function getDynamicPricingSummary(
     entries,
     primaryEntries: isTaskUsage
       ? entries.filter((entry) => entry.unit !== 'request')
-      : entries.filter((entry) => PRIMARY_DYNAMIC_FIELDS.has(entry.field)),
+      : entries.filter(
+          (entry) =>
+            entry.unit === 'request' || PRIMARY_DYNAMIC_FIELDS.has(entry.field)
+        ),
     secondaryEntries: isTaskUsage
       ? entries.filter((entry) => entry.unit === 'request')
-      : entries.filter((entry) => !PRIMARY_DYNAMIC_FIELDS.has(entry.field)),
+      : entries.filter(
+          (entry) =>
+            entry.unit !== 'request' && !PRIMARY_DYNAMIC_FIELDS.has(entry.field)
+        ),
     isTaskUsage,
+    ...(isMixedBilling ? { isMixedBilling } : {}),
   }
 }
 

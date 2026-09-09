@@ -55,8 +55,8 @@ test('model card keeps complete colored pricing and task pricing', async () => {
   )
   const text = html.replaceAll(/<[^>]*>/g, ' ').replaceAll(/\s+/g, ' ')
 
-  assert.match(text, /discount x0\.5 Input \$1 \/ 1M Output \$2 \/ 1M/)
   assert.match(text, /standard x1 Current Input \$2 \/ 1M Output \$4 \/ 1M/)
+  assert.doesNotMatch(text, /discount x0\.5 Input \$1 \/ 1M Output \$2 \/ 1M/)
   assert.match(text, /Cached/)
   assert.match(text, /Image/)
   assert.match(text, /Image Out/)

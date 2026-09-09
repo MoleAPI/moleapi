@@ -77,6 +77,21 @@ describe('model card price display', () => {
     )
   })
 
+  test('shows only the selected group price when a group filter is active', () => {
+    const groups = getDisplayedPriceGroups(
+      {
+        ...model,
+        enable_groups: ['default', 'standard', 'discount'],
+        group_ratio: { default: 1, standard: 0.9, discount: 0.7 },
+      },
+      'standard'
+    )
+
+    assert.deepEqual(groups, [
+      { group: 'standard', index: 1, ratio: 0.9, isCurrent: true },
+    ])
+  })
+
   test('sorts available model groups from lowest to highest price', () => {
     const groups = getAvailableGroups(
       {

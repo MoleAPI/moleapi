@@ -109,3 +109,20 @@ func TestGPT6AstraBuiltinBilling(t *testing.T) {
 		})
 	}
 }
+
+func TestGPTImage25BuiltinBillingUsesGPTImage2TokenRates(t *testing.T) {
+	for _, model := range []string{
+		"gpt-image-2.5-flare",
+		"gpt-image-2.5-flare-2026-09-08",
+		"gpt-image-2.5-sunburst",
+		"gpt-image-2.5-sunburst-2026-09-08",
+	} {
+		expression, ok := billing_setting.GetBuiltinBillingExpr(model)
+		require.True(t, ok, model)
+		cost, _, err := billingexpr.RunExpr(expression, billingexpr.TokenParams{
+			P: 700, CR: 100, Img: 200, ImgO: 300,
+		})
+		require.NoError(t, err, model)
+		assert.Equal(t, 14225.0, cost, model)
+	}
+}

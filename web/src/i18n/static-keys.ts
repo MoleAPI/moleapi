@@ -530,6 +530,17 @@ export const STATIC_I18N_KEYS = [
   'No enabled tokens available',
   'Redirecting to chat page...',
 
+  // Channel test endpoint labels
+  'Auto detect (default)',
+  'OpenAI (/v1/chat/completions)',
+  'OpenAI Responses (/v1/responses)',
+  'OpenAI Response Compaction (/v1/responses/compact)',
+  'Anthropic (/v1/messages)',
+  'Gemini (/v1beta/models/{model}:generateContent)',
+  'Jina Rerank (/v1/rerank)',
+  'Image Generation (/v1/images/generations)',
+  'Embeddings (/v1/embeddings)',
+
   // Channel upstream updates
   'No processable upstream model updates for this channel',
   'Upstream model updates applied: {{added}} added, {{removed}} removed, {{ignored}} ignored this time, {{totalIgnored}} total ignored models',

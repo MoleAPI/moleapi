@@ -356,7 +356,7 @@ export function DynamicPricingBreakdown({
       }
       return fields
     }
-    return BILLING_PRICING_VARS.filter((variable) => {
+    const fields: BreakdownPriceField[] = BILLING_PRICING_VARS.filter((variable) => {
       if (hideCacheColumns && variable.group === 'cache') return false
       return tiers.some(
         (tier) =>
@@ -373,6 +373,19 @@ export function DynamicPricingBreakdown({
           ? 0
           : Number(tier[variable.field as string as keyof ParsedTier] || 0),
     }))
+    if (tiers.some((tier) => !isTaskBreakdownTier(tier) && tier.billingUnit === 'request')) {
+      fields.push({
+        id: 'fixedPrice',
+        label: 'Price per request',
+        labelKind: 'i18n',
+        unit: 'request',
+        value: (tier) =>
+          !isTaskBreakdownTier(tier) && tier.billingUnit === 'request'
+            ? Number(tier.fixedPrice)
+            : Number.NaN,
+      })
+    }
+    return fields
   })()
   const mobileTierKeyOccurrences = new Map<string, number>()
   const requestRuleKeyOccurrences = new Map<string, number>()
@@ -462,7 +475,8 @@ export function DynamicPricingBreakdown({
                               compact ? 'text-xs' : 'text-sm font-semibold'
                             )}
                           >
-                            {value > 0
+                            {value > 0 ||
+                            (field.unit === 'request' && Number.isFinite(value))
                               ? formatBreakdownPrice(
                                   value,
                                   field,
@@ -559,7 +573,8 @@ export function DynamicPricingBreakdown({
                 ),
                 cell: (tier: BreakdownTier) => {
                   const value = field.value(tier)
-                  return value > 0 ? (
+                  return value > 0 ||
+                    (field.unit === 'request' && Number.isFinite(value)) ? (
                     <span className={cn(!compact && 'font-semibold')}>
                       {formatBreakdownPrice(value, field, symbol, rate, t)}
                     </span>
