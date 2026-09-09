@@ -158,6 +158,8 @@ export function getDisplayedPriceGroups(
     ratio: getConfiguredGroupRatio(model.group_ratio || {}, group),
     isCurrent: group === selected,
   }))
+  if (selected) return items.filter((item) => item.group === selected)
+
   const defaultGroup = items.find((item) => item.group === 'default')
   const seenRatios = new Set<string>()
 
