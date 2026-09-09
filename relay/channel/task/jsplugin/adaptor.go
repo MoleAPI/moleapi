@@ -805,29 +805,29 @@ func (a *TaskAdaptor) ConvertToOpenAIVideo(task *model.Task) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	rendered := kitdto.NewOpenAIVideo()
-	if err = common.Unmarshal(encoded, rendered); err != nil {
+	var rendered map[string]any
+	if err = common.Unmarshal(encoded, &rendered); err != nil || rendered == nil {
 		return nil, fmt.Errorf("plugin returned an invalid OpenAI video object")
 	}
 	host := task.ToOpenAIVideo()
-	rendered.ID = host.ID
-	rendered.Object = host.Object
-	rendered.TaskID = ""
-	rendered.Status = host.Status
-	rendered.Progress = host.Progress
-	rendered.CreatedAt = host.CreatedAt
-	rendered.Model = host.Model
-	rendered.CompletedAt = host.CompletedAt
-	if task.Status == model.TaskStatusFailure {
-		rendered.Error = &kitdto.OpenAIVideoError{Code: "task_failed", Message: service.PublicTaskFailureMessage(task.FailReason)}
+	// Keep provider-specific fields while the gateway owns the public lifecycle fields.
+	hostEncoded, err := common.Marshal(host)
+	if err != nil {
+		return nil, err
 	}
-	for key := range rendered.Metadata {
-		if strings.EqualFold(key, "url") {
-			delete(rendered.Metadata, key)
+	var hostFields map[string]any
+	if err = common.Unmarshal(hostEncoded, &hostFields); err != nil {
+		return nil, err
+	}
+	for _, key := range []string{"id", "object", "model", "status", "progress", "created_at", "completed_at"} {
+		delete(rendered, key)
+		if value, ok := hostFields[key]; ok {
+			rendered[key] = value
 		}
 	}
-	if len(rendered.Metadata) == 0 {
-		rendered.Metadata = nil
+	delete(rendered, "task_id")
+	if task.Status == model.TaskStatusFailure && task.FailReason != "" {
+		rendered["error"] = map[string]any{"code": "task_failed", "message": service.PublicTaskFailureMessage(task.FailReason)}
 	}
 	return common.Marshal(rendered)
 }
