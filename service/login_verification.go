@@ -10,10 +10,12 @@ import (
 const LoginVerificationTTL = 5 * time.Minute
 
 type LoginChallenge struct {
-	RequireVerification bool                       `json:"require_verification"`
-	FlowToken           string                     `json:"flow_token"`
-	ExpiresAt           int64                      `json:"expires_at"`
-	Methods             []VerificationMethodOption `json:"methods"`
+	RequireVerification bool `json:"require_verification"`
+	// ponytail: retain the deployed OTP screen's flag on the shared challenge.
+	RequireTwoFA bool                       `json:"require_2fa,omitempty"`
+	FlowToken    string                     `json:"flow_token"`
+	ExpiresAt    int64                      `json:"expires_at"`
+	Methods      []VerificationMethodOption `json:"methods"`
 }
 
 type loginFlowPayload struct {
@@ -45,8 +47,10 @@ func StartLoginVerification(user *model.User, loginMethod string) (*LoginChallen
 		return nil, err
 	}
 	available := false
+	twoFAAvailable := false
 	for _, method := range methods {
 		available = available || method.Available
+		twoFAAvailable = twoFAAvailable || (method.Method == VerificationMethodTwoFA && method.Available)
 	}
 	if !available {
 		return nil, ErrVerificationUnavailable
@@ -63,7 +67,7 @@ func StartLoginVerification(user *model.User, loginMethod string) (*LoginChallen
 	if err != nil {
 		return nil, err
 	}
-	return &LoginChallenge{RequireVerification: true, FlowToken: token, ExpiresAt: expiresAt.Unix(), Methods: methods}, nil
+	return &LoginChallenge{RequireVerification: true, RequireTwoFA: twoFAAvailable, FlowToken: token, ExpiresAt: expiresAt.Unix(), Methods: methods}, nil
 }
 
 func RequireLoginVerification(token, method string) (*LoginVerification, error) {
