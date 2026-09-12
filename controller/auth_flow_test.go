@@ -71,14 +71,32 @@ func TestSecurityLoginCodeCompletesOnce(t *testing.T) {
 	for _, test := range []struct {
 		path   string
 		backup bool
-	}{{"/api/user/login/verify", false}, {"/api/user/login/2fa", false}, {"/api/user/login/verify", true}} {
+	}{{"/api/user/login/verify", false}, {"/api/user/login/2fa", false}, {"/api/user/login/verify", true}, {"/api/user/login/2fa", true}} {
 		t.Run(fmt.Sprintf("%s/backup=%t", test.path, test.backup), func(t *testing.T) {
 			user, _ := setupSecurityEnrollmentTest(t)
 			factor := &model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}
 			require.NoError(t, model.DB.Create(factor).Error)
-			challenge, err := service.StartLoginVerification(user, "password")
-			require.NoError(t, err)
-			require.NotNil(t, challenge)
+			previousPasswordLogin := common.PasswordLoginEnabled
+			common.PasswordLoginEnabled = true
+			t.Cleanup(func() { common.PasswordLoginEnabled = previousPasswordLogin })
+			router := gin.New()
+			router.POST("/api/user/login", Login)
+			router.POST("/api/user/login/verify", VerifyLogin)
+			router.POST("/api/user/login/2fa", Verify2FALogin)
+			loginResponse := httptest.NewRecorder()
+			router.ServeHTTP(loginResponse, httptest.NewRequest("POST", "/api/user/login", strings.NewReader(`{"username":"enrollment-user","password":"enrollment-password"}`)))
+			var loginResult struct {
+				Success bool `json:"success"`
+				Data    struct {
+					RequireTwoFA bool   `json:"require_2fa"`
+					FlowToken    string `json:"flow_token"`
+				} `json:"data"`
+			}
+			require.NoError(t, common.Unmarshal(loginResponse.Body.Bytes(), &loginResult))
+			require.True(t, loginResult.Success, loginResponse.Body.String())
+			require.True(t, loginResult.Data.RequireTwoFA, "the deployed OTP screen must recognize the challenge")
+			require.NotEmpty(t, loginResult.Data.FlowToken)
+			assert.Empty(t, loginResponse.Header().Values("Set-Cookie"))
 			code, err := totp.GenerateCode(factor.Secret, time.Now())
 			require.NoError(t, err)
 			if test.backup {
@@ -87,11 +105,8 @@ func TestSecurityLoginCodeCompletesOnce(t *testing.T) {
 				require.NoError(t, err)
 				require.NoError(t, model.DB.Create(&model.TwoFABackupCode{UserId: user.Id, CodeHash: hash}).Error)
 			}
-			body, err := common.Marshal(map[string]string{"flow_token": challenge.FlowToken, "code": code})
+			body, err := common.Marshal(map[string]string{"flow_token": loginResult.Data.FlowToken, "code": code})
 			require.NoError(t, err)
-			router := gin.New()
-			router.POST("/api/user/login/verify", VerifyLogin)
-			router.POST("/api/user/login/2fa", Verify2FALogin)
 			for attempt := range 2 {
 				response := httptest.NewRecorder()
 				router.ServeHTTP(response, httptest.NewRequest("POST", test.path, strings.NewReader(string(body))))
