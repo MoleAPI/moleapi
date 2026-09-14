@@ -89,9 +89,6 @@ test('model providers follow the four-year privacy and model commitments', async
 test('home commitments state operating history, conversation retention and model integrity', async () => {
   const html = await renderWithEnglish(<Features />)
   assert.match(html, /Four years, built on trust/)
-  assert.match(html, /We do not store your prompts or model replies/)
-  assert.match(
-    html,
-    /We do not secretly substitute models or mix lower-quality responses/
-  )
+  assert.match(html, /Prompts and replies are never stored/)
+  assert.match(html, /No substitutions or mixed responses/)
 })

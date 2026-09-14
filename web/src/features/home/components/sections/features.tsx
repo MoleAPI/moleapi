@@ -25,29 +25,27 @@ export function Features() {
     {
       icon: HeartHandshake,
       title: t('Four years, built on trust'),
-      description: t(
-        'For four years, we have focused on reliable AI access and lasting relationships with our users.'
-      ),
+      description: t('Reliable AI access for four years.'),
     },
     {
       icon: ShieldCheck,
       title: t('ZDR from day one'),
       description: t(
-        'We do not store your prompts or model replies. Necessary account, billing and usage records do not include conversation content.'
+        'Prompts and replies are never stored. Account and billing records exclude conversation content.'
       ),
     },
     {
       icon: ArrowRight,
       title: t('The model you choose'),
       description: t(
-        'Each model maps to its corresponding upstream model. We do not secretly substitute models or mix lower-quality responses.'
+        'Your chosen model, its original reply. No substitutions or mixed responses.'
       ),
     },
   ]
   return (
     <section className='mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8'>
       <h2 className='mb-8 text-2xl font-semibold tracking-tight sm:text-3xl'>
-        {t('Trust, built over four years.')}
+        {t('Four years of trust.')}
       </h2>
       <div className='grid gap-6 md:grid-cols-3'>
         {commitments.map(({ icon: Icon, title, description }) => (

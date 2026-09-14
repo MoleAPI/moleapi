@@ -118,10 +118,8 @@ export function Hero(props: HeroProps) {
             className='landing-animate-fade-up opacity-0'
             style={{ animationDelay: '120ms' }}
           >
-            <p className='text-muted-foreground mt-5 max-w-xl text-base leading-relaxed sm:text-lg'>
-              {t(
-                'Four years, one commitment: your conversations stay yours. ZDR from day one, with one-to-one model forwarding.'
-              )}
+            <p className='text-muted-foreground mt-5 text-sm leading-relaxed whitespace-nowrap sm:text-base'>
+              {t('4 years · ZDR · 1:1 model forwarding')}
             </p>
           </div>
 
@@ -129,15 +127,7 @@ export function Hero(props: HeroProps) {
             href='#offers'
             className='text-foreground mt-6 block max-w-xl rounded-sm text-sm leading-7 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4'
           >
-            <span className='font-semibold'>
-              {t('Start with 1 USD. Get up to 40% extra credit.')}
-            </span>
-            <br />
-            <span className='text-muted-foreground'>
-              {t(
-                'Selected DeepSeek and GPT models from 10% of standard pricing.'
-              )}
-            </span>
+            {t('Sign up for a free trial. Selected models up to 90% off.')}
           </a>
 
           <div

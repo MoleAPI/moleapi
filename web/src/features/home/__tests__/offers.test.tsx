@@ -95,9 +95,7 @@ test('top-up examples label both amounts in USD and show the bonus in the receiv
 test('the low-price offer opens the eligible temp group rather than unfiltered pricing', async () => {
   const router = await renderOffers()
   const user = userEvent.setup()
-  expect(
-    screen.getByText(/0.1 times their MoleAPI standard-group price/)
-  ).toBeVisible()
+  expect(screen.getByText(/10% of MoleAPI standard-group prices/)).toBeVisible()
   await user.click(
     screen.getByRole('link', { name: 'Explore temp-group models' })
   )
@@ -109,10 +107,8 @@ test('the low-price offer opens the eligible temp group rather than unfiltered p
 
 test('the comparison discloses the required bonus and distinguishes effective cost from balance deduction', async () => {
   await renderOffers(true)
-  expect(screen.getByText(/With a 280 USD top-up and 40% bonus/)).toBeVisible()
-  expect(
-    screen.getByText(/the balance deduction is still 18 USD/)
-  ).toBeVisible()
+  expect(screen.getByText(/Top up 280 USD, get 40% extra/)).toBeVisible()
+  expect(screen.getByText(/balance charged: 18 USD/)).toBeVisible()
   expect(screen.getByText('≈ 12.86 USD')).toBeVisible()
   expect(
     screen.getByRole('link', { name: 'Check current model pricing' })

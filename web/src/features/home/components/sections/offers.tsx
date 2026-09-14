@@ -42,7 +42,7 @@ export function Offers(props: { isAuthenticated: boolean }) {
     >
       <div className='mb-10 max-w-2xl'>
         <p className='text-primary mb-3 text-sm font-semibold'>
-          {t('Priced in USD. More value with every top-up.')}
+          {t('USD pricing. Top-up bonuses.')}
         </p>
         <h2
           id='offers-title'
@@ -63,7 +63,7 @@ export function Offers(props: { isAuthenticated: boolean }) {
           <p className='mt-5 text-xl font-medium'>DeepSeek · GPT</p>
           <p className='text-muted-foreground mt-3 text-sm leading-7'>
             {t(
-              'The temp group bills eligible models at 0.1 times their MoleAPI standard-group price. Model availability can change; check the current list before use.'
+              'Eligible temp models cost 10% of MoleAPI standard-group prices. See the current model list.'
             )}
           </p>
           <Button
@@ -81,9 +81,7 @@ export function Offers(props: { isAuthenticated: boolean }) {
             {t('Top up from 1 USD. Receive up to 40% extra.')}
           </h3>
           <p className='text-muted-foreground mt-3 text-sm leading-7'>
-            {t(
-              'Your top-up and bonus combine into one usage balance, denominated in USD.'
-            )}
+            {t('Top-ups and bonuses are credited in USD.')}
           </p>
           <table className='mt-6 w-full text-left text-sm tabular-nums'>
             <caption className='sr-only'>{t('Top-up examples in USD')}</caption>
@@ -117,7 +115,7 @@ export function Offers(props: { isAuthenticated: boolean }) {
           </table>
           <p className='text-muted-foreground mt-4 text-xs leading-6'>
             {t(
-              'Current top-up examples. Credits are for API usage; payment conversion and final terms are shown at checkout.'
+              'API credits only. See checkout for payment conversion and terms.'
             )}
           </p>
           <Button
@@ -144,12 +142,12 @@ export function Offers(props: { isAuthenticated: boolean }) {
             </h3>
             <p className='text-muted-foreground mt-3 text-sm leading-7'>
               {t(
-                'Claude Sonnet 4.6: 1M input tokens plus 1M output tokens, accumulated across standard text requests.'
+                'Claude Sonnet 4.6: 1M input + 1M output tokens across standard text requests.'
               )}
             </p>
             <p className='mt-4 text-sm leading-7'>
               {t(
-                'With a 280 USD top-up and 40% bonus, standard-group usage costs about 28.6% less than the official API, or 32.3% less than OpenRouter including its listed fee.'
+                'Top up 280 USD, get 40% extra: about 28.6% less than the official API, or 32.3% less than OpenRouter with fees.'
               )}
             </p>
           </div>
@@ -190,7 +188,7 @@ export function Offers(props: { isAuthenticated: boolean }) {
         </div>
         <p className='text-muted-foreground mt-6 text-xs leading-6'>
           {t(
-            'This example uses the standard group, not temp. Effective cost assumes all purchased and bonus credits are used: 18 / 1.4 ≈ 12.86 USD; the balance deduction is still 18 USD. Excludes caching, tools, batch discounts, taxes and currency conversion. Prices checked on September 14, 2026.'
+            'Standard group example. With all credits used, 18 / 1.4 ≈ 12.86 USD; balance charged: 18 USD. Excludes cache, tools, batch discounts, tax and FX. Checked September 14, 2026.'
           )}
         </p>
         <Link
