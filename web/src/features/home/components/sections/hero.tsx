@@ -125,6 +125,21 @@ export function Hero(props: HeroProps) {
             </p>
           </div>
 
+          <a
+            href='#offers'
+            className='text-foreground mt-6 block max-w-xl rounded-sm text-sm leading-7 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4'
+          >
+            <span className='font-semibold'>
+              {t('Start with 1 USD. Get up to 40% extra credit.')}
+            </span>
+            <br />
+            <span className='text-muted-foreground'>
+              {t(
+                'Selected DeepSeek and GPT models from 10% of standard pricing.'
+              )}
+            </span>
+          </a>
+
           <div
             className='landing-animate-fade-up mt-8 flex flex-wrap items-center gap-3 opacity-0'
             style={{ animationDelay: '180ms' }}
