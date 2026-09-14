@@ -68,6 +68,7 @@ interface NotificationTabProps {
 export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
   const { t } = useTranslation()
   const isAdmin = (profile?.role ?? 0) >= ROLE.ADMIN
+  const profileSettings = profile?.setting
   const [loading, setLoading] = useState(false)
   const [settings, setSettings] = useState<UserSettings>({
     notify_type: 'email',
@@ -93,8 +94,8 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
   )
 
   useEffect(() => {
-    if (profile?.setting) {
-      const parsed = parseUserSettings(profile.setting)
+    if (profileSettings) {
+      const parsed = parseUserSettings(profileSettings)
       setSettings({
         notify_type: normalizeNotifyType(parsed.notify_type),
         quota_warning_threshold:
@@ -113,7 +114,7 @@ export function NotificationTab({ profile, onUpdate }: NotificationTabProps) {
           parsed.upstream_model_update_notify_enabled || false,
       })
     }
-  }, [profile])
+  }, [profileSettings])
 
   const handleSave = async () => {
     try {
