@@ -162,7 +162,9 @@ describe('model cards', () => {
       })
     ).toBeVisible()
     expect(screen.getByText('No description available.')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Details' })).toBeEnabled()
+    expect(
+      within(metrics).getByRole('button', { name: 'Details' })
+    ).toBeEnabled()
   })
 
   it('uses fixed spacing between hourly status bars', () => {
@@ -196,14 +198,15 @@ describe('model cards', () => {
       />
     )
 
-    for (const group of groups.slice(0, 2))
-      {expect(screen.getByText(group)).toBeVisible()}
-    expect(screen.getByText('Endpoints', { exact: false })).toHaveAttribute(
-      'title',
-      endpoints.join(', ')
-    )
-    for (const tag of tags.slice(0, 5))
-      {expect(screen.getByText(tag)).toBeVisible()}
+    for (const group of groups.slice(0, 2)) {
+      expect(screen.getByText(group)).toBeVisible()
+    }
+    for (const endpoint of endpoints) {
+      expect(screen.getByText(endpoint)).toHaveAttribute('data-slot', 'badge')
+    }
+    for (const tag of tags.slice(0, 5)) {
+      expect(screen.getByText(tag)).toBeVisible()
+    }
     expect(screen.getByText('+1')).toHaveAttribute('title', 'pro')
     expect(screen.getByText('Token-based')).toBeVisible()
   })

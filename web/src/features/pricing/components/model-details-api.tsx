@@ -675,6 +675,11 @@ function RateLimitsSection(props: { model: PricingModel }) {
   return (
     <section>
       <SectionTitle icon={Gauge}>{t('Rate limits')}</SectionTitle>
+      <p className='text-muted-foreground mb-3 text-xs'>
+        {t(
+          'Example limits only; actual limits depend on your account settings.'
+        )}
+      </p>
       <StaticDataTable
         className={tableStyles.sectionContainer}
         headerRowClassName={tableStyles.mutedHeaderRow}
@@ -714,7 +719,7 @@ function RateLimitsSection(props: { model: PricingModel }) {
       />
       <p className='text-muted-foreground mt-2 text-[11px] leading-relaxed'>
         {t(
-          'RPM = requests per minute, TPM = tokens per minute, RPD = requests per day. Limits apply per token group.'
+          'RPM = requests per minute, TPM = tokens per minute, RPD = requests per day.'
         )}
       </p>
     </section>

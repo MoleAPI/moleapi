@@ -24,15 +24,13 @@ export function Features() {
   const commitments = [
     {
       icon: HeartHandshake,
-      title: t('Four years, built on trust'),
-      description: t('Reliable AI access for four years.'),
+      title: t('Reliable for the long run'),
+      description: t('Consistent service, lasting peace of mind.'),
     },
     {
       icon: ShieldCheck,
       title: t('ZDR from day one'),
-      description: t(
-        'Prompts and replies are never stored. Account and billing records exclude conversation content.'
-      ),
+      description: t('No stored prompts or replies. No conversations in logs.'),
     },
     {
       icon: ArrowRight,
@@ -45,7 +43,7 @@ export function Features() {
   return (
     <section className='mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8'>
       <h2 className='mb-8 text-2xl font-semibold tracking-tight sm:text-3xl'>
-        {t('Four years of trust.')}
+        {t('Our commitments')}
       </h2>
       <div className='grid gap-6 md:grid-cols-3'>
         {commitments.map(({ icon: Icon, title, description }) => (
