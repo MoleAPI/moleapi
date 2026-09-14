@@ -99,7 +99,22 @@ export function Profile() {
 
           <CardStaggerItem>
             <div className='grid gap-4 sm:gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)] xl:items-start'>
-              <div className='flex min-w-0 flex-col gap-4 sm:gap-6'>
+              <div
+                data-profile-column='left'
+                className='flex min-w-0 flex-col gap-4 sm:gap-6'
+              >
+                <ProfileSettingsCard
+                  profile={profile}
+                  loading={loading}
+                  onProfileUpdate={refreshProfile}
+                />
+                <LoginSessionsCard />
+              </div>
+
+              <div
+                data-profile-column='right'
+                className='flex min-w-0 flex-col gap-4 sm:gap-6'
+              >
                 <AccountBindingsCard
                   profile={profile}
                   loading={loading}
@@ -114,15 +129,6 @@ export function Profile() {
                   loading={loading}
                   onProfileUpdate={refreshProfile}
                 />
-                <LoginSessionsCard />
-                <ProfileSettingsCard
-                  profile={profile}
-                  loading={loading}
-                  onProfileUpdate={refreshProfile}
-                />
-              </div>
-
-              <div className='flex min-w-0 flex-col gap-4 sm:gap-6'>
                 {checkinEnabled && (
                   <CheckinCalendarCard
                     checkinEnabled={checkinEnabled}
