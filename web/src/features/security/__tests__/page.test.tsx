@@ -235,9 +235,15 @@ describe('unified profile and security page', () => {
     })
     const user = userEvent.setup()
     await renderPage()
-    await user.click(
-      await screen.findByRole('button', { name: 'Set Password' })
-    )
+    const setPassword = await screen.findByRole('button', {
+      name: 'Set Password',
+    })
+    const notificationEmail = screen.getByRole('textbox', {
+      name: 'Notification Email',
+    })
+    await user.clear(notificationEmail)
+    await user.type(notificationEmail, 'draft@example.com')
+    await user.click(setPassword)
     const dialog = await screen.findByRole('dialog', { name: 'Set Password' })
     expect(
       within(dialog).queryByLabelText('Current Password')
@@ -267,6 +273,7 @@ describe('unified profile and security page', () => {
     expect(
       await screen.findByRole('button', { name: 'Change Password' })
     ).toBeVisible()
+    expect(notificationEmail).toHaveValue('draft@example.com')
     expect(put).toHaveBeenCalledWith(
       '/api/user/self',
       { password: 'test-account-password!42' },
