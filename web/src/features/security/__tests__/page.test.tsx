@@ -27,15 +27,17 @@ import {
 import {
   cleanup,
   render,
+  renderHook,
   screen,
   waitFor,
   within,
 } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, assert, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { Profile } from '@/features/profile'
 import type { UserProfile } from '@/features/profile/types'
+import { useSidebarData } from '@/hooks/use-sidebar-data'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -61,7 +63,10 @@ const profile: UserProfile = {
   }),
 }
 
+let currentProfile: UserProfile
+
 beforeEach(() => {
+  currentProfile = { ...profile }
   vi.stubGlobal('localStorage', {
     getItem: () => null,
     setItem: () => undefined,
@@ -87,7 +92,7 @@ beforeEach(() => {
       }
     }
     if (url === '/api/user/self') {
-      return { data: { success: true, data: profile } }
+      return { data: { success: true, data: currentProfile } }
     }
     if (url === '/api/user/passkey') {
       return { data: { success: true, data: { enabled: false } } }
@@ -114,7 +119,7 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function renderPage(path = '/security') {
+async function renderPage(path = '/profile') {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   })
@@ -158,57 +163,158 @@ async function renderPage(path = '/security') {
   return { ...rendered, router }
 }
 
-describe('security page migration', () => {
-  it('places account management on the left and verification and privacy on the right', async () => {
+describe('unified profile and security page', () => {
+  it('keeps one copy of each security control alongside profile preferences', async () => {
     await renderPage()
-    const login = await screen.findByRole('region', {
-      name: 'Login & Authentication',
+    expect(
+      await screen.findByRole('button', { name: 'Change Password' })
+    ).toBeVisible()
+    expect(
+      screen.getAllByRole('button', { name: 'Change Password' })
+    ).toHaveLength(1)
+    expect(
+      screen.getAllByRole('button', { name: 'Delete Account' })
+    ).toHaveLength(1)
+    expect(
+      screen.getAllByRole('list', { name: 'Account Bindings' })
+    ).toHaveLength(1)
+    expect(
+      screen.getAllByRole('heading', { name: 'Access Token' })
+    ).toHaveLength(1)
+    expect(screen.getAllByText('Passkey Login')).toHaveLength(1)
+    expect(screen.getAllByText('Two-Factor Authentication')).toHaveLength(1)
+    expect(await screen.findByText('No active login sessions')).toBeVisible()
+    expect(
+      screen.getAllByRole('switch', { name: 'Record IP Address' })
+    ).toHaveLength(1)
+    expect(screen.getByRole('button', { name: 'Save Settings' })).toBeVisible()
+  })
+
+  it('old security links redirect to Profile without a second settings page', async () => {
+    const { router } = await renderPage('/security')
+    await waitFor(() => expect(router.state.location.pathname).toBe('/profile'))
+    expect(
+      await screen.findByRole('button', { name: 'Change Password' })
+    ).toBeVisible()
+  })
+
+  it('passwordless accounts refresh their profile after setting a verified password', async () => {
+    currentProfile = { ...profile, has_password: false }
+    const originalGet = vi.mocked(api.get).getMockImplementation()
+    assert(originalGet)
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (url === '/api/verify/methods') {
+        return {
+          data: {
+            success: true,
+            data: {
+              scope: 'account.password.set',
+              methods: [{ method: '2fa', available: true }],
+              oauth_providers: [],
+              password_encryption_enabled: false,
+            },
+          },
+        }
+      }
+      return originalGet(url, config)
     })
-    expect(
-      screen
-        .getAllByRole('region')
-        .map((region) => within(region).getAllByRole('heading')[0].textContent)
-    ).toEqual([
-      'Login & Authentication',
-      'Sessions & Access',
-      'Account Actions',
-      'Privacy',
-    ])
-    expect(
-      within(login).getByRole('button', { name: 'Change Password' })
-    ).toBeVisible()
-    expect(within(login).getByText('Account Bindings')).toBeVisible()
-    const verification = screen.getByRole('complementary', {
-      name: 'Security verification',
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: {
+        success: true,
+        data: {
+          scope: 'account.password.set',
+          method: '2fa',
+          proof_token: 'test-password-proof',
+          expires_at: Math.floor(Date.now() / 1000) + 60,
+        },
+      },
     })
-    expect(await within(verification).findByText('Passkey Login')).toBeVisible()
-    expect(
-      await within(verification).findByText('Two-Factor Authentication')
-    ).toBeVisible()
-    expect(
-      within(verification).getByRole('switch', { name: 'Record IP Address' })
-    ).toBeVisible()
-    expect(verification).toHaveClass('xl:sticky', 'xl:top-0')
-    expect(verification.parentElement).toHaveClass(
-      'grid',
-      'xl:grid-cols-[minmax(0,1fr)_minmax(360px,0.46fr)]'
+    const put = vi.spyOn(api, 'put').mockImplementation(async () => {
+      currentProfile = { ...currentProfile, has_password: true }
+      return { data: { success: true, data: { has_password: true } } }
+    })
+    const user = userEvent.setup()
+    await renderPage()
+    await user.click(
+      await screen.findByRole('button', { name: 'Set Password' })
     )
-    const access = screen.getByRole('region', { name: 'Sessions & Access' })
+    const dialog = await screen.findByRole('dialog', { name: 'Set Password' })
     expect(
-      within(access).getByRole('heading', { name: 'Access Token' })
+      within(dialog).queryByLabelText('Current Password')
+    ).not.toBeInTheDocument()
+    await user.type(
+      within(dialog).getByLabelText('New Password'),
+      'test-account-password!42'
+    )
+    await user.type(
+      within(dialog).getByLabelText('Confirm New Password'),
+      'test-account-password!42'
+    )
+    await user.click(
+      within(dialog).getByRole('button', { name: 'Set Password' })
+    )
+    expect(put).not.toHaveBeenCalled()
+    await user.type(
+      await screen.findByLabelText('Authenticator code or backup code', {
+        selector: 'input',
+      }),
+      '123456'
+    )
+    await user.click(screen.getByRole('button', { name: 'Verify' }))
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    )
+    expect(
+      await screen.findByRole('button', { name: 'Change Password' })
     ).toBeVisible()
-    expect(
-      await within(access).findByText('No active login sessions')
-    ).toBeVisible()
-    expect(
-      screen.getByRole('switch', { name: 'Record IP Address' })
-    ).toBeVisible()
-    expect(
-      within(screen.getByRole('region', { name: 'Account Actions' })).getByRole(
-        'button',
-        { name: 'Delete Account' }
+    expect(put).toHaveBeenCalledWith(
+      '/api/user/self',
+      { password: 'test-account-password!42' },
+      expect.objectContaining({
+        headers: { 'X-Security-Proof': 'test-password-proof' },
+        singleUseAuthorization: true,
+      })
+    )
+  })
+
+  it('the single privacy control saves with notification preferences', async () => {
+    currentProfile = {
+      ...profile,
+      setting: JSON.stringify({
+        record_ip_log: true,
+        notify_type: 'email',
+        quota_warning_threshold: 500000,
+        notification_email: 'alerts@example.com',
+      }),
+    }
+    const put = vi
+      .spyOn(api, 'put')
+      .mockImplementation(async (_url, settings) => {
+        currentProfile = {
+          ...currentProfile,
+          setting: JSON.stringify(settings),
+        }
+        return { data: { success: true } }
+      })
+    const user = userEvent.setup()
+    await renderPage()
+    const toggle = await screen.findByRole('switch', {
+      name: 'Record IP Address',
+    })
+    await waitFor(() => expect(toggle).toBeChecked())
+    await user.click(toggle)
+    await user.click(screen.getByRole('button', { name: 'Save Settings' }))
+    await waitFor(() =>
+      expect(put).toHaveBeenCalledWith(
+        '/api/user/setting',
+        expect.objectContaining({
+          record_ip_log: false,
+          notify_type: 'email',
+          notification_email: 'alerts@example.com',
+        })
       )
-    ).toBeVisible()
+    )
+    expect(toggle).not.toBeChecked()
   })
 
   it('built-in and custom bindings share one compact responsive grid', async () => {
@@ -248,26 +354,30 @@ describe('security page migration', () => {
     )
   })
 
-  it('Profile retains preferences and uses the shared security controls', async () => {
-    await renderPage('/profile')
+  it('personal navigation has one Profile entry and no separate Security entry', () => {
+    const { result } = renderHook(useSidebarData)
+    const items = result.current.navGroups.find(
+      (group) => group.id === 'personal'
+    )?.items
     expect(
-      await screen.findByRole('button', { name: /^Change Password/ })
-    ).toBeInTheDocument()
+      items?.filter((item) => 'url' in item && item.url === '/profile')
+    ).toHaveLength(1)
     expect(
-      screen.getByRole('button', { name: 'Save Settings' })
-    ).toBeInTheDocument()
-    expect(screen.getByText('Account Bindings')).toBeInTheDocument()
-    await waitFor(() =>
-      expect(api.get).toHaveBeenCalledWith(
-        '/api/user/2fa/status',
-        expect.any(Object)
-      )
-    )
-    expect(api.get).toHaveBeenCalledWith('/api/user/sessions')
+      items?.some((item) => 'url' in item && item.url === '/security')
+    ).toBe(false)
   })
 
   it('a failed profile load offers retry before exposing account actions', async () => {
-    vi.mocked(api.get).mockResolvedValueOnce({ data: { success: false } })
+    const originalGet = vi.mocked(api.get).getMockImplementation()
+    assert(originalGet)
+    let failed = false
+    vi.mocked(api.get).mockImplementation(async (url, config) => {
+      if (url === '/api/user/self' && !failed) {
+        failed = true
+        return { data: { success: false } }
+      }
+      return originalGet(url, config)
+    })
     const user = userEvent.setup()
     await renderPage()
     expect(await screen.findByText('Failed to load profile')).toBeVisible()

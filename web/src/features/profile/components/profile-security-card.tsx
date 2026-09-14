@@ -16,125 +16,56 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Shield, Trash2 } from 'lucide-react'
+import { Shield } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
-import { Card, CardContent, CardHeader } from '@/components/ui/card'
-import { IconBadge } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
 import { AccessTokenCard } from '@/features/security/components/access-token-card'
-import { useDialogs } from '@/hooks/use-dialog'
+import { AccountActionCard } from '@/features/security/components/account-action-card'
 
 import type { UserProfile } from '../types'
-import { ChangePasswordDialog } from './dialogs/change-password-dialog'
-import { DeleteAccountDialog } from './dialogs/delete-account-dialog'
-
-// ============================================================================
-// Profile Security Card Component
-// ============================================================================
 
 interface ProfileSecurityCardProps {
   profile: UserProfile | null
   loading: boolean
+  onProfileUpdate: () => void
 }
 
-type DialogKey = 'password' | 'token' | 'delete'
-
-export function ProfileSecurityCard({
-  profile,
-  loading,
-}: ProfileSecurityCardProps) {
+export function ProfileSecurityCard(props: ProfileSecurityCardProps) {
   const { t } = useTranslation()
-  const dialogs = useDialogs<DialogKey>()
 
-  if (loading) {
-    return (
-      <Card data-card-hover='false' className='gap-0 overflow-hidden py-0'>
-        <CardHeader className='border-b p-3 !pb-3 sm:p-5 sm:!pb-5'>
-          <Skeleton className='h-6 w-32' />
-          <Skeleton className='mt-2 h-4 w-48' />
-        </CardHeader>
-        <CardContent className='space-y-3 p-3 sm:p-5'>
-          {['password', 'token', 'delete'].map((key) => (
-            <Skeleton key={key} className='h-16 w-full' />
-          ))}
-        </CardContent>
-      </Card>
-    )
-  }
-
-  if (!profile) return null
-
-  const securityActions = [
-    {
-      icon: Shield,
-      title: t('Change Password'),
-      description: t('Update your password to keep your account secure'),
-      action: () => dialogs.open('password'),
-      variant: 'default' as const,
-    },
-    {
-      icon: Trash2,
-      title: t('Delete Account'),
-      description: t('Permanently delete your account and all data'),
-      action: () => dialogs.open('delete'),
-      variant: 'destructive' as const,
-    },
-  ]
+  if (!props.loading && !props.profile) return null
 
   return (
     <>
       <TitledCard
         title={t('Security')}
         description={t('Manage your security settings and account access')}
-        icon={<Shield className='h-4 w-4' />}
+        icon={<Shield className='size-4' />}
         iconTone='success'
         disableHoverEffect
       >
-        <div className='grid grid-cols-1 gap-2.5 sm:gap-3 md:grid-cols-2'>
-          {securityActions.map((item) => (
-            <button
-              key={item.title}
-              type='button'
-              onClick={item.action}
-              className={`flex items-center gap-3 rounded-lg border p-3 text-left md:flex-col md:gap-2 md:p-4 md:text-center ${
-                item.variant === 'destructive' ? 'border-destructive/30' : ''
-              }`}
-            >
-              <IconBadge tone='neutral' size='sm'>
-                <item.icon />
-              </IconBadge>
-              <div className='min-w-0 md:contents'>
-                <p className='text-sm font-medium'>{item.title}</p>
-                <p className='text-muted-foreground line-clamp-1 text-xs md:line-clamp-none'>
-                  {item.description}
-                </p>
-              </div>
-            </button>
-          ))}
+        <div className='space-y-3'>
+          {props.profile ? (
+            <>
+              <AccountActionCard
+                action='password'
+                username={props.profile.username}
+                hasPassword={props.profile.has_password}
+                onUpdate={props.onProfileUpdate}
+              />
+              <AccountActionCard
+                action='delete'
+                username={props.profile.username}
+              />
+            </>
+          ) : (
+            <Skeleton className='h-32 w-full' />
+          )}
         </div>
       </TitledCard>
-
-      {/* Dialogs */}
-      <ChangePasswordDialog
-        open={dialogs.isOpen('password')}
-        onOpenChange={(open) =>
-          open ? dialogs.open('password') : dialogs.close('password')
-        }
-        username={profile.username}
-        hasPassword={profile.has_password}
-      />
-
-      <AccessTokenCard />
-
-      <DeleteAccountDialog
-        open={dialogs.isOpen('delete')}
-        onOpenChange={(open) =>
-          open ? dialogs.open('delete') : dialogs.close('delete')
-        }
-        username={profile.username}
-      />
+      {props.profile && <AccessTokenCard />}
     </>
   )
 }
