@@ -110,12 +110,17 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 		usage                                     *dto.Usage
 		audio, stream, refund, insufficient, tool bool
 		realtime, reserveInsufficient             bool
+		legacy                                    bool
 		wallet, outboundImages                    int
 		groupRatio                                float64
 		want                                      int
 		unit                                      billingexpr.BillingUnit
 		requestedImages, actualImages             int
 	}{
+		{name: "legacy audio price is retained", expression: flat, legacy: true, audio: true, usage: &dto.Usage{PromptTokens: 14, CompletionTokens: 100, TotalTokens: 114, CompletionTokenDetails: dto.OutputTokenDetails{AudioTokens: 100}}, want: 5000},
+		{name: "legacy realtime price is retained", expression: flat, legacy: true, realtime: true, usage: &dto.Usage{PromptTokens: 14, CompletionTokens: 100, TotalTokens: 114, CompletionTokenDetails: dto.OutputTokenDetails{AudioTokens: 100}}, want: 5000},
+		{name: "realtime modalities reserve and settle once", expression: `p * 2 + c * 4 + ai * 10 + ao * 20`, realtime: true, usage: &dto.Usage{PromptTokens: 14, CompletionTokens: 100, TotalTokens: 114, PromptTokensDetails: dto.InputTokenDetails{TextTokens: 10, AudioTokens: 4}, CompletionTokenDetails: dto.OutputTokenDetails{TextTokens: 10, AudioTokens: 90}}, want: 950, unit: billingexpr.BillingUnitToken},
+
 		{name: "missing usage charges once", expression: flat, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "zero usage charges once", expression: flat, usage: &dto.Usage{}, want: 5000, unit: billingexpr.BillingUnitRequest},
 		{name: "stream charges once", expression: flat, stream: true, usage: &dto.Usage{PromptTokens: 100, CompletionTokens: 20, TotalTokens: 120}, want: 5000, unit: billingexpr.BillingUnitRequest},
@@ -176,6 +181,14 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 			snapshot := &billingexpr.BillingSnapshot{BillingMode: "tiered_expr", ExprString: tc.expression, ExprHash: billingexpr.ExprHashString(tc.expression), QuotaPerUnit: common.QuotaPerUnit, GroupRatio: group, EstimatedTier: trace.MatchedTier, EstimatedBillingUnit: trace.BillingUnit, EstimatedFixedPrice: trace.FixedPrice, EstimatedQuotaAfterGroup: reservation}
 			snapshot.EstimatedImageCount = trace.ImageCount
 			info := &relaycommon.RelayInfo{UserId: user.Id, TokenId: token.Id, TokenKey: token.Key, ChannelMeta: &relaycommon.ChannelMeta{ChannelId: channel.Id}, OriginModelName: "fixed-test", UsingGroup: "default", UserGroup: "default", UserSetting: dto.UserSetting{BillingPreference: "wallet_only"}, ForcePreConsume: true, StartTime: time.Now(), IsStream: tc.stream, RelayFormat: types.RelayFormatOpenAI, PriceData: hosttypes.PriceData{GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: group}}, TieredBillingSnapshot: snapshot, BillingRequestInput: request}
+			if tc.legacy {
+				info.TieredBillingSnapshot = nil
+				info.PriceData.UsePrice = true
+				info.PriceData.ModelPrice = 0.01
+			}
+			if tc.realtime {
+				info.RelayFormat = types.RelayFormatOpenAIRealtime
+			}
 			info.SetEstimatePromptTokens(tc.estimate)
 			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
@@ -228,9 +241,17 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 						info.ResponsesUsageInfo = &relaycommon.ResponsesUsageInfo{BuiltInTools: map[string]*relaycommon.BuildInToolInfo{"fixed_billing_tool": {CallCount: 1}}}
 					}
 					if tc.realtime {
-						PostWssConsumeQuota(ctx, info, info.OriginModelName, &dto.RealtimeUsage{
-							InputTokens: tc.usage.PromptTokens, OutputTokens: tc.usage.CompletionTokens, TotalTokens: tc.usage.TotalTokens,
-						}, "")
+						liveUsage := &dto.RealtimeUsage{InputTokens: tc.usage.PromptTokens, OutputTokens: tc.usage.CompletionTokens, TotalTokens: tc.usage.TotalTokens}
+						if tc.expression != imageExpression {
+							liveUsage.InputTokenDetails = tc.usage.PromptTokensDetails
+							liveUsage.OutputTokenDetails = tc.usage.CompletionTokenDetails
+						}
+						require.NoError(t, PreWssConsumeQuota(ctx, info, liveUsage))
+						require.NoError(t, PreWssConsumeQuota(ctx, info, liveUsage), "repeated cumulative usage does not reserve twice")
+						held, err := model.GetUserQuota(user.Id, true)
+						require.NoError(t, err)
+						assert.Equal(t, quota-max(reservation, tc.want), held)
+						PostWssConsumeQuota(ctx, info, info.OriginModelName, liveUsage, "")
 					} else if tc.audio {
 						PostAudioConsumeQuota(ctx, info, tc.usage, "")
 					} else {
@@ -244,7 +265,11 @@ func runFixedPriceAccountingCases(t *testing.T, db, logDB *gorm.DB) {
 					assert.NotContains(t, log.Content, "无法扣费")
 					var other map[string]any
 					require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
-					assert.Equal(t, string(tc.unit), other["billing_unit"])
+					if tc.legacy {
+						assert.Equal(t, 0.01, other["model_price"])
+					} else {
+						assert.Equal(t, string(tc.unit), other["billing_unit"])
+					}
 					if tc.requestedImages > 0 {
 						count := tc.actualImages
 						if count == 0 {

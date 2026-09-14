@@ -70,6 +70,10 @@ Powered by [expr-lang/expr](https://github.com/expr-lang/expr). Expressions are 
 | `p * 3 + c * 15` | 500 | 没用 `ao`，音频输出包含在 `c` 里按 $15 计费 |
 | `p * 3 + c * 15 + ao * 50` | 400 | 用了 `ao`，音频 100 从 `c` 中扣除按 $50 计费 |
 
+当同时使用 `cr` 和 `ai`，且上游提供有效的 `cached_tokens_details.audio_tokens` 时，
+缓存音频归入 `cr`，从 `ai` 中移除，避免同一 token 同时按缓存和音频价格收费。
+缺少有效明细时不推测缓存音频比例。Realtime 累计用量必须保留这些缓存模态明细。
+
 #### 图片缓存与兼容性
 
 OpenAI 兼容图片接口可报告
@@ -463,7 +467,7 @@ After the upstream response returns with actual token usage:
 1. `BuildTieredTokenParams(usage, isClaudeUsageSemantic, usedVars)`:
    - Reads actual token counts from `dto.Usage`
    - For GPT-format APIs (prompt_tokens includes everything): subtracts sub-categories from P/C **only when** the expression uses their variables (detected via AST introspection of the compiled expression)
-   - For Claude-format APIs: cache reads omitted from the expression are added to input; separately priced cache remains separate
+   - For Claude-format APIs: cache reads and writes omitted from the expression are added to input; separately priced cache remains separate
 
 2. `TryTieredSettle(relayInfo, params)`:
    - Uses the captured `BillingSnapshot`, whose group-dependent fields have been refreshed from the final selected group

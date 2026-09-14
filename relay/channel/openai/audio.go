@@ -6,6 +6,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -48,6 +49,8 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 					usage.PromptTokens = simpleResponse.Usage.InputTokens
 					usage.CompletionTokens = simpleResponse.OutputTokens
 					usage.TotalTokens = simpleResponse.TotalTokens
+					usage.PromptTokensDetails.TextTokens = usage.PromptTokens
+					usage.CompletionTokenDetails.AudioTokens = usage.CompletionTokens
 				}
 			}
 			if err := helper.StringData(c, data); err != nil {
@@ -74,7 +77,7 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 		// 计算音频时长并更新 usage
 		audioFormat := "mp3" // 默认格式
 		if audioReq, ok := info.Request.(*dto.AudioRequest); ok && audioReq.ResponseFormat != "" {
-			audioFormat = audioReq.ResponseFormat
+			audioFormat = strings.ToLower(audioReq.ResponseFormat)
 		}
 
 		var duration float64
@@ -118,6 +121,20 @@ func OpenaiTTSHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 func OpenaiSTTHandler(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo, responseFormat string) (*types.NewAPIError, *dto.Usage) {
 	defer service.CloseResponseBodyGracefully(resp)
 
+	if strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
+		info.IsStream = true
+		usage := &dto.Usage{PromptTokens: info.GetEstimatePromptTokens(), TotalTokens: info.GetEstimatePromptTokens()}
+		helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
+			if reported := parseTranscriptionUsage([]byte(data)); reported != nil {
+				usage = reported
+			}
+			if err := helper.StringData(c, data); err != nil {
+				sr.Error(err)
+			}
+		})
+		return nil, usage
+	}
+
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return types.NewOpenAIError(err, types.ErrorCodeReadResponseBodyFailed, http.StatusInternalServerError), nil
@@ -125,20 +142,8 @@ func OpenaiSTTHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 	// 写入新的 response body
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
-	var responseData struct {
-		Usage *dto.Usage `json:"usage"`
-	}
-	if err := common.Unmarshal(responseBody, &responseData); err == nil && responseData.Usage != nil {
-		if responseData.Usage.TotalTokens > 0 {
-			usage := responseData.Usage
-			if usage.PromptTokens == 0 {
-				usage.PromptTokens = usage.InputTokens
-			}
-			if usage.CompletionTokens == 0 {
-				usage.CompletionTokens = usage.OutputTokens
-			}
-			return nil, usage
-		}
+	if usage := parseTranscriptionUsage(responseBody); usage != nil {
+		return nil, usage
 	}
 
 	usage := &dto.Usage{}
@@ -146,4 +151,35 @@ func OpenaiSTTHandler(c *gin.Context, resp *http.Response, info *relaycommon.Rel
 	usage.CompletionTokens = 0
 	usage.TotalTokens = usage.PromptTokens + usage.CompletionTokens
 	return nil, usage
+}
+
+// parseTranscriptionUsage accepts the audio endpoint's singular detail field
+// and the plural spelling used by compatible providers.
+func parseTranscriptionUsage(responseBody []byte) *dto.Usage {
+	var responseData struct {
+		Usage *struct {
+			dto.Usage
+			InputTokenDetails *dto.InputTokenDetails `json:"input_token_details"`
+		} `json:"usage"`
+	}
+	if err := common.Unmarshal(responseBody, &responseData); err == nil && responseData.Usage != nil {
+		if responseData.Usage.TotalTokens > 0 {
+			usage := &responseData.Usage.Usage
+			if usage.PromptTokens == 0 {
+				usage.PromptTokens = usage.InputTokens
+			}
+			if usage.CompletionTokens == 0 {
+				usage.CompletionTokens = usage.OutputTokens
+			}
+			if details := responseData.Usage.InputTokenDetails; details != nil {
+				usage.PromptTokensDetails = *details
+			} else if usage.InputTokensDetails != nil {
+				usage.PromptTokensDetails = *usage.InputTokensDetails
+			}
+			usage.CompletionTokenDetails.TextTokens = usage.CompletionTokens
+			return usage
+		}
+	}
+
+	return nil
 }

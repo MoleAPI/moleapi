@@ -30,12 +30,12 @@ func CreateTwoFAEnrollment(identity AuthSessionIdentity, authorization *AuthFlow
 			return err
 		}
 		var existing TwoFA
-		err := lockForUpdate(tx).Where("user_id = ?", identity.UserID).First(&existing).Error
+		err := lockForUpdate(tx.Unscoped()).Where("user_id = ?", identity.UserID).First(&existing).Error
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 			return err
 		}
 		if err == nil {
-			if existing.IsEnabled {
+			if existing.IsEnabled && !existing.DeletedAt.Valid {
 				return ErrTwoFAAlreadyEnabled
 			}
 			if err := tx.Unscoped().Delete(&existing).Error; err != nil {
