@@ -20,6 +20,8 @@ import { BadgePercent, ChevronRight, Copy } from 'lucide-react'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
@@ -462,7 +464,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         className='focus-visible:ring-ring absolute inset-0 z-10 cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:outline-none'
       />
 
-      <div className='flex min-w-0 items-start gap-3'>
+      <div className='flex min-w-0 flex-wrap items-center gap-3'>
         <div className='bg-muted/50 flex size-10 shrink-0 items-center justify-center rounded-lg sm:size-11'>
           <span className='[&_svg]:size-6 sm:[&_svg]:size-7'>
             {modelIcon || (
@@ -473,7 +475,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           </span>
         </div>
 
-        <div className='min-w-0 flex-1'>
+        <div className='min-w-0 flex-1 basis-40'>
           <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
             <h3
               title={props.model.model_name}
@@ -502,24 +504,23 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               </button>
             )}
           </div>
-          <p className='text-muted-foreground mt-1 line-clamp-1 text-[12px] leading-relaxed'>
-            {description || t('No description available.')}
-          </p>
         </div>
-
-        <div className='relative z-20 hidden shrink-0 items-center gap-1 sm:flex'>
-          <button
-            type='button'
+        <ModelPerfBadge perf={props.perf} className='ml-auto w-auto shrink-0'>
+          <Button
+            variant='outline'
+            size='sm'
             onClick={handleDetailsClick}
-            className='text-muted-foreground hover:text-foreground hover:bg-muted hidden items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors sm:inline-flex'
+            className='relative z-20 h-7 shrink-0 gap-1 px-2 text-xs'
           >
             {t('Details')}
             <ChevronRight className='size-3.5' />
-          </button>
-        </div>
+          </Button>
+        </ModelPerfBadge>
       </div>
+      <p className='text-muted-foreground mt-1 line-clamp-1 text-[12px] leading-relaxed'>
+        {description || t('No description available.')}
+      </p>
 
-      <ModelPerfBadge perf={props.perf} className='mt-3' />
       {dynamicSummary?.isTimePricing && (
         <p className='text-muted-foreground mt-2 text-xs'>
           {t('Current period price')}
@@ -561,12 +562,17 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       </div>
 
       {!!props.model.supported_endpoint_types?.length && (
-        <p
-          className='text-muted-foreground mt-2 truncate text-xs'
-          title={props.model.supported_endpoint_types.join(', ')}
-        >
-          {t('Endpoints')}: {props.model.supported_endpoint_types.join(', ')}
-        </p>
+        <div className='mt-2 flex min-w-0 flex-wrap items-center gap-1.5'>
+          {props.model.supported_endpoint_types.map((endpoint) => (
+            <Badge
+              key={endpoint}
+              variant='secondary'
+              className='h-auto max-w-full py-0.5 break-all whitespace-normal'
+            >
+              {endpoint}
+            </Badge>
+          ))}
+        </div>
       )}
       <div className='mt-3 flex min-w-0 items-center justify-between gap-3'>
         <div className='flex min-w-0 flex-wrap items-center gap-1.5'>

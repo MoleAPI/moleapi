@@ -162,7 +162,9 @@ describe('model cards', () => {
       })
     ).toBeVisible()
     expect(screen.getByText('No description available.')).toBeVisible()
-    expect(screen.getByRole('button', { name: 'Details' })).toBeEnabled()
+    expect(
+      within(metrics).getByRole('button', { name: 'Details' })
+    ).toBeEnabled()
   })
 
   it('uses fixed spacing between hourly status bars', () => {
@@ -170,7 +172,14 @@ describe('model cards', () => {
     const statusStrip = screen.getByRole('img', {
       name: 'Recent success-rate samples; gray bars indicate missing data.',
     })
-    expect(statusStrip).toHaveClass('gap-px')
+    expect(statusStrip).toHaveClass('gap-px', 'w-20')
+    const metrics = screen.getByLabelText(
+      'Performance metrics for the last 24 hours'
+    )
+    expect(metrics).toHaveClass('ml-auto', 'w-auto')
+    expect(metrics.parentElement).toContainElement(
+      screen.getByRole('heading', { name: 'example-model' })
+    )
     expect(statusStrip).not.toHaveClass('justify-between')
   })
 
@@ -196,14 +205,16 @@ describe('model cards', () => {
       />
     )
 
-    for (const group of groups.slice(0, 2))
-      {expect(screen.getByText(group)).toBeVisible()}
-    expect(screen.getByText('Endpoints', { exact: false })).toHaveAttribute(
-      'title',
-      endpoints.join(', ')
-    )
-    for (const tag of tags.slice(0, 5))
-      {expect(screen.getByText(tag)).toBeVisible()}
+    for (const group of groups.slice(0, 2)) {
+      expect(screen.getByText(group)).toBeVisible()
+    }
+    expect(screen.queryByText('Endpoints:')).not.toBeInTheDocument()
+    for (const endpoint of endpoints) {
+      expect(screen.getByText(endpoint)).toHaveAttribute('data-slot', 'badge')
+    }
+    for (const tag of tags.slice(0, 5)) {
+      expect(screen.getByText(tag)).toBeVisible()
+    }
     expect(screen.getByText('+1')).toHaveAttribute('title', 'pro')
     expect(screen.getByText('Token-based')).toBeVisible()
   })

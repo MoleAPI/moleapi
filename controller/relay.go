@@ -1,14 +1,11 @@
 package controller
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"net/url"
-	"sort"
 	"strings"
 	"time"
 
@@ -25,14 +22,11 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
-	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
-	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
-	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -132,57 +126,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		return
 	}
 
-	needSensitiveCheck := setting.ShouldCheckPromptSensitive()
-	needWaffoPancakeCheck := setting.ShouldCheckPromptWithWaffoPancake()
-	needModerationCheck := setting.ShouldCheckPromptWithModeration()
-	needCountToken := constant.CountToken
-	// Avoid building huge CombineText (strings.Join) when token counting and sensitive check are both disabled.
-	var meta *types.TokenCountMeta
-	if needSensitiveCheck || needWaffoPancakeCheck || needModerationCheck || needCountToken {
-		meta = request.GetTokenCountMeta()
-	} else {
-		meta = fastTokenCountMetaForPricing(request)
-	}
-
-	if safetyErr := checkPromptSafety(c, relayInfo, meta, needSensitiveCheck, needWaffoPancakeCheck, needModerationCheck); safetyErr != nil {
-		newAPIError = safetyErr
+	if newAPIError = relay.PrepareRequestBilling(c, relayInfo); newAPIError != nil {
 		return
 	}
-
-	tokens, err := service.EstimateRequestToken(c, meta, relayInfo)
-	if err != nil {
-		newAPIError = types.NewError(err, types.ErrorCodeCountTokenFailed)
-		return
-	}
-
-	relayInfo.SetEstimatePromptTokens(tokens)
-
-	priceData, err := helper.ModelPriceHelper(c, relayInfo, tokens, meta)
-	if err != nil {
-		newAPIError = types.NewError(err, types.ErrorCodeModelPriceError, types.ErrOptionWithStatusCode(http.StatusBadRequest))
-		return
-	}
-
-	// common.SetContextKey(c, constant.ContextKeyTokenCountMeta, meta)
-
-	if priceData.FreeModel {
-		logger.LogInfo(c, fmt.Sprintf("模型 %s 免费，跳过预扣费", relayInfo.OriginModelName))
-	} else {
-		newAPIError = service.PreConsumeBilling(c, priceData.QuotaToPreConsume, relayInfo)
-		if newAPIError != nil {
-			return
-		}
-	}
-
 	defer func() {
-		// Only return quota if downstream failed and quota was actually pre-consumed
-		if newAPIError != nil {
-			newAPIError = service.NormalizeViolationFeeError(newAPIError)
-			if relayInfo.Billing != nil {
-				relayInfo.Billing.Refund(c)
-			}
-			service.ChargeViolationFeeIfNeeded(c, relayInfo, newAPIError)
-		}
+		newAPIError = relay.RefundFailedRequestBilling(c, relayInfo, newAPIError)
 	}()
 
 	requestPath := c.Request.URL.Path
@@ -299,7 +247,7 @@ func CountClaudeTokens(c *gin.Context) {
 }
 
 var upgrader = websocket.Upgrader{
-	Subprotocols: []string{"realtime"}, // WS 握手支持的协议，如果有使用 Sec-WebSocket-Protocol，则必须在此声明对应的 Protocol TODO add other protocol
+	Subprotocols: []string{"realtime", "responses"}, // WS 握手支持的协议，如果有使用 Sec-WebSocket-Protocol，则必须在此声明对应的 Protocol
 	CheckOrigin: func(r *http.Request) bool {
 		return true // 允许跨域
 	},
@@ -309,280 +257,6 @@ func addUsedChannel(c *gin.Context, channelId int) {
 	useChannel := c.GetStringSlice("use_channel")
 	useChannel = append(useChannel, fmt.Sprintf("%d", channelId))
 	c.Set("use_channel", useChannel)
-}
-
-const promptModerationModel = "text-moderation-stable"
-
-type moderationScanResponse struct {
-	Error   *types.OpenAIError `json:"error,omitempty"`
-	Results []struct {
-		Flagged    bool            `json:"flagged"`
-		Categories map[string]bool `json:"categories,omitempty"`
-	} `json:"results"`
-}
-
-func checkPromptSafety(c *gin.Context, relayInfo *relaycommon.RelayInfo, meta *types.TokenCountMeta, needSensitiveCheck, needWaffoPancakeCheck, needModerationCheck bool) *types.NewAPIError {
-	if meta == nil || strings.TrimSpace(meta.CombineText) == "" {
-		return nil
-	}
-	prompt := meta.CombineText
-
-	if needSensitiveCheck {
-		contains, words := service.CheckSensitiveText(prompt)
-		if contains {
-			logger.LogWarn(c, fmt.Sprintf("user sensitive words detected: %s", strings.Join(words, ", ")))
-			return sensitiveWordsDetectedError("prompt blocked by sensitive words")
-		}
-	}
-
-	if needWaffoPancakeCheck && isImageRelayMode(relayInfo.RelayMode) {
-		result, err := service.ScanWaffoPancakePrompt(c.Request.Context(), prompt)
-		if err != nil {
-			logger.LogWarn(c, fmt.Sprintf("Waffo Pancake prompt safety check failed: %s", err.Error()))
-			return promptSafetyUnavailableError("Waffo Pancake", err)
-		}
-		if result != nil && result.Action != "" && result.Action != "allow" {
-			detail := result.Action
-			if result.ReasonCode != "" {
-				detail += "/" + result.ReasonCode
-			}
-			if len(result.MatchedCategories) > 0 {
-				detail += " categories=" + strings.Join(result.MatchedCategories, ",")
-			}
-			logger.LogWarn(c, fmt.Sprintf(
-				"Waffo Pancake prompt blocked: action=%s reason=%s request_id=%s categories=%s",
-				result.Action,
-				result.ReasonCode,
-				result.RequestID,
-				strings.Join(result.MatchedCategories, ","),
-			))
-			return promptBlockedError("prompt blocked by Waffo Pancake content safety: " + detail)
-		}
-	}
-
-	if needModerationCheck && relayInfo.RelayMode != relayconstant.RelayModeModerations {
-		flagged, categories, err := scanPromptWithModeration(c, relayInfo, prompt)
-		if err != nil {
-			logger.LogWarn(c, fmt.Sprintf("prompt moderation check failed: %s", err.Error()))
-			return promptSafetyUnavailableError("moderation", err)
-		}
-		if flagged {
-			detail := "prompt blocked by moderation"
-			if len(categories) > 0 {
-				detail += ": " + strings.Join(categories, ",")
-			}
-			logger.LogWarn(c, fmt.Sprintf("prompt blocked by moderation: categories=%s", strings.Join(categories, ",")))
-			return promptBlockedError(detail)
-		}
-	}
-
-	return nil
-}
-
-func isImageRelayMode(relayMode int) bool {
-	return relayMode == relayconstant.RelayModeImagesGenerations || relayMode == relayconstant.RelayModeImagesEdits
-}
-
-func scanPromptWithModeration(c *gin.Context, relayInfo *relaycommon.RelayInfo, prompt string) (bool, []string, error) {
-	group := moderationGroup(c, relayInfo)
-	channel, err := model.GetRandomSatisfiedChannel(group, promptModerationModel, 0, []taskdto.ChannelFilter{{
-		Kind:        taskdto.FilterRequestPath,
-		RequestPath: "/v1/moderations",
-	}})
-	if err != nil {
-		return false, nil, err
-	}
-	if channel == nil {
-		return false, nil, fmt.Errorf("no available moderation channel for group %s", group)
-	}
-
-	upstreamModel, err := moderationUpstreamModel(channel)
-	if err != nil {
-		return false, nil, err
-	}
-
-	key, _, apiErr := channel.GetNextEnabledKey()
-	if apiErr != nil {
-		return false, nil, apiErr
-	}
-	bodyBytes, err := common.Marshal(map[string]any{
-		"model": upstreamModel,
-		"input": prompt,
-	})
-	if err != nil {
-		return false, nil, err
-	}
-
-	req, err := http.NewRequestWithContext(c.Request.Context(), http.MethodPost, moderationRequestURL(channel, upstreamModel), bytes.NewReader(bodyBytes))
-	if err != nil {
-		return false, nil, err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if channel.Type == constant.ChannelTypeAzure {
-		req.Header.Set("api-key", key)
-	} else {
-		req.Header.Set("Authorization", "Bearer "+key)
-	}
-	if channel.OpenAIOrganization != nil && *channel.OpenAIOrganization != "" {
-		req.Header.Set("OpenAI-Organization", *channel.OpenAIOrganization)
-	}
-
-	client := service.GetHttpClient()
-	if client == nil {
-		client = http.DefaultClient
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, nil, err
-	}
-	defer service.CloseResponseBodyGracefully(resp)
-
-	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return false, nil, err
-	}
-	if resp.StatusCode != http.StatusOK {
-		return false, nil, fmt.Errorf("moderation upstream returned status %d: %s", resp.StatusCode, common.LocalLogPreview(string(responseBody)))
-	}
-	return moderationScanFlagged(responseBody)
-}
-
-func moderationGroup(c *gin.Context, relayInfo *relaycommon.RelayInfo) string {
-	group := relayInfo.UsingGroup
-	if group == "" {
-		group = common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
-	}
-	if group == "auto" {
-		autoGroup := common.GetContextKeyString(c, constant.ContextKeyAutoGroup)
-		if autoGroup != "" {
-			return autoGroup
-		}
-		groups := service.GetUserAutoGroup(relayInfo.UserGroup)
-		if len(groups) > 0 {
-			return groups[0]
-		}
-	}
-	if group == "" {
-		group = relayInfo.UserGroup
-	}
-	return group
-}
-
-func moderationRequestURL(channel *model.Channel, modelName string) string {
-	baseURL := strings.TrimRight(channel.GetBaseURL(), "/")
-	if channel.Type == constant.ChannelTypeAzure {
-		apiVersion := strings.TrimSpace(channel.Other)
-		if apiVersion == "" {
-			apiVersion = constant.AzureDefaultAPIVersion
-		}
-		return fmt.Sprintf("%s/openai/deployments/%s/moderations?api-version=%s", baseURL, modelName, url.QueryEscape(apiVersion))
-	}
-	return baseURL + "/v1/moderations"
-}
-
-func moderationUpstreamModel(channel *model.Channel) (string, error) {
-	modelName := promptModerationModel
-	modelMapping := channel.GetModelMapping()
-	if modelMapping == "" || modelMapping == "{}" {
-		return modelName, nil
-	}
-
-	modelMap := map[string]string{}
-	if err := common.Unmarshal([]byte(modelMapping), &modelMap); err != nil {
-		return "", errors.New("unmarshal_model_mapping_failed")
-	}
-
-	visited := map[string]bool{modelName: true}
-	for {
-		nextModel := modelMap[modelName]
-		if nextModel == "" || nextModel == modelName {
-			return modelName, nil
-		}
-		if visited[nextModel] {
-			return "", errors.New("model_mapping_contains_cycle")
-		}
-		visited[nextModel] = true
-		modelName = nextModel
-	}
-}
-
-func moderationScanFlagged(responseBody []byte) (bool, []string, error) {
-	var response moderationScanResponse
-	if err := common.Unmarshal(responseBody, &response); err != nil {
-		return false, nil, err
-	}
-	if response.Error != nil && response.Error.Message != "" {
-		return false, nil, errors.New(response.Error.Message)
-	}
-
-	matchedCategories := map[string]struct{}{}
-	flagged := false
-	for _, result := range response.Results {
-		if !result.Flagged {
-			continue
-		}
-		flagged = true
-		for category, matched := range result.Categories {
-			if matched {
-				matchedCategories[category] = struct{}{}
-			}
-		}
-	}
-
-	categories := make([]string, 0, len(matchedCategories))
-	for category := range matchedCategories {
-		categories = append(categories, category)
-	}
-	sort.Strings(categories)
-	return flagged, categories, nil
-}
-
-func sensitiveWordsDetectedError(message string) *types.NewAPIError {
-	err := types.NewErrorWithStatusCode(errors.New(message), types.ErrorCodeSensitiveWordsDetected, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
-	err.SetPublicMessage(message)
-	return err
-}
-
-func promptBlockedError(message string) *types.NewAPIError {
-	err := types.NewErrorWithStatusCode(errors.New(message), types.ErrorCodePromptBlocked, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
-	err.SetPublicMessage(message)
-	return err
-}
-
-func promptSafetyUnavailableError(source string, err error) *types.NewAPIError {
-	message := source + " content safety check failed"
-	apiErr := types.NewErrorWithStatusCode(fmt.Errorf("%s: %w", message, err), types.ErrorCodePromptBlocked, http.StatusServiceUnavailable, types.ErrOptionWithSkipRetry())
-	apiErr.SetPublicMessage(message)
-	return apiErr
-}
-
-func fastTokenCountMetaForPricing(request dto.Request) *types.TokenCountMeta {
-	if request == nil {
-		return &types.TokenCountMeta{}
-	}
-	meta := &types.TokenCountMeta{
-		TokenType: types.TokenTypeTokenizer,
-	}
-	switch r := request.(type) {
-	case *dto.GeneralOpenAIRequest:
-		maxCompletionTokens := lo.FromPtrOr(r.MaxCompletionTokens, uint(0))
-		maxTokens := lo.FromPtrOr(r.MaxTokens, uint(0))
-		if maxCompletionTokens > maxTokens {
-			meta.MaxTokens = int(maxCompletionTokens)
-		} else {
-			meta.MaxTokens = int(maxTokens)
-		}
-	case *dto.OpenAIResponsesRequest:
-		meta.MaxTokens = int(lo.FromPtrOr(r.MaxOutputTokens, uint(0)))
-	case *dto.ClaudeRequest:
-		meta.MaxTokens = int(lo.FromPtr(r.MaxTokens))
-	case *dto.ImageRequest:
-		// Pricing for image requests depends on ImagePriceRatio; safe to compute even when CountToken is disabled.
-		return r.GetTokenCountMeta()
-	default:
-		// Best-effort: leave CombineText empty to avoid large allocations.
-	}
-	return meta
 }
 
 func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service.RetryParam) (*model.Channel, *types.NewAPIError) {
@@ -617,73 +291,11 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 }
 
 func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) bool {
-	if openaiErr == nil {
-		return false
-	}
-	if service.ShouldSkipRetryAfterChannelAffinityFailure(c) {
-		return false
-	}
-	if types.IsChannelError(openaiErr) {
-		return true
-	}
-	if types.IsSkipRetryError(openaiErr) {
-		return false
-	}
-	if retryTimes <= 0 {
-		return false
-	}
-	if service.GetChannelConstraints(c).SuppressesRetry() {
-		return false
-	}
-	code := openaiErr.StatusCode
-	if code >= 200 && code < 300 {
-		return false
-	}
-	if code < 100 || code > 599 {
-		return true
-	}
-	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
-		return false
-	}
-	return operation_setting.ShouldRetryByStatusCode(code)
+	return service.ShouldRetryRelayError(c, openaiErr, retryTimes)
 }
 
 func processChannelError(c *gin.Context, channelError types.ChannelError, err *types.NewAPIError, relayInfo *relaycommon.RelayInfo) {
-	perfmetrics.RecordChannelAttempt(channelError.ChannelId, false)
-	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.Error())))
-	// 不要使用context获取渠道信息，异步处理时可能会出现渠道信息不一致的情况
-	// do not use context to get channel info, there may be inconsistent channel info when processing asynchronously
-	if service.ShouldDisableChannel(err) && channelError.AutoBan {
-		gopool.Go(func() {
-			service.DisableChannel(channelError, err.ErrorWithStatusCode())
-		})
-	}
-
-	if constant.ErrorLogEnabled && types.IsRecordErrorLog(err) {
-		// 保存错误日志到mysql中
-		userId := c.GetInt("id")
-		tokenName := c.GetString("token_name")
-		modelName := c.GetString("original_model")
-		tokenId := c.GetInt("token_id")
-		userGroup := c.GetString("group")
-		other := model.NewLogOther()
-		if c.Request != nil && c.Request.URL != nil {
-			other.SetPublic("request_path", c.Request.URL.Path)
-		}
-		other.SetPublic("error_type", err.GetErrorType())
-		other.SetPublic("error_code", err.GetErrorCode())
-		other.SetPublic("status_code", err.StatusCode)
-		service.AppendRelayLogAdminInfo(c, relayInfo, other)
-		other.SetAdmin("upstream_error", common.LogDetailPreview(err.ErrorWithStatusCode()))
-		service.AppendTaskPluginContextAuditInfo(c, other)
-		startTime := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
-		if startTime.IsZero() {
-			startTime = time.Now()
-		}
-		useTimeSeconds := int(time.Since(startTime).Seconds())
-		model.RecordErrorLog(c, userId, channelError.ChannelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
-	}
-
+	service.ProcessChannelError(c, channelError, err, relayInfo)
 }
 
 func RelayMidjourney(c *gin.Context) {
