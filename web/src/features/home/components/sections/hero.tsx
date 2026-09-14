@@ -24,7 +24,6 @@ import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 
 import { HeroTerminalDemo } from '../hero-terminal-demo'
-import { HeroTypewriter } from '../hero-typewriter'
 import { SUPPORTED_APPS, SUPPORTED_APPS_MORE_KEY } from '../supported-apps'
 
 interface HeroProps {
@@ -102,7 +101,7 @@ export function Hero(props: HeroProps) {
               <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75' />
               <span className='relative inline-flex size-1.5 rounded-full bg-blue-500 dark:bg-blue-400' />
             </span>
-            <span>{t('AI Application Infrastructure Foundation')}</span>
+            <span>{t('Four years of trusted AI access')}</span>
           </div>
 
           <h1
@@ -119,7 +118,11 @@ export function Hero(props: HeroProps) {
             className='landing-animate-fade-up opacity-0'
             style={{ animationDelay: '120ms' }}
           >
-            <HeroTypewriter />
+            <p className='text-muted-foreground mt-5 max-w-xl text-base leading-relaxed sm:text-lg'>
+              {t(
+                'Four years, one commitment: your conversations stay yours. ZDR from day one, with one-to-one model forwarding.'
+              )}
+            </p>
           </div>
 
           <div

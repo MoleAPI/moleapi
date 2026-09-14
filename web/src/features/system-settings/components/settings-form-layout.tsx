@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import type { ComponentProps, ReactNode } from 'react'
+import { useId, type ComponentProps, type ReactNode } from 'react'
 
 import { FormItem } from '@/components/ui/form'
 import { Label } from '@/components/ui/label'
@@ -37,6 +37,7 @@ type SettingsSwitchRowProps = ComponentProps<'div'>
 type SettingsControlGroupProps = ComponentProps<'div'>
 type SettingsControlChildrenProps = ComponentProps<'div'>
 type SettingsSwitchFieldProps = SettingsSwitchRowProps & {
+  controlId?: string
   checked: boolean
   onCheckedChange: (checked: boolean) => void
   label: ReactNode
@@ -107,6 +108,7 @@ export function SettingsSwitchRow({
 }
 
 export function SettingsSwitchField({
+  controlId,
   checked,
   onCheckedChange,
   label,
@@ -115,15 +117,23 @@ export function SettingsSwitchField({
   className,
   ...props
 }: SettingsSwitchFieldProps) {
+  const generatedId = useId()
+  const id = controlId ?? generatedId
   return (
     <SettingsSwitchRow className={className} {...props}>
       <SettingsSwitchContent>
-        <Label className='text-sm font-medium'>{label}</Label>
+        <Label htmlFor={id} className='text-sm font-medium'>
+          {label}
+        </Label>
         {description ? (
-          <p className='text-muted-foreground text-xs'>{description}</p>
+          <p id={`${id}-description`} className='text-muted-foreground text-xs'>
+            {description}
+          </p>
         ) : null}
       </SettingsSwitchContent>
       <Switch
+        id={id}
+        aria-describedby={description ? `${id}-description` : undefined}
         checked={checked}
         onCheckedChange={onCheckedChange}
         disabled={disabled}

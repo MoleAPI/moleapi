@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Switch } from '@/components/ui/switch'
 import { getChannelTypeLabel } from '@/features/channels/lib'
+import { handleServerError } from '@/lib/handle-server-error'
 import { resolveLocalizedText } from '@/lib/localized-text'
 
 import {
@@ -93,7 +94,7 @@ export function PluginsTable(props: PluginsTableProps) {
         setBlockedAction('disable')
         return
       }
-      toast.error(error.message)
+      handleServerError(error)
     },
   })
   const deleteMutation = useMutation({
@@ -110,7 +111,7 @@ export function PluginsTable(props: PluginsTableProps) {
         setBlockedAction('delete')
         return
       }
-      toast.error(error.message)
+      handleServerError(error)
     },
   })
   const columns = useMemo<ColumnDef<TaskPluginListItem, unknown>[]>(
@@ -430,7 +431,7 @@ export function PluginsTable(props: PluginsTableProps) {
                       queryKey: ['task-plugins'],
                     })
                   })
-                  .catch((error: Error) => toast.error(error.message))
+                  .catch((error: Error) => handleServerError(error))
               }
               if (blockedAction === 'disable' && statusTarget) {
                 statusMutation.mutate({

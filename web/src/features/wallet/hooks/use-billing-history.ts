@@ -22,6 +22,7 @@ import { toast } from 'sonner'
 
 import { useIsAdmin } from '@/hooks/use-admin'
 import { useDebounce } from '@/hooks/use-debounce'
+import { handleServerError } from '@/lib/handle-server-error'
 
 import {
   getUserBillingHistory,
@@ -92,18 +93,13 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
         setRecords(response.data.items || [])
         setTotal(response.data.total || 0)
       } else {
-        toast.error(
-          response.message || i18next.t('Failed to load billing history')
-        )
+        handleServerError(response, i18next.t('Failed to load billing history'))
         setRecords([])
         setTotal(0)
       }
     } catch (error) {
       if (requestId !== requestIdRef.current) return
-
-      // eslint-disable-next-line no-console
-      console.error('Failed to fetch billing history:', error)
-      toast.error(i18next.t('Failed to load billing history'))
+      handleServerError(error, i18next.t('Failed to load billing history'))
       setRecords([])
       setTotal(0)
     } finally {
@@ -140,13 +136,11 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
           await fetchBillingHistory()
           return true
         } else {
-          toast.error(response.message || i18next.t('Failed to complete order'))
+          handleServerError(response, i18next.t('Failed to complete order'))
           return false
         }
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error('Failed to complete order:', error)
-        toast.error(i18next.t('Failed to complete order'))
+        handleServerError(error, i18next.t('Failed to complete order'))
         return false
       } finally {
         setCompleting(false)
@@ -208,8 +202,9 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
 
   // Fetch data after the search draft has settled.
   useEffect(() => {
-    if (keyword !== debouncedKeyword || userKeyword !== debouncedUserKeyword)
+    if (keyword !== debouncedKeyword || userKeyword !== debouncedUserKeyword) {
       return
+    }
 
     fetchBillingHistory()
   }, [

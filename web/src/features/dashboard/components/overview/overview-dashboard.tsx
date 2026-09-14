@@ -51,8 +51,10 @@ import { fetchTokenKey, getApiKeys } from '@/features/keys/api'
 import type { ApiKey } from '@/features/keys/types'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getUserModels } from '@/lib/api'
+import { handleServerError } from '@/lib/handle-server-error'
 import { MOTION_TRANSITION } from '@/lib/motion'
 import { ROLE } from '@/lib/roles'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -297,7 +299,7 @@ function RequestPreview(props: {
       const result = await fetchTokenKey(props.example.keyId)
       const key = result.success && result.data?.key ? result.data.key : ''
       if (!key) {
-        toast.error(result.message || t('Failed to copy to clipboard'))
+        handleServerError(result, t('Failed to copy to clipboard'))
         return
       }
 
@@ -312,6 +314,8 @@ function RequestPreview(props: {
       } else {
         toast.error(t('Failed to copy to clipboard'))
       }
+    } catch (error) {
+      handleServerError(error, t('Failed to copy to clipboard'))
     } finally {
       setIsCopying(false)
     }
@@ -477,7 +481,7 @@ export function OverviewDashboard() {
   const apiKeysQuery = useQuery({
     queryKey: ['dashboard', 'overview', 'api-keys'],
     queryFn: async () => {
-      const result = await getApiKeys({ p: 1, size: 10 })
+      const result = requireServerSuccess(await getApiKeys({ p: 1, size: 10 }))
       return result.success ? (result.data?.items ?? []) : []
     },
     staleTime: 60 * 1000,
@@ -486,7 +490,7 @@ export function OverviewDashboard() {
   const modelsQuery = useQuery({
     queryKey: ['dashboard', 'overview', 'user-models'],
     queryFn: async () => {
-      const result = await getUserModels()
+      const result = requireServerSuccess(await getUserModels())
       return result.success ? (result.data ?? []) : []
     },
     staleTime: 5 * 60 * 1000,

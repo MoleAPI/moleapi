@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
@@ -44,6 +45,6 @@ func TestGetInviteRebateTopUpsHidesDatabaseErrors(t *testing.T) {
 	}
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.False(t, response.Success)
-	assert.Equal(t, "common.database_error", response.Message)
+	assert.Equal(t, common.TranslateMessage(context, i18n.MsgDatabaseError), response.Message)
 	assert.NotContains(t, recorder.Body.String(), "database is closed")
 }

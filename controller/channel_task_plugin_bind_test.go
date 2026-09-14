@@ -145,7 +145,7 @@ export function parseTaskResult() { return {}; }
 		t.Cleanup(func() { jsplugin.DefaultRegistry.Unregister(key) })
 	}
 	body := func(pluginKey string) string {
-		return fmt.Sprintf(`{"mode":"single","channel":{"type":61,"name":"%s","key":"sk","models":"doc","group":"default","setting":"{\"task_plugin_key\":\"%s\"}"}}`, pluginKey, pluginKey)
+		return fmt.Sprintf(`{"mode":"single","channel":{"type":%d,"name":"%s","key":"sk","models":"doc","group":"default","setting":"{\"task_plugin_key\":\"%s\"}"}}`, constant.ChannelTypeTaskPlugin, pluginKey, pluginKey)
 	}
 
 	noDefault := postAddChannel(t, 1, common.RoleRootUser, body("bind-no-default"))

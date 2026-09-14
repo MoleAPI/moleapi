@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import i18next from 'i18next'
 import type { ComponentType } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -153,9 +154,11 @@ async function renderCell(columnId: string, isAdmin = false, value = log) {
 
   return renderToStaticMarkup(
     <I18nextProvider i18n={i18n}>
-      <UsageLogsProvider>
-        <TestCell columnId={columnId} isAdmin={isAdmin} value={value} />
-      </UsageLogsProvider>
+      <QueryClientProvider client={new QueryClient()}>
+        <UsageLogsProvider>
+          <TestCell columnId={columnId} isAdmin={isAdmin} value={value} />
+        </UsageLogsProvider>
+      </QueryClientProvider>
     </I18nextProvider>
   )
 }
@@ -520,9 +523,11 @@ test('desktop common logs keep full values on one horizontally scrollable row', 
 
   const layoutHtml = renderToStaticMarkup(
     <I18nextProvider i18n={i18n}>
-      <UsageLogsProvider>
-        <TestDesktopLayout />
-      </UsageLogsProvider>
+      <QueryClientProvider client={new QueryClient()}>
+        <UsageLogsProvider>
+          <TestDesktopLayout />
+        </UsageLogsProvider>
+      </QueryClientProvider>
     </I18nextProvider>
   )
   const timeHtml = await renderCell('created_at', true)

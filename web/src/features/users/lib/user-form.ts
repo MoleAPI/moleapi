@@ -24,6 +24,7 @@ import {
   normalizeAdminPermissions,
 } from '@/lib/admin-permissions'
 import { quotaUnitsToDollars } from '@/lib/format'
+import { accountPasswordSchema } from '@/lib/password-policy'
 import { ROLE } from '@/lib/roles'
 
 import { DEFAULT_GROUP } from '../constants'
@@ -36,7 +37,7 @@ import type { UserFormData, User } from '../types'
 export const userFormSchema = z.object({
   username: z.string().min(1, 'Username is required'),
   display_name: z.string().optional(),
-  password: z.string().optional(),
+  password: accountPasswordSchema.or(z.literal('')).optional(),
   role: z.number().optional(),
   quota_dollars: z.number().min(0).optional(),
   invite_rebate_percent: z.number().min(0).max(100).optional(),

@@ -33,7 +33,7 @@ import type {
   PrefillGroupsResponse,
   SyncLocale,
   SyncSource,
-  SyncOverwritePayload,
+  MetadataSyncRequest,
   DeploymentSettingsResponse,
   ListDeploymentsResponse,
   ModelDescriptionExport,
@@ -78,7 +78,10 @@ export async function getModel(id: number): Promise<GetModelResponse> {
 export async function createModel(
   data: Partial<Model>
 ): Promise<{ success: boolean; message?: string; data?: Model }> {
-  const res = await api.post('/api/models/', data)
+  const res = await api.post('/api/models/', data, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
   return res.data
 }
 
@@ -88,7 +91,10 @@ export async function createModel(
 export async function updateModel(
   data: Partial<Model> & { id: number }
 ): Promise<{ success: boolean; message?: string; data?: Model }> {
-  const res = await api.put('/api/models/', data)
+  const res = await api.put('/api/models/', data, {
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
   return res.data
 }
 
@@ -107,22 +113,15 @@ export async function updateModelStatus(
  * Delete model
  */
 export async function deleteModel(
-  id: number
-): Promise<{ success: boolean; message?: string }> {
-  const res = await api.delete(`/api/models/${id}`)
-  return res.data
-}
-
-export async function exportModelDescriptions(): Promise<ModelDescriptionExport> {
-  const res = await api.get('/api/models/descriptions/export')
-  return res.data
-}
-
-export async function importModelDescriptions(
-  data: ModelDescriptionExport
-): Promise<ModelDescriptionImportResponse> {
-  const res = await api.post('/api/models/descriptions/import', data, {
-    skipBusinessError: true,
+  id: number,
+  removeFromChannels = false,
+  removePricing = false
+): Promise<{ success: boolean; message?: string; data: ModelDeleteResult }> {
+  const res = await api.delete(`/api/models/${id}`, {
+    params: {
+      remove_from_channels: removeFromChannels,
+      remove_pricing: removePricing,
+    },
   })
   return res.data
 }
@@ -148,6 +147,7 @@ export async function getVendors(params?: {
  * Search vendors
  */
 export async function searchVendors(params: {
+  association?: string
   keyword?: string
   p?: number
   page_size?: number
@@ -201,11 +201,9 @@ export async function deleteVendor(
 /**
  * Sync upstream models (missing only or with overwrite)
  */
-export async function syncUpstream(params?: {
-  locale?: SyncLocale
-  source?: SyncSource
-  overwrite?: SyncOverwritePayload[]
-}): Promise<SyncUpstreamResponse> {
+export async function syncUpstream(
+  params: MetadataSyncRequest
+): Promise<SyncUpstreamResponse> {
   const res = await api.post('/api/models/sync_upstream', params)
   return res.data
 }
@@ -230,17 +228,6 @@ export async function previewUpstreamDiff(params?: {
     : '/api/models/sync_upstream/preview'
   const res = await api.get(url)
   return res.data
-}
-
-/**
- * Apply upstream overwrite
- */
-export async function applyUpstreamOverwrite(params: {
-  overwrite: SyncOverwritePayload[]
-  locale?: SyncLocale
-  source?: SyncSource
-}): Promise<SyncUpstreamResponse> {
-  return syncUpstream(params)
 }
 
 // ============================================================================
@@ -647,3 +634,39 @@ export async function checkClusterNameAvailability(name: string): Promise<{
   })
   return res.data
 }
+
+export interface ModelDeleteResult {
+  deleted_count: number
+  updated_channels: number
+}
+
+export async function deleteModels(
+  modelIds: number[],
+  removeFromChannels = false,
+  removePricing = false
+): Promise<{ success: boolean; message?: string; data: ModelDeleteResult }> {
+  const res = await api.post('/api/models/delete', {
+    model_ids: modelIds,
+    remove_from_channels: removeFromChannels,
+    remove_pricing: removePricing,
+  })
+  return res.data
+}
+
+export async function exportModelDescriptions(): Promise<ModelDescriptionExport> {
+  const res = await api.get('/api/models/descriptions/export')
+  return res.data
+}
+
+export async function importModelDescriptions(
+  data: ModelDescriptionExport
+): Promise<ModelDescriptionImportResponse> {
+  const res = await api.post('/api/models/descriptions/import', data, {
+    skipBusinessError: true,
+  })
+  return res.data
+}
+
+// ============================================================================
+// Vendor Management
+// ============================================================================

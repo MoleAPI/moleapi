@@ -21,51 +21,14 @@ import { expect, test, vi } from 'vitest'
 
 import { AccessTokenDialog } from '../access-token-dialog'
 
-const generate = vi.fn(async () => true)
-
-vi.mock('../../../hooks', () => ({
-  useAccessToken: () => ({
-    token: '',
-    generating: false,
-    generate,
-    clearToken: vi.fn(),
-  }),
-}))
-
-vi.mock('@/components/dialog', () => ({
-  Dialog: (props: {
-    open: boolean
-    children: React.ReactNode
-    footer: React.ReactNode
-  }) =>
-    props.open ? (
-      <div>
-        {props.children}
-        {props.footer}
-      </div>
-    ) : null,
-}))
-
-vi.mock('@/components/confirm-dialog', () => ({
-  ConfirmDialog: (props: {
-    open: boolean
-    confirmText: React.ReactNode
-    handleConfirm: () => void
-  }) =>
-    props.open ? (
-      <button type='button' onClick={props.handleConfirm}>
-        {props.confirmText}
-      </button>
-    ) : null,
-}))
-
-test('rotates an access token only after explicit confirmation', async () => {
-  render(<AccessTokenDialog open onOpenChange={() => undefined} />)
-
-  expect(generate).not.toHaveBeenCalled()
-  fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }))
-  expect(generate).not.toHaveBeenCalled()
-
-  fireEvent.click(screen.getByRole('button', { name: 'Regenerate token' }))
-  expect(generate).toHaveBeenCalledOnce()
+test('shows the generated token until the user closes it', () => {
+  const close = vi.fn()
+  render(<AccessTokenDialog token='test-token' onClose={close} />)
+  expect(screen.getByLabelText('Token')).toHaveValue('test-token')
+  expect(screen.getByLabelText('Token')).toHaveAttribute('readonly')
+  expect(
+    screen.queryByRole('button', { name: 'Regenerate' })
+  ).not.toBeInTheDocument()
+  fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0])
+  expect(close).toHaveBeenCalledOnce()
 })

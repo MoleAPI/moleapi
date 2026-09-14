@@ -130,6 +130,7 @@ export type DataTablePageProps<TData> = {
    * Rendered only on desktop (mobile selection is uncommon).
    */
   bulkActions?: React.ReactNode
+  showMobileBulkActions?: boolean
 
   /**
    * Custom mobile list node — fully replaces the default {@link MobileCardList}.
@@ -141,6 +142,7 @@ export type DataTablePageProps<TData> = {
    * Ignored if `mobile` is provided.
    */
   mobileProps?: {
+    enableRowSelection?: boolean
     getRowKey?: (row: Row<TData>) => string | number
     getRowClassName?: (row: Row<TData>) => string | undefined
   }
@@ -351,7 +353,7 @@ export function DataTablePage<TData>(props: DataTablePageProps<TData>) {
 
       {/* Bulk actions are typically a fixed-position toolbar; let the consumer
           handle its own visibility, we just gate it to non-mobile. */}
-      {!showMobile && props.bulkActions}
+      {(!showMobile || props.showMobileBulkActions) && props.bulkActions}
 
       {paginationNode}
     </>
@@ -467,6 +469,7 @@ function renderMobile<TData>(
           isLoading={props.isLoading}
           emptyTitle={props.emptyTitle}
           emptyDescription={props.emptyDescription}
+          enableRowSelection={props.mobileProps?.enableRowSelection}
           getRowKey={props.mobileProps?.getRowKey}
           getRowClassName={mobileGetRowClassName}
         />

@@ -1,8 +1,10 @@
 package controller
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -16,6 +18,20 @@ import (
 // action 的 params 填充。本地化展示文案在前端 i18n 模板中维护，本表是语言中立的
 // 英文基线——调用方因此无需在每个埋点处手写句子（避免与 params 重复书写同一份值）。
 var auditContentTemplates = map[string]string{
+	"redemption.delete_batch":          "Batch deleted ${count} redemption codes",
+	"user.email_binding_resend":        "Email confirmation code resend",
+	"user.binding_unbind":              "Account unlinking",
+	"user.binding_bind":                "Account binding",
+	"user.binding_start":               "Account binding request",
+	"user.password_change":             "Account password change",
+	"user.security_verify":             "Completed security verification",
+	"user.2fa_backup_codes":            "Regenerated two-factor backup codes",
+	"user.2fa_disable_self":            "Disabled two-factor authentication",
+	"user.2fa_enable":                  "Enabled two-factor authentication",
+	"user.2fa_setup":                   "Started two-factor authentication setup",
+	"access_token.revoke":              "Revoked the system access token",
+	"access_token.generate":            "Generated a system access token",
+	"user.account_delete":              "Account deletion",
 	"user.create":                      "Created user ${username} (role ${role})",
 	"user.update":                      "Updated user ${username} (ID: ${id})",
 	"user.delete":                      "Deleted user ${username} (ID: ${id})",
@@ -33,24 +49,28 @@ var auditContentTemplates = map[string]string{
 	"option.model_pricing.import":      "Imported ${updated_options} model pricing settings",
 	"option.update":                    "Updated system setting ${key}",
 
-	"channel.create":              "Created channel ${name} (type ${type}, count ${count})",
-	"channel.update":              "Updated channel ${name} (ID: ${id})",
-	"channel.delete":              "Deleted channel ${name} (ID: ${id})",
-	"channel.delete_batch":        "Batch deleted ${count} channels",
-	"channel.delete_disabled":     "Deleted all disabled channels (${count})",
-	"channel.key_view":            "Viewed channel key ${name} (ID: ${id})",
-	"channel.tag_disable":         "Disabled channels with tag ${tag}",
-	"channel.tag_enable":          "Enabled channels with tag ${tag}",
-	"channel.tag_edit":            "Edited channels with tag ${tag}",
-	"channel.tag_batch_set":       "Batch set tag for ${count} channels",
-	"channel.copy":                "Copied channel (source ID: ${sourceId}) to ${name} (new ID: ${id})",
-	"channel.multi_key_manage":    "Multi-key management ${action} on channel (ID: ${id})",
-	"channel.status_update":       "Updated channel ${id} status to ${status}",
-	"channel.status_update_batch": "Updated ${count} of ${total} channels to ${status}",
-	"channel.upstream_apply":      "Applied upstream model changes to channel (ID: ${id})",
-	"channel.upstream_apply_all":  "Applied upstream model changes to ${count} channels",
-	"channel.upstream_detect":     "Detected upstream model changes for channel ${name} (ID: ${id})",
-	"channel.upstream_detect_all": "Started upstream model update detection task ${task_id}",
+	"channel.create":                   "Created channel ${name} (type ${type}, count ${count})",
+	"channel.update":                   "Updated channel ${name} (ID: ${id})",
+	"channel.delete":                   "Deleted channel ${name} (ID: ${id})",
+	"channel.delete_batch":             "Batch deleted ${count} channels",
+	"channel.delete_disabled":          "Deleted all disabled channels (${count})",
+	"channel.key_view":                 "Viewed channel key ${name} (ID: ${id})",
+	"channel.tag_disable":              "Disabled channels with tag ${tag}",
+	"channel.tag_enable":               "Enabled channels with tag ${tag}",
+	"channel.tag_edit":                 "Edited channels with tag ${tag}",
+	"channel.tag_batch_set":            "Batch set tag for ${count} channels",
+	"channel.copy":                     "Copied channel (source ID: ${sourceId}) to ${name} (new ID: ${id})",
+	"channel.multi_key_manage":         "Multi-key management ${action} on channel (ID: ${id})",
+	"channel.status_update":            "Updated channel ${id} status to ${status}",
+	"channel.status_update_batch":      "Updated ${count} of ${total} channels to ${status}",
+	"channel.upstream_apply":           "Applied upstream model changes to channel (ID: ${id})",
+	"channel.upstream_apply_all":       "Applied upstream model changes to ${count} channels",
+	"channel.upstream_detect":          "Detected upstream model changes for channel ${name} (ID: ${id})",
+	"channel.upstream_detect_all":      "Started upstream model update detection task ${task_id}",
+	"option.passkey_domains":           "Updated Passkey domains: removed ${domains}; affected ${known}; unknown ${unknown}",
+	"option.passkey_domains_confirmed": "Confirmed removal of Passkey domains: ${domains}; affected ${known}; unknown ${unknown}",
+	"option.passkey_domains_blocked":   "Passkey domain change blocked: ${domains}; affected ${known}; unknown ${unknown}",
+	"option.passkey_domains_failed":    "Passkey domain update failed",
 
 	"redemption.create":  "Created ${count} redemption codes named ${name} (${quota} each)",
 	"topup.invoice_view": "Viewed invoice for top-up ${trade_no} (ID: ${topup_id})",
@@ -58,6 +78,33 @@ var auditContentTemplates = map[string]string{
 	"subscription.plan_reset":      "Reset active subscriptions for plan ${plan_id}",
 	"subscription.plan_delete":     "Deleted subscription plan ${plan_title} (ID: ${plan_id})",
 	"subscription.user_plan_reset": "Reset active plan ${plan_id} subscriptions for user ${target_user_id}",
+}
+
+func recordPasskeyDomainAudit(c *gin.Context, change *model.PasskeyDomainChange, confirmed bool, err error) {
+	confirmed = confirmed && err == nil && change != nil && len(change.RemovedRPIDs) > 0
+	params := map[string]any{"success": err == nil, "confirmed": confirmed}
+	if change != nil {
+		params["domains"] = strings.Join(change.RemovedRPIDs, ", ")
+		params["removed_rp_ids"] = change.RemovedRPIDs
+		params["known"] = change.AffectedCredentials
+		params["unknown"] = change.UnknownCredentials
+		params["previous_rp_id"] = change.PreviousRPID
+		params["effective_rp_id"] = change.EffectiveRPID
+	}
+	action := "option.passkey_domains"
+	if errors.Is(err, model.ErrPasskeyDomainRemovalConfirmation) {
+		action = "option.passkey_domains_blocked"
+	} else if err != nil {
+		action = "option.passkey_domains_failed"
+	} else if confirmed && change != nil && len(change.RemovedRPIDs) > 0 {
+		action = "option.passkey_domains_confirmed"
+	}
+	auditInfo := &model.AuditRequestInfo{
+		Method: c.Request.Method, Route: c.FullPath(), Path: c.FullPath(),
+		Status: c.Writer.Status(), Success: err == nil,
+	}
+	model.RecordOperationAuditLog(c.GetInt("id"), c.GetInt("role"), auditContentEN(action, params), c.ClientIP(), action, params, auditAdminInfo(c), auditInfo, c)
+	markAuditLogged(c)
 }
 
 // auditContentEN 按 action 模板渲染英文兜底文本；未登记的 action 退回 action 本身。
