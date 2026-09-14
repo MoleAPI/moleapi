@@ -35,6 +35,17 @@ func listModelsMeta(c *gin.Context, keyword, vendor string) {
 		return
 	}
 	pageInfo := common.GetPageQuery(c)
+	if squareState != "" {
+		for _, key := range []string{"p", "page", "page_size"} {
+			if raw := c.Query(key); raw != "" {
+				value, err := strconv.Atoi(raw)
+				if err != nil || value < 1 {
+					c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid pagination"})
+					return
+				}
+			}
+		}
+	}
 	offset, limit := pageInfo.GetStartIdx(), pageInfo.GetPageSize()
 	if squareState != "" {
 		offset, limit = 0, -1

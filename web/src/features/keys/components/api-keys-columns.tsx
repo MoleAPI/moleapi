@@ -33,6 +33,7 @@ import { toIntlLocale } from '@/i18n/languages'
 import { getUserGroups } from '@/lib/api'
 import dayjs from '@/lib/dayjs'
 import { formatQuota } from '@/lib/format'
+import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import { API_KEY_STATUSES } from '../constants'
@@ -56,7 +57,7 @@ function getQuotaProgressColor(percentage: number): string {
 function useGroupRatios(): Record<string, number | string> {
   const { data } = useQuery({
     queryKey: ['user-groups'],
-    queryFn: getUserGroups,
+    queryFn: async () => requireServerSuccess(await getUserGroups()),
     staleTime: 0,
     select: (res) => {
       if (!res.success || !res.data) return {}

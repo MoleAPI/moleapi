@@ -26,6 +26,8 @@ import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useDebounce } from '@/hooks/use-debounce'
+import { handleServerError } from '@/lib/handle-server-error'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { checkClusterNameAvailability, updateDeploymentName } from '../../api'
 import { deploymentsQueryKeys } from '../../lib'
@@ -55,8 +57,12 @@ export function RenameDeploymentDialog({
 
   const { data: checkRes, isFetching: isChecking } = useQuery({
     queryKey: ['deployment-rename-check', debouncedTrimmed],
-    queryFn: () =>
-      debouncedTrimmed ? checkClusterNameAvailability(debouncedTrimmed) : null,
+    queryFn: async () =>
+      requireServerSuccess(
+        await (debouncedTrimmed
+          ? checkClusterNameAvailability(debouncedTrimmed)
+          : null)
+      ),
     enabled: open && Boolean(debouncedTrimmed),
     staleTime: 10_000,
   })
@@ -106,9 +112,9 @@ export function RenameDeploymentDialog({
         onOpenChange(false)
         return
       }
-      toast.error(res.message || t('Rename failed'))
+      handleServerError(res, t('Rename failed'))
     } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : t('Rename failed'))
+      handleServerError(err, t('Rename failed'))
     } finally {
       setIsSubmitting(false)
     }

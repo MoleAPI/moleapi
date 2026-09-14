@@ -440,6 +440,7 @@ func newAuditTestDatabase(t *testing.T, kind, dsn string) (*gorm.DB, string) {
 		path := t.TempDir() + "/audit.db"
 		db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
 		require.NoError(t, err)
+		trackAuditTestDatabase(t, db)
 		return db, path
 	}
 	require.NotEmpty(t, dsn)
@@ -589,6 +590,7 @@ func verifyAuditJSONStorage(t *testing.T) {
 	assert.JSONEq(t, `{}`, string(empty))
 	for range 2 {
 		require.NoError(t, model.InitLogDB())
+		trackAuditTestDatabase(t, model.LOG_DB)
 	}
 	entries, total, err = model.GetAuditLogs(filter, 0, 20, common.RoleRootUser)
 	require.NoError(t, err)
@@ -682,7 +684,9 @@ func TestAuditDatabaseMatrix(t *testing.T) {
 					}
 					for range 2 {
 						require.NoError(t, model.InitDB())
+						trackAuditTestDatabase(t, model.DB)
 						require.NoError(t, model.InitLogDB())
+						trackAuditTestDatabase(t, model.LOG_DB)
 					}
 					if !upgrade {
 						require.NoError(t, db.Create(&model.User{Username: "fresh-owner", Password: "placeholder", AffCode: "fresh-aff"}).Error)
@@ -782,7 +786,9 @@ func TestIndependentAuditLogStores(t *testing.T) {
 				t.Setenv("LOG_SQL_DSN", isolatedDSN)
 				t.Setenv("LOG_SQL_CLICKHOUSE_TTL_DAYS", "7")
 				require.NoError(t, model.InitLogDB())
+				trackAuditTestDatabase(t, model.LOG_DB)
 				require.NoError(t, model.InitLogDB())
+				trackAuditTestDatabase(t, model.LOG_DB)
 				if upgrade {
 					var old model.Log
 					require.NoError(t, model.LOG_DB.Where("request_id = ?", "legacy-split-request").Take(&old).Error)
@@ -849,3 +855,10 @@ CREATE TABLE IF NOT EXISTS logs (
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(toDateTime(created_at))
 ORDER BY (created_at, request_id)`
+
+func trackAuditTestDatabase(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	connection, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, connection.Close()) })
+}

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -34,7 +35,7 @@ func setupManageUserTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	model.DB, model.LOG_DB = db, db
 	require.NoError(t, db.AutoMigrate(
-		&model.User{}, &model.UserSession{}, &model.Log{}, &model.CasbinRule{}, &model.AuthzRole{},
+		&model.User{}, &model.UserSession{}, &model.Log{}, &model.AuditLog{}, &model.CasbinRule{}, &model.AuthzRole{},
 	))
 
 	t.Cleanup(func() {
@@ -173,22 +174,21 @@ func TestManageUserQuotaAuditIncludesRawQuota(t *testing.T) {
 	recorder := performManageUserRequest(t, fmt.Sprintf(`{"id":%d,"action":"add_quota","mode":"subtract","value":25}`, user.Id))
 	assert.Contains(t, recorder.Body.String(), `"success":true`)
 
-	var log model.Log
-	require.NoError(t, db.Where("type = ?", model.LogTypeManage).First(&log).Error)
+	var log model.AuditLog
+	require.NoError(t, db.Where("action = ?", "user.quota_subtract").First(&log).Error)
+	require.NotNil(t, log.Other.Op)
+	assert.Equal(t, 9999, log.UserId)
+	assert.Equal(t, "user.quota_subtract", log.Other.Op.Action)
+	assert.Equal(t, fmt.Sprint(user.Id), string(log.Other.Op.Params["target_user_id"].(json.RawMessage)))
+	assert.Equal(t, "25", string(log.Other.Op.Params["quota_raw"].(json.RawMessage)))
 	var other map[string]interface{}
-	require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
-	op := other["op"].(map[string]interface{})
-	params := op["params"].(map[string]interface{})
-	assert.Equal(t, "user.quota_subtract", op["action"])
-	assert.EqualValues(t, user.Id, params["target_user_id"])
-	assert.EqualValues(t, 25, params["quota_raw"])
 
 	var rewardLog model.Log
 	require.NoError(t, db.Where("user_id = ? AND type = ?", user.Id, model.LogTypeSystem).First(&rewardLog).Error)
 	assert.Equal(t, -25, rewardLog.Quota)
 	assert.Contains(t, rewardLog.Content, "管理员调整额度")
 	require.NoError(t, common.UnmarshalJsonStr(rewardLog.Other, &other))
-	op = other["op"].(map[string]interface{})
+	op := other["op"].(map[string]interface{})
 	assert.Equal(t, "user.quota_subtract", op["action"])
 }
 

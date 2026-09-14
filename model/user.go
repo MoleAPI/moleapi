@@ -1213,6 +1213,13 @@ func (user *User) delete(identity *AuthSessionIdentity) error {
 	}
 	var nextAuthVersion int64
 	if err := DB.Transaction(func(tx *gorm.DB) error {
+		if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+			// Acquire SQLite's write lock before reading; a concurrent proof claim
+			// can otherwise prevent the read transaction from upgrading its lock.
+			if err := tx.Model(&User{}).Where("id = ?", user.Id).UpdateColumn("auth_version", gorm.Expr("auth_version")).Error; err != nil {
+				return err
+			}
+		}
 		if identity != nil {
 			if err := ValidateAuthSessionWithTx(tx, *identity); err != nil {
 				return err

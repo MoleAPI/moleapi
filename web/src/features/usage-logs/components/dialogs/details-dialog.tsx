@@ -41,6 +41,8 @@ import { IconBadge, type IconBadgeTone } from '@/components/ui/icon-badge'
 import { Label } from '@/components/ui/label'
 import { DynamicPricingBreakdown } from '@/features/pricing/components/dynamic-pricing-breakdown'
 import { usePricingData } from '@/features/pricing/hooks/use-pricing-data'
+import { BILLING_PRICING_VARS } from '@/features/pricing/lib/billing-expr'
+import { pluginUsageSchema } from '@/features/pricing/lib/plugin-pricing'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
@@ -397,13 +399,13 @@ function BillingBreakdown(props: {
       for (const entry of tieredSummary.priceEntries) {
         rows.push({
           label: t(entry.shortLabel),
-          value: `${fmtPrice(entry.price)}/M`,
+          value: `${fmtPrice(entry.price)}/${entry.unit ? t(entry.unit) : 'M'}`,
         })
       }
     } else {
       rows.push({
         label: t('Matched Tier'),
-        value: t('No matching results'),
+        value: other.matched_tier || t('No matching results'),
       })
     }
   } else if (isPerCall) {
@@ -595,6 +597,16 @@ function BillingBreakdown(props: {
     for (const entry of tieredSummary.priceEntries) {
       if (entry.field === 'fixedPrice') {
         calculationParts.push(`${t('Per-call')} ${fmtPrice(entry.price)}`)
+      } else if (other.billing_tokens) {
+        const variable = BILLING_PRICING_VARS.find(
+          (item) => item.field === entry.field
+        )
+        if (variable)
+          {addTokenTerm(
+            t(variable.shortLabel),
+            other.billing_tokens[variable.key] ?? 0,
+            entry.price
+          )}
       } else if (entry.field === 'inputPrice') {
         addTokenTerm(t('Input'), tieredInputTokens, entry.price)
       } else if (entry.field === 'outputPrice') {
@@ -785,7 +797,7 @@ function TokenBreakdown(props: { log: UsageLog; inline?: boolean }) {
     imageBreakdown.input > 0 ||
     imageBreakdown.output > 0
 
-  if (!hasTextTokens) return null
+  if (!hasTextTokens && !other?.billing_tokens) return null
 
   const rows: Array<{ label: string; value: string }> = []
 
@@ -834,9 +846,36 @@ function TokenBreakdown(props: { log: UsageLog; inline?: boolean }) {
     })
   }
 
-  const renderedRows = rows.map((row) => (
-    <DetailRow key={row.label} label={row.label} value={row.value} mono />
-  ))
+  const renderedRows = (
+    <>
+      {rows.map((row) => (
+        <DetailRow key={row.label} label={row.label} value={row.value} mono />
+      ))}
+      {other?.billing_tokens && (
+        <div
+          role='group'
+          aria-label={t('Billable token breakdown')}
+          className='space-y-2'
+        >
+          <Label className='text-xs font-semibold'>
+            {t('Billable token breakdown')}
+          </Label>
+          {BILLING_PRICING_VARS.map((variable) => {
+            const count = other.billing_tokens?.[variable.key]
+            if (count === undefined || !Number.isFinite(count)) return null
+            return (
+              <DetailRow
+                key={variable.key}
+                label={t(variable.shortLabel)}
+                value={count.toLocaleString()}
+                mono
+              />
+            )
+          })}
+        </div>
+      )}
+    </>
+  )
 
   if (props.inline) return <div className='contents'>{renderedRows}</div>
 
@@ -950,9 +989,12 @@ export function DetailsDialog(props: DetailsDialogProps) {
     other?.billing_mode === 'tiered_expr' &&
     !!other?.expr_b64
   const pricingData = usePricingData(props.open && isTieredBilling)
-  const billingUsageSchema = pricingData.models.find(
-    (model) => model.model_name === props.log.model_name
-  )?.billing_usage_schema
+  const billingUsageSchema = pluginUsageSchema(
+    pricingData.models.find(
+      (model) => model.model_name === props.log.model_name
+    ),
+    other?.admin_info?.task_plugin?.key
+  )
   const hasAudioTokens = other?.ws || other?.audio
   const showTiming = isTimingLogType(props.log.type)
   const showAdminIp =
@@ -1640,10 +1682,18 @@ export function DetailsDialog(props: DetailsDialogProps) {
         {/* Tiered pricing breakdown (when billing_mode is tiered_expr) */}
         {isTieredBilling && other?.expr_b64 && (
           <DetailSection label={t('Dynamic Pricing')}>
+            {other.image_count !== undefined && (
+              <DetailRow
+                label={t('Billable image count')}
+                value={other.image_count}
+              />
+            )}
             <DynamicPricingBreakdown
               compact
               billingExpr={decodeBillingExprB64(other.expr_b64)}
               matchedTierLabel={other.matched_tier}
+              matchedBillingUnit={other.billing_unit}
+              matchedFixedPrice={other.fixed_price}
               requestRules={other.request_rules}
               hideCacheColumns={!hasAnyCacheTokens(other)}
               usageSchema={billingUsageSchema}

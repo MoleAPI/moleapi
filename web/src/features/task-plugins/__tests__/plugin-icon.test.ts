@@ -38,13 +38,13 @@ describe('resolvePluginIcon', () => {
     )
   })
 
-  test('uses the first channel type when icon is absent', () => {
+  test('uses its own name when compatible channel types have no icon', () => {
     assert.deepEqual(
       resolvePluginIcon({
         channelTypes: [55, 1],
         key: 'sora',
       }),
-      { kind: 'lobe', name: 'OpenAI.Color' }
+      { kind: 'text', label: 'SO', colorSeed: 'sora' }
     )
   })
 

@@ -22,7 +22,6 @@ import type { Table as TanstackTable } from '@tanstack/react-table'
 import { Database } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 
 import {
   DISABLED_ROW_DESKTOP,
@@ -43,6 +42,7 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { formatQuota } from '@/lib/format'
+import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import { getApiKeys, searchApiKeys } from '../api'
@@ -255,15 +255,14 @@ export function ApiKeysTable() {
           })
 
       if (!result.success) {
-        toast.error(
-          result.message ||
-            t(
-              shouldSearch
-                ? ERROR_MESSAGES.SEARCH_FAILED
-                : ERROR_MESSAGES.LOAD_FAILED
-            )
+        throw createServerError(
+          result,
+          t(
+            shouldSearch
+              ? ERROR_MESSAGES.SEARCH_FAILED
+              : ERROR_MESSAGES.LOAD_FAILED
+          )
         )
-        return { items: [], total: 0 }
       }
 
       return {

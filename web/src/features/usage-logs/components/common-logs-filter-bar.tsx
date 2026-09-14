@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQueryClient, useIsFetching } from '@tanstack/react-query'
+import { useQueryClient, useIsFetching, useQuery } from '@tanstack/react-query'
 import { useNavigate, getRouteApi } from '@tanstack/react-router'
 import type { Table } from '@tanstack/react-table'
 import { Eye, EyeOff } from 'lucide-react'
@@ -24,6 +24,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
 import {
   Select,
   SelectContent,
@@ -37,6 +38,9 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { getGroups } from '@/features/users/api'
+import { getUserGroups } from '@/lib/api'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
@@ -117,6 +121,24 @@ export function CommonLogsFilterBar<TData>(
   const { isAdminView: isAdmin } = useLogsViewScope()
   const { sensitiveVisible, setSensitiveVisible } = useUsageLogsContext()
   const fetchingLogs = useIsFetching({ queryKey: ['logs'] })
+  const { data: adminGroups } = useQuery({
+    queryKey: ['groups'],
+    queryFn: async () => requireServerSuccess(await getGroups()),
+    enabled: isAdmin,
+  })
+  const { data: userGroups } = useQuery({
+    queryKey: ['user-groups'],
+    queryFn: async () => requireServerSuccess(await getUserGroups()),
+    enabled: !isAdmin,
+  })
+  const groupOptions = useMemo(() => {
+    const groups = isAdmin
+      ? (adminGroups?.data ?? [])
+      : Object.keys(userGroups?.data ?? {})
+    return groups
+      .filter((group) => group !== 'auto')
+      .map((group) => ({ label: group, value: group }))
+  }, [isAdmin, adminGroups, userGroups])
 
   const searchState = useMemo<CommonLogDraft>(() => {
     const { start, end } = getDefaultTimeRange()
@@ -308,12 +330,14 @@ export function CommonLogsFilterBar<TData>(
   )
   const groupFilter = (
     <LogsFilterField>
-      <LogsFilterInput
+      <Combobox
+        options={groupOptions}
+        allowCustomValue
         placeholder={t('Group')}
+        aria-label={t('Group')}
         className={sensitiveInputClass}
         value={filters.group || ''}
-        onChange={(e) => handleChange('group', e.target.value)}
-        onClear={() => handleChange('group', undefined)}
+        onValueChange={(value) => handleChange('group', value || undefined)}
         onKeyDown={handleKeyDown}
       />
     </LogsFilterField>

@@ -35,7 +35,7 @@ func setupTopUpInvoiceTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	model.DB = db
 	model.LOG_DB = db
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}, &model.AuditLog{}))
 
 	t.Cleanup(func() {
 		model.DB = originalDB
@@ -162,10 +162,11 @@ func TestGetTopUpInvoiceAllowsAuditedAdminViewOfAnotherUsersOrder(t *testing.T) 
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), topUp.TradeNo)
-	var auditLog model.Log
-	require.NoError(t, db.Where("user_id = ? AND type = ?", admin.Id, model.LogTypeManage).First(&auditLog).Error)
+	var auditLog model.AuditLog
+	require.NoError(t, db.Where("user_id = ? AND action = ?", admin.Id, "topup.invoice_view").First(&auditLog).Error)
 	assert.Contains(t, auditLog.Content, topUp.TradeNo)
-	assert.Contains(t, auditLog.Other, "topup.invoice_view")
+	require.NotNil(t, auditLog.Other.Op)
+	assert.Equal(t, "topup.invoice_view", auditLog.Other.Op.Action)
 }
 
 func TestGetTopUpInvoiceDoesNotAllowAnotherUserToViewOrder(t *testing.T) {

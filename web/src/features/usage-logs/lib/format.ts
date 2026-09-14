@@ -21,6 +21,7 @@ import {
   BILLING_PRICING_VARS,
   normalizeTierLabel,
   parseTiersFromExpr,
+  splitBillingExprAndRequestRules,
   type ParsedTier,
 } from '@/features/pricing/lib/billing-expr'
 import { formatLogQuota } from '@/lib/format'
@@ -369,7 +370,7 @@ export interface TieredBillingSummary {
     field: string
     shortLabel: string
     price: number
-    unit?: 'request'
+    unit?: 'request' | 'image'
   }>
 }
 
@@ -399,6 +400,7 @@ export function hasAnyCacheTokens(
   if (!other) return false
   return (
     (other.cache_tokens || 0) > 0 ||
+    (other.image_cache_tokens || 0) > 0 ||
     (other.cache_creation_tokens || 0) > 0 ||
     (other.cache_creation_tokens_5m || 0) > 0 ||
     (other.cache_creation_tokens_1h || 0) > 0 ||
@@ -412,10 +414,10 @@ export function getTieredBillingSummary(
   if (!other || other.billing_mode !== 'tiered_expr') return null
   const exprStr = decodeBillingExprB64(other.expr_b64)
   if (!exprStr) return null
-  const tiers = parseTiersFromExpr(exprStr)
+  const tiers = parseTiersFromExpr(
+    splitBillingExprAndRequestRules(exprStr).billingExpr
+  )
   const tier = resolveMatchedTier(tiers, other.matched_tier)
-  if (!tier) return null
-
   if (
     other.billing_unit === 'request' &&
     typeof other.fixed_price === 'number' &&
@@ -423,11 +425,44 @@ export function getTieredBillingSummary(
     other.fixed_price >= 0
   ) {
     const fixedPrice = other.fixed_price
+    const actualTier = tiers.find(
+      (entry) =>
+        normalizeTierLabel(entry.label) ===
+          normalizeTierLabel(other.matched_tier) &&
+        entry.billingUnit === 'request' &&
+        entry.fixedPrice === fixedPrice
+    ) ?? {
+      label: other.matched_tier || '',
+      conditions: [],
+      billingUnit: 'request' as const,
+      fixedPrice,
+    }
+    return {
+      tiers,
+      tier: actualTier,
+      priceEntries: [
+        {
+          field: 'fixedPrice',
+          shortLabel:
+            other.image_count !== undefined ? 'Per image' : 'Per-call',
+          price: fixedPrice,
+          unit: other.image_count !== undefined ? 'image' : 'request',
+        },
+      ],
+    }
+  }
+  if (!tier) return null
+  if (tier.billingUnit === 'request' && typeof tier.fixedPrice === 'number') {
     return {
       tiers,
       tier,
       priceEntries: [
-        { field: 'fixedPrice', shortLabel: 'Per-call', price: fixedPrice, unit: 'request' },
+        {
+          field: 'fixedPrice',
+          shortLabel: tier.imageCount ? 'Per image' : 'Per-call',
+          price: tier.fixedPrice,
+          unit: tier.imageCount ? 'image' : 'request',
+        },
       ],
     }
   }
@@ -440,7 +475,7 @@ export function getTieredBillingSummary(
     if (v.group === 'cache' && !cacheTokensPresent) continue
     const raw = tier[v.field as keyof ParsedTier]
     const price = Number(raw)
-    if (Number.isFinite(price) && price > 0) {
+    if (Number.isFinite(price) && price >= 0) {
       priceEntries.push({
         field: v.field,
         shortLabel: v.shortLabel,
@@ -495,6 +530,26 @@ const AUDIT_PARAM_LABELS: Record<string, string> = {
 }
 
 const AUDIT_TEMPLATES: Record<string, string> = {
+  'user.account_delete': 'Account deletion',
+  'user.email_binding_resend': 'Email confirmation code resend',
+  'user.binding_unbind': 'Account unlinking',
+  'user.binding_bind': 'Account binding',
+  'user.binding_start': 'Account binding request',
+  'user.password_change': 'Account password change',
+  'user.security_verify': 'Completed security verification',
+  'user.2fa_backup_codes': 'Regenerated two-factor backup codes',
+  'user.2fa_disable_self': 'Disabled two-factor authentication',
+  'user.2fa_enable': 'Enabled two-factor authentication',
+  'user.2fa_setup': 'Started two-factor authentication setup',
+  'access_token.revoke': 'Revoked the system access token',
+  'access_token.generate': 'Generated a system access token',
+  'token.key_view_batch': 'API token batch key access',
+  'token.key_view': 'API token key access',
+  'token.delete_batch': 'API token batch deletion',
+  'token.delete': 'API token deletion',
+  'token.status_update': 'API token status update',
+  'token.update': 'API token configuration update',
+  'token.create': 'API token creation',
   login: 'Logged in successfully via {{method}}',
   // User management
   'user.create': 'Created user {{username}} (role {{role}})',
@@ -535,6 +590,13 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'option.update': 'Updated system setting {{key}}',
   'option.model_pricing.import':
     'Imported {{updated_options}} model pricing settings',
+  'option.passkey_domains':
+    'Updated Passkey domains: removed {{domains}}; affected {{known}}; unknown {{unknown}}',
+  'option.passkey_domains_confirmed':
+    'Confirmed removal of Passkey domains: {{domains}}; affected {{known}}; unknown {{unknown}}',
+  'option.passkey_domains_blocked':
+    'Passkey domain change blocked: {{domains}}; affected {{known}}; unknown {{unknown}}',
+  'option.passkey_domains_failed': 'Passkey domain update failed',
   'option.payment_compliance': 'Confirmed payment compliance',
   'option.reset_ratio': 'Reset model ratios',
   'option.clear_affinity_cache': 'Cleared channel affinity cache',
@@ -661,6 +723,24 @@ export function renderAuditContent(
 ): string | null {
   const op = other?.op
   if (!op?.action) return null
+  if (
+    op.action === 'redemption.delete_batch' ||
+    (op.action === 'redemption.delete' &&
+      other?.audit_info?.route === '/api/redemption/batch')
+  ) {
+    if (other?.audit_info?.success === false) {
+      return t('Failed to batch delete redemption codes')
+    }
+    const count = op.params?.count
+    if (
+      typeof count === 'number' &&
+      Number.isSafeInteger(count) &&
+      count >= 0
+    ) {
+      return t('Batch deleted {{count}} redemption codes', { count })
+    }
+    return t('Batch deleted redemption codes (count not recorded)')
+  }
   const template = AUDIT_TEMPLATES[op.action]
   if (!template) return null
   const params = { ...op.params } as Record<string, unknown>
