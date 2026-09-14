@@ -115,7 +115,6 @@ export function useSidebarData(): SidebarData {
             url: '/profile',
             icon: User,
           },
-          { title: t('Security'), url: '/security', icon: User },
         ],
       },
       {
