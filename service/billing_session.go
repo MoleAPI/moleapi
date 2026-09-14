@@ -160,7 +160,8 @@ func (s *BillingSession) Reserve(targetQuota int) error {
 		_, imageRequest = s.relayInfo.Request.(*dto.ImageRequest)
 		imageRequest = imageRequest || s.relayInfo.ImageRequestCount > 0
 	}
-	if s.settled || s.refunded || s.trusted && !imageRequest || targetQuota <= s.preConsumedQuota {
+	requireAvailableQuota := imageRequest || s.relayInfo != nil && s.relayInfo.RelayFormat == types.RelayFormatOpenAIRealtime
+	if s.settled || s.refunded || s.trusted && !requireAvailableQuota || targetQuota <= s.preConsumedQuota {
 		return nil
 	}
 
@@ -169,7 +170,7 @@ func (s *BillingSession) Reserve(targetQuota int) error {
 		return nil
 	}
 
-	if err := s.reserveFunding(delta, imageRequest); err != nil {
+	if err := s.reserveFunding(delta, requireAvailableQuota); err != nil {
 		return err
 	}
 	if err := s.reserveToken(delta); err != nil {
@@ -180,7 +181,7 @@ func (s *BillingSession) Reserve(targetQuota int) error {
 	s.preConsumedQuota += delta
 	s.tokenConsumed += delta
 	s.extraReserved += delta
-	if imageRequest {
+	if requireAvailableQuota {
 		s.trusted = false
 	}
 	s.syncRelayInfo()

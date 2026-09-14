@@ -1089,3 +1089,50 @@ func TestSamePriceCacheReadsRemainInInput(t *testing.T) {
 		})
 	}
 }
+
+func TestClaudeCacheWritesPreserveAllInputTokens(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		five, hour  int
+		expression  string
+		p, cc, cc1h float64
+	}{
+		{"aggregate only", 0, 0, "p + c", 1000, 50, 0},
+		{"split folded into input", 30, 20, "p + c", 1000, 30, 20},
+		{"only five minute separately priced", 30, 20, "p + c + cc", 970, 30, 20},
+		{"only hour separately priced", 30, 20, "p + c + cc1h", 980, 30, 20},
+		{"both separately priced", 30, 20, "p + c + cc + cc1h", 950, 30, 20},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			usage := &dto.Usage{PromptTokens: 750, CompletionTokens: 100, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 200, CachedCreationTokens: 50}, ClaudeCacheCreation5mTokens: tc.five, ClaudeCacheCreation1hTokens: tc.hour}
+			params := BuildTieredTokenParams(usage, true, billingexpr.UsedVars(tc.expression))
+			assert.Equal(t, tc.p, params.P)
+			assert.Equal(t, float64(1000), params.Len)
+			assert.Equal(t, tc.cc, params.CC)
+			assert.Equal(t, tc.cc1h, params.CC1h)
+			cost, _, err := billingexpr.RunExpr(tc.expression, params)
+			require.NoError(t, err)
+			assert.Equal(t, float64(1100), cost)
+		})
+	}
+}
+
+func TestCachedAudioIsChargedOnce(t *testing.T) {
+	usage := &dto.Usage{PromptTokens: 1000, PromptTokensDetails: dto.InputTokenDetails{AudioTokens: 600, CachedTokens: 300, CachedTokensDetails: &dto.CachedTokenDetails{AudioTokens: common.GetPointer(200)}}}
+	for _, tc := range []struct {
+		expression  string
+		p, ai, cost float64
+	}{
+		{"p * 2 + cr * 0.5 + ai * 10", 300, 400, 4750},
+		{"p * 2 + ai * 10", 400, 600, 6800},
+		{"p * 2 + cr * 0.5", 700, 600, 1550},
+	} {
+		params := BuildTieredTokenParams(usage, false, billingexpr.UsedVars(tc.expression))
+		assert.Equal(t, tc.p, params.P)
+		assert.Equal(t, tc.ai, params.AI)
+		assert.Equal(t, float64(1000), params.Len)
+		cost, _, err := billingexpr.RunExpr(tc.expression, params)
+		require.NoError(t, err)
+		assert.Equal(t, tc.cost, cost)
+	}
+}

@@ -31,8 +31,8 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	cc1h := float64(0)
 
 	if usage.UsageSemantic == "anthropic" {
-		cc1h = float64(usage.ClaudeCacheCreation1hTokens)
-		cc5m = float64(usage.ClaudeCacheCreation5mTokens)
+		cc1h = float64(max(usage.ClaudeCacheCreation1hTokens, 0))
+		cc5m = max(float64(usage.ClaudeCacheCreation5mTokens), cc5m-cc1h, 0)
 	}
 
 	img := float64(usage.PromptTokensDetails.ImageTokens)
@@ -68,6 +68,18 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 		}
 	}
 	ai := float64(usage.PromptTokensDetails.AudioTokens)
+	if usedVars["cr"] && usedVars["ai"] && !isClaudeUsageSemantic {
+		if details := usage.PromptTokensDetails.CachedTokensDetails; details != nil && details.AudioTokens != nil {
+			cachedAudio := float64(*details.AudioTokens)
+			// Cached audio is already charged by cr; it must not also enter ai.
+			if cachedAudio >= 0 && cachedAudio <= cr && cachedAudio <= ai &&
+				float64(usage.PromptTokensDetails.CachedTokens)+ai-cachedAudio <= p {
+				ai -= cachedAudio
+			} else {
+				common.SysError("invalid audio cache token breakdown; using aggregate cache billing")
+			}
+		}
+	}
 	imgO := float64(usage.CompletionTokenDetails.ImageTokens)
 	ao := float64(usage.CompletionTokenDetails.AudioTokens)
 
@@ -80,10 +92,16 @@ func BuildTieredTokenParams(usage *dto.Usage, isClaudeUsageSemantic bool, usedVa
 	}
 
 	if isClaudeUsageSemantic {
-		// Anthropic input excludes cache reads. When cr has no separate
-		// price, merge those tokens into the input category instead.
+		// Anthropic input excludes cache reads and writes. Unpriced
+		// sub-categories remain billable at the ordinary input price.
 		if !usedVars["cr"] {
 			p += cr
+		}
+		if !usedVars["cc"] {
+			p += cc5m
+		}
+		if !usedVars["cc1h"] {
+			p += cc1h
 		}
 	} else {
 		if usedVars["cr"] {
