@@ -59,4 +59,9 @@ export const SUPPORTED_APPS = [
     href: 'https://docs.moleapi.com/zh-CN/docs/apps/codex-app',
     icon: <Codex size={22} />,
   },
+  {
+    name: 'WorkBuddy',
+    href: 'https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Model',
+    icon: <img src='/app-icons/workbuddy.svg' alt='' className='size-[22px]' />,
+  },
 ] as const

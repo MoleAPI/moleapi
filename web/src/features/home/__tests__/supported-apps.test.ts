@@ -44,6 +44,10 @@ test('supported application pills open the requested MoleAPI guides', () => {
       ['LobeHub', 'https://docs.moleapi.com/zh-CN/docs/apps/lobechat'],
       ['AionUI', 'https://docs.moleapi.com/zh-CN/docs/apps/aionui'],
       ['Codex', 'https://docs.moleapi.com/zh-CN/docs/apps/codex-app'],
+      [
+        'WorkBuddy',
+        'https://www.workbuddy.cn/docs/workbuddy/From-Beginner-to-Expert-Guide/Function-Description/Model',
+      ],
     ]
   )
 })
@@ -53,6 +57,7 @@ test('supported application pills use bundled product artwork instead of initial
     ['CC Switch', '/app-icons/cc-switch.svg'],
     ['NextChat', '/app-icons/nextchat.svg'],
     ['AionUI', '/app-icons/aionui.svg'],
+    ['WorkBuddy', '/app-icons/workbuddy.svg'],
   ])
 
   for (const app of SUPPORTED_APPS) {

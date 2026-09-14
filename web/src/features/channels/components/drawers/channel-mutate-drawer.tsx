@@ -205,6 +205,7 @@ import {
 import { ParamOverrideEditorDialog } from '../dialogs/param-override-editor-dialog'
 import { StatusCodeRiskDialog } from '../dialogs/status-code-risk-dialog'
 import { ModelMappingEditor } from '../model-mapping-editor'
+import { ResponsesWebSocketSetting } from '../responses-websocket-setting'
 import { UpstreamModelSelection } from '../upstream-model-selection'
 import {
   ChannelConfiguration,
@@ -272,6 +273,7 @@ const SENSITIVE_FORM_FIELDS = [
   'http_protocol',
   'http2_connection_shards',
   'pass_through_body_enabled',
+  'responses_websocket_enabled',
   'system_prompt',
   'system_prompt_override',
   'allow_service_tier',
@@ -419,13 +421,6 @@ export function ChannelMutateDrawer({
     useState<ChannelConnectionInfo | null>(null)
 
   const isEditing = Boolean(currentRow)
-  const requestedSide = isEditing ? 'left' : 'right'
-  const [drawerSide, setDrawerSide] = useState<'left' | 'right'>(requestedSide)
-  // The parent clears currentRow as soon as closing starts. Keep the last
-  // open direction until the next opening, including the entire exit animation.
-  if (open && drawerSide !== requestedSide) {
-    setDrawerSide(requestedSide)
-  }
   const channelId = currentRow?.id ?? null
   const sensitiveLocked = isEditing && !canEditSensitive
   const [providerTarget, setProviderTarget] =
@@ -4212,6 +4207,10 @@ export function ChannelMutateDrawer({
                 disabled={sensitiveLocked}
                 className='space-y-4 disabled:opacity-60'
               >
+                <ResponsesWebSocketSetting
+                  channelType={currentType}
+                  disabled={sensitiveLocked || isSubmitting}
+                />
                 {formatFields}
                 {thinkingFields}
                 {passthroughFields}
@@ -4271,7 +4270,7 @@ export function ChannelMutateDrawer({
     <>
       <Sheet open={open} onOpenChange={handleOpenChange}>
         <SheetContent
-          side={drawerSide}
+          side='right'
           className={sideDrawerContentClassName('sm:max-w-7xl')}
         >
           <SheetHeader className={sideDrawerHeaderClassName('pr-12 sm:pr-14')}>

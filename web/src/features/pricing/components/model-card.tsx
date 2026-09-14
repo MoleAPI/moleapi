@@ -20,6 +20,8 @@ import { BadgePercent, ChevronRight, Copy } from 'lucide-react'
 import { memo } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
@@ -506,20 +508,19 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
             {description || t('No description available.')}
           </p>
         </div>
-
-        <div className='relative z-20 hidden shrink-0 items-center gap-1 sm:flex'>
-          <button
-            type='button'
-            onClick={handleDetailsClick}
-            className='text-muted-foreground hover:text-foreground hover:bg-muted hidden items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors sm:inline-flex'
-          >
-            {t('Details')}
-            <ChevronRight className='size-3.5' />
-          </button>
-        </div>
       </div>
 
-      <ModelPerfBadge perf={props.perf} className='mt-3' />
+      <ModelPerfBadge perf={props.perf} className='mt-3 flex-wrap'>
+        <Button
+          variant='outline'
+          size='sm'
+          onClick={handleDetailsClick}
+          className='relative z-20 ml-auto h-7 shrink-0 gap-1 px-2 text-xs'
+        >
+          {t('Details')}
+          <ChevronRight className='size-3.5' />
+        </Button>
+      </ModelPerfBadge>
       {dynamicSummary?.isTimePricing && (
         <p className='text-muted-foreground mt-2 text-xs'>
           {t('Current period price')}
@@ -561,12 +562,20 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       </div>
 
       {!!props.model.supported_endpoint_types?.length && (
-        <p
-          className='text-muted-foreground mt-2 truncate text-xs'
-          title={props.model.supported_endpoint_types.join(', ')}
-        >
-          {t('Endpoints')}: {props.model.supported_endpoint_types.join(', ')}
-        </p>
+        <div className='mt-2 flex min-w-0 flex-wrap items-center gap-1.5'>
+          <span className='text-muted-foreground text-xs'>
+            {t('Endpoints')}:
+          </span>
+          {props.model.supported_endpoint_types.map((endpoint) => (
+            <Badge
+              key={endpoint}
+              variant='secondary'
+              className='h-auto max-w-full py-0.5 break-all whitespace-normal'
+            >
+              {endpoint}
+            </Badge>
+          ))}
+        </div>
       )}
       <div className='mt-3 flex min-w-0 items-center justify-between gap-3'>
         <div className='flex min-w-0 flex-wrap items-center gap-1.5'>
