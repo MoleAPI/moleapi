@@ -33,6 +33,8 @@ import type {
   SystemTaskResponse,
   UpdateOptionRequest,
   UpdateOptionResponse,
+  UpdatePasskeyDomainsRequest,
+  UpdatePasskeyDomainsResponse,
   UpstreamChannelsResponse,
   UpstreamRatiosResponse,
 } from './types'
@@ -67,6 +69,20 @@ export async function batchUpdateInviteRebateRatio(
 export async function getInviteRebateRatios() {
   const res = await api.get<InviteRebateRatiosResponse>(
     '/api/user/invite_rebate/ratios'
+  )
+  return res.data
+}
+
+export async function updatePasskeyDomains(
+  request: UpdatePasskeyDomainsRequest
+) {
+  const res = await api.put<UpdatePasskeyDomainsResponse>(
+    '/api/option/passkey/domains',
+    request,
+    {
+      validateStatus: (status) =>
+        (status >= 200 && status < 300) || status === 409,
+    }
   )
   return res.data
 }

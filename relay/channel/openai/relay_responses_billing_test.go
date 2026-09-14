@@ -268,3 +268,17 @@ func TestOaiResponsesStreamHandlerDoesNotCountPartialImageEvent(t *testing.T) {
 
 	assert.Equal(t, 0, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolImageGeneration].CallCount)
 }
+
+func TestResponsesToolBillingCountsFinalOnlyAndRepeatedEventsOnce(t *testing.T) {
+	operation_setting.SetToolPriceForTest("priced_fn", 5)
+	t.Cleanup(func() { operation_setting.DeleteToolPriceForTest("priced_fn") })
+	item := `{"type":"web_search_call","id":"search_1","status":"completed"}`
+	for _, prefix := range []string{"", `{"type":"response.output_item.done","output_index":0,"item":` + item + `}`} {
+		info := runResponsesImageBillingStream(t, prefix, prefix,
+			`{"type":"response.completed","response":{"output":[`+item+`,{"type":"function_call","id":"fn_1","name":"priced_fn"}],"usage":{"input_tokens":1,"output_tokens":1,"total_tokens":2}}}`)
+		require.Contains(t, info.ResponsesUsageInfo.BuiltInTools, dto.BuildInToolWebSearchPreview)
+		assert.Equal(t, 1, info.ResponsesUsageInfo.BuiltInTools[dto.BuildInToolWebSearchPreview].CallCount)
+		require.Contains(t, info.ResponsesUsageInfo.BuiltInTools, "priced_fn")
+		assert.Equal(t, 1, info.ResponsesUsageInfo.BuiltInTools["priced_fn"].CallCount)
+	}
+}

@@ -25,13 +25,14 @@ import { getLobeIcon } from '@/lib/lobe-icon'
 import { cn } from '@/lib/utils'
 
 import { DEFAULT_TOKEN_UNIT } from '../constants'
+import { useBillingTime } from '../hooks/use-billing-time'
 import {
   getCardExamplePrice,
   getDynamicDisplayGroupRatio,
-  getDynamicPriceEntries,
   getDynamicPriceUnitLabelKey,
   getDynamicPricingSummary,
   isUnconfiguredTaskUsageModel,
+  isDynamicPricingModel,
 } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
 import {
@@ -45,6 +46,7 @@ import {
   formatGroupPrice,
   stripTrailingZeros,
 } from '../lib/price'
+import { taskPriceLabel, taskUsageUnitLabel } from '../lib/task-price-display'
 import type { ModelCapability, PricingModel, TokenUnit } from '../types'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import { ModelPerfBadge, type ModelPerfBadgeData } from './model-perf-badge'
@@ -104,7 +106,7 @@ function PriceLine(props: Metric) {
           props.tone === 'accent' && 'text-primary'
         )}
       >
-        <span className='shrink-0'>{props.value}</span>
+        <span className='shrink-0'>{props.value}</span>{' '}
         {props.unit && (
           <span className='text-muted-foreground shrink-0 text-[10px]'>
             {props.unit}
@@ -120,12 +122,6 @@ function PriceGroupColumn(props: {
   ratio: number
   isCurrent: boolean
   lines: Metric[]
-  tierRows?: Array<{
-    id: string
-    label: string
-    condition: string
-    lines: Metric[]
-  }>
   examplePrice?: { label: string; formatted: string } | null
   notice?: string
   t: (key: string) => string
@@ -159,44 +155,18 @@ function PriceGroupColumn(props: {
           {props.notice}
         </div>
       ) : null}
-      {!props.notice && props.tierRows?.length ? (
-        <div className='min-w-0 space-y-1.5'>
-          {props.tierRows.map((row) => (
-            <div
-              key={`${props.group}-${row.id}`}
-              className='grid min-w-0 gap-1.5 sm:grid-cols-[8rem_minmax(0,1fr)]'
-            >
-              <div className='min-w-0'>
-                <div className='text-foreground truncate text-[11px] leading-4 font-semibold'>
-                  {row.label}
-                </div>
-                {row.condition && (
-                  <div className='text-muted-foreground truncate text-[10px] leading-3'>
-                    {row.condition}
-                  </div>
-                )}
-              </div>
-              <div className='flex min-w-0 flex-wrap gap-x-4 gap-y-1'>
-                {row.lines.map((line) => (
-                  <PriceLine key={`${row.id}-${line.id}`} {...line} />
-                ))}
-              </div>
-            </div>
-          ))}
-          {props.examplePrice && (
-            <div className='text-muted-foreground/70 truncate text-[10px] leading-4'>
-              {props.examplePrice.label} ≈ {props.examplePrice.formatted}
-            </div>
-          )}
-        </div>
-      ) : null}
-      {!props.notice && !props.tierRows?.length ? (
+      {!props.notice ? (
         <div className='flex min-w-0 flex-wrap gap-x-4 gap-y-1'>
           {props.lines.map((line) => (
             <PriceLine key={`${props.group}-${line.id}`} {...line} />
           ))}
         </div>
       ) : null}
+      {props.examplePrice && (
+        <p className='text-muted-foreground text-xs sm:col-start-2'>
+          {props.examplePrice.label} ≈ {props.examplePrice.formatted}
+        </p>
+      )}
     </div>
   )
 }
@@ -207,46 +177,9 @@ function getDynamicMetricTone(field: string): Metric['tone'] {
   return undefined
 }
 
-function formatDynamicTokenHint(value: number): string {
-  if (value >= 1_000_000) {
-    return `${(value / 1_000_000).toFixed(value % 1_000_000 === 0 ? 0 : 1)}M`
-  }
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(value % 1000 === 0 ? 0 : 1)}K`
-  }
-  return String(value)
-}
-
-function formatDynamicTierCondition(
-  conditions: Array<
-    | { var: string; op: string; value: number }
-    | { field: string; value: string }
-  >,
-  t: (key: string) => string
-): string {
-  const varLabels: Record<string, string> = {
-    len: t('Length'),
-    p: t('Input'),
-    c: t('Output'),
-  }
-  const opLabels: Record<string, string> = {
-    '<=': '≤',
-    '>=': '≥',
-  }
-  return conditions
-    .map((condition) => {
-      if ('field' in condition) {
-        return `${condition.field} = ${condition.value}`
-      }
-      const variable = varLabels[condition.var] || condition.var
-      const operator = opLabels[condition.op] || condition.op
-      return `${variable} ${operator} ${formatDynamicTokenHint(condition.value)}`
-    })
-    .join(' && ')
-}
-
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const { t, i18n } = useTranslation()
+  const billingTime = useBillingTime(props.model.billing_expr)
   const { copyToClipboard } = useCopyToClipboard()
   const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT
   const priceRate = props.priceRate ?? 1
@@ -260,14 +193,13 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const modelIconKey = props.model.icon || props.model.vendor_icon
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 28) : null
   const initial = props.model.model_name?.charAt(0).toUpperCase() || '?'
-  const isDynamicPricing =
-    props.model.billing_mode === 'tiered_expr' &&
-    Boolean(props.model.billing_expr)
+  const isDynamicPricing = isDynamicPricingModel(props.model)
   const isUnconfiguredTaskUsage = isUnconfiguredTaskUsageModel(props.model)
   const hasCachedPrice = isTokenBased && props.model.cache_ratio != null
   const dynamicSummary = isDynamicPricing
     ? getDynamicPricingSummary(props.model, {
         tokenUnit,
+        now: billingTime === undefined ? undefined : new Date(billingTime),
         showRechargePrice,
         priceRate,
         usdExchangeRate,
@@ -318,18 +250,11 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
     let lines: Metric[] = []
     let notice: string | undefined
     let examplePrice: { label: string; formatted: string } | null = null
-    let tierRows:
-      | Array<{
-          id: string
-          label: string
-          condition: string
-          lines: Metric[]
-        }>
-      | undefined
 
     if (isDynamicPricing) {
       const dynamicOptions = {
         tokenUnit,
+        now: billingTime === undefined ? undefined : new Date(billingTime),
         showRechargePrice,
         priceRate,
         usdExchangeRate,
@@ -338,29 +263,26 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       }
       const summary = getDynamicPricingSummary(props.model, dynamicOptions)
       examplePrice = getCardExamplePrice(props.model, dynamicOptions)
-      tierRows = summary?.tiers.slice(0, 2).map((tier, index) => ({
-        id: `${tier.label || index}`,
-        label: tier.label || t('Default'),
-        condition: formatDynamicTierCondition(tier.conditions, t),
-        lines: getDynamicPriceEntries(tier, dynamicOptions)
-          .slice(0, 6)
-          .map((entry) => {
-            const unitLabelKey = getDynamicPriceUnitLabelKey(entry)
-            let unit: string | undefined
-            if (entry.variable) unit = tokenPriceUnit
-            else if (unitLabelKey) unit = `/ ${t(unitLabelKey)}`
-            return {
-              id: entry.key,
-              label:
-                entry.labelKind === 'schema'
-                  ? entry.shortLabel
-                  : t(entry.shortLabel),
-              value: stripTrailingZeros(entry.formatted),
-              unit,
-              tone: getDynamicMetricTone(entry.field),
-            }
-          }),
-      }))
+      lines = (summary?.entries ?? []).slice(0, 8).map((entry) => {
+        const unitKey = getDynamicPriceUnitLabelKey(entry)
+        const unit = entry.variable
+          ? tokenPriceUnit
+          : `/ ${taskUsageUnitLabel(entry, i18n.language, unitKey ? t(unitKey) : '')}`
+        return {
+          id: entry.key,
+          label:
+            entry.labelKind === 'schema'
+              ? taskPriceLabel(
+                  entry.description,
+                  entry.shortLabel,
+                  i18n.language
+                )
+              : t(entry.shortLabel),
+          value: entry.formattedRange ?? stripTrailingZeros(entry.formatted),
+          unit,
+          tone: getDynamicMetricTone(entry.field),
+        }
+      })
     } else if (isUnconfiguredTaskUsage) {
       notice = t('Usage-based billing · price not configured')
     } else if (isTokenBased) {
@@ -523,7 +445,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       ]
     }
 
-    return { ...item, lines, tierRows, examplePrice, notice }
+    return { ...item, lines, examplePrice, notice }
   })
 
   return (
@@ -553,7 +475,10 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
 
         <div className='min-w-0 flex-1'>
           <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
-            <h3 className='text-foreground min-w-0 truncate text-sm leading-tight font-semibold sm:text-[15px]'>
+            <h3
+              title={props.model.model_name}
+              className='text-foreground min-w-0 truncate text-sm leading-tight font-semibold sm:text-[15px]'
+            >
               {props.model.model_name}
             </h3>
             <button
@@ -561,7 +486,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               onClick={handleCopy}
               className='text-muted-foreground hover:text-foreground hover:bg-muted relative z-20 rounded-md border p-1 transition-colors'
               title={t('Copy')}
-              aria-label={t('Copy')}
+              aria-label={t('Copy model name')}
             >
               <Copy className='size-3' />
             </button>
@@ -583,7 +508,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         </div>
 
         <div className='relative z-20 hidden shrink-0 items-center gap-1 sm:flex'>
-          <ModelPerfBadge perf={props.perf} className='mr-1' />
           <button
             type='button'
             onClick={handleDetailsClick}
@@ -595,6 +519,19 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         </div>
       </div>
 
+      <ModelPerfBadge perf={props.perf} className='mt-3' />
+      {dynamicSummary?.isTimePricing && (
+        <p className='text-muted-foreground mt-2 text-xs'>
+          {t('Current period price')}
+        </p>
+      )}
+      {(dynamicSummary?.providerCount ?? 0) > 1 && (
+        <p className='text-muted-foreground mt-2 text-xs'>
+          {t('{{count}} providers', { count: dynamicSummary?.providerCount })}
+          {dynamicSummary?.hasUnconfiguredProviders &&
+            ` · ${t('Not configured for some providers')}`}
+        </p>
+      )}
       <div className='bg-muted/10 mt-3 overflow-hidden rounded-lg border'>
         {specialPriceSummary ? (
           <div className='min-w-0 px-3 py-2'>
@@ -614,7 +551,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
                 ratio={item.ratio}
                 isCurrent={item.isCurrent}
                 lines={item.lines}
-                tierRows={item.tierRows}
                 examplePrice={item.examplePrice}
                 notice={item.notice}
                 t={t}
@@ -624,12 +560,28 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         )}
       </div>
 
+      {!!props.model.supported_endpoint_types?.length && (
+        <p
+          className='text-muted-foreground mt-2 truncate text-xs'
+          title={props.model.supported_endpoint_types.join(', ')}
+        >
+          {t('Endpoints')}: {props.model.supported_endpoint_types.join(', ')}
+        </p>
+      )}
       <div className='mt-3 flex min-w-0 items-center justify-between gap-3'>
         <div className='flex min-w-0 flex-wrap items-center gap-1.5'>
           <ModelBillingModeBadge model={props.model} className='shrink-0' />
           {chips.map((chip, index) => (
             <ModelTagChip key={`tag-${chip}`} tag={chip} index={index} />
           ))}
+          {allChips.length > chips.length && (
+            <span
+              className='text-muted-foreground text-xs'
+              title={allChips.slice(chips.length).join(', ')}
+            >
+              +{allChips.length - chips.length}
+            </span>
+          )}
         </div>
       </div>
     </div>

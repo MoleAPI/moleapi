@@ -30,6 +30,7 @@ import {
   PUBLIC_API_BASE_URL,
 } from '../components/hero-terminal-demo-data'
 import { HeroTypewriter } from '../components/hero-typewriter'
+import { Features } from '../components/sections/features'
 import { Stats } from '../components/sections/stats'
 
 async function renderWithEnglish(element: ReactNode) {
@@ -75,12 +76,19 @@ test('hero API demo shows the MoleAPI base URL and cycles common routes', async 
   )
 })
 
-test('model providers follow the four gateway capability totals', async () => {
+test('model providers follow the four-year privacy and model commitments', async () => {
   const html = await renderWithEnglish(<Stats />)
 
-  assert.ok(
-    html.indexOf('scheduling controls') < html.indexOf('Model Providers')
-  )
+  assert.ok(html.indexOf('1:1') < html.indexOf('Model Providers'))
+  assert.match(html, /ZDR/)
+  assert.match(html, /Years of continuous service/)
   assert.match(html, /Model Providers/)
   assert.match(html, /OpenAI/)
+})
+
+test('home commitments state operating history, conversation retention and model integrity', async () => {
+  const html = await renderWithEnglish(<Features />)
+  assert.match(html, /Four years, built on trust/)
+  assert.match(html, /Prompts and replies are never stored/)
+  assert.match(html, /No substitutions or mixed responses/)
 })

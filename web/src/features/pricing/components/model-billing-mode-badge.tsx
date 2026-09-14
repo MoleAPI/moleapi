@@ -22,7 +22,7 @@ import { useTranslation } from 'react-i18next'
 
 import { cn } from '@/lib/utils'
 
-import { isTokenBasedModel } from '../lib/model-helpers'
+import { getBillingModeLabelKey } from '../lib/billing-mode'
 import type { PricingModel } from '../types'
 
 interface ModelBillingModeBadgeProps {
@@ -32,16 +32,7 @@ interface ModelBillingModeBadgeProps {
 
 export function ModelBillingModeBadge(props: ModelBillingModeBadgeProps) {
   const { t } = useTranslation()
-  const isDynamic =
-    props.model.billing_mode === 'tiered_expr' &&
-    Boolean(props.model.billing_expr)
-  const isTokenBased = isTokenBasedModel(props.model)
-  let label = t('Pay per call')
-  if (isDynamic) {
-    label = t('Dynamic Pricing')
-  } else if (isTokenBased) {
-    label = t('Pay as you go')
-  }
+  const label = t(getBillingModeLabelKey(props.model))
 
   return (
     <span

@@ -3,6 +3,11 @@ package billing_setting
 // Built-in token prices use actual USD per million tokens. Keep new model
 // defaults here instead of splitting them across the legacy ratio tables.
 var builtinBillingExpr = map[string]string{
+	// https://developers.openai.com/api/docs/pricing (Standard, 2026-09-09).
+	// The Images API reports image output in output_tokens, normalized to c.
+	"gpt-image-2":            `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
+	"gpt-image-2.5-sunburst": `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
+	"gpt-image-2.5-flare":    `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
 	// https://developers.openai.com/api/docs/models/gpt-6-astra
 	// Standard pricing; the long-context rates apply to the whole request.
 	// Do not infer service-tier discounts from incoming request parameters:
@@ -12,8 +17,6 @@ var builtinBillingExpr = map[string]string{
 	// https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst
 	// Token rates match GPT Image 2: text input $5, cached input $1.25,
 	// image input $8, and image output $30 per million tokens.
-	"gpt-image-2.5-flare":               `tier("base", p * 5 + cr * 1.25 + img * 8 + img_o * 30)`,
-	"gpt-image-2.5-flare-2026-09-08":    `tier("base", p * 5 + cr * 1.25 + img * 8 + img_o * 30)`,
-	"gpt-image-2.5-sunburst":            `tier("base", p * 5 + cr * 1.25 + img * 8 + img_o * 30)`,
-	"gpt-image-2.5-sunburst-2026-09-08": `tier("base", p * 5 + cr * 1.25 + img * 8 + img_o * 30)`,
+	"gpt-image-2.5-flare-2026-09-08":    `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
+	"gpt-image-2.5-sunburst-2026-09-08": `tier("standard", p * 5 + cr * 1.25 + img * 8 + img_cr * 2 + c * 30)`,
 }

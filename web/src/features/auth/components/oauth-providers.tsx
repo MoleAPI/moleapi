@@ -26,13 +26,11 @@ import {
   IconTelegram,
   IconWeChat,
 } from '@/assets/brand-icons'
-import { ReactIconByName } from '@/components/react-icon-by-name'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 import { useOAuthLogin } from '../hooks/use-oauth-login'
 import type { SystemStatus } from '../types'
-import { TelegramLoginDialog } from './telegram-login-dialog'
 
 type OAuthProvidersProps = {
   status: SystemStatus | null
@@ -41,7 +39,6 @@ type OAuthProvidersProps = {
   onWeChatLogin?: () => void
   isWeChatLoading?: boolean
   redirectTo?: string
-  onBeforeStart?: () => boolean
 }
 
 type ProviderButton = {
@@ -59,7 +56,6 @@ export function OAuthProviders({
   onWeChatLogin,
   isWeChatLoading = false,
   redirectTo,
-  onBeforeStart,
 }: OAuthProvidersProps) {
   const { t } = useTranslation()
   const {
@@ -72,10 +68,6 @@ export function OAuthProviders({
     handleLinuxDOLogin,
     handleTelegramLogin,
     handleCustomOAuthLogin,
-    isTelegramDialogOpen,
-    isTelegramPending,
-    handleTelegramAuthorization,
-    setIsTelegramDialogOpen,
   } = useOAuthLogin(status, redirectTo)
 
   const providerButtons: ProviderButton[] = []
@@ -146,64 +138,42 @@ export function OAuthProviders({
         key: `custom-${provider.slug}`,
         label: t('Continue with {{name}}', { name: provider.name }),
         onClick: () => handleCustomOAuthLogin(provider),
-        icon: provider.icon ? (
-          <ReactIconByName
-            name={provider.icon}
-            className='h-4 w-4'
-            title={provider.name}
-          />
-        ) : undefined,
       })
     }
   }
 
   if (providerButtons.length === 0) return null
 
-  const runProviderLogin = (onClick: () => void) => {
-    if (onBeforeStart?.() === false) return
-    onClick()
-  }
-
   return (
-    <>
-      <div className={cn('space-y-3', className)}>
-        <div className='relative'>
-          <div className='absolute inset-0 flex items-center'>
-            <span className='w-full border-t' />
-          </div>
-          <div className='relative flex justify-center text-xs uppercase'>
-            <span className='bg-background text-muted-foreground px-2'>
-              {t('Or continue with')}
-            </span>
-          </div>
+    <div className={cn('space-y-3', className)}>
+      <div className='relative'>
+        <div className='absolute inset-0 flex items-center'>
+          <span className='w-full border-t' />
         </div>
-
-        <div className='flex flex-col gap-2'>
-          {providerButtons.map(
-            ({ key, label, onClick, icon, disabled: extraDisabled }) => (
-              <Button
-                key={key}
-                variant='outline'
-                type='button'
-                disabled={disabled || isLoading || extraDisabled}
-                onClick={() => runProviderLogin(onClick)}
-                className='h-11 w-full justify-center gap-2 rounded-lg'
-              >
-                {icon}
-                {label}
-              </Button>
-            )
-          )}
+        <div className='relative flex justify-center text-xs uppercase'>
+          <span className='bg-background text-muted-foreground px-2'>
+            {t('Or continue with')}
+          </span>
         </div>
       </div>
 
-      <TelegramLoginDialog
-        open={isTelegramDialogOpen}
-        botName={status?.telegram_bot_name ?? ''}
-        pending={isTelegramPending}
-        onOpenChange={setIsTelegramDialogOpen}
-        onAuthorization={handleTelegramAuthorization}
-      />
-    </>
+      <div className='flex flex-col gap-2'>
+        {providerButtons.map(
+          ({ key, label, onClick, icon, disabled: extraDisabled }) => (
+            <Button
+              key={key}
+              variant='outline'
+              type='button'
+              disabled={disabled || isLoading || extraDisabled}
+              onClick={onClick}
+              className='h-11 w-full justify-center gap-2 rounded-lg'
+            >
+              {icon}
+              {label}
+            </Button>
+          )
+        )}
+      </div>
+    </div>
   )
 }

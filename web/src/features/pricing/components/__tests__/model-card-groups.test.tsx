@@ -88,7 +88,7 @@ test('model card keeps complete colored pricing and task pricing', async () => {
   )
   const taskText = taskHtml.replaceAll(/<[^>]*>/g, ' ').replaceAll(/\s+/g, ' ')
 
-  assert.match(taskText, /base seconds \$0\.4 \/ s/)
+  assert.match(taskText, /standard x1 seconds \$0\.4 \/ s/)
   assert.match(taskText, /Ten seconds ≈ \$4/)
 
   const unconfiguredText = renderToStaticMarkup(

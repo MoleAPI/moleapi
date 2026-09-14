@@ -64,7 +64,7 @@ func setupSecurityEnrollmentTest(t *testing.T) (*model.User, service.AuthIdentit
 	var version string
 	require.NoError(t, db.Raw(versionQuery).Scan(&version).Error)
 	t.Logf("database: %s %s", dialect, version)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.AuthFlow{}, &model.UserOAuthBinding{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserSession{}, &model.TwoFA{}, &model.TwoFABackupCode{}, &model.PasskeyCredential{}, &model.AuthFlow{}, &model.UserOAuthBinding{}, &model.Option{}))
 	require.NoError(t, logDB.AutoMigrate(&model.AuditLog{}))
 	model.DB, model.LOG_DB = db, logDB
 	dbType := common.DatabaseTypeSQLite
@@ -1006,6 +1006,64 @@ func TestSecurityEnrollmentTwoFAFlowAndSessionRotation(t *testing.T) {
 	for _, secret := range []string{setups[0].Secret, setups[1].Secret, proof, code, setups[1].FlowToken} {
 		assert.NotContains(t, string(encoded), secret)
 	}
+
+	verification, err := common.Marshal(service.VerificationInput{Scope: service.VerificationScopeTwoFABackupCodes, Method: "2fa", Code: code})
+	require.NoError(t, err)
+	verified := securityEnrollmentRequest("POST", "/api/verify", string(verification), "", newIdentity, UniversalVerify)
+	require.NoError(t, common.Unmarshal(verified.Body.Bytes(), &body))
+	require.True(t, body.Success, body.Message)
+	var backupProof service.SecurityProof
+	require.NoError(t, common.Unmarshal(body.Data, &backupProof))
+	response = securityEnrollmentRequest("POST", "/api/user/2fa/backup_codes", `{}`, backupProof.ProofToken, newIdentity, RegenerateBackupCodes)
+	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
+	require.True(t, body.Success, body.Message)
+	var replacement struct {
+		AccessToken string   `json:"access_token"`
+		BackupCodes []string `json:"backup_codes"`
+	}
+	require.NoError(t, common.Unmarshal(body.Data, &replacement))
+	require.Len(t, replacement.BackupCodes, common.BackupCodeCount)
+	newIdentity, err = service.ParseAccessToken(replacement.AccessToken)
+	require.NoError(t, err)
+	for _, test := range []struct {
+		code  string
+		valid bool
+	}{
+		{setups[1].BackupCodes[0], false}, {replacement.BackupCodes[0], true}, {replacement.BackupCodes[0], false},
+	} {
+		valid, err := model.ValidateBackupCode(user.Id, test.code)
+		require.NoError(t, err)
+		assert.Equal(t, test.valid, valid)
+	}
+	disableProof, err := service.VerifySecurityInput(newIdentity, service.VerificationInput{Scope: service.VerificationScopeTwoFADisable, Method: "2fa", Code: replacement.BackupCodes[1]})
+	require.NoError(t, err, "a recovery code can disable a lost authenticator")
+	response = securityEnrollmentRequest("POST", "/api/user/2fa/disable", `{}`, disableProof.ProofToken, newIdentity, Disable2FA)
+	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
+	require.True(t, body.Success, body.Message)
+	require.NoError(t, common.Unmarshal(body.Data, &rotated))
+	newIdentity, err = service.ParseAccessToken(rotated.AccessToken)
+	require.NoError(t, err)
+	_, err = service.StartTwoFASetup(newIdentity, authorizeSecurityEnrollment(t, newIdentity))
+	require.NoError(t, err, "disabling 2FA must allow enrolling again")
+}
+
+func TestSecurityEnrollmentReplacesLegacyDeletedTwoFA(t *testing.T) {
+	user, identity := setupSecurityEnrollmentTest(t)
+	old := &model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}
+	require.NoError(t, model.DB.Create(old).Error)
+	require.NoError(t, model.DB.Delete(old).Error)
+	setup, err := service.StartTwoFASetup(identity, authorizeSecurityEnrollment(t, identity))
+	require.NoError(t, err)
+	code, err := totp.GenerateCode(setup.Secret, time.Now())
+	require.NoError(t, err)
+	require.NoError(t, service.FinishTwoFASetup(identity, setup.FlowToken, code))
+	factor, err := model.GetTwoFAByUserId(user.Id)
+	require.NoError(t, err)
+	assert.True(t, factor.IsEnabled)
+	assert.NotEqual(t, old.Id, factor.Id)
+	valid, err := model.ValidateBackupCode(user.Id, setup.BackupCodes[0])
+	require.NoError(t, err)
+	assert.True(t, valid)
 }
 
 func TestSecurityEnrollmentSetupAndEnableRollback(t *testing.T) {

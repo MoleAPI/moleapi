@@ -24,7 +24,6 @@ import { Button } from '@/components/ui/button'
 import { useStatus } from '@/hooks/use-status'
 
 import { HeroTerminalDemo } from '../hero-terminal-demo'
-import { HeroTypewriter } from '../hero-typewriter'
 import { SUPPORTED_APPS, SUPPORTED_APPS_MORE_KEY } from '../supported-apps'
 
 interface HeroProps {
@@ -102,7 +101,7 @@ export function Hero(props: HeroProps) {
               <span className='absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-400 opacity-75' />
               <span className='relative inline-flex size-1.5 rounded-full bg-blue-500 dark:bg-blue-400' />
             </span>
-            <span>{t('AI Application Infrastructure Foundation')}</span>
+            <span>{t('Four years of trusted AI access')}</span>
           </div>
 
           <h1
@@ -119,8 +118,17 @@ export function Hero(props: HeroProps) {
             className='landing-animate-fade-up opacity-0'
             style={{ animationDelay: '120ms' }}
           >
-            <HeroTypewriter />
+            <p className='text-muted-foreground mt-5 text-sm leading-relaxed whitespace-nowrap sm:text-base'>
+              {t('4 years · ZDR · 1:1 model forwarding')}
+            </p>
           </div>
+
+          <a
+            href='#offers'
+            className='text-foreground mt-6 block max-w-xl rounded-sm text-sm leading-7 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-4'
+          >
+            {t('Sign up for a free trial. Selected models up to 90% off.')}
+          </a>
 
           <div
             className='landing-animate-fade-up mt-8 flex flex-wrap items-center gap-3 opacity-0'

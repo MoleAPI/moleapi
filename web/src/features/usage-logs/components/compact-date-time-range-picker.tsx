@@ -146,6 +146,7 @@ export function CompactDateTimeRangePicker({
               </div>
               <Input
                 type='datetime-local'
+                aria-label={t('Start Time')}
                 value={draftStart}
                 onChange={(e) => setDraftStart(e.target.value)}
                 className='h-8 text-sm leading-5 tabular-nums'
@@ -160,6 +161,7 @@ export function CompactDateTimeRangePicker({
               </div>
               <Input
                 type='datetime-local'
+                aria-label={t('End Time')}
                 value={draftEnd}
                 onChange={(e) => setDraftEnd(e.target.value)}
                 className='h-8 text-sm leading-5 tabular-nums'

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
@@ -53,6 +54,6 @@ func TestTransferAffQuotaHidesDatabaseErrors(t *testing.T) {
 	TransferAffQuota(context)
 
 	assert.Contains(t, recorder.Body.String(), `"success":false`)
-	assert.Contains(t, recorder.Body.String(), "common.operation_failed")
+	assert.Contains(t, recorder.Body.String(), common.TranslateMessage(context, i18n.MsgOperationFailed))
 	assert.NotContains(t, recorder.Body.String(), "sensitive transfer database detail")
 }
