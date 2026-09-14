@@ -608,3 +608,51 @@ it('shows provider count, price range and missing-price status in both list and 
   expect(screen.getByText('0.4 – 0.8/s')).toBeVisible()
   expect(screen.getByText('$0.4 – $0.8')).toBeVisible()
 })
+
+it('shows the full hourly history in the overview success-rate metric', () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  })
+  clients.push(client)
+  client.setQueryData(['perf-metrics', model.model_name], {
+    success: true,
+    data: { groups: [] },
+  })
+  client.setQueryData(['perf-metrics-summary', 24], {
+    success: true,
+    data: {
+      models: [
+        {
+          model_name: model.model_name,
+          recent_success_series: [
+            {
+              ts: Math.floor(Date.now() / 1000 / 3600) * 3600,
+              success_rate: 0,
+            },
+          ],
+        },
+      ],
+    },
+  })
+  render(
+    <QueryClientProvider client={client}>
+      <ModelDetailsContent
+        model={model}
+        groupRatio={{ default: 1 }}
+        usableGroup={{ default: { desc: '', ratio: 1 } }}
+        endpointMap={{}}
+        autoGroups={[]}
+        priceRate={1}
+        usdExchangeRate={1}
+        tokenUnit='M'
+      />
+    </QueryClientProvider>
+  )
+  const history = screen.getByRole('img', {
+    name: 'Recent success-rate samples; gray bars indicate missing data.',
+  })
+  expect(history).toHaveClass('w-full')
+  expect(history.children).toHaveLength(24)
+  expect(history.lastElementChild).not.toHaveClass('bg-muted-foreground/15')
+  expect(history.parentElement).toHaveTextContent('Success rate')
+})

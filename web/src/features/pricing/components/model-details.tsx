@@ -48,7 +48,10 @@ import {
 } from '@/components/ui/sheet'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { getPerfMetrics } from '@/features/performance-metrics/api'
+import {
+  getPerfMetrics,
+  getPerfMetricsSummary,
+} from '@/features/performance-metrics/api'
 import {
   formatLatency,
   formatThroughput,
@@ -111,6 +114,7 @@ import { DynamicPricingBreakdown } from './dynamic-pricing-breakdown'
 import { ModelBillingModeBadge } from './model-billing-mode-badge'
 import { ModelDetailsApi } from './model-details-api'
 import { ModelDetailsPerformance } from './model-details-performance'
+import { SuccessRateHistory } from './model-perf-badge'
 
 // ----------------------------------------------------------------------------
 // Local UI helpers
@@ -241,6 +245,7 @@ function normalizeCatalogItems(items?: readonly string[]): string[] {
 }
 
 function OverviewMetric(props: {
+  children?: React.ReactNode
   icon: React.ComponentType<{ className?: string }>
   label: string
   value: React.ReactNode
@@ -263,6 +268,7 @@ function OverviewMetric(props: {
         >
           {props.value}
         </div>
+        {props.children}
       </div>
     </div>
   )
@@ -270,6 +276,17 @@ function OverviewMetric(props: {
 
 function OverviewSummaryGrid(props: { model: PricingModel }) {
   const { t } = useTranslation()
+  // ponytail: reuse the marketplace summary cache so both history strips agree.
+  const summaryQuery = useQuery({
+    queryKey: ['perf-metrics-summary', 24],
+    queryFn: () => getPerfMetricsSummary(24),
+    staleTime: 60 * 1000,
+    retry: false,
+  })
+  const history = summaryQuery.data?.data?.models?.find(
+    (model) => model.model_name === props.model.model_name
+  )?.recent_success_series
+
   const metricsQuery = useQuery({
     queryKey: ['perf-metrics', props.model.model_name],
     queryFn: async () =>
@@ -320,7 +337,9 @@ function OverviewSummaryGrid(props: { model: PricingModel }) {
         label={t('Success rate')}
         value={formatUptimePct(successRate)}
         valueClassName={getSuccessRateTextClass(successRate)}
-      />
+      >
+        <SuccessRateHistory series={history} className='mt-1' />
+      </OverviewMetric>
     </div>
   )
 }

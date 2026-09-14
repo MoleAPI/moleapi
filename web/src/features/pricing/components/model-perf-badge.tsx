@@ -40,6 +40,53 @@ export interface ModelPerfBadgeProps extends React.HTMLAttributes<HTMLDivElement
 
 const STATUS_SLOTS = Array.from({ length: 24 }, (_, slot) => slot)
 
+export function SuccessRateHistory(props: {
+  series?: SuccessRatePoint[]
+  className?: string
+}) {
+  const { t } = useTranslation()
+  // Hourly points with timestamps, anchored to the client's current hour.
+  // Hours without traffic stay gray. Slot 23 is the current, partial hour.
+  const statusRates = useMemo(() => {
+    const currentHourStart = Math.floor(Date.now() / 1000 / 3600) * 3600
+    const ratesByHour = new Map<number, number>()
+    for (const point of props.series ?? []) {
+      ratesByHour.set(point.ts, point.success_rate)
+    }
+    return STATUS_SLOTS.map((slot) => {
+      const hourStart = currentHourStart - (23 - slot) * 3600
+      return ratesByHour.get(hourStart)
+    })
+  }, [props.series])
+
+  return (
+    <div
+      role='img'
+      aria-label={t(
+        'Recent success-rate samples; gray bars indicate missing data.'
+      )}
+      title={t('Recent success-rate samples; gray bars indicate missing data.')}
+      className={cn('flex h-3 w-full items-center gap-px', props.className)}
+    >
+      {STATUS_SLOTS.map((slot) => {
+        const rate = statusRates[slot]
+        return (
+          <span
+            key={slot}
+            aria-hidden
+            className={cn(
+              'h-full min-w-0 flex-1 rounded-xs',
+              rate != null && Number.isFinite(rate) && rate >= 0 && rate <= 100
+                ? getSuccessRateDotClass(rate)
+                : 'bg-muted-foreground/15'
+            )}
+          />
+        )
+      })}
+    </div>
+  )
+}
+
 export const ModelPerfBadge = memo(function ModelPerfBadge(
   props: ModelPerfBadgeProps
 ) {
@@ -55,30 +102,14 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
     Number.isFinite(successRate) &&
     successRate >= 0 &&
     successRate <= 100
-  // Hourly points with timestamps, anchored to the client's current hour.
-  // Hours without traffic stay gray. Slot 23 is the current, partial hour.
-  const statusRates = useMemo(() => {
-    const currentHourStart = Math.floor(Date.now() / 1000 / 3600) * 3600
-    const ratesByHour = new Map<number, number>()
-    for (const point of props.perf?.recent_success_series ?? []) {
-      ratesByHour.set(point.ts, point.success_rate)
-    }
-    return STATUS_SLOTS.map((slot) => {
-      const hourStart = currentHourStart - (23 - slot) * 3600
-      return ratesByHour.get(hourStart)
-    })
-  }, [props.perf?.recent_success_series])
 
   return (
     <div
       aria-label={t('Performance metrics for the last 24 hours')}
-      className={cn(
-        'flex w-full min-w-0 items-center justify-between gap-3',
-        props.className
-      )}
+      className={cn('flex min-w-0 items-center gap-3', props.className)}
     >
-      <dl className='flex min-w-0 items-start gap-5 text-xs tabular-nums'>
-        <div className='w-24 shrink-0'>
+      <dl className='flex min-w-0 items-start gap-3 text-xs tabular-nums'>
+        <div className='w-20 shrink-0'>
           <dt
             title={t('Request success rate sampled over the last 24 hours')}
             className='text-muted-foreground flex items-center justify-between gap-1 text-[11px] leading-4'
@@ -88,34 +119,11 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
               {hasSuccessRate ? `${successRate.toFixed(1)}%` : '—%'}
             </span>
           </dt>
-          <dd
-            role='img'
-            aria-label={t(
-              'Recent success-rate samples; gray bars indicate missing data.'
-            )}
-            title={t(
-              'Recent success-rate samples; gray bars indicate missing data.'
-            )}
-            className='mt-1 flex h-3 w-24 items-center gap-px'
-          >
-            {STATUS_SLOTS.map((slot) => {
-              const rate = statusRates[slot]
-              return (
-                <span
-                  key={slot}
-                  aria-hidden
-                  className={cn(
-                    'h-full w-[3px] shrink-0 rounded-xs',
-                    rate != null &&
-                      Number.isFinite(rate) &&
-                      rate >= 0 &&
-                      rate <= 100
-                      ? getSuccessRateDotClass(rate)
-                      : 'bg-muted-foreground/15'
-                  )}
-                />
-              )
-            })}
+          <dd className='mt-1'>
+            <SuccessRateHistory
+              series={props.perf?.recent_success_series}
+              className='w-20'
+            />
           </dd>
         </div>
         <div title={t('Average latency')} className='shrink-0'>

@@ -464,7 +464,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
         className='focus-visible:ring-ring absolute inset-0 z-10 cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:outline-none'
       />
 
-      <div className='flex min-w-0 items-start gap-3'>
+      <div className='flex min-w-0 flex-wrap items-center gap-3'>
         <div className='bg-muted/50 flex size-10 shrink-0 items-center justify-center rounded-lg sm:size-11'>
           <span className='[&_svg]:size-6 sm:[&_svg]:size-7'>
             {modelIcon || (
@@ -475,7 +475,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
           </span>
         </div>
 
-        <div className='min-w-0 flex-1'>
+        <div className='min-w-0 flex-1 basis-40'>
           <div className='flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1'>
             <h3
               title={props.model.model_name}
@@ -504,23 +504,23 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               </button>
             )}
           </div>
-          <p className='text-muted-foreground mt-1 line-clamp-1 text-[12px] leading-relaxed'>
-            {description || t('No description available.')}
-          </p>
         </div>
+        <ModelPerfBadge perf={props.perf} className='ml-auto w-auto shrink-0'>
+          <Button
+            variant='outline'
+            size='sm'
+            onClick={handleDetailsClick}
+            className='relative z-20 h-7 shrink-0 gap-1 px-2 text-xs'
+          >
+            {t('Details')}
+            <ChevronRight className='size-3.5' />
+          </Button>
+        </ModelPerfBadge>
       </div>
+      <p className='text-muted-foreground mt-1 line-clamp-1 text-[12px] leading-relaxed'>
+        {description || t('No description available.')}
+      </p>
 
-      <ModelPerfBadge perf={props.perf} className='mt-3 flex-wrap'>
-        <Button
-          variant='outline'
-          size='sm'
-          onClick={handleDetailsClick}
-          className='relative z-20 ml-auto h-7 shrink-0 gap-1 px-2 text-xs'
-        >
-          {t('Details')}
-          <ChevronRight className='size-3.5' />
-        </Button>
-      </ModelPerfBadge>
       {dynamicSummary?.isTimePricing && (
         <p className='text-muted-foreground mt-2 text-xs'>
           {t('Current period price')}
@@ -563,9 +563,6 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
 
       {!!props.model.supported_endpoint_types?.length && (
         <div className='mt-2 flex min-w-0 flex-wrap items-center gap-1.5'>
-          <span className='text-muted-foreground text-xs'>
-            {t('Endpoints')}:
-          </span>
           {props.model.supported_endpoint_types.map((endpoint) => (
             <Badge
               key={endpoint}

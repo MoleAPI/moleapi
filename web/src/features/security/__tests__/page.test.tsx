@@ -188,6 +188,19 @@ describe('unified profile and security page', () => {
       screen.getAllByRole('switch', { name: 'Record IP Address' })
     ).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Save Settings' })).toBeVisible()
+    const settings = screen.getByText('Settings & Preferences')
+    const left = settings.closest('[data-profile-column]')
+    expect(left).toHaveAttribute('data-profile-column', 'left')
+    expect(left?.firstElementChild).toContainElement(settings)
+    for (const title of [
+      'Account Bindings',
+      'Language Preferences',
+      'Security',
+    ]) {
+      expect(
+        screen.getByText(title).closest('[data-profile-column]')
+      ).toHaveAttribute('data-profile-column', 'right')
+    }
   })
 
   it('old security links redirect to Profile without a second settings page', async () => {

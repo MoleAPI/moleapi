@@ -172,7 +172,14 @@ describe('model cards', () => {
     const statusStrip = screen.getByRole('img', {
       name: 'Recent success-rate samples; gray bars indicate missing data.',
     })
-    expect(statusStrip).toHaveClass('gap-px')
+    expect(statusStrip).toHaveClass('gap-px', 'w-20')
+    const metrics = screen.getByLabelText(
+      'Performance metrics for the last 24 hours'
+    )
+    expect(metrics).toHaveClass('ml-auto', 'w-auto')
+    expect(metrics.parentElement).toContainElement(
+      screen.getByRole('heading', { name: 'example-model' })
+    )
     expect(statusStrip).not.toHaveClass('justify-between')
   })
 
@@ -201,6 +208,7 @@ describe('model cards', () => {
     for (const group of groups.slice(0, 2)) {
       expect(screen.getByText(group)).toBeVisible()
     }
+    expect(screen.queryByText('Endpoints:')).not.toBeInTheDocument()
     for (const endpoint of endpoints) {
       expect(screen.getByText(endpoint)).toHaveAttribute('data-slot', 'badge')
     }
