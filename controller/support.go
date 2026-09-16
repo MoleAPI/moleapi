@@ -5,8 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -44,6 +46,36 @@ type zohoDeskConversation struct {
 	Content     string `json:"content"`
 	CreatedTime string `json:"createdTime"`
 	FromEmail   string `json:"fromEmailAddress"`
+}
+
+type zohoDeskAttachment struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	Size string `json:"size"`
+	Href string `json:"href"`
+}
+
+const (
+	supportAttachmentLimit       = 3
+	supportAttachmentMaxFileSize = 5 << 20
+	supportAttachmentMaxBodySize = 16 << 20
+)
+
+var supportTicketTypes = map[string]struct{}{
+	"API Integration":      {},
+	"Authentication Issue": {},
+	"Billing & Credits":    {},
+	"Model Availability":   {},
+	"Model Rate Limit":     {},
+	"Partnership Inquiry":  {},
+	"Feature Request":      {},
+	"Invoice Request":      {},
+	"Other":                {},
+}
+
+var supportAttachmentExtensions = map[string]struct{}{
+	".gif": {}, ".jpeg": {}, ".jpg": {}, ".log": {}, ".pdf": {},
+	".png": {}, ".txt": {}, ".webp": {},
 }
 
 var zohoDeskTokenCache struct {
@@ -141,6 +173,76 @@ func zohoDeskRequest(cfg zohoDeskConfig, method, path string, body any, result a
 	return common.DecodeJson(res.Body, result)
 }
 
+func zohoDeskUploadAttachment(cfg zohoDeskConfig, ticketID string, header *multipart.FileHeader) (zohoDeskAttachment, error) {
+	file, err := header.Open()
+	if err != nil {
+		return zohoDeskAttachment{}, err
+	}
+	defer file.Close()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("file", filepath.Base(header.Filename))
+	if err != nil {
+		return zohoDeskAttachment{}, err
+	}
+	if _, err = io.Copy(part, file); err != nil {
+		return zohoDeskAttachment{}, err
+	}
+	if err = writer.Close(); err != nil {
+		return zohoDeskAttachment{}, err
+	}
+
+	token, err := zohoDeskAccessToken(cfg)
+	if err != nil {
+		return zohoDeskAttachment{}, err
+	}
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(cfg.APIDomain, "/")+"/api/v1/tickets/"+ticketID+"/attachments", &body)
+	if err != nil {
+		return zohoDeskAttachment{}, err
+	}
+	req.Header.Set("Authorization", "Zoho-oauthtoken "+token)
+	req.Header.Set("orgId", cfg.OrgID)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return zohoDeskAttachment{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return zohoDeskAttachment{}, fmt.Errorf("Zoho Desk returned %d: %s", res.StatusCode, strings.TrimSpace(string(message)))
+	}
+	var attachment zohoDeskAttachment
+	if err = common.DecodeJson(res.Body, &attachment); err != nil {
+		return zohoDeskAttachment{}, err
+	}
+	return attachment, nil
+}
+
+func zohoDeskDownloadAttachment(cfg zohoDeskConfig, ticketID, attachmentID string) (*http.Response, error) {
+	token, err := zohoDeskAccessToken(cfg)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(cfg.APIDomain, "/")+"/api/v1/tickets/"+ticketID+"/attachments/"+attachmentID+"/content", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Zoho-oauthtoken "+token)
+	req.Header.Set("orgId", cfg.OrgID)
+	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= 300 {
+		defer res.Body.Close()
+		message, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
+		return nil, fmt.Errorf("Zoho Desk returned %d: %s", res.StatusCode, strings.TrimSpace(string(message)))
+	}
+	return res, nil
+}
+
 func supportUser(c *gin.Context) (*model.User, bool) {
 	user, err := model.GetUserById(c.GetInt("id"), false)
 	if err != nil {
@@ -210,7 +312,7 @@ func CreateSupportTicket(c *gin.Context) {
 		common.ApiErrorMsg(c, "Please check the subject and description length.")
 		return
 	}
-	if input.Type != "Support" && input.Type != "Billing & Invoice" {
+	if _, ok := supportTicketTypes[input.Type]; !ok {
 		common.ApiErrorMsg(c, "Invalid ticket type.")
 		return
 	}
@@ -246,6 +348,79 @@ func CreateSupportTicket(c *gin.Context) {
 		return
 	}
 	common.ApiSuccess(c, ticket)
+}
+
+func UploadSupportAttachments(c *gin.Context) {
+	cfg := getZohoDeskConfig()
+	if !cfg.ready() {
+		common.ApiErrorMsg(c, "Support tickets are not configured yet.")
+		return
+	}
+	ticket, ok := loadSupportTicket(c, cfg)
+	if !ok {
+		return
+	}
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, supportAttachmentMaxBodySize)
+	if err := c.Request.ParseMultipartForm(1 << 20); err != nil {
+		common.ApiErrorMsg(c, "Invalid or oversized attachment request.")
+		return
+	}
+	files := c.Request.MultipartForm.File["files"]
+	if len(files) == 0 || len(files) > supportAttachmentLimit {
+		common.ApiErrorMsg(c, "Attach between 1 and 3 files.")
+		return
+	}
+	for _, header := range files {
+		extension := strings.ToLower(filepath.Ext(header.Filename))
+		_, allowed := supportAttachmentExtensions[extension]
+		if header.Size <= 0 || header.Size > supportAttachmentMaxFileSize || !allowed {
+			common.ApiErrorMsg(c, "Only images, PDF, text, and log files up to 5 MB are supported.")
+			return
+		}
+	}
+
+	attachments := make([]zohoDeskAttachment, 0, len(files))
+	for _, header := range files {
+		attachment, err := zohoDeskUploadAttachment(cfg, ticket.ID, header)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		attachments = append(attachments, attachment)
+	}
+	common.ApiSuccess(c, attachments)
+}
+
+func DownloadSupportAttachment(c *gin.Context) {
+	cfg := getZohoDeskConfig()
+	if !cfg.ready() {
+		common.ApiErrorMsg(c, "Support tickets are not configured yet.")
+		return
+	}
+	ticket, ok := loadSupportTicket(c, cfg)
+	if !ok {
+		return
+	}
+	attachmentID := c.Param("attachment_id")
+	if _, err := strconv.ParseUint(attachmentID, 10, 64); err != nil {
+		common.ApiErrorMsg(c, "Invalid attachment ID.")
+		return
+	}
+	res, err := zohoDeskDownloadAttachment(cfg, ticket.ID, attachmentID)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	defer res.Body.Close()
+	for _, header := range []string{"Content-Type", "Content-Length", "Content-Disposition"} {
+		if value := res.Header.Get(header); value != "" {
+			c.Header(header, value)
+		}
+	}
+	c.Status(res.StatusCode)
+	if _, err = io.Copy(c.Writer, res.Body); err != nil {
+		common.SysError("failed to proxy support attachment: " + err.Error())
+	}
 }
 
 func loadSupportTicket(c *gin.Context, cfg zohoDeskConfig) (zohoDeskTicket, bool) {
@@ -285,11 +460,18 @@ func GetSupportTicket(c *gin.Context) {
 	var conversations struct {
 		Data []zohoDeskConversation `json:"data"`
 	}
+	var attachments struct {
+		Data []zohoDeskAttachment `json:"data"`
+	}
+	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/attachments", nil, &attachments); err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/conversations", nil, &conversations); err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"ticket": ticket, "conversations": conversations.Data})
+	common.ApiSuccess(c, gin.H{"ticket": ticket, "conversations": conversations.Data, "attachments": attachments.Data})
 }
 
 func ReplySupportTicket(c *gin.Context) {

@@ -18,28 +18,69 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
-import { ticketSchema } from '../api'
+import { buildTicketDescription, ticketSchema } from '../api'
+import { INVOICE_TYPE, TICKET_TYPES } from '../constants'
 
 describe('support ticket validation', () => {
-  test('accepts support and invoice tickets with useful descriptions', () => {
-    for (const type of ['Support', 'Billing & Invoice']) {
+  test('accepts every supported ticket type', () => {
+    for (const { value: type } of TICKET_TYPES) {
       expect(
         ticketSchema.safeParse({
           type,
           subject: 'Need help',
           content: 'A clear description of the request.',
+          invoiceTitle: type === INVOICE_TYPE ? 'Mole API Ltd.' : '',
         }).success
       ).toBe(true)
     }
   })
 
-  test('rejects unsupported types and short descriptions', () => {
+  test('rejects unsupported types, short descriptions, and incomplete invoices', () => {
     expect(
       ticketSchema.safeParse({
-        type: 'Other',
+        type: 'Unknown',
         subject: 'Hi',
         content: 'Too short',
       }).success
     ).toBe(false)
+    expect(
+      ticketSchema.safeParse({
+        type: INVOICE_TYPE,
+        subject: 'Invoice request',
+        content: 'Please issue an invoice for my order.',
+        invoiceTitle: '',
+      }).success
+    ).toBe(false)
+  })
+
+  test('adds invoice and billing information to the submitted description', () => {
+    const description = buildTicketDescription(
+      {
+        type: INVOICE_TYPE,
+        subject: 'Invoice request',
+        content: 'Please issue an invoice for my order.',
+        invoiceTitle: 'Mole API Ltd.',
+        taxId: '123456',
+        invoiceEmail: 'billing@example.com',
+        invoiceAddressPhone: '',
+        bankAccount: '',
+      },
+      [
+        {
+          id: 1,
+          user_id: 1,
+          amount: 10,
+          money: 10,
+          payment_currency: 'USD',
+          trade_no: 'ORDER-1',
+          payment_method: 'stripe',
+          create_time: 1,
+          status: 'success',
+        },
+      ]
+    )
+
+    expect(description).toContain('Invoice title: Mole API Ltd.')
+    expect(description).toContain('ORDER-1 | USD 10 | stripe | success')
   })
 })
