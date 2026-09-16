@@ -17,6 +17,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import {
+  Add01Icon,
+  AiChat02Icon,
   ArrowLeft01Icon,
   CustomerSupportIcon,
   File01Icon,
@@ -43,7 +45,6 @@ import {
 import { Field, FieldLabel } from '@/components/ui/field'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
 import { TitledCard } from '@/components/ui/titled-card'
 import { useIsAdmin } from '@/hooks/use-admin'
@@ -59,6 +60,10 @@ import {
   replySupportTicket,
 } from './api'
 import { CommunityChannels } from './components/community-channels'
+import {
+  SupportAssistant,
+  type AssistantTicketDraft,
+} from './components/support-assistant'
 import { TicketCreateForm } from './components/ticket-create-form'
 
 export function Support() {
@@ -67,7 +72,12 @@ export function Support() {
   const accountEmail = useAuthStore((state) => state.auth.user?.email)
   const queryClient = useQueryClient()
   const [selectedTicket, setSelectedTicket] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState('create')
+  const [userPanel, setUserPanel] = useState<'overview' | 'ai' | 'create'>(
+    'overview'
+  )
+  const [ticketDraft, setTicketDraft] = useState<AssistantTicketDraft | null>(
+    null
+  )
   const [reply, setReply] = useState('')
   const config = useQuery({
     queryKey: ['support', 'config'],
@@ -156,44 +166,230 @@ export function Support() {
               )}
               icon={<HugeiconsIcon icon={CustomerSupportIcon} />}
               iconTone='info'
+              contentClassName='p-0 sm:p-0'
               disableHoverEffect
             >
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList>
-                  <TabsTrigger value='create'>
-                    {t('Create a ticket')}
-                  </TabsTrigger>
-                  <TabsTrigger value='tickets'>{t('My tickets')}</TabsTrigger>
-                </TabsList>
-                <TabsContent value='create' className='pt-4'>
-                  <TicketCreateForm
-                    accountEmail={accountEmail}
-                    onCreated={(id) => {
-                      setSelectedTicket(id)
-                      setActiveTab('tickets')
-                    }}
-                  />
-                </TabsContent>
-                <TabsContent value='tickets' className='pt-4'>
-                  <TicketBrowser
-                    loading={tickets.isLoading}
-                    tickets={tickets.data ?? []}
-                    selectedTicket={selectedTicket}
-                    onSelect={setSelectedTicket}
-                    detail={detail.data}
-                    detailLoading={detail.isLoading}
-                    reply={reply}
-                    onReplyChange={setReply}
-                    onSend={() => sendReply.mutate(undefined)}
-                    sending={sendReply.isPending}
-                  />
-                </TabsContent>
-              </Tabs>
+              <UserSupportWorkspace
+                accountEmail={accountEmail}
+                loading={tickets.isLoading}
+                tickets={tickets.data ?? []}
+                selectedTicket={selectedTicket}
+                onSelectTicket={(id) => {
+                  setSelectedTicket(id)
+                  setUserPanel('overview')
+                }}
+                panel={userPanel}
+                onPanelChange={(panel) => {
+                  setSelectedTicket(null)
+                  setUserPanel(panel)
+                  if (panel === 'create') setTicketDraft(null)
+                }}
+                draft={ticketDraft}
+                onAssistantDraft={(draft) => {
+                  setTicketDraft(draft)
+                  setSelectedTicket(null)
+                  setUserPanel('create')
+                }}
+                detail={detail.data}
+                detailLoading={detail.isLoading}
+                reply={reply}
+                onReplyChange={setReply}
+                onSend={() => sendReply.mutate(undefined)}
+                sending={sendReply.isPending}
+              />
             </TitledCard>
           )}
         </div>
       </SectionPageLayout.Content>
     </SectionPageLayout>
+  )
+}
+
+function UserSupportWorkspace(props: {
+  accountEmail?: string
+  loading: boolean
+  tickets: Awaited<ReturnType<typeof getSupportTickets>>
+  selectedTicket: string | null
+  onSelectTicket: (id: string | null) => void
+  panel: 'overview' | 'ai' | 'create'
+  onPanelChange: (panel: 'overview' | 'ai' | 'create') => void
+  draft: AssistantTicketDraft | null
+  onAssistantDraft: (draft: AssistantTicketDraft) => void
+  detail: Awaited<ReturnType<typeof getSupportTicket>> | undefined
+  detailLoading: boolean
+  reply: string
+  onReplyChange: (value: string) => void
+  onSend: () => void
+  sending: boolean
+}) {
+  const { t } = useTranslation()
+  const showingPanel =
+    Boolean(props.selectedTicket) || props.panel !== 'overview'
+  const goBack = () => {
+    props.onSelectTicket(null)
+    props.onPanelChange('overview')
+  }
+
+  return (
+    <div className='grid min-h-[38rem] overflow-hidden md:grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)]'>
+      <aside
+        className={cn(
+          'min-h-0 flex-col border-r',
+          showingPanel ? 'hidden md:flex' : 'flex'
+        )}
+      >
+        <div className='grid grid-cols-2 gap-2 border-b p-3'>
+          <Button
+            variant={props.panel === 'ai' ? 'secondary' : 'outline'}
+            onClick={() => props.onPanelChange('ai')}
+          >
+            <HugeiconsIcon icon={AiChat02Icon} data-icon='inline-start' />
+            {t('Ask AI')}
+          </Button>
+          <Button onClick={() => props.onPanelChange('create')}>
+            <HugeiconsIcon icon={Add01Icon} data-icon='inline-start' />
+            {t('Create ticket')}
+          </Button>
+        </div>
+        <div className='flex h-12 items-center gap-2 border-b px-4 font-medium'>
+          {t('My tickets')}
+          <Badge variant='secondary'>{props.tickets.length}</Badge>
+        </div>
+        <ScrollArea className='min-h-0 flex-1'>
+          {props.loading && <LoadingState />}
+          {!props.loading && props.tickets.length === 0 && (
+            <div className='text-muted-foreground px-4 py-8 text-center text-sm'>
+              {t('No tickets yet')}
+            </div>
+          )}
+          {!props.loading && props.tickets.length > 0 && (
+            <div className='divide-y'>
+              {props.tickets.map((ticket) => (
+                <button
+                  key={ticket.id}
+                  type='button'
+                  className={cn(
+                    'hover:bg-muted/60 flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors',
+                    props.selectedTicket === ticket.id && 'bg-muted'
+                  )}
+                  onClick={() => props.onSelectTicket(ticket.id)}
+                >
+                  <HugeiconsIcon
+                    icon={File01Icon}
+                    className='text-muted-foreground mt-0.5 size-4 shrink-0'
+                    aria-hidden='true'
+                  />
+                  <span className='min-w-0 flex-1'>
+                    <span className='block truncate text-sm font-medium'>
+                      {ticket.subject}
+                    </span>
+                    <span className='text-muted-foreground mt-1 block truncate text-xs'>
+                      #{ticket.ticketNumber} · {t(ticket.category)}
+                    </span>
+                  </span>
+                  <Badge variant='secondary'>{t(ticket.status)}</Badge>
+                </button>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
+      </aside>
+
+      <section
+        className={cn(
+          'min-h-0 flex-col',
+          showingPanel ? 'flex' : 'hidden md:flex'
+        )}
+      >
+        {!showingPanel && <SupportOverview />}
+        {!props.selectedTicket && props.panel !== 'overview' && (
+          <div className='flex items-center border-b px-3 py-2 md:hidden'>
+            <Button variant='ghost' size='icon-sm' onClick={goBack}>
+              <HugeiconsIcon icon={ArrowLeft01Icon} />
+              <span className='sr-only'>{t('Back to tickets')}</span>
+            </Button>
+          </div>
+        )}
+        {props.panel === 'ai' && !props.selectedTicket && (
+          <SupportAssistant onCreateTicket={props.onAssistantDraft} />
+        )}
+        {props.panel === 'create' && !props.selectedTicket && (
+          <ScrollArea className='min-h-0 flex-1'>
+            <div className='p-5 sm:p-7'>
+              <div className='mx-auto mb-6 w-full max-w-3xl'>
+                <h2 className='font-semibold'>
+                  {t('Create a support ticket')}
+                </h2>
+                <p className='text-muted-foreground mt-1 text-sm'>
+                  {t(
+                    'Choose a type and include enough detail for support to investigate.'
+                  )}
+                </p>
+              </div>
+              <TicketCreateForm
+                key={
+                  props.draft
+                    ? `${props.draft.type}-${props.draft.subject}`
+                    : 'blank'
+                }
+                accountEmail={props.accountEmail}
+                initialValues={props.draft ?? undefined}
+                onCreated={(id) => props.onSelectTicket(id)}
+              />
+            </div>
+          </ScrollArea>
+        )}
+        {props.selectedTicket && (props.detailLoading || !props.detail) && (
+          <LoadingState />
+        )}
+        {props.selectedTicket && props.detail && (
+          <TicketDetail
+            data={props.detail}
+            reply={props.reply}
+            onReplyChange={props.onReplyChange}
+            onBack={goBack}
+            onSend={props.onSend}
+            sending={props.sending}
+          />
+        )}
+      </section>
+    </div>
+  )
+}
+
+function SupportOverview() {
+  const { t } = useTranslation()
+  return (
+    <div className='flex flex-1 items-center justify-center p-6'>
+      <div className='max-w-xl text-center'>
+        <div className='bg-primary/10 text-primary mx-auto mb-4 flex size-12 items-center justify-center rounded-xl'>
+          <HugeiconsIcon icon={CustomerSupportIcon} className='size-6' />
+        </div>
+        <h2 className='text-xl font-semibold'>{t('How can support help?')}</h2>
+        <p className='text-muted-foreground mt-2 text-sm leading-relaxed'>
+          {t(
+            'Ask AI for immediate troubleshooting, create a structured ticket with files and billing records, or continue an existing conversation.'
+          )}
+        </p>
+        <div className='mt-6 grid gap-3 text-left sm:grid-cols-3'>
+          {[
+            t('Troubleshoot with AI'),
+            t('Submit complete details'),
+            t('Track support replies'),
+          ].map((item, index) => (
+            <div
+              key={item}
+              className='bg-muted/50 rounded-lg border p-3 text-sm'
+            >
+              <Badge variant='secondary' className='mb-2'>
+                {index + 1}
+              </Badge>
+              <p className='font-medium'>{item}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -261,10 +457,10 @@ function TicketBrowser(props: {
                     {ticket.subject}
                   </span>
                   <span className='text-muted-foreground mt-1 block truncate text-xs'>
-                    #{ticket.ticketNumber} · {ticket.category}
+                    #{ticket.ticketNumber} · {t(ticket.category)}
                   </span>
                 </span>
-                <Badge variant='secondary'>{ticket.status}</Badge>
+                <Badge variant='secondary'>{t(ticket.status)}</Badge>
               </button>
             ))}
           </div>
@@ -348,10 +544,10 @@ function TicketDetail(props: {
             {props.data.ticket.subject}
           </h2>
           <p className='text-muted-foreground truncate text-xs'>
-            #{props.data.ticket.ticketNumber} · {props.data.ticket.category}
+            #{props.data.ticket.ticketNumber} · {t(props.data.ticket.category)}
           </p>
         </div>
-        <Badge variant='secondary'>{props.data.ticket.status}</Badge>
+        <Badge variant='secondary'>{t(props.data.ticket.status)}</Badge>
       </div>
 
       <ScrollArea className='min-h-0 flex-1'>

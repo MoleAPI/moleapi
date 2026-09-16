@@ -60,6 +60,7 @@ import {
   BILLING_TYPES,
   INVOICE_TYPE,
   TICKET_TYPES,
+  type TicketType,
   mergeSupportFiles,
 } from '../constants'
 import { AttachmentPicker } from './attachment-picker'
@@ -69,6 +70,11 @@ type TicketForm = import('zod').infer<typeof ticketSchema>
 export function TicketCreateForm(props: {
   accountEmail?: string
   onCreated: (id: string) => void
+  initialValues?: {
+    type: TicketType
+    subject: string
+    content: string
+  }
 }) {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
@@ -77,9 +83,9 @@ export function TicketCreateForm(props: {
   const form = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
     defaultValues: {
-      type: 'API Integration',
-      subject: '',
-      content: '',
+      type: props.initialValues?.type ?? 'API Integration',
+      subject: props.initialValues?.subject ?? '',
+      content: props.initialValues?.content ?? '',
       invoiceTitle: '',
       taxId: '',
       invoiceEmail: props.accountEmail ?? '',

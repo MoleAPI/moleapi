@@ -73,6 +73,34 @@ export const BILLING_TYPES: readonly TicketType[] = [
   INVOICE_TYPE,
 ]
 
+const ticketTypeValues = new Set<string>(TICKET_TYPES.map((item) => item.value))
+const ticketMarker = /\s*<ticket>([\s\S]*?)<\/ticket>\s*$/i
+
+export function parseAssistantReply(content: string) {
+  const marker = content.match(ticketMarker)
+  const answer = content.replace(ticketMarker, '').trim()
+  if (!marker) return { answer, type: 'Other' as TicketType, subject: '' }
+
+  try {
+    const suggestion = JSON.parse(marker[1]) as {
+      type?: string
+      subject?: string
+    }
+    return {
+      answer,
+      type: ticketTypeValues.has(suggestion.type ?? '')
+        ? (suggestion.type as TicketType)
+        : ('Other' as TicketType),
+      subject:
+        typeof suggestion.subject === 'string'
+          ? suggestion.subject.trim().slice(0, 200)
+          : '',
+    }
+  } catch {
+    return { answer, type: 'Other' as TicketType, subject: '' }
+  }
+}
+
 export const SUPPORT_ATTACHMENT_LIMIT = 3
 export const SUPPORT_ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024
 export const SUPPORT_ATTACHMENT_ACCEPT =

@@ -18,8 +18,10 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, test } from 'vitest'
 
+import zh from '@/i18n/locales/zh.json'
+
 import { buildTicketDescription, ticketSchema } from '../api'
-import { INVOICE_TYPE, TICKET_TYPES } from '../constants'
+import { INVOICE_TYPE, TICKET_TYPES, parseAssistantReply } from '../constants'
 
 describe('support ticket validation', () => {
   test('accepts every supported ticket type', () => {
@@ -82,5 +84,34 @@ describe('support ticket validation', () => {
 
     expect(description).toContain('Invoice title: Mole API Ltd.')
     expect(description).toContain('ORDER-1 | USD 10 | stripe | success')
+  })
+
+  test('keeps every ticket type and template inside the active translation namespace', () => {
+    for (const item of TICKET_TYPES) {
+      expect(zh.translation[item.value]).toBeTruthy()
+      expect(zh.translation[item.template]).toBeTruthy()
+      expect(zh.translation[item.template]).not.toBe(item.template)
+    }
+  })
+
+  test('extracts a safe ticket suggestion from the AI reply', () => {
+    expect(
+      parseAssistantReply(
+        'Try a new API key.\n<ticket>{"type":"Authentication Issue","subject":"API key rejected"}</ticket>'
+      )
+    ).toEqual({
+      answer: 'Try a new API key.',
+      type: 'Authentication Issue',
+      subject: 'API key rejected',
+    })
+    expect(
+      parseAssistantReply(
+        'More detail is needed.\n<ticket>{"type":"Unsafe Type","subject":42}</ticket>'
+      )
+    ).toEqual({
+      answer: 'More detail is needed.',
+      type: 'Other',
+      subject: '',
+    })
   })
 })
