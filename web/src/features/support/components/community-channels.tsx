@@ -25,6 +25,7 @@ import { IconDiscord, IconTelegram, IconWeChat } from '@/assets/brand-icons'
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { IconBadge } from '@/components/ui/icon-badge'
+import { cn } from '@/lib/utils'
 
 const channels = [
   { key: 'qq', label: 'QQ', icon: 'qq', qr: true, tone: 'info' },
@@ -71,14 +72,19 @@ export function CommunityChannels(props: { links: Record<string, string> }) {
           {t('Join a community for announcements and peer support.')}
         </p>
       </div>
-      <div className='grid grid-cols-2 gap-3 lg:grid-cols-4'>
-        {channels.map((channel) => {
+      <div className='grid grid-cols-2 overflow-hidden rounded-lg border lg:grid-cols-4'>
+        {channels.map((channel, index) => {
           const href = props.links[channel.key]
           const trigger = (
             <Button
-              variant='outline'
+              variant='ghost'
               disabled={!href}
-              className='h-auto min-w-0 justify-start gap-3 p-3 text-left sm:p-4'
+              className={cn(
+                'h-20 min-w-0 justify-start gap-3 rounded-none border-0 p-3 text-left sm:h-24 sm:p-4',
+                index < 2 && 'border-b lg:border-b-0',
+                index % 2 === 0 && 'border-r',
+                index === 1 && 'lg:border-r'
+              )}
             >
               <IconBadge tone={channel.tone} size='lg'>
                 <ChannelIcon icon={channel.icon} />
