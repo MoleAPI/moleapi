@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
+import { SupportSettingsSection } from '../integrations/support-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
@@ -74,6 +75,29 @@ const OPERATIONS_SECTIONS = [
           SMTPStartTLSEnabled: settings.SMTPStartTLSEnabled,
           SMTPInsecureSkipVerify: settings.SMTPInsecureSkipVerify,
           SMTPForceAuthLogin: settings.SMTPForceAuthLogin,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'support',
+    titleKey: 'Support & Community',
+    build: (settings: OperationsSettings) => (
+      <SupportSettingsSection
+        defaultValues={{
+          ZohoDeskEnabled: settings.ZohoDeskEnabled,
+          ZohoDeskClientId: settings.ZohoDeskClientId,
+          ZohoDeskClientSecret: settings.ZohoDeskClientSecret,
+          ZohoDeskRefreshToken: settings.ZohoDeskRefreshToken,
+          ZohoDeskOrgId: settings.ZohoDeskOrgId,
+          ZohoDeskDepartmentId: settings.ZohoDeskDepartmentId,
+          ZohoDeskApiDomain: settings.ZohoDeskApiDomain,
+          ZohoDeskAccountsDomain: settings.ZohoDeskAccountsDomain,
+          ZohoDeskFromEmail: settings.ZohoDeskFromEmail,
+          SupportDiscordUrl: settings.SupportDiscordUrl,
+          SupportTelegramUrl: settings.SupportTelegramUrl,
+          SupportQQUrl: settings.SupportQQUrl,
+          SupportWeChatUrl: settings.SupportWeChatUrl,
         }}
       />
     ),

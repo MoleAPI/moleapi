@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createMemoryHistory,
@@ -166,9 +148,10 @@ async function renderPage(path = '/profile') {
 describe('unified profile and security page', () => {
   it('keeps one copy of each security control alongside profile preferences', async () => {
     await renderPage()
-    expect(
-      await screen.findByRole('button', { name: 'Change Password' })
-    ).toBeVisible()
+    const changePassword = await screen.findByRole('button', {
+      name: 'Change Password',
+    })
+    expect(changePassword).toBeVisible()
     expect(
       screen.getAllByRole('button', { name: 'Change Password' })
     ).toHaveLength(1)
@@ -188,15 +171,25 @@ describe('unified profile and security page', () => {
       screen.getAllByRole('switch', { name: 'Record IP Address' })
     ).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Save Settings' })).toBeVisible()
-    const settings = screen.getByText('Settings & Preferences')
-    const left = settings.closest('[data-profile-column]')
+    expect(changePassword.parentElement).toHaveClass(
+      'grid-cols-1',
+      'md:grid-cols-2'
+    )
+    const bindings = screen.getByText('Account Bindings')
+    const left = bindings.closest('[data-profile-column]')
     expect(left).toHaveAttribute('data-profile-column', 'left')
-    expect(left?.firstElementChild).toContainElement(settings)
+    expect(left?.firstElementChild).toContainElement(bindings)
     for (const title of [
-      'Account Bindings',
       'Language Preferences',
       'Security',
+      'No active login sessions',
+      'Settings & Preferences',
     ]) {
+      expect(
+        screen.getByText(title).closest('[data-profile-column]')
+      ).toHaveAttribute('data-profile-column', 'left')
+    }
+    for (const title of ['Passkey Login', 'Two-Factor Authentication']) {
       expect(
         screen.getByText(title).closest('[data-profile-column]')
       ).toHaveAttribute('data-profile-column', 'right')
