@@ -460,6 +460,19 @@ export type OperationsSettings = {
   SMTPStartTLSEnabled: boolean
   SMTPInsecureSkipVerify: boolean
   SMTPForceAuthLogin: boolean
+  ZohoDeskEnabled: boolean
+  ZohoDeskClientId: string
+  ZohoDeskClientSecret: string
+  ZohoDeskRefreshToken: string
+  ZohoDeskOrgId: string
+  ZohoDeskDepartmentId: string
+  ZohoDeskApiDomain: string
+  ZohoDeskAccountsDomain: string
+  ZohoDeskFromEmail: string
+  SupportDiscordUrl: string
+  SupportTelegramUrl: string
+  SupportQQUrl: string
+  SupportWeChatUrl: string
   WorkerUrl: string
   WorkerValidKey: string
   WorkerAllowHttpImageRequestEnabled: boolean

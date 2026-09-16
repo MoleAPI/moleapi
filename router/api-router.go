@@ -58,6 +58,15 @@ func SetApiRouter(router *gin.Engine) {
 		// Standard OAuth providers (GitHub, Discord, OIDC, LinuxDO, Telegram) - unified route
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
+		supportRoute := apiRouter.Group("/support")
+		supportRoute.Use(middleware.UserAuth())
+		{
+			supportRoute.GET("/config", controller.GetSupportConfig)
+			supportRoute.GET("/tickets", controller.ListSupportTickets)
+			supportRoute.POST("/tickets", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.CreateSupportTicket)
+			supportRoute.GET("/tickets/:id", controller.GetSupportTicket)
+			supportRoute.POST("/tickets/:id/reply", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ReplySupportTicket)
+		}
 
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)

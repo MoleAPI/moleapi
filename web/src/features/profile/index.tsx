@@ -1,21 +1,3 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -103,18 +85,6 @@ export function Profile() {
                 data-profile-column='left'
                 className='flex min-w-0 flex-col gap-4 sm:gap-6'
               >
-                <ProfileSettingsCard
-                  profile={profile}
-                  loading={loading}
-                  onProfileUpdate={refreshProfile}
-                />
-                <LoginSessionsCard />
-              </div>
-
-              <div
-                data-profile-column='right'
-                className='flex min-w-0 flex-col gap-4 sm:gap-6'
-              >
                 <AccountBindingsCard
                   profile={profile}
                   loading={loading}
@@ -129,6 +99,18 @@ export function Profile() {
                   loading={loading}
                   onProfileUpdate={refreshProfile}
                 />
+                <LoginSessionsCard />
+                <ProfileSettingsCard
+                  profile={profile}
+                  loading={loading}
+                  onProfileUpdate={refreshProfile}
+                />
+              </div>
+
+              <div
+                data-profile-column='right'
+                className='flex min-w-0 flex-col gap-4 sm:gap-6'
+              >
                 {checkinEnabled && (
                   <CheckinCalendarCard
                     checkinEnabled={checkinEnabled}
