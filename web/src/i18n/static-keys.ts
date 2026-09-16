@@ -19,6 +19,27 @@ For commercial licensing, please contact support@quantumnous.com
 // Static translation keys that don't get picked up by the t('...') regex.
 // These cover dynamic labels (e.g. constants, configs) that are passed into t at runtime.
 export const STATIC_I18N_KEYS = [
+  // Support ticket types, templates, and interpolated labels.
+  'API Integration',
+  'Authentication Issue',
+  'Billing & Credits',
+  'Model Availability',
+  'Model Rate Limit',
+  'Partnership Inquiry',
+  'Feature Request',
+  'Invoice Request',
+  'Other',
+  'Please include the API endpoint, request example, response, and request ID.',
+  'Please describe the authentication method, error message, and when the issue started.',
+  'Please include the related order number, amount, payment method, and expected result.',
+  'Please include the model name, region, endpoint, and the availability issue you observed.',
+  'Please include the model name, request rate, error response, and approximate occurrence time.',
+  'Please introduce your organization, cooperation proposal, expected scale, and contact method.',
+  'Please describe the use case, current workaround, desired behavior, and expected benefit.',
+  'Please select the related billing records and add any special invoice requirements.',
+  'Please describe what happened, what you expected, and any steps needed to reproduce it.',
+  '{{platform}} community QR code',
+  '{{file}} exceeds the 5 MB attachment limit.',
   'For this channel, map the model name in client requests to the model name sent upstream.',
   // Channel provider labels, descriptions and presentation badges.
   'Zhipu GLM',
