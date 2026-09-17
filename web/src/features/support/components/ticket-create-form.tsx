@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { SparklesIcon } from 'lucide-react'
+import { SparklesIcon, Undo2Icon } from 'lucide-react'
 import { useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -82,10 +82,15 @@ export function TicketCreateForm(props: {
     subject: string
     content: string
   }
+  initialFiles?: File[]
 }) {
   const { t, i18n } = useTranslation()
   const queryClient = useQueryClient()
-  const [files, setFiles] = useState<File[]>([])
+  const [files, setFiles] = useState<File[]>(props.initialFiles ?? [])
+  const [beforePolish, setBeforePolish] = useState<{
+    subject: string
+    content: string
+  } | null>(null)
   const [selectedBillingIds, setSelectedBillingIds] = useState<number[]>([])
   const form = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
@@ -158,7 +163,11 @@ export function TicketCreateForm(props: {
     onError: (error) => handleServerError(error),
   })
   const polishDescription = useMutation({
-    mutationFn: async (description: string) => {
+    mutationFn: async (original: {
+      type: TicketType
+      subject: string
+      content: string
+    }) => {
       const config = getInitialPlaygroundConfig()
       const payload = buildChatCompletionPayload(
         [
@@ -168,7 +177,7 @@ export function TicketCreateForm(props: {
             versions: [
               {
                 id: crypto.randomUUID(),
-                content: `${t('Ticket type')}: ${t(type)}\n\n${description}`,
+                content: `${t('Ticket type')}: ${t(original.type)}\n${t('Subject')}: ${original.subject}\n\n${original.content}`,
               },
             ],
           },
@@ -179,19 +188,52 @@ export function TicketCreateForm(props: {
       payload.messages.unshift({
         role: 'system',
         content:
-          'Rewrite this support-ticket description so it is clear, concise, and useful for troubleshooting. Preserve every fact, identifier, error message, and redaction. Do not invent information. Reply in the same language as the user and output only the revised description.',
+          'Rewrite this support ticket with a short, specific title and a clear, concise description useful for troubleshooting. Preserve every fact, identifier, error message, and redaction. Do not invent information. Reply in the same language as the user. Output only a JSON object with string fields "subject" and "content".',
       })
       const response = await sendChatCompletion(payload)
-      const polished = response.choices?.[0]?.message?.content?.trim()
-      if (!polished) throw new Error('AI returned an empty response.')
-      return polished
+      const answer = response.choices?.[0]?.message?.content?.trim()
+      if (!answer) throw new Error('AI returned an empty response.')
+      const parsed: unknown = JSON.parse(
+        answer.replaceAll(/^```(?:json)?\s*|\s*```$/g, '')
+      )
+      if (
+        !parsed ||
+        typeof parsed !== 'object' ||
+        !('subject' in parsed) ||
+        !('content' in parsed) ||
+        typeof parsed.subject !== 'string' ||
+        typeof parsed.content !== 'string' ||
+        parsed.subject.trim().length < 3 ||
+        parsed.subject.length > 200 ||
+        parsed.content.trim().length < 10 ||
+        parsed.content.length > 10000
+      ) {
+        throw new Error('AI returned an invalid ticket draft.')
+      }
+      return {
+        subject: parsed.subject.trim(),
+        content: parsed.content.trim(),
+        original,
+      }
     },
     onSuccess: (polished) => {
-      form.setValue('content', polished, {
+      if (
+        form.getValues('content') !== polished.original.content ||
+        form.getValues('subject') !== polished.original.subject ||
+        form.getValues('type') !== polished.original.type
+      ) {
+        return
+      }
+      setBeforePolish(polished.original)
+      form.setValue('subject', polished.subject, {
         shouldDirty: true,
         shouldValidate: true,
       })
-      toast.success(t('Description polished'))
+      form.setValue('content', polished.content, {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+      toast.success(t('Ticket draft polished'))
     },
     onError: (error) => handleServerError(error),
   })
@@ -280,23 +322,54 @@ export function TicketCreateForm(props: {
             <FieldLabel htmlFor='ticket-content'>
               {t('Detailed description')}
             </FieldLabel>
-            <Button
-              type='button'
-              size='sm'
-              variant='outline'
-              disabled={
-                content.trim().length < 10 || polishDescription.isPending
-              }
-              onClick={() => polishDescription.mutate(content.trim())}
-              title={t('Uses your selected Playground model')}
-            >
-              {polishDescription.isPending ? (
-                <Spinner data-icon='inline-start' />
-              ) : (
-                <SparklesIcon data-icon='inline-start' />
+            <div className='flex items-center gap-2'>
+              {beforePolish && (
+                <Button
+                  type='button'
+                  size='sm'
+                  variant='ghost'
+                  onClick={() => {
+                    form.setValue('subject', beforePolish.subject, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                    form.setValue('content', beforePolish.content, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                    setBeforePolish(null)
+                  }}
+                >
+                  <Undo2Icon data-icon='inline-start' />
+                  {t('Undo polish')}
+                </Button>
               )}
-              {polishDescription.isPending ? t('Polishing...') : t('AI polish')}
-            </Button>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                disabled={
+                  content.trim().length < 10 || polishDescription.isPending
+                }
+                onClick={() =>
+                  polishDescription.mutate({
+                    type,
+                    subject: form.getValues('subject'),
+                    content: content.trim(),
+                  })
+                }
+                title={t('Uses your selected Playground model')}
+              >
+                {polishDescription.isPending ? (
+                  <Spinner data-icon='inline-start' />
+                ) : (
+                  <SparklesIcon data-icon='inline-start' />
+                )}
+                {polishDescription.isPending
+                  ? t('Polishing...')
+                  : t('AI polish')}
+              </Button>
+            </div>
           </div>
           <Textarea
             id='ticket-content'

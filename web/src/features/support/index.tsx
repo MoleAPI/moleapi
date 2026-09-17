@@ -47,6 +47,7 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { TitledCard } from '@/components/ui/titled-card'
+import { usePlaygroundState } from '@/features/playground/hooks'
 import { useIsAdmin } from '@/hooks/use-admin'
 import { handleServerError } from '@/lib/handle-server-error'
 import { cn } from '@/lib/utils'
@@ -114,14 +115,13 @@ export function Support() {
   })
 
   return (
-    <SectionPageLayout>
-      <SectionPageLayout.Title>
-        {t('Support & Community')}
-      </SectionPageLayout.Title>
+    <SectionPageLayout fixedContent>
+      <SectionPageLayout.Title>{t('Support center')}</SectionPageLayout.Title>
+      <SectionPageLayout.Actions>
+        <CommunityChannels links={config.data?.community_links ?? {}} />
+      </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
-        <div className='flex w-full flex-col gap-6'>
-          <CommunityChannels links={config.data?.community_links ?? {}} />
-
+        <div className='flex h-full min-h-0 w-full flex-col gap-4'>
           {config.isLoading && <LoadingState />}
           {!config.isLoading && !config.data?.enabled && (
             <Alert>
@@ -136,11 +136,12 @@ export function Support() {
 
           {config.data?.enabled && isAdmin && (
             <TitledCard
+              className='min-h-0 flex-1'
               title={t('Ticket management')}
               description={t('Replying here also sends an email to the user.')}
               icon={<HugeiconsIcon icon={CustomerSupportIcon} />}
               iconTone='info'
-              contentClassName='p-0 sm:p-0'
+              contentClassName='min-h-0 flex-1 p-0 sm:p-0'
               disableHoverEffect
             >
               <TicketBrowser
@@ -160,13 +161,14 @@ export function Support() {
 
           {config.data?.enabled && !isAdmin && (
             <TitledCard
+              className='min-h-0 flex-1'
               title={t('Support tickets')}
               description={t(
                 'Submit a request or continue a conversation with support.'
               )}
               icon={<HugeiconsIcon icon={CustomerSupportIcon} />}
               iconTone='info'
-              contentClassName='p-0 sm:p-0'
+              contentClassName='min-h-0 flex-1 p-0 sm:p-0'
               disableHoverEffect
             >
               <UserSupportWorkspace
@@ -223,6 +225,9 @@ function UserSupportWorkspace(props: {
   sending: boolean
 }) {
   const { t } = useTranslation()
+  const assistantState = usePlaygroundState('support')
+  const [assistantFiles, setAssistantFiles] = useState<File[]>([])
+  const [assistantBusy, setAssistantBusy] = useState(false)
   const showingPanel =
     Boolean(props.selectedTicket) || props.panel !== 'overview'
   const goBack = () => {
@@ -231,7 +236,7 @@ function UserSupportWorkspace(props: {
   }
 
   return (
-    <div className='grid min-h-[38rem] overflow-hidden md:grid-cols-[minmax(17rem,22rem)_minmax(0,1fr)]'>
+    <div className='grid h-full min-h-0 overflow-hidden md:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]'>
       <aside
         className={cn(
           'min-h-0 flex-col border-r',
@@ -241,12 +246,16 @@ function UserSupportWorkspace(props: {
         <div className='grid grid-cols-2 gap-2 border-b p-3'>
           <Button
             variant={props.panel === 'ai' ? 'secondary' : 'outline'}
+            disabled={assistantBusy}
             onClick={() => props.onPanelChange('ai')}
           >
             <HugeiconsIcon icon={AiChat02Icon} data-icon='inline-start' />
             {t('Ask AI')}
           </Button>
-          <Button onClick={() => props.onPanelChange('create')}>
+          <Button
+            disabled={assistantBusy}
+            onClick={() => props.onPanelChange('create')}
+          >
             <HugeiconsIcon icon={Add01Icon} data-icon='inline-start' />
             {t('Create ticket')}
           </Button>
@@ -256,18 +265,70 @@ function UserSupportWorkspace(props: {
           <Badge variant='secondary'>{props.tickets.length}</Badge>
         </div>
         <ScrollArea className='min-h-0 flex-1'>
-          {props.loading && <LoadingState />}
-          {!props.loading && props.tickets.length === 0 && (
-            <div className='text-muted-foreground px-4 py-8 text-center text-sm'>
-              {t('No tickets yet')}
+          {assistantState.sessions.some(
+            (session) => session.messages.length > 0
+          ) && (
+            <div className='border-b py-2'>
+              <p className='text-muted-foreground px-4 py-1 text-xs font-medium'>
+                {t('AI conversations')}
+              </p>
+              {[...assistantState.sessions]
+                .filter((session) => session.messages.length > 0)
+                .sort((a, b) => b.updatedAt - a.updatedAt)
+                .map((session) => (
+                  <button
+                    key={session.id}
+                    type='button'
+                    disabled={assistantBusy}
+                    aria-current={
+                      props.panel === 'ai' &&
+                      !props.selectedTicket &&
+                      assistantState.activeSessionId === session.id
+                        ? 'page'
+                        : undefined
+                    }
+                    className={cn(
+                      'hover:bg-muted/60 flex w-full items-center gap-3 px-4 py-3 text-left text-sm',
+                      props.panel === 'ai' &&
+                        !props.selectedTicket &&
+                        assistantState.activeSessionId === session.id &&
+                        'bg-muted'
+                    )}
+                    onClick={() => {
+                      assistantState.selectConversation(session.id)
+                      setAssistantFiles([])
+                      props.onPanelChange('ai')
+                    }}
+                  >
+                    <HugeiconsIcon
+                      icon={AiChat02Icon}
+                      className='text-muted-foreground size-4 shrink-0'
+                      aria-hidden='true'
+                    />
+                    <span className='truncate'>
+                      {session.title || t('New chat')}
+                    </span>
+                  </button>
+                ))}
             </div>
           )}
+          {props.loading && <LoadingState />}
+          {!props.loading &&
+            props.tickets.length === 0 &&
+            assistantState.sessions.every(
+              (session) => session.messages.length === 0
+            ) && (
+              <div className='text-muted-foreground px-4 py-8 text-center text-sm'>
+                {t('No tickets yet')}
+              </div>
+            )}
           {!props.loading && props.tickets.length > 0 && (
             <div className='divide-y'>
               {props.tickets.map((ticket) => (
                 <button
                   key={ticket.id}
                   type='button'
+                  disabled={assistantBusy}
                   className={cn(
                     'hover:bg-muted/60 flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors',
                     props.selectedTicket === ticket.id && 'bg-muted'
@@ -304,14 +365,27 @@ function UserSupportWorkspace(props: {
         {!showingPanel && <SupportOverview />}
         {!props.selectedTicket && props.panel !== 'overview' && (
           <div className='flex items-center border-b px-3 py-2 md:hidden'>
-            <Button variant='ghost' size='icon-sm' onClick={goBack}>
+            <Button
+              variant='ghost'
+              size='icon-sm'
+              disabled={assistantBusy}
+              onClick={goBack}
+            >
               <HugeiconsIcon icon={ArrowLeft01Icon} />
               <span className='sr-only'>{t('Back to tickets')}</span>
             </Button>
           </div>
         )}
         {props.panel === 'ai' && !props.selectedTicket && (
-          <SupportAssistant onCreateTicket={props.onAssistantDraft} />
+          <SupportAssistant
+            state={assistantState}
+            files={assistantFiles}
+            onFilesChange={setAssistantFiles}
+            onBusyChange={setAssistantBusy}
+            onCreateTicket={(draft) => {
+              props.onAssistantDraft({ ...draft, files: assistantFiles })
+            }}
+          />
         )}
         {props.panel === 'create' && !props.selectedTicket && (
           <ScrollArea className='min-h-0 flex-1'>
@@ -334,6 +408,7 @@ function UserSupportWorkspace(props: {
                 }
                 accountEmail={props.accountEmail}
                 initialValues={props.draft ?? undefined}
+                initialFiles={props.draft?.files}
                 onCreated={(id) => props.onSelectTicket(id)}
               />
             </div>
@@ -361,29 +436,21 @@ function SupportOverview() {
   const { t } = useTranslation()
   return (
     <div className='flex flex-1 items-center justify-center p-6'>
-      <div className='max-w-xl text-center'>
-        <div className='bg-primary/10 text-primary mx-auto mb-4 flex size-12 items-center justify-center rounded-xl'>
+      <div className='w-full max-w-lg'>
+        <div className='bg-primary/10 text-primary mb-4 flex size-10 items-center justify-center rounded-md'>
           <HugeiconsIcon icon={CustomerSupportIcon} className='size-6' />
         </div>
         <h2 className='text-xl font-semibold'>{t('How can support help?')}</h2>
-        <p className='text-muted-foreground mt-2 text-sm leading-relaxed'>
-          {t(
-            'Ask AI for immediate troubleshooting, create a structured ticket with files and billing records, or continue an existing conversation.'
-          )}
-        </p>
-        <div className='mt-6 grid gap-3 text-left sm:grid-cols-3'>
+        <div className='mt-6 divide-y border-y'>
           {[
-            t('Troubleshoot with AI'),
-            t('Submit complete details'),
-            t('Track support replies'),
+            t('Troubleshoot errors and connect faster with AI'),
+            t('Send error details or bug reports to support'),
+            t('Request invoices or discuss a partnership'),
           ].map((item, index) => (
-            <div
-              key={item}
-              className='bg-muted/50 rounded-lg border p-3 text-sm'
-            >
-              <Badge variant='secondary' className='mb-2'>
-                {index + 1}
-              </Badge>
+            <div key={item} className='flex items-center gap-4 py-4 text-sm'>
+              <span className='text-muted-foreground w-5 shrink-0 tabular-nums'>
+                0{index + 1}
+              </span>
               <p className='font-medium'>{item}</p>
             </div>
           ))}
@@ -424,7 +491,7 @@ function TicketBrowser(props: {
   }
 
   return (
-    <div className='grid min-h-[32rem] overflow-hidden rounded-lg border md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]'>
+    <div className='grid h-full min-h-0 overflow-hidden md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]'>
       <aside
         className={cn(
           'min-h-0 flex-col border-r',

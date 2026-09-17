@@ -63,84 +63,87 @@ export function CommunityChannels(props: { links: Record<string, string> }) {
   const { t } = useTranslation()
 
   return (
-    <section aria-labelledby='community-title' className='flex flex-col gap-3'>
-      <div>
-        <h2 id='community-title' className='text-sm font-semibold'>
+    <Dialog
+      title={t('Community')}
+      description={t('Join a community for announcements and peer support.')}
+      trigger={
+        <Button variant='outline' size='sm'>
+          <HugeiconsIcon icon={BubbleChatIcon} data-icon='inline-start' />
           {t('Community')}
-        </h2>
-        <p className='text-muted-foreground mt-0.5 text-xs'>
-          {t('Join a community for announcements and peer support.')}
-        </p>
-      </div>
-      <div className='grid grid-cols-2 overflow-hidden rounded-lg border lg:grid-cols-4'>
-        {channels.map((channel, index) => {
-          const href = props.links[channel.key]
-          const trigger = (
-            <Button
-              variant='ghost'
-              disabled={!href}
-              className={cn(
-                'h-20 min-w-0 justify-start gap-3 rounded-none border-0 p-3 text-left sm:h-24 sm:p-4',
-                index < 2 && 'border-b lg:border-b-0',
-                index % 2 === 0 && 'border-r',
-                index === 1 && 'lg:border-r'
-              )}
-            >
-              <IconBadge tone={channel.tone} size='lg'>
-                <ChannelIcon icon={channel.icon} />
-              </IconBadge>
-              <span className='min-w-0'>
-                <span className='block truncate font-medium'>
-                  {channel.label}
+        </Button>
+      }
+      contentClassName='sm:max-w-lg'
+    >
+      <div>
+        <div className='grid grid-cols-2 overflow-hidden rounded-lg border'>
+          {channels.map((channel, index) => {
+            const href = props.links[channel.key]
+            const trigger = (
+              <Button
+                variant='ghost'
+                disabled={!href}
+                className={cn(
+                  'h-20 min-w-0 justify-start gap-3 rounded-none border-0 p-3 text-left sm:p-4',
+                  index < 2 && 'border-b',
+                  index % 2 === 0 && 'border-r'
+                )}
+              >
+                <IconBadge tone={channel.tone} size='lg'>
+                  <ChannelIcon icon={channel.icon} />
+                </IconBadge>
+                <span className='min-w-0'>
+                  <span className='block truncate font-medium'>
+                    {channel.label}
+                  </span>
+                  <span className='text-muted-foreground block truncate text-xs font-normal'>
+                    {href ? t('View community') : t('Coming soon')}
+                  </span>
                 </span>
-                <span className='text-muted-foreground block truncate text-xs font-normal'>
-                  {href ? t('View community') : t('Coming soon')}
-                </span>
-              </span>
-            </Button>
-          )
+              </Button>
+            )
 
-          if (!href) return <div key={channel.key}>{trigger}</div>
+            if (!href) return <div key={channel.key}>{trigger}</div>
 
-          return (
-            <Dialog
-              key={channel.key}
-              title={channel.label}
-              description={
-                channel.qr
-                  ? t('Scan the QR code or open the community link.')
-                  : t('You will be redirected to the community platform.')
-              }
-              trigger={trigger}
-              contentClassName='sm:max-w-sm'
-              bodyClassName='flex flex-col items-center gap-4'
-              footer={
-                <Button
-                  render={<a href={href} target='_blank' rel='noreferrer' />}
-                >
-                  <HugeiconsIcon
-                    icon={LinkSquare01Icon}
-                    data-icon='inline-start'
-                  />
-                  {t('Open link')}
-                </Button>
-              }
-            >
-              {channel.qr && (
-                <div className='bg-background rounded-lg border p-3'>
-                  <QRCodeSVG
-                    value={href}
-                    size={196}
-                    title={t('{{platform}} community QR code', {
-                      platform: channel.label,
-                    })}
-                  />
-                </div>
-              )}
-            </Dialog>
-          )
-        })}
+            return (
+              <Dialog
+                key={channel.key}
+                title={channel.label}
+                description={
+                  channel.qr
+                    ? t('Scan the QR code or open the community link.')
+                    : t('You will be redirected to the community platform.')
+                }
+                trigger={trigger}
+                contentClassName='sm:max-w-sm'
+                bodyClassName='flex flex-col items-center gap-4'
+                footer={
+                  <Button
+                    render={<a href={href} target='_blank' rel='noreferrer' />}
+                  >
+                    <HugeiconsIcon
+                      icon={LinkSquare01Icon}
+                      data-icon='inline-start'
+                    />
+                    {t('Open link')}
+                  </Button>
+                }
+              >
+                {channel.qr && (
+                  <div className='bg-background rounded-lg border p-3'>
+                    <QRCodeSVG
+                      value={href}
+                      size={196}
+                      title={t('{{platform}} community QR code', {
+                        platform: channel.label,
+                      })}
+                    />
+                  </div>
+                )}
+              </Dialog>
+            )
+          })}
+        </div>
       </div>
-    </section>
+    </Dialog>
   )
 }
