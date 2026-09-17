@@ -7054,6 +7054,13 @@
     "Powered by deepseek-flash through Playground billing. Do not share secrets.": "Powered by deepseek-flash through Playground billing. Do not share secrets.",
     "AI support request": "AI support request",
     "AI-assisted support conversation": "AI-assisted support conversation",
-    "AI support": "AI support"
+    "AI support": "AI support",
+    "Support AI": "Support AI",
+    "Support AI history": "Support AI history",
+    "Uses your Playground model and balance. Do not share secrets.": "Uses your Playground model and balance. Do not share secrets.",
+    "Description polished": "Description polished",
+    "Uses your selected Playground model": "Uses your selected Playground model",
+    "Polishing...": "Polishing...",
+    "AI polish": "AI polish"
   }
 }

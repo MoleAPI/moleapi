@@ -7054,6 +7054,13 @@
     "Powered by deepseek-flash through Playground billing. Do not share secrets.": "Sử dụng deepseek-flash và tính phí qua Playground. Không chia sẻ thông tin bí mật.",
     "AI support request": "Yêu cầu hỗ trợ AI",
     "AI-assisted support conversation": "Cuộc trò chuyện hỗ trợ có AI",
-    "AI support": "Hỗ trợ AI"
+    "AI support": "Hỗ trợ AI",
+    "Support AI": "AI hỗ trợ",
+    "Support AI history": "Lịch sử AI hỗ trợ",
+    "Uses your Playground model and balance. Do not share secrets.": "Sử dụng mô hình đã chọn trong Playground và số dư của bạn. Không chia sẻ thông tin bí mật.",
+    "Description polished": "Đã trau chuốt mô tả",
+    "Uses your selected Playground model": "Sử dụng mô hình đã chọn trong Playground",
+    "Polishing...": "Đang trau chuốt...",
+    "AI polish": "Trau chuốt bằng AI"
   }
 }

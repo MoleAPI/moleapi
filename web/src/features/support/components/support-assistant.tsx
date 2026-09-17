@@ -16,12 +16,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { AiChat02Icon, ArrowUp02Icon } from '@hugeicons/core-free-icons'
+import {
+  AiChat02Icon,
+  ArrowUp02Icon,
+  PlusSignIcon,
+} from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation } from '@tanstack/react-query'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { ModelGroupSelector } from '@/components/model-group-selector'
 import { Button } from '@/components/ui/button'
 import {
   Empty,
@@ -31,21 +36,30 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { sendChatCompletion } from '@/features/playground/api'
+import {
+  usePlaygroundOptions,
+  usePlaygroundState,
+} from '@/features/playground/hooks'
+import {
+  buildChatCompletionPayload,
+  getMessageContent,
+} from '@/features/playground/lib'
 
 import {
   TICKET_TYPES,
   type TicketType,
   parseAssistantReply,
 } from '../constants'
-
-type AssistantMessage = {
-  id: string
-  role: 'user' | 'assistant'
-  content: string
-}
 
 export type AssistantTicketDraft = {
   type: TicketType
@@ -58,45 +72,66 @@ export function SupportAssistant(props: {
 }) {
   const { t } = useTranslation()
   const [input, setInput] = useState('')
-  const [messages, setMessages] = useState<AssistantMessage[]>([])
   const [suggestion, setSuggestion] = useState<{
     type: TicketType
     subject: string
   } | null>(null)
+  const {
+    config,
+    parameterEnabled,
+    messages,
+    sessions,
+    activeSessionId,
+    isLoadingMessages,
+    models,
+    groups,
+    setModels,
+    setGroups,
+    updateConfig,
+    updateMessages,
+    createConversation,
+    selectConversation,
+  } = usePlaygroundState('support')
+  const { isLoadingModels } = usePlaygroundOptions({
+    currentGroup: config.group,
+    currentModel: config.model,
+    setGroups,
+    setModels,
+    updateConfig,
+  })
 
   const ask = useMutation({
     mutationFn: async (question: string) => {
-      // ponytail: keep the last 10 turns to bound cost; add persistence only if
-      // long-running support sessions become a real requirement.
-      const recentMessages = [
-        ...messages,
-        { id: crypto.randomUUID(), role: 'user' as const, content: question },
-      ].slice(-10)
-      const response = await sendChatCompletion({
-        model: 'deepseek-flash',
-        stream: false,
-        temperature: 0.2,
-        max_tokens: 1200,
-        messages: [
-          {
-            role: 'system',
-            content: `You are MoleAPI support triage. Help users troubleshoot safely and concisely. Never ask for passwords, complete API keys, or other secrets. Ask for request IDs and redacted errors when useful. If the problem is not resolved, recommend creating a support ticket. Reply in the user's language. End every response with exactly one machine-readable line in this format: <ticket>{"type":"TYPE","subject":"SHORT SUBJECT"}</ticket>. TYPE must be one of: ${TICKET_TYPES.map((item) => item.value).join(', ')}.`,
-          },
-          ...recentMessages.map(({ role, content }) => ({ role, content })),
-        ],
+      const userMessage = {
+        key: crypto.randomUUID(),
+        from: 'user' as const,
+        versions: [{ id: crypto.randomUUID(), content: question }],
+      }
+      // ponytail: ten recent messages keep support costs bounded without a
+      // separate server-side conversation store.
+      const payload = buildChatCompletionPayload(
+        [...messages, userMessage].slice(-10),
+        { ...config, stream: false },
+        parameterEnabled
+      )
+      payload.messages.unshift({
+        role: 'system',
+        content: `You are MoleAPI support triage. Help users troubleshoot safely and concisely. Never ask for passwords, complete API keys, or other secrets. Ask for request IDs and redacted errors when useful. If the problem is not resolved, recommend creating a support ticket. Reply in the user's language. End every response with exactly one machine-readable line in this format: <ticket>{"type":"TYPE","subject":"SHORT SUBJECT"}</ticket>. TYPE must be one of: ${TICKET_TYPES.map((item) => item.value).join(', ')}.`,
       })
+      const response = await sendChatCompletion(payload)
       const content = response.choices?.[0]?.message?.content?.trim()
       if (!content) throw new Error('AI support returned an empty response.')
-      return { question, parsed: parseAssistantReply(content) }
+      return { userMessage, parsed: parseAssistantReply(content) }
     },
-    onSuccess: ({ question, parsed }) => {
-      setMessages((current) => [
+    onSuccess: ({ userMessage, parsed }) => {
+      updateMessages((current) => [
         ...current,
-        { id: crypto.randomUUID(), role: 'user', content: question },
+        userMessage,
         {
-          id: crypto.randomUUID(),
-          role: 'assistant',
-          content: parsed.answer,
+          key: crypto.randomUUID(),
+          from: 'assistant',
+          versions: [{ id: crypto.randomUUID(), content: parsed.answer }],
+          status: 'complete',
         },
       ])
       setSuggestion({ type: parsed.type, subject: parsed.subject })
@@ -105,10 +140,12 @@ export function SupportAssistant(props: {
   })
 
   const createTicket = () => {
-    const firstQuestion = messages.find(
-      (message) => message.role === 'user'
-    )?.content
-    const subject = suggestion?.subject || firstQuestion?.slice(0, 200) || ''
+    const firstQuestion = messages.find((message) => message.from === 'user')
+    const firstQuestionContent = firstQuestion
+      ? getMessageContent(firstQuestion)
+      : ''
+    const subject =
+      suggestion?.subject || firstQuestionContent.slice(0, 200) || ''
     props.onCreateTicket({
       type: suggestion?.type ?? 'Other',
       subject:
@@ -117,7 +154,7 @@ export function SupportAssistant(props: {
         t('AI-assisted support conversation'),
         ...messages.map(
           (message) =>
-            `${message.role === 'user' ? t('You') : t('AI support')}: ${message.content}`
+            `${message.from === 'user' ? t('You') : t('AI support')}: ${getMessageContent(message)}`
         ),
       ].join('\n\n'),
     })
@@ -132,12 +169,66 @@ export function SupportAssistant(props: {
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
       <div className='border-b px-5 py-4'>
-        <h2 className='font-semibold'>{t('Ask AI first')}</h2>
-        <p className='text-muted-foreground mt-1 text-sm'>
-          {t(
-            'Get troubleshooting help and a suggested ticket category before contacting support.'
-          )}
-        </p>
+        <div className='flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between'>
+          <div>
+            <h2 className='font-semibold'>{t('Ask AI first')}</h2>
+            <p className='text-muted-foreground mt-1 text-sm'>
+              {t(
+                'Get troubleshooting help and a suggested ticket category before contacting support.'
+              )}
+            </p>
+          </div>
+          <div className='flex flex-wrap items-center gap-2'>
+            <Select
+              disabled={ask.isPending || isLoadingMessages}
+              items={sessions.map((session) => ({
+                value: session.id,
+                label: session.title || t('New chat'),
+              }))}
+              value={activeSessionId}
+              onValueChange={(value) => {
+                if (value) selectConversation(value)
+              }}
+            >
+              <SelectTrigger
+                className='min-w-44 flex-1 xl:max-w-64'
+                aria-label={t('Support AI history')}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[...sessions]
+                  .sort((a, b) => b.updatedAt - a.updatedAt)
+                  .map((session) => (
+                    <SelectItem key={session.id} value={session.id}>
+                      {session.title || t('New chat')}
+                    </SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
+            <Button
+              aria-label={t('New chat')}
+              disabled={ask.isPending || isLoadingMessages}
+              onClick={() => {
+                setSuggestion(null)
+                createConversation()
+              }}
+              size='icon'
+              variant='outline'
+            >
+              <HugeiconsIcon icon={PlusSignIcon} />
+            </Button>
+            <ModelGroupSelector
+              selectedModel={config.model}
+              models={models}
+              onModelChange={(value) => updateConfig('model', value)}
+              selectedGroup={config.group}
+              groups={groups}
+              onGroupChange={(value) => updateConfig('group', value)}
+              disabled={ask.isPending || isLoadingModels}
+            />
+          </div>
+        </div>
       </div>
 
       <ScrollArea className='min-h-0 flex-1'>
@@ -161,15 +252,15 @@ export function SupportAssistant(props: {
           <div className='mx-auto flex w-full max-w-3xl flex-col gap-5 p-5'>
             {messages.map((message) => (
               <article
-                key={message.id}
+                key={message.key}
                 className={
-                  message.role === 'user'
+                  message.from === 'user'
                     ? 'bg-primary text-primary-foreground ml-auto max-w-[85%] rounded-xl px-4 py-3'
                     : 'bg-muted max-w-[92%] rounded-xl px-4 py-3'
                 }
               >
                 <p className='text-sm leading-relaxed whitespace-pre-wrap'>
-                  {message.content}
+                  {getMessageContent(message)}
                 </p>
               </article>
             ))}
@@ -233,9 +324,7 @@ export function SupportAssistant(props: {
           </Button>
         </form>
         <p className='text-muted-foreground mt-2 text-xs'>
-          {t(
-            'Powered by deepseek-flash through Playground billing. Do not share secrets.'
-          )}
+          {t('Uses your Playground model and balance. Do not share secrets.')}
         </p>
       </div>
     </div>

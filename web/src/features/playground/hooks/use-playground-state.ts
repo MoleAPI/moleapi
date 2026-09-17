@@ -40,6 +40,7 @@ import type {
   ModelOption,
   GroupOption,
   PlaygroundConversationSession,
+  PlaygroundConversationScope,
 } from '../types'
 
 const MESSAGE_SAVE_DEBOUNCE_MS = 500
@@ -47,7 +48,9 @@ const MESSAGE_SAVE_DEBOUNCE_MS = 500
 /**
  * Main state management hook for playground
  */
-export function usePlaygroundState() {
+export function usePlaygroundState(
+  conversationScope: PlaygroundConversationScope = 'playground'
+) {
   // Load initial state from localStorage
   const [config, setConfig] = useState<PlaygroundConfig>(
     getInitialPlaygroundConfig
@@ -85,7 +88,11 @@ export function usePlaygroundState() {
 
       messagesSaveTimerRef.current = window.setTimeout(() => {
         messagesSaveTimerRef.current = null
-        const savedSessions = saveConversationState(sessionsToSave, activeId)
+        const savedSessions = saveConversationState(
+          sessionsToSave,
+          activeId,
+          conversationScope
+        )
         latestSessionsRef.current = savedSessions
         setStorageUsage(getConversationStorageUsage(savedSessions))
         if (savedSessions.length !== sessionsToSave.length) {
@@ -93,7 +100,7 @@ export function usePlaygroundState() {
         }
       }, MESSAGE_SAVE_DEBOUNCE_MS)
     },
-    []
+    [conversationScope]
   )
 
   const setActiveMessages = useCallback(
@@ -131,7 +138,7 @@ export function usePlaygroundState() {
     let cancelled = false
 
     window.setTimeout(() => {
-      const loadedState = loadConversationState()
+      const loadedState = loadConversationState(conversationScope)
       const activeSession =
         loadedState.sessions.find(
           (session) => session.id === loadedState.activeSessionId
@@ -155,7 +162,7 @@ export function usePlaygroundState() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [conversationScope])
 
   useEffect(
     () => () => {
@@ -163,11 +170,12 @@ export function usePlaygroundState() {
         window.clearTimeout(messagesSaveTimerRef.current)
         saveConversationState(
           latestSessionsRef.current,
-          activeSessionIdRef.current
+          activeSessionIdRef.current,
+          conversationScope
         )
       }
     },
-    []
+    [conversationScope]
   )
 
   // Update config with automatic save
@@ -209,44 +217,49 @@ export function usePlaygroundState() {
     updateMessages([])
   }, [updateMessages])
 
-  const selectConversation = useCallback((sessionId: string) => {
-    if (sessionId === activeSessionIdRef.current) {
-      return
-    }
+  const selectConversation = useCallback(
+    (sessionId: string) => {
+      if (sessionId === activeSessionIdRef.current) {
+        return
+      }
 
-    const nextSession = latestSessionsRef.current.find(
-      (session) => session.id === sessionId
-    )
-    if (!nextSession) {
-      return
-    }
+      const nextSession = latestSessionsRef.current.find(
+        (session) => session.id === sessionId
+      )
+      if (!nextSession) {
+        return
+      }
 
-    if (messagesSaveTimerRef.current !== null) {
-      window.clearTimeout(messagesSaveTimerRef.current)
-      messagesSaveTimerRef.current = null
-    }
+      if (messagesSaveTimerRef.current !== null) {
+        window.clearTimeout(messagesSaveTimerRef.current)
+        messagesSaveTimerRef.current = null
+      }
 
-    const previousSessions = latestSessionsRef.current
-    const savedSessions = saveConversationState(
-      previousSessions,
-      nextSession.id
-    )
-    latestSessionsRef.current = savedSessions
-    activeSessionIdRef.current = nextSession.id
-    latestMessagesRef.current = nextSession.messages
-    if (savedSessions.length !== previousSessions.length) {
-      setSessions(savedSessions)
-    }
-    setStorageUsage(getConversationStorageUsage(savedSessions))
-    setActiveSessionId(nextSession.id)
-    setMessages(nextSession.messages)
-  }, [])
+      const previousSessions = latestSessionsRef.current
+      const savedSessions = saveConversationState(
+        previousSessions,
+        nextSession.id,
+        conversationScope
+      )
+      latestSessionsRef.current = savedSessions
+      activeSessionIdRef.current = nextSession.id
+      latestMessagesRef.current = nextSession.messages
+      if (savedSessions.length !== previousSessions.length) {
+        setSessions(savedSessions)
+      }
+      setStorageUsage(getConversationStorageUsage(savedSessions))
+      setActiveSessionId(nextSession.id)
+      setMessages(nextSession.messages)
+    },
+    [conversationScope]
+  )
 
   const createConversation = useCallback(() => {
     const nextSession = createConversationSession()
     const nextSessions = saveConversationState(
       [nextSession, ...latestSessionsRef.current],
-      nextSession.id
+      nextSession.id,
+      conversationScope
     )
 
     latestSessionsRef.current = nextSessions
@@ -256,40 +269,44 @@ export function usePlaygroundState() {
     setStorageUsage(getConversationStorageUsage(nextSessions))
     setActiveSessionId(nextSession.id)
     setMessages([])
-  }, [])
+  }, [conversationScope])
 
-  const deleteConversation = useCallback((sessionId: string) => {
-    const nextState = deleteConversationSession(
-      latestSessionsRef.current,
-      activeSessionIdRef.current,
-      sessionId
-    )
-    if (nextState.sessions === latestSessionsRef.current) {
-      return
-    }
+  const deleteConversation = useCallback(
+    (sessionId: string) => {
+      const nextState = deleteConversationSession(
+        latestSessionsRef.current,
+        activeSessionIdRef.current,
+        sessionId
+      )
+      if (nextState.sessions === latestSessionsRef.current) {
+        return
+      }
 
-    if (messagesSaveTimerRef.current !== null) {
-      window.clearTimeout(messagesSaveTimerRef.current)
-      messagesSaveTimerRef.current = null
-    }
+      if (messagesSaveTimerRef.current !== null) {
+        window.clearTimeout(messagesSaveTimerRef.current)
+        messagesSaveTimerRef.current = null
+      }
 
-    const nextSessions = saveConversationState(
-      nextState.sessions,
-      nextState.activeSessionId
-    )
-    const nextActiveSession =
-      nextSessions.find(
-        (session) => session.id === nextState.activeSessionId
-      ) ?? nextSessions[0]
+      const nextSessions = saveConversationState(
+        nextState.sessions,
+        nextState.activeSessionId,
+        conversationScope
+      )
+      const nextActiveSession =
+        nextSessions.find(
+          (session) => session.id === nextState.activeSessionId
+        ) ?? nextSessions[0]
 
-    latestSessionsRef.current = nextSessions
-    activeSessionIdRef.current = nextActiveSession.id
-    latestMessagesRef.current = nextActiveSession.messages
-    setSessions(nextSessions)
-    setStorageUsage(getConversationStorageUsage(nextSessions))
-    setActiveSessionId(nextActiveSession.id)
-    setMessages(nextActiveSession.messages)
-  }, [])
+      latestSessionsRef.current = nextSessions
+      activeSessionIdRef.current = nextActiveSession.id
+      latestMessagesRef.current = nextActiveSession.messages
+      setSessions(nextSessions)
+      setStorageUsage(getConversationStorageUsage(nextSessions))
+      setActiveSessionId(nextActiveSession.id)
+      setMessages(nextActiveSession.messages)
+    },
+    [conversationScope]
+  )
 
   // Reset config to defaults
   const resetConfig = useCallback(() => {

@@ -51,6 +51,9 @@ beforeAll(() => {
     'Local storage remaining: {{size}}': 'Local storage remaining: {{size}}',
     'Storage is running low. Oldest records will be deleted automatically.':
       'Storage is running low. Oldest records will be deleted automatically.',
+    Playground: 'Playground',
+    'Support AI': 'Support AI',
+    'Support AI history': 'Support AI history',
   })
 })
 
@@ -102,6 +105,34 @@ test('shows the remaining local history storage in a progress bar', () => {
 
   expect(screen.getByRole('progressbar')).toBeInTheDocument()
   expect(screen.getByText(/Local storage remaining: .* MB/)).toBeVisible()
+})
+
+test('switches between separate playground and support histories', async () => {
+  const user = userEvent.setup()
+  const onConversationScopeChange = vi.fn()
+
+  render(
+    <PlaygroundHistorySidebar
+      activeSessionId='first'
+      conversationScope='support'
+      onConversationScopeChange={onConversationScopeChange}
+      onDeleteConversation={() => undefined}
+      onNewConversation={() => undefined}
+      onSelectConversation={() => undefined}
+      sessions={sessions}
+      storageUsage={getConversationStorageUsage(sessions)}
+    />
+  )
+
+  expect(screen.getByText('Support AI history')).toBeVisible()
+  expect(screen.getByRole('button', { name: 'Support AI' })).toHaveAttribute(
+    'aria-pressed',
+    'true'
+  )
+
+  await user.click(screen.getByRole('button', { name: 'Playground' }))
+
+  expect(onConversationScopeChange).toHaveBeenCalledWith('playground')
 })
 
 test('uses a dark red warning when local history storage is running low', () => {

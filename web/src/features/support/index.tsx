@@ -119,7 +119,7 @@ export function Support() {
         {t('Support & Community')}
       </SectionPageLayout.Title>
       <SectionPageLayout.Content>
-        <div className='mx-auto flex w-full max-w-7xl flex-col gap-6'>
+        <div className='flex w-full flex-col gap-6'>
           <CommunityChannels links={config.data?.community_links ?? {}} />
 
           {config.isLoading && <LoadingState />}
