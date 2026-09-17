@@ -72,6 +72,8 @@ export const STORAGE_KEYS = {
   CONVERSATIONS: 'playground_conversations',
   MESSAGES: 'playground_messages',
   PARAMETER_ENABLED: 'playground_parameter_enabled',
+  SUPPORT_ACTIVE_CONVERSATION_ID: 'support_ai_active_conversation_id',
+  SUPPORT_CONVERSATIONS: 'support_ai_conversations',
 } as const
 
 // Error messages

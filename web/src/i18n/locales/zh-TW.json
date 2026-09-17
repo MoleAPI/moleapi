@@ -7054,6 +7054,13 @@
     "Powered by deepseek-flash through Playground billing. Do not share secrets.": "由 deepseek-flash 提供支援，並透過遊樂場計費。請勿傳送金鑰等敏感資訊。",
     "AI support request": "AI 支援請求",
     "AI-assisted support conversation": "AI 輔助支援對話",
-    "AI support": "AI 支援"
+    "AI support": "AI 支援",
+    "Support AI": "支援 AI",
+    "Support AI history": "支援 AI 歷史",
+    "Uses your Playground model and balance. Do not share secrets.": "使用你在遊樂場中選擇的模型和餘額。請勿分享敏感資訊。",
+    "Description polished": "詳細描述已潤飾",
+    "Uses your selected Playground model": "使用你在遊樂場中選擇的模型",
+    "Polishing...": "潤飾中...",
+    "AI polish": "AI 潤飾"
   }
 }

@@ -22,6 +22,7 @@ import type {
   ParameterEnabled,
   Message,
   PlaygroundConversationSession,
+  PlaygroundConversationScope,
 } from '../../types'
 import {
   finalizeMessage,
@@ -75,8 +76,24 @@ function readStoredMessagesValue(): unknown | null {
   return JSON.parse(saved) as unknown
 }
 
-function readStoredConversationsValue(): unknown | null {
-  const saved = localStorage.getItem(STORAGE_KEYS.CONVERSATIONS)
+function getConversationStorageKeys(scope: PlaygroundConversationScope) {
+  return scope === 'support'
+    ? {
+        active: STORAGE_KEYS.SUPPORT_ACTIVE_CONVERSATION_ID,
+        conversations: STORAGE_KEYS.SUPPORT_CONVERSATIONS,
+      }
+    : {
+        active: STORAGE_KEYS.ACTIVE_CONVERSATION_ID,
+        conversations: STORAGE_KEYS.CONVERSATIONS,
+      }
+}
+
+function readStoredConversationsValue(
+  scope: PlaygroundConversationScope
+): unknown | null {
+  const saved = localStorage.getItem(
+    getConversationStorageKeys(scope).conversations
+  )
   if (!saved) return null
 
   return JSON.parse(saved) as unknown
@@ -576,15 +593,16 @@ export function saveMessages(messages: Message[]): void {
   }
 }
 
-export function loadConversationState(): {
+export function loadConversationState(
+  scope: PlaygroundConversationScope = 'playground'
+): {
   activeSessionId: string
   sessions: PlaygroundConversationSession[]
 } {
   try {
-    const saved = readStoredConversationsValue()
-    const savedActiveSessionId = readStoredValue(
-      STORAGE_KEYS.ACTIVE_CONVERSATION_ID
-    )
+    const storageKeys = getConversationStorageKeys(scope)
+    const saved = readStoredConversationsValue(scope)
+    const savedActiveSessionId = readStoredValue(storageKeys.active)
     const activeSessionId =
       typeof unwrapStoredValue(savedActiveSessionId) === 'string'
         ? (unwrapStoredValue(savedActiveSessionId) as string)
@@ -607,7 +625,7 @@ export function loadConversationState(): {
       }
     }
 
-    const legacyMessages = loadMessages() ?? []
+    const legacyMessages = scope === 'playground' ? (loadMessages() ?? []) : []
     const session = createDefaultConversation(legacyMessages)
 
     return {
@@ -628,7 +646,8 @@ export function loadConversationState(): {
 
 export function saveConversationState(
   sessions: PlaygroundConversationSession[],
-  activeSessionId: string
+  activeSessionId: string,
+  scope: PlaygroundConversationScope = 'playground'
 ): PlaygroundConversationSession[] {
   try {
     const normalized = sessions.map((session) => ({
@@ -643,8 +662,9 @@ export function saveConversationState(
     const parsed = conversationSessionsSchema.parse(
       trimmed
     ) as PlaygroundConversationSession[]
-    writeStoredValue(STORAGE_KEYS.CONVERSATIONS, parsed)
-    writeStoredValue(STORAGE_KEYS.ACTIVE_CONVERSATION_ID, activeSessionId)
+    const storageKeys = getConversationStorageKeys(scope)
+    writeStoredValue(storageKeys.conversations, parsed)
+    writeStoredValue(storageKeys.active, activeSessionId)
 
     return parsed
   } catch (error) {
@@ -665,6 +685,8 @@ export function clearPlaygroundData(): void {
     localStorage.removeItem(STORAGE_KEYS.CONVERSATIONS)
     localStorage.removeItem(STORAGE_KEYS.PARAMETER_ENABLED)
     localStorage.removeItem(STORAGE_KEYS.MESSAGES)
+    localStorage.removeItem(STORAGE_KEYS.SUPPORT_ACTIVE_CONVERSATION_ID)
+    localStorage.removeItem(STORAGE_KEYS.SUPPORT_CONVERSATIONS)
   } catch (error) {
     // eslint-disable-next-line no-console
     console.error('Failed to clear playground data:', error)

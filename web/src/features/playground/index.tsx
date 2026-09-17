@@ -16,6 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useState } from 'react'
+
 import { PlaygroundChat } from './components/chat/playground-chat'
 import { PlaygroundHistorySidebar } from './components/history/playground-history-sidebar'
 import { PlaygroundInput } from './components/input/playground-input'
@@ -25,8 +27,25 @@ import {
   usePlaygroundOptions,
   usePlaygroundState,
 } from './hooks'
+import type { PlaygroundConversationScope } from './types'
 
 export function Playground() {
+  const [conversationScope, setConversationScope] =
+    useState<PlaygroundConversationScope>('playground')
+
+  return (
+    <PlaygroundWorkspace
+      key={conversationScope}
+      conversationScope={conversationScope}
+      onConversationScopeChange={setConversationScope}
+    />
+  )
+}
+
+function PlaygroundWorkspace(props: {
+  conversationScope: PlaygroundConversationScope
+  onConversationScopeChange: (scope: PlaygroundConversationScope) => void
+}) {
   const {
     config,
     parameterEnabled,
@@ -46,7 +65,7 @@ export function Playground() {
     createConversation,
     deleteConversation,
     selectConversation,
-  } = usePlaygroundState()
+  } = usePlaygroundState(props.conversationScope)
 
   const { sendChat, stopGeneration, isGenerating } = useChatHandler({
     config,
@@ -142,9 +161,11 @@ export function Playground() {
 
       <PlaygroundHistorySidebar
         activeSessionId={activeSessionId}
+        conversationScope={props.conversationScope}
         disabled={isGenerating || isLoadingMessages}
         onDeleteConversation={handleDeleteConversation}
         onNewConversation={handleNewConversation}
+        onConversationScopeChange={props.onConversationScopeChange}
         onSelectConversation={handleSelectConversation}
         sessions={sessions}
         storageUsage={storageUsage}

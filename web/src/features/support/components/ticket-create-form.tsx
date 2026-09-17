@@ -19,6 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { SparklesIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -47,6 +48,12 @@ import {
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
+import { sendChatCompletion } from '@/features/playground/api'
+import {
+  buildChatCompletionPayload,
+  getInitialParameterEnabled,
+  getInitialPlaygroundConfig,
+} from '@/features/playground/lib'
 import { getUserBillingHistory } from '@/features/wallet/api'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -94,6 +101,7 @@ export function TicketCreateForm(props: {
     },
   })
   const type = useWatch({ control: form.control, name: 'type' })
+  const content = useWatch({ control: form.control, name: 'content' })
   const selectedType =
     TICKET_TYPES.find((item) => item.value === type) ?? TICKET_TYPES[0]
   const billingType = BILLING_TYPES.includes(type)
@@ -149,6 +157,44 @@ export function TicketCreateForm(props: {
     },
     onError: (error) => handleServerError(error),
   })
+  const polishDescription = useMutation({
+    mutationFn: async (description: string) => {
+      const config = getInitialPlaygroundConfig()
+      const payload = buildChatCompletionPayload(
+        [
+          {
+            key: crypto.randomUUID(),
+            from: 'user',
+            versions: [
+              {
+                id: crypto.randomUUID(),
+                content: `${t('Ticket type')}: ${t(type)}\n\n${description}`,
+              },
+            ],
+          },
+        ],
+        { ...config, stream: false },
+        getInitialParameterEnabled()
+      )
+      payload.messages.unshift({
+        role: 'system',
+        content:
+          'Rewrite this support-ticket description so it is clear, concise, and useful for troubleshooting. Preserve every fact, identifier, error message, and redaction. Do not invent information. Reply in the same language as the user and output only the revised description.',
+      })
+      const response = await sendChatCompletion(payload)
+      const polished = response.choices?.[0]?.message?.content?.trim()
+      if (!polished) throw new Error('AI returned an empty response.')
+      return polished
+    },
+    onSuccess: (polished) => {
+      form.setValue('content', polished, {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+      toast.success(t('Description polished'))
+    },
+    onError: (error) => handleServerError(error),
+  })
 
   if (!props.accountEmail) {
     return (
@@ -187,6 +233,10 @@ export function TicketCreateForm(props: {
             name='type'
             render={({ field }) => (
               <Select
+                items={TICKET_TYPES.map((item) => ({
+                  value: item.value,
+                  label: t(item.value),
+                }))}
                 value={field.value}
                 onValueChange={(value) => {
                   field.onChange(value)
@@ -226,9 +276,28 @@ export function TicketCreateForm(props: {
         </Field>
 
         <Field data-invalid={Boolean(form.formState.errors.content)}>
-          <FieldLabel htmlFor='ticket-content'>
-            {t('Detailed description')}
-          </FieldLabel>
+          <div className='flex items-center justify-between gap-3'>
+            <FieldLabel htmlFor='ticket-content'>
+              {t('Detailed description')}
+            </FieldLabel>
+            <Button
+              type='button'
+              size='sm'
+              variant='outline'
+              disabled={
+                content.trim().length < 10 || polishDescription.isPending
+              }
+              onClick={() => polishDescription.mutate(content.trim())}
+              title={t('Uses your selected Playground model')}
+            >
+              {polishDescription.isPending ? (
+                <Spinner data-icon='inline-start' />
+              ) : (
+                <SparklesIcon data-icon='inline-start' />
+              )}
+              {polishDescription.isPending ? t('Polishing...') : t('AI polish')}
+            </Button>
+          </div>
           <Textarea
             id='ticket-content'
             rows={8}

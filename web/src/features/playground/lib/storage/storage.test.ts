@@ -169,6 +169,25 @@ describe('playground conversation storage', () => {
     )
   })
 
+  test('keeps support conversations separate from regular playground history', () => {
+    const playgroundSession = createSession('playground-chat', 1)
+    const supportSession = createSession('support-chat', 2)
+
+    saveConversationState([playgroundSession], playgroundSession.id)
+    saveConversationState([supportSession], supportSession.id, 'support')
+
+    assert.equal(
+      loadConversationState('playground').sessions[0]?.id,
+      'playground-chat'
+    )
+    assert.equal(
+      loadConversationState('support').sessions[0]?.id,
+      'support-chat'
+    )
+    assert.ok(localStorage.getItem(STORAGE_KEYS.CONVERSATIONS))
+    assert.ok(localStorage.getItem(STORAGE_KEYS.SUPPORT_CONVERSATIONS))
+  })
+
   test('keeps the active conversation when saved history exceeds the local cap', () => {
     const oldActiveSession = createSession('active-old', 1)
     const newerSessions = Array.from({ length: 12 }, (_, index) =>
