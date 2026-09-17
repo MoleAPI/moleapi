@@ -46,6 +46,7 @@ export function AttachmentPicker(props: {
   files: File[]
   onFilesChange: (files: File[]) => void
   onRejected: (fileName: string) => void
+  compact?: boolean
 }) {
   const { t } = useTranslation()
   const inputRef = useRef<HTMLInputElement>(null)
@@ -59,63 +60,96 @@ export function AttachmentPicker(props: {
 
   return (
     <div className='flex flex-col gap-3'>
-      <div
-        className={cn(
-          'flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-5 text-center transition-colors',
-          dragging ? 'border-primary bg-primary/5' : 'bg-muted/20'
-        )}
-        onDragOver={(event) => {
-          event.preventDefault()
-          setDragging(true)
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault()
-          setDragging(false)
-          addFiles([...event.dataTransfer.files])
-        }}
-      >
-        <HugeiconsIcon
-          icon={DocumentAttachmentIcon}
-          className='text-muted-foreground size-5'
-          aria-hidden='true'
-        />
-        <div>
-          <p className='text-sm font-medium'>
-            {t('Attach files or screenshots')}
-          </p>
-          <p className='text-muted-foreground mt-0.5 text-xs'>
-            {t(
-              'Drop files here, choose files, or paste a screenshot into the detailed description.'
-            )}
-          </p>
+      {!props.compact && (
+        <div
+          className={cn(
+            'flex flex-col items-center gap-2 rounded-lg border border-dashed px-4 py-5 text-center transition-colors',
+            dragging ? 'border-primary bg-primary/5' : 'bg-muted/20'
+          )}
+          onDragOver={(event) => {
+            event.preventDefault()
+            setDragging(true)
+          }}
+          onDragLeave={() => setDragging(false)}
+          onDrop={(event) => {
+            event.preventDefault()
+            setDragging(false)
+            addFiles([...event.dataTransfer.files])
+          }}
+        >
+          <HugeiconsIcon
+            icon={DocumentAttachmentIcon}
+            className='text-muted-foreground size-5'
+            aria-hidden='true'
+          />
+          <div>
+            <p className='text-sm font-medium'>
+              {t('Attach files or screenshots')}
+            </p>
+            <p className='text-muted-foreground mt-0.5 text-xs'>
+              {t(
+                'Drop files here, choose files, or paste a screenshot into the detailed description.'
+              )}
+            </p>
+          </div>
+          <Button
+            type='button'
+            variant='outline'
+            size='sm'
+            disabled={props.files.length >= SUPPORT_ATTACHMENT_LIMIT}
+            onClick={() => inputRef.current?.click()}
+          >
+            <HugeiconsIcon icon={FolderOpenIcon} data-icon='inline-start' />
+            {t('Choose files')}
+          </Button>
+          <label className='sr-only' htmlFor='support-attachments'>
+            {t('Attachments')}
+          </label>
+          <input
+            ref={inputRef}
+            id='support-attachments'
+            type='file'
+            multiple
+            accept={SUPPORT_ATTACHMENT_ACCEPT}
+            className='sr-only'
+            onChange={(event) => {
+              addFiles([...(event.target.files ?? [])])
+              event.target.value = ''
+            }}
+          />
         </div>
+      )}
+
+      {props.compact && (
         <Button
           type='button'
           variant='outline'
           size='sm'
+          className='w-fit'
           disabled={props.files.length >= SUPPORT_ATTACHMENT_LIMIT}
           onClick={() => inputRef.current?.click()}
         >
-          <HugeiconsIcon icon={FolderOpenIcon} data-icon='inline-start' />
+          <HugeiconsIcon
+            icon={DocumentAttachmentIcon}
+            data-icon='inline-start'
+          />
           {t('Choose files')}
         </Button>
-        <label className='sr-only' htmlFor='support-attachments'>
-          {t('Attachments')}
-        </label>
+      )}
+      {props.compact && (
         <input
           ref={inputRef}
-          id='support-attachments'
           type='file'
           multiple
           accept={SUPPORT_ATTACHMENT_ACCEPT}
+          aria-label={t('Attachments')}
           className='sr-only'
           onChange={(event) => {
             addFiles([...(event.target.files ?? [])])
             event.target.value = ''
           }}
         />
-      </div>
+      )}
 
       {props.files.length > 0 && (
         <ItemGroup className='gap-2'>
