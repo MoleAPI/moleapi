@@ -367,6 +367,7 @@ function UserSupportWorkspace(props: {
   }
   const startNewAIConversation = () => {
     assistantState.createConversation()
+    assistantState.updateConfig('model', 'deepseek-flash')
     setAssistantFiles([])
     setSidebarView('ai')
     props.onPanelChange('ai')
