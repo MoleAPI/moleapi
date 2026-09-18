@@ -363,18 +363,6 @@ export function SupportAssistant(props: {
                     )}
                   </p>
                 </div>
-                <div className='flex flex-wrap justify-center gap-2'>
-                  <Button
-                    onClick={() => inputRef.current?.focus()}
-                    size='sm'
-                    variant='outline'
-                  >
-                    {t('Ask AI')}
-                  </Button>
-                  <Button onClick={props.onCreateBlankTicket} size='sm'>
-                    {t('Create ticket')}
-                  </Button>
-                </div>
               </div>
             </div>
           }
@@ -392,15 +380,18 @@ export function SupportAssistant(props: {
           onSaveEditAndSubmit={(content) => applyEdit(content, true)}
           afterMessage={(message) => {
             const answer = getMessageContent(message)
-            if (
-              message.from !== 'assistant' ||
-              message.status !== 'complete' ||
-              !/(已|已经).{0,8}(记录|提交|转交|反馈)|\b(logged|submitted|reported|recorded)\b/i.test(
-                answer
-              )
-            ) {
+            if (message.from !== 'assistant' || message.status !== 'complete') {
               return null
             }
+            const claimsTicketAction =
+              /(已|已经).{0,8}(记录|提交|转交|反馈)|\b(logged|submitted|reported|recorded)\b/i.test(
+                answer
+              )
+            const isLatestMessage = messages.at(-1)?.key === message.key
+            const needsHumanSupport =
+              isLatestMessage &&
+              messages.filter((item) => item.from === 'user').length >= 3
+            if (!claimsTicketAction && !needsHumanSupport) return null
             return (
               <Button
                 className='mt-2'
@@ -408,7 +399,11 @@ export function SupportAssistant(props: {
                 variant='outline'
                 onClick={createTicket}
               >
-                {t('Report this as a ticket')}
+                {t(
+                  claimsTicketAction
+                    ? 'Report this as a ticket'
+                    : 'Request human support'
+                )}
               </Button>
             )
           }}

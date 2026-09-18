@@ -55,7 +55,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
-import { FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   InputGroup,
@@ -872,9 +871,21 @@ function TicketList(props: {
               </span>
             </span>
             <span className='text-muted-foreground col-span-2 flex w-full min-w-0 flex-wrap gap-x-2 text-xs'>
-              <span>
+              <span className='min-w-0 truncate'>
                 #{ticket.ticketNumber} · {t(ticket.category)}
               </span>
+              {props.admin && (
+                <span className='min-w-0 truncate'>
+                  {ticket.user
+                    ? `${ticket.user.username} · ID ${ticket.user.id}`
+                    : null}
+                </span>
+              )}
+              {props.admin && (
+                <span className='min-w-0 max-w-[42%] truncate text-right'>
+                  {ticket.email}
+                </span>
+              )}
               <time
                 className='ml-auto text-right'
                 dateTime={ticket.modifiedTime || ticket.createdTime}
@@ -885,15 +896,6 @@ function TicketList(props: {
                 )}
               </time>
             </span>
-            {props.admin && (
-              <span className='col-span-2 flex w-full min-w-0 items-center gap-2 text-xs'>
-                <span className='truncate'>
-                  {ticket.user
-                    ? `${ticket.user.username} · ID ${ticket.user.id} · ${ticket.email}`
-                    : ticket.email}
-                </span>
-              </span>
-            )}
           </button>
         ))}
         {visible.length === 0 && (
@@ -978,15 +980,15 @@ export function TicketDetail(props: {
           </p>
         </div>
         <div className='flex min-w-0 flex-wrap items-center justify-end gap-2'>
-          <Badge variant='secondary' className='shrink-0'>
-            {ticketStatusLabel(ticket, t)}
-          </Badge>
           <span
             className='text-muted-foreground max-w-56 truncate text-xs'
             title={ticket.email}
           >
             {ticket.email}
           </span>
+          <Badge variant='secondary' className='shrink-0'>
+            {ticketStatusLabel(ticket, t)}
+          </Badge>
           {isAdmin && ticket.user && (
             <span className='text-muted-foreground hidden text-xs xl:inline'>
               {ticket.user.username} · ID {ticket.user.id}
@@ -1129,12 +1131,6 @@ export function TicketDetail(props: {
         </div>
       ) : (
         <div className='shrink-0 border-t p-3 sm:p-4'>
-          <div className='mb-2 flex items-center justify-between gap-2'>
-            <FieldLabel htmlFor='ticket-reply'>{t('Reply')}</FieldLabel>
-            <span className='text-muted-foreground text-xs'>
-              {isAdmin && t('Replying here also sends an email to the user.')}
-            </span>
-          </div>
           <InputGroup className='bg-background overflow-hidden'>
             <InputGroupTextarea
               id='ticket-reply'
