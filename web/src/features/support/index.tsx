@@ -951,6 +951,16 @@ export function TicketDetail(props: {
   if (!statusOptions.some((option) => option.value === ticket.status)) {
     statusOptions.push({ value: ticket.status, label: ticket.status })
   }
+  const conversations = [...props.data.conversations].sort(
+    (a, b) =>
+      Date.parse(a.createdTime || a.commentedTime || '') -
+      Date.parse(b.createdTime || b.commentedTime || '')
+  )
+  const hasInitialConversation = conversations.some(
+    (message) =>
+      normalizeSupportContent(message.content || message.summary) ===
+      normalizeSupportContent(ticket.description)
+  )
   const downloadAttachment = async (
     attachment: (typeof props.data.attachments)[number]
   ) => {
@@ -993,7 +1003,7 @@ export function TicketDetail(props: {
         </div>
         <div className='flex min-w-0 flex-wrap items-center justify-end gap-2'>
           {isAdmin && ticket.user && (
-            <span className='text-muted-foreground hidden text-xs xl:inline'>
+            <span className='text-muted-foreground text-xs'>
               {ticket.user.username} · ID {ticket.user.id}
             </span>
           )}
@@ -1069,20 +1079,16 @@ export function TicketDetail(props: {
 
       <ScrollArea className='min-h-0 flex-1'>
         <div className='w-full px-4 sm:px-6 lg:px-8'>
-          <Message
-            sender={props.data.ticket.email}
-            content={props.data.ticket.description}
-            html
-            time={ticket.createdTime}
-            customer
-          />
-          {[...props.data.conversations]
-            .sort(
-              (a, b) =>
-                Date.parse(a.createdTime || a.commentedTime || '') -
-                Date.parse(b.createdTime || b.commentedTime || '')
-            )
-            .map((message) => (
+          {!hasInitialConversation && (
+            <Message
+              sender={props.data.ticket.email}
+              content={props.data.ticket.description}
+              html
+              time={ticket.createdTime}
+              customer
+            />
+          )}
+          {conversations.map((message) => (
               <Message
                 key={message.id}
                 sender={
@@ -1218,6 +1224,13 @@ export function TicketDetail(props: {
       </Dialog>
     </div>
   )
+}
+
+function normalizeSupportContent(value: string) {
+  return value
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 function Message(props: {
