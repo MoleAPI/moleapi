@@ -138,6 +138,34 @@ func TestSupportConversationActivity(t *testing.T) {
 	}
 }
 
+func TestSupportPortalCommentNormalization(t *testing.T) {
+	message := zohoDeskConversation{
+		Type:     "comment",
+		IsPublic: true,
+		Content:  "<div>alice (UID 11):<br>Still broken</div>",
+	}
+	normalizeSupportPortalComment(&message)
+	assert.Equal(t, "Still broken", message.Content)
+	assert.Equal(t, "text/plain", message.ContentType)
+	assert.Equal(t, "in", message.Direction)
+	assert.Equal(t, "END_USER", message.Author.Type)
+	assert.Equal(t, "alice", message.Author.Name)
+}
+
+func TestSupportConversationMatchesTicketDescription(t *testing.T) {
+	ticket := zohoDeskTicket{
+		Description: "Please help",
+		CreatedTime: "2026-09-18T10:00:00Z",
+	}
+	message := zohoDeskConversation{
+		Type:        "thread",
+		Visibility:  "public",
+		Content:     "<p>Please help</p>",
+		CreatedTime: "2026-09-18T10:00:01Z",
+	}
+	assert.True(t, supportConversationMatchesTicketDescription(message, ticket))
+}
+
 func TestSupportEmailConfigPreservesConfiguredAddress(t *testing.T) {
 	common.OptionMapRWMutex.Lock()
 	previous := common.OptionMap

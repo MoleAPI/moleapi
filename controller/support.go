@@ -89,7 +89,51 @@ func (message zohoDeskConversation) public() bool {
 	return message.Visibility == "public"
 }
 
-var supportPortalComment = regexp.MustCompile(`^[^\r\n<]+ \(UID [0-9]+\):`)
+var supportPortalComment = regexp.MustCompile(`(?s)^([^\r\n<]+) \(UID ([0-9]+)\):\s*(.*)$`)
+
+func supportConversationText(value string) string {
+	tokens := html.NewTokenizer(strings.NewReader(value))
+	var text strings.Builder
+	for token := tokens.Next(); token != html.ErrorToken; token = tokens.Next() {
+		if token == html.TextToken {
+			text.WriteString(string(tokens.Text()))
+		}
+	}
+	return cleanSupportEmailText(text.String())
+}
+
+func normalizeSupportPortalComment(message *zohoDeskConversation) {
+	if message.Type != "comment" || !message.IsPublic {
+		return
+	}
+	match := supportPortalComment.FindStringSubmatch(supportConversationText(message.Content))
+	if len(match) != 4 {
+		return
+	}
+	message.Content = strings.TrimSpace(match[3])
+	message.ContentType = "text/plain"
+	message.Direction = "in"
+	message.Author.Type = "END_USER"
+	message.Author.Name = strings.TrimSpace(match[1])
+	message.Commenter.Type = "END_USER"
+	message.Commenter.Name = strings.TrimSpace(match[1])
+}
+
+func supportConversationMatchesTicketDescription(message zohoDeskConversation, ticket zohoDeskTicket) bool {
+	if !message.public() || supportConversationText(message.Content) != supportConversationText(ticket.Description) {
+		return false
+	}
+	messageTime := message.CreatedTime
+	if messageTime == "" {
+		messageTime = message.CommentedTime
+	}
+	ticketTime, ticketErr := time.Parse(time.RFC3339Nano, ticket.CreatedTime)
+	conversationTime, conversationErr := time.Parse(time.RFC3339Nano, messageTime)
+	if ticketErr == nil && conversationErr == nil {
+		return ticketTime.Sub(conversationTime) <= 2*time.Minute && conversationTime.Sub(ticketTime) <= 2*time.Minute
+	}
+	return true
+}
 
 func cleanSupportEmailText(value string) string {
 	lines := strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n")
@@ -110,6 +154,7 @@ func supportConversationActivity(messages []zohoDeskConversation) string {
 	var latest time.Time
 	activity := "unknown"
 	for _, message := range messages {
+		normalizeSupportPortalComment(&message)
 		if !message.public() {
 			continue
 		}
@@ -437,6 +482,9 @@ func ListSupportTickets(c *gin.Context) {
 			}
 			ticket.Activity = "unknown"
 			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/conversations?limit=20", nil, &conversations); err == nil {
+				for i := range conversations.Data {
+					normalizeSupportPortalComment(&conversations.Data[i])
+				}
 				ticket.Activity = supportConversationActivity(conversations.Data)
 			}
 		}(&tickets[i])
@@ -663,8 +711,14 @@ func GetSupportTicket(c *gin.Context) {
 	}
 	ticket.Activity = supportConversationActivity(conversations.Data)
 	visible := make([]zohoDeskConversation, 0, len(conversations.Data))
+	initialDescriptionShown := false
 	for _, message := range conversations.Data {
 		if c.GetInt("role") >= common.RoleAdminUser || message.public() {
+			if !initialDescriptionShown && supportConversationMatchesTicketDescription(message, ticket) {
+				initialDescriptionShown = true
+				continue
+			}
+			normalizeSupportPortalComment(&message)
 			visible = append(visible, message)
 		}
 	}
