@@ -653,7 +653,7 @@ export function saveConversationState(
     const normalized = sessions.map((session) => ({
       ...session,
       messages: trimMessages(session.messages),
-      title: getConversationTitle(session.messages),
+      title: session.title || getConversationTitle(session.messages),
     }))
     const trimmed = trimConversationsByStorageSize(
       trimConversations(normalized, activeSessionId),

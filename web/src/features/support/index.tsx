@@ -87,6 +87,7 @@ import {
   getSupportTicket,
   getSupportTickets,
   replySupportTicket,
+  uploadSupportAttachments,
   updateSupportTicketStatus,
   type SupportTicket,
 } from './api'
@@ -96,6 +97,7 @@ import {
   type AssistantTicketDraft,
 } from './components/support-assistant'
 import { TicketCreateForm } from './components/ticket-create-form'
+import { AttachmentPicker } from './components/attachment-picker'
 
 export function Support() {
   const { t } = useTranslation()
@@ -110,10 +112,17 @@ export function Support() {
     null
   )
   const [replies, setReplies] = useState<Record<string, string>>({})
+  const [replyFiles, setReplyFiles] = useState<Record<string, File[]>>({})
   const reply = selectedTicket ? (replies[selectedTicket] ?? '') : ''
   const setReply = (value: string) => {
     if (selectedTicket) {
       setReplies((current) => ({ ...current, [selectedTicket]: value }))
+    }
+  }
+  const files = selectedTicket ? (replyFiles[selectedTicket] ?? []) : []
+  const setFiles = (value: File[]) => {
+    if (selectedTicket) {
+      setReplyFiles((current) => ({ ...current, [selectedTicket]: value }))
     }
   }
   const config = useQuery({
@@ -140,17 +149,30 @@ export function Support() {
     staleTime: 30_000,
   })
   const sendReply = useMutation({
-    mutationFn: ({ id, content }: { id: string; content: string }) =>
-      replySupportTicket(id, content),
-    onSuccess: async (_, { id, content }) => {
+    mutationFn: async ({ id, content, files }: { id: string; content: string; files: File[] }) => {
+      await replySupportTicket(id, content)
+      let attachmentsFailed = false
+      if (files.length > 0) {
+        try {
+          await uploadSupportAttachments(id, files)
+        } catch {
+          attachmentsFailed = true
+        }
+      }
+      return { attachmentsFailed }
+    },
+    onSuccess: async ({ attachmentsFailed }, { id, content }) => {
       setReplies((current) =>
         current[id] === content ? { ...current, [id]: '' } : current
       )
+      setReplyFiles((current) => ({ ...current, [id]: [] }))
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['support', 'ticket', id] }),
         queryClient.invalidateQueries({ queryKey: ['support', 'tickets'] }),
       ])
-      toast.success(t('Reply sent'))
+      toast[attachmentsFailed ? 'warning' : 'success'](
+        attachmentsFailed ? t('Reply sent, but attachments could not be uploaded.') : t('Reply sent')
+      )
     },
     onError: (error) => handleServerError(error),
   })
@@ -214,8 +236,10 @@ export function Support() {
                 onReplyChange={setReply}
                 onSend={() =>
                   selectedTicket &&
-                  sendReply.mutate({ id: selectedTicket, content: reply })
+                  sendReply.mutate({ id: selectedTicket, content: reply, files })
                 }
+                files={files}
+                onFilesChange={setFiles}
                 sending={sendReply.isPending}
               />
             </div>
@@ -252,8 +276,10 @@ export function Support() {
                 onReplyChange={setReply}
                 onSend={() =>
                   selectedTicket &&
-                  sendReply.mutate({ id: selectedTicket, content: reply })
+                  sendReply.mutate({ id: selectedTicket, content: reply, files })
                 }
+                files={files}
+                onFilesChange={setFiles}
                 sending={sendReply.isPending}
               />
             </div>
@@ -290,6 +316,8 @@ function UserSupportWorkspace(props: {
   onRetry: () => void
   reply: string
   onReplyChange: (value: string) => void
+  files?: File[]
+  onFilesChange?: (files: File[]) => void
   onSend: () => void
   sending: boolean
 }) {
@@ -316,7 +344,11 @@ function UserSupportWorkspace(props: {
           <Button
             variant={props.panel === 'ai' ? 'secondary' : 'outline'}
             disabled={assistantBusy}
-            onClick={() => props.onPanelChange('ai')}
+            onClick={() => {
+              assistantState.createConversation()
+              setAssistantFiles([])
+              props.onPanelChange('ai')
+            }}
           >
             <HugeiconsIcon icon={AiChat02Icon} data-icon='inline-start' />
             {t('Ask AI')}
@@ -392,12 +424,17 @@ function UserSupportWorkspace(props: {
               </div>
             )}
           {!props.loading && props.tickets.length > 0 && (
-            <TicketList
-              tickets={props.tickets}
-              selectedTicket={props.selectedTicket}
-              onSelect={props.onSelectTicket}
-              disabled={assistantBusy}
-            />
+            <div className='border-t'>
+              <p className='text-muted-foreground px-4 py-2 text-xs font-medium'>
+                {t('Support tickets')}
+              </p>
+              <TicketList
+                tickets={props.tickets}
+                selectedTicket={props.selectedTicket}
+                onSelect={props.onSelectTicket}
+                disabled={assistantBusy}
+              />
+            </div>
           )}
         </ScrollArea>
       </aside>
@@ -408,7 +445,16 @@ function UserSupportWorkspace(props: {
           showingPanel ? 'flex' : 'hidden md:flex'
         )}
       >
-        {!showingPanel && <SupportOverview />}
+        {!showingPanel && (
+          <SupportOverview
+            onAskAI={() => {
+              assistantState.createConversation()
+              setAssistantFiles([])
+              props.onPanelChange('ai')
+            }}
+            onCreateTicket={() => props.onPanelChange('create')}
+          />
+        )}
         {!props.selectedTicket && props.panel !== 'overview' && (
           <div className='flex items-center border-b px-3 py-2 md:hidden'>
             <Button
@@ -470,6 +516,8 @@ function UserSupportWorkspace(props: {
             data={props.detail}
             reply={props.reply}
             onReplyChange={props.onReplyChange}
+            files={props.files ?? []}
+            onFilesChange={props.onFilesChange ?? (() => undefined)}
             onBack={goBack}
             onSend={props.onSend}
             sending={props.sending}
@@ -480,7 +528,10 @@ function UserSupportWorkspace(props: {
   )
 }
 
-function SupportOverview() {
+function SupportOverview(props: {
+  onAskAI: () => void
+  onCreateTicket: () => void
+}) {
   const { t } = useTranslation()
   return (
     <div className='flex flex-1 items-center justify-center p-6'>
@@ -503,6 +554,16 @@ function SupportOverview() {
             </div>
           ))}
         </div>
+        <div className='mt-6 flex flex-wrap gap-2'>
+          <Button onClick={props.onAskAI}>
+            <HugeiconsIcon icon={AiChat02Icon} data-icon='inline-start' />
+            {t('Ask AI')}
+          </Button>
+          <Button variant='outline' onClick={props.onCreateTicket}>
+            <HugeiconsIcon icon={Add01Icon} data-icon='inline-start' />
+            {t('Create ticket')}
+          </Button>
+        </div>
       </div>
     </div>
   )
@@ -519,6 +580,8 @@ export function TicketBrowser(props: {
   onRetry: () => void
   reply: string
   onReplyChange: (value: string) => void
+  files?: File[]
+  onFilesChange?: (files: File[]) => void
   onSend: () => void
   sending: boolean
 }) {
@@ -593,6 +656,8 @@ export function TicketBrowser(props: {
             data={props.detail}
             reply={props.reply}
             onReplyChange={props.onReplyChange}
+            files={props.files ?? []}
+            onFilesChange={props.onFilesChange ?? (() => undefined)}
             onBack={() => props.onSelect(null)}
             onSend={props.onSend}
             sending={props.sending}
@@ -623,6 +688,18 @@ function ticketActivityLabel(
   if (ticket.activity === 'agent') return t('Support replied')
   if (ticket.activity === 'new') return t('New ticket')
   return null
+}
+
+function formatSupportDate(value: string | undefined, language: string) {
+  if (!value) return ''
+  return new Date(value).toLocaleString(toIntlLocale(language), {
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  })
 }
 
 function TicketList(props: {
@@ -730,8 +807,11 @@ function TicketList(props: {
                 )}
               </span>
             </span>
-            <span className='text-muted-foreground block w-full truncate text-xs'>
-              #{ticket.ticketNumber} · {t(ticket.category)}
+            <span className='text-muted-foreground flex w-full flex-wrap gap-x-2 text-xs'>
+              <span>#{ticket.ticketNumber} · {t(ticket.category)}</span>
+              <time dateTime={ticket.modifiedTime}>
+                {formatSupportDate(ticket.modifiedTime, i18n.language)}
+              </time>
             </span>
             {props.admin && (
               <span className='flex w-full min-w-0 items-center gap-2 text-xs'>
@@ -740,25 +820,6 @@ function TicketList(props: {
                     ? `${ticket.user.username} · ID ${ticket.user.id}`
                     : ticket.email}
                 </span>
-                <time
-                  className='text-muted-foreground ml-auto shrink-0'
-                  dateTime={ticket.modifiedTime}
-                >
-                  {ticket.modifiedTime &&
-                    new Date(ticket.modifiedTime).toLocaleDateString(
-                      toIntlLocale(i18n.language)
-                    )}
-                </time>
-              </span>
-            )}
-            {!props.admin && (
-              <span className='text-muted-foreground flex w-full justify-end text-xs'>
-                <time dateTime={ticket.modifiedTime}>
-                  {ticket.modifiedTime &&
-                    new Date(ticket.modifiedTime).toLocaleDateString(
-                      toIntlLocale(i18n.language)
-                    )}
-                </time>
               </span>
             )}
           </button>
@@ -777,11 +838,13 @@ export function TicketDetail(props: {
   data: Awaited<ReturnType<typeof getSupportTicket>>
   reply: string
   onReplyChange: (value: string) => void
+  files?: File[]
+  onFilesChange?: (files: File[]) => void
   onBack: () => void
   onSend: () => void
   sending: boolean
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const isAdmin = useIsAdmin()
   const queryClient = useQueryClient()
   const [closing, setClosing] = useState(false)
@@ -837,8 +900,9 @@ export function TicketDetail(props: {
           <h2 className='truncate font-semibold'>
             {props.data.ticket.subject}
           </h2>
-          <p className='text-muted-foreground truncate text-xs'>
-            #{props.data.ticket.ticketNumber} · {t(props.data.ticket.category)}
+          <p className='text-muted-foreground flex flex-wrap gap-x-2 text-xs'>
+            #{props.data.ticket.ticketNumber} · {t(props.data.ticket.category)} ·{' '}
+            {formatSupportDate(ticket.createdTime, i18n.language)}
           </p>
         </div>
         <Badge variant='secondary'>
@@ -923,6 +987,7 @@ export function TicketDetail(props: {
             content={props.data.ticket.description}
             html
             time={ticket.createdTime}
+            customer
           />
           {[...props.data.conversations]
             .sort(
@@ -950,6 +1015,7 @@ export function TicketDetail(props: {
                     ? !message.isPublic
                     : message.visibility !== 'public'
                 }
+                customer={message.direction === 'in' || message.author?.type === 'END_USER' || message.commenter?.type === 'END_USER'}
               />
             ))}
           {props.data.attachments.length > 0 && (
@@ -995,6 +1061,15 @@ export function TicketDetail(props: {
             value={props.reply}
             onChange={(event) => props.onReplyChange(event.target.value)}
           />
+          <AttachmentPicker
+            compact
+            files={props.files ?? []}
+            onFilesChange={props.onFilesChange ?? (() => undefined)}
+            disabled={props.sending || status.isPending}
+            onRejected={(fileName) =>
+              toast.error(t('{{file}} exceeds the 5 MB attachment limit.', { file: fileName }))
+            }
+          />
           <div className='flex items-center justify-between gap-3'>
             <span className='text-muted-foreground text-xs'>
               {isAdmin && t('Replying here also sends an email to the user.')}
@@ -1032,6 +1107,7 @@ function Message(props: {
   html?: boolean
   time?: string
   internal?: boolean
+  customer?: boolean
 }) {
   const { t, i18n } = useTranslation()
   const safeContent = useMemo(
@@ -1070,15 +1146,16 @@ function Message(props: {
     [props.content, props.html]
   )
   return (
-    <article className='border-b py-5 last:border-b-0'>
-      <div className='text-muted-foreground mb-2 flex flex-wrap items-center gap-2 text-xs'>
+    <div className={cn('flex border-b py-5 last:border-b-0', props.customer ? 'justify-end' : 'justify-start')}>
+      <article className={cn('w-fit max-w-[88%] rounded-2xl px-4 py-3', props.customer ? 'bg-primary text-primary-foreground' : 'bg-muted')}>
+      <div className={cn('mb-2 flex flex-wrap items-center gap-2 text-xs', props.customer ? 'text-primary-foreground/75 justify-end' : 'text-muted-foreground')}>
         <span className='break-all'>{props.sender}</span>
         {props.internal && (
           <Badge variant='outline'>{t('Internal note')}</Badge>
         )}
         {props.time && (
           <time dateTime={props.time}>
-            {new Date(props.time).toLocaleString(toIntlLocale(i18n.language))}
+            {formatSupportDate(props.time, i18n.language)}
           </time>
         )}
       </div>
@@ -1092,6 +1169,7 @@ function Message(props: {
           {props.content}
         </p>
       )}
-    </article>
+      </article>
+    </div>
   )
 }

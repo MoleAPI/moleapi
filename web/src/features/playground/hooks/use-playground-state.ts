@@ -120,7 +120,7 @@ export function usePlaygroundState(
             ? {
                 ...session,
                 messages: messagesToSave,
-                title: getConversationTitle(messagesToSave),
+                title: session.title || getConversationTitle(messagesToSave),
                 updatedAt: now,
               }
             : session
@@ -271,6 +271,22 @@ export function usePlaygroundState(
     setMessages([])
   }, [conversationScope])
 
+  const renameConversation = useCallback(
+    (title: string) => {
+      const trimmedTitle = title.trim().slice(0, 60)
+      if (!trimmedTitle || !activeSessionIdRef.current) return
+      const nextSessions = latestSessionsRef.current.map((session) =>
+        session.id === activeSessionIdRef.current
+          ? { ...session, title: trimmedTitle, updatedAt: Date.now() }
+          : session
+      )
+      latestSessionsRef.current = nextSessions
+      setSessions(nextSessions)
+      persistSessions(nextSessions, activeSessionIdRef.current)
+    },
+    [persistSessions]
+  )
+
   const deleteConversation = useCallback(
     (sessionId: string) => {
       const nextState = deleteConversationSession(
@@ -338,6 +354,7 @@ export function usePlaygroundState(
     updateMessages,
     clearMessages,
     createConversation,
+    renameConversation,
     deleteConversation,
     selectConversation,
     resetConfig,
