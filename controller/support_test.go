@@ -138,6 +138,20 @@ func TestSupportConversationActivity(t *testing.T) {
 	}
 }
 
+func TestSupportEmailConfigUsesMoleAPIAddress(t *testing.T) {
+	common.OptionMapRWMutex.Lock()
+	previous := common.OptionMap
+	common.OptionMap = map[string]string{"ZohoDeskFromEmail": "support@moleapi.zohodesk.jp"}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previous
+		common.OptionMapRWMutex.Unlock()
+	})
+	assert.Equal(t, "support@moleapi.com", getZohoDeskConfig().FromEmail)
+	assert.Equal(t, "A clean reply\nwith emphasis", cleanSupportEmailText("## **A clean reply**\nwith emphasis"))
+}
+
 func TestSupportTicketWorkflow(t *testing.T) {
 	for _, kind := range []string{"sqlite", "mysql", "postgres"} {
 		t.Run(kind, func(t *testing.T) {

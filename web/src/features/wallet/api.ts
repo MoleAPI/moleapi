@@ -246,7 +246,8 @@ export async function getAffiliateHistory(
   page: number,
   pageSize: number,
   startTimestamp?: number,
-  endTimestamp?: number
+  endTimestamp?: number,
+  filters: { allUsers?: boolean; inviterKeyword?: string } = {}
 ): Promise<AffiliateHistoryResponse> {
   const params = new URLSearchParams({
     p: page.toString(),
@@ -257,6 +258,10 @@ export async function getAffiliateHistory(
   }
   if (endTimestamp) {
     params.append('end_timestamp', endTimestamp.toString())
+  }
+  if (filters.allUsers) params.append('all_users', '1')
+  if (filters.inviterKeyword) {
+    params.append('inviter_keyword', filters.inviterKeyword)
   }
   const res = await api.get(`/api/user/aff/history?${params.toString()}`)
   return res.data

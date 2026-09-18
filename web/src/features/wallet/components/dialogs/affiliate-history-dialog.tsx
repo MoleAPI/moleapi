@@ -34,6 +34,8 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { formatQuota } from '@/lib/format'
+import { useIsAdmin } from '@/hooks/use-admin'
+import { useDebounce } from '@/hooks/use-debounce'
 
 import { getAffiliateHistory, isApiSuccess } from '../../api'
 import { formatTimestamp } from '../../lib/billing'
@@ -115,12 +117,15 @@ function rewardSourceKey(record: AffiliateRewardRecord): string {
 
 export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
   const { t } = useTranslation()
+  const isAdmin = useIsAdmin()
   const [records, setRecords] = useState<AffiliateRewardRecord[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(false)
   const [startDate, setStartDate] = useState(() => defaultDateRange().start)
   const [endDate, setEndDate] = useState(() => defaultDateRange().end)
+  const [inviterKeyword, setInviterKeyword] = useState('')
+  const debouncedInviterKeyword = useDebounce(inviterKeyword, 400)
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -133,7 +138,8 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
         page,
         PAGE_SIZE,
         dateInputTimestamp(startDate),
-        dateInputTimestamp(endDate, true)
+        dateInputTimestamp(endDate, true),
+        { allUsers: isAdmin, inviterKeyword: debouncedInviterKeyword }
       )
       if (isApiSuccess(response) && response.data) {
         setRecords(response.data.items ?? [])
@@ -152,7 +158,7 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
     } finally {
       setLoading(false)
     }
-  }, [endDate, page, props.open, startDate, t])
+  }, [debouncedInviterKeyword, endDate, isAdmin, page, props.open, startDate, t])
 
   useEffect(() => {
     if (props.open) {
@@ -164,6 +170,7 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
     const range = defaultDateRange()
     setStartDate(range.start)
     setEndDate(range.end)
+    setInviterKeyword('')
     setPage(1)
   }
 
@@ -178,6 +185,18 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
       bodyClassName='space-y-3'
     >
       <div className='flex flex-col gap-2 sm:flex-row sm:flex-wrap'>
+        {isAdmin && (
+          <Input
+            aria-label={t('Search inviter')}
+            placeholder={t('Inviter ID, username, email, or display name')}
+            value={inviterKeyword}
+            onChange={(event) => {
+              setInviterKeyword(event.target.value)
+              setPage(1)
+            }}
+            className='h-9 sm:min-w-72 sm:flex-1'
+          />
+        )}
         <Input
           aria-label={t('Start time')}
           type='date'
@@ -240,6 +259,7 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
             <TableHeader className='bg-muted/40 sticky top-0 z-10'>
               <TableRow>
                 <TableHead>{t('Source')}</TableHead>
+                {isAdmin && <TableHead>{t('Inviter')}</TableHead>}
                 <TableHead>{t('Invited user')}</TableHead>
                 <TableHead>{t('Reward')}</TableHead>
                 <TableHead>{t('Time')}</TableHead>
@@ -251,6 +271,11 @@ export function AffiliateHistoryDialog(props: AffiliateHistoryDialogProps) {
                   <TableCell className='whitespace-nowrap'>
                     {t(rewardSourceKey(record))}
                   </TableCell>
+                  {isAdmin && (
+                    <TableCell className='font-mono'>
+                      {record.inviter_username || record.inviter_id || '-'}
+                    </TableCell>
+                  )}
                   <TableCell className='font-mono'>
                     {record.related_user ?? '-'}
                   </TableCell>

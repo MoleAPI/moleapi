@@ -86,7 +86,7 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 	require.NoError(t, err)
 	DB = db
 	LOG_DB = db
-	require.NoError(t, db.AutoMigrate(&Log{}))
+	require.NoError(t, db.AutoMigrate(&Log{}, &User{}))
 	t.Cleanup(func() {
 		DB = originalDB
 		LOG_DB = originalLogDB
@@ -115,6 +115,8 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 		{UserId: 1, Type: LogTypeManage, Content: "Decreased user 70 quota", Other: other, CreatedAt: 550},
 		{UserId: 99, Type: LogTypeSystem, Content: "邀请用户赠送 ＄0.000040 额度", Quota: 40, CreatedAt: 500},
 	}
+	require.NoError(t, db.Create(&User{Id: 7, Username: "alice", Email: "alice@example.com", AffCode: "alice-reward"}).Error)
+	require.NoError(t, db.Create(&User{Id: 99, Username: "bob", Email: "bob@example.com", AffCode: "bob-reward"}).Error)
 	for _, log := range logs {
 		require.NoError(t, db.Create(log).Error)
 	}
@@ -157,6 +159,17 @@ func TestGetInviteRebateTopUpsReturnsOnlyGrantedRewards(t *testing.T) {
 	require.NoError(t, searchErr)
 	assert.Equal(t, int64(5), total)
 	assert.Empty(t, got)
+
+	got, total, searchErr = GetInviteRebateTopUps(0, &common.PageInfo{Page: 1, PageSize: 10}, InviteRewardHistoryParams{AllUsers: true})
+	require.NoError(t, searchErr)
+	assert.Equal(t, int64(6), total)
+	if assert.NotEmpty(t, got) {
+		assert.Equal(t, 99, got[0].InviterId)
+		assert.Equal(t, "bob", got[0].InviterUsername)
+	}
+	got, total, searchErr = GetInviteRebateTopUps(0, &common.PageInfo{Page: 1, PageSize: 10}, InviteRewardHistoryParams{AllUsers: true, InviterKeyword: "alice"})
+	require.NoError(t, searchErr)
+	assert.Equal(t, int64(5), total)
 }
 
 func TestGetAdminBusinessMetricsKeepsIntentAndPaidOrdersDistinct(t *testing.T) {

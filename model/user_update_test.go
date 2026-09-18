@@ -502,6 +502,16 @@ func TestInsertUsesDefaultInviteRebateRatio(t *testing.T) {
 	}
 }
 
+func TestGetSelfUserByIdIncludesInviteRebateRatio(t *testing.T) {
+	setupUserUpdateTestState(t)
+	user := &User{Username: "self-rebate-ratio", Status: common.UserStatusEnabled, InviteRebateRatio: 375}
+	require.NoError(t, DB.Create(user).Error)
+
+	profile, err := GetSelfUserById(user.Id)
+	require.NoError(t, err)
+	assert.Equal(t, 375, profile.InviteRebateRatio)
+}
+
 func TestInsertPersistsInviterRelationship(t *testing.T) {
 	setupUserUpdateTestState(t)
 

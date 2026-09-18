@@ -298,6 +298,8 @@ export interface AffiliateRewardRecord {
   source: AffiliateRewardSource
   quota: number
   related_user?: string
+  inviter_id?: number
+  inviter_username?: string
   complete_time: number
 }
 

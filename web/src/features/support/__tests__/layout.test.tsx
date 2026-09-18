@@ -239,7 +239,7 @@ describe('support page layout', () => {
       screen.getByRole('button', { name: /Resolved request/ })
     ).toBeVisible()
     await user.click(screen.getByRole('combobox', { name: 'Ticket status' }))
-    await user.click(screen.getByRole('option', { name: 'On Hold' }))
+    await user.click(screen.getByRole('option', { name: 'Waiting' }))
     await waitFor(() =>
       expect(updateSupportTicketStatus).toHaveBeenCalledWith('42', 'On Hold')
     )

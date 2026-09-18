@@ -7092,6 +7092,9 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Search inviter": "Поиск пригласившего",
+    "Inviter ID, username, email, or display name": "ID, имя пользователя, электронная почта или отображаемое имя пригласившего",
+    "Unprocessed": "Не обработано"
   }
 }
