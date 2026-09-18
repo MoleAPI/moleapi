@@ -28,6 +28,8 @@ import type { SuccessRatePoint } from '@/features/performance-metrics/types'
 import { cn } from '@/lib/utils'
 
 export type ModelPerfBadgeData = {
+  window_start?: number
+  window_end?: number
   avg_latency_ms: number
   success_rate: number
   avg_tps: number
@@ -111,12 +113,14 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
       <dl className='flex min-w-0 items-start gap-3 text-xs tabular-nums'>
         <div className='w-20 shrink-0'>
           <dt
-            title={t('Request success rate sampled over the last 24 hours')}
+            title={t(
+              'Success rate excludes business rejections and includes the current partial hour.'
+            )}
             className='text-muted-foreground flex items-center justify-between gap-1 text-[11px] leading-4'
           >
             <span>{t('Status')}</span>
             <span className='font-mono'>
-              {hasSuccessRate ? `${successRate.toFixed(1)}%` : '—%'}
+              {hasSuccessRate ? `${successRate.toFixed(2)}%` : '—'}
             </span>
           </dt>
           <dd className='mt-1'>

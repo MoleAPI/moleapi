@@ -11,7 +11,10 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
+
+	"github.com/bytedance/gopkg/util/gopool"
 )
 
 var hotBuckets sync.Map
@@ -24,7 +27,9 @@ func Init() {
 	go flushLoop()
 }
 
-func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
+// RecordRelayResult samples one finished relay exactly once, at the request
+// boundary, regardless of how many channel attempts it took.
+func RecordRelayResult(ctx context.Context, info *relaycommon.RelayInfo, apiErr *types.NewAPIError) {
 	if info == nil {
 		return
 	}
@@ -51,8 +56,8 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
-		Success:      success,
-		OutputTokens: outputTokens,
+		Success:      outcome == OutcomeSuccess,
+		OutputTokens: info.PerformanceOutputTokens,
 		GenerationMs: generationMs,
 	})
 }
@@ -76,18 +81,25 @@ func Record(sample Sample) {
 	}
 	actual, _ := hotBuckets.LoadOrStore(key, &atomicBucket{})
 	actual.(*atomicBucket).add(sample)
-	recordRedis(key, sample)
+	gopool.Go(func() {
+		recordRedis(key, sample)
+	})
+}
+
+// queryWindow covers the current partial hour plus the preceding complete
+// hours, so every reader shares the same hourly buckets.
+func queryWindow(now time.Time, hours int) (int64, int64) {
+	if hours <= 0 {
+		hours = 24
+	}
+	hours = min(hours, 24*30)
+	endTs := now.Unix()
+	return endTs - endTs%3600 - int64(hours-1)*3600, endTs
 }
 
 func Query(params QueryParams) (QueryResult, error) {
-	if params.Hours <= 0 {
-		params.Hours = 24
-	}
-	if params.Hours > 24*30 {
-		params.Hours = 24 * 30
-	}
-	endTs := time.Now().Unix()
-	startTs := endTs - int64(params.Hours)*3600
+	startTs, endTs := queryWindow(time.Now(), params.Hours)
+	allowedGroups := allowedGroupSet(params.AllowedGroups)
 
 	merged := map[bucketKey]counters{}
 	rows, err := model.GetPerfMetrics(params.Model, params.Group, startTs, endTs)
@@ -95,6 +107,11 @@ func Query(params QueryParams) (QueryResult, error) {
 		return QueryResult{}, err
 	}
 	for _, row := range rows {
+		if allowedGroups != nil {
+			if _, ok := allowedGroups[row.Group]; !ok {
+				continue
+			}
+		}
 		mergeCounters(merged, bucketKey{
 			model:    row.ModelName,
 			group:    row.Group,
@@ -118,22 +135,22 @@ func Query(params QueryParams) (QueryResult, error) {
 		if params.Group != "" && k.group != params.Group {
 			return true
 		}
+		if allowedGroups != nil {
+			if _, ok := allowedGroups[k.group]; !ok {
+				return true
+			}
+		}
 		mergeCounters(merged, k, value.(*atomicBucket).snapshot())
 		return true
 	})
 
-	return buildQueryResult(params.Model, merged), nil
+	result := buildQueryResult(params.Model, merged)
+	result.WindowStart, result.WindowEnd = startTs, endTs
+	return result, nil
 }
 
 func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
-	if hours <= 0 {
-		hours = 24
-	}
-	if hours > 24*30 {
-		hours = 24 * 30
-	}
-	endTs := time.Now().Unix()
-	startTs := endTs - int64(hours)*3600
+	startTs, endTs := queryWindow(time.Now(), hours)
 	allowedGroups := allowedGroupSet(groups)
 
 	rows, err := model.GetPerfMetricsSummaryBucketsAll(startTs, endTs, groups)
@@ -174,11 +191,17 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 		return true
 	})
 
+	all := counters{}
 	models := make([]ModelSummary, 0, len(totals))
 	for name, total := range totals {
 		if total.requestCount == 0 {
 			continue
 		}
+		all.requestCount += total.requestCount
+		all.successCount += total.successCount
+		all.totalLatencyMs += total.totalLatencyMs
+		all.outputTokens += total.outputTokens
+		all.generationMs += total.generationMs
 		avgLatency := total.totalLatencyMs / total.requestCount
 		successRate := float64(total.successCount) / float64(total.requestCount) * 100
 		avgTps := 0.0
@@ -199,7 +222,7 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 		return models[i].RequestCount > models[j].RequestCount
 	})
 
-	return SummaryAllResult{Models: models}, nil
+	return SummaryAllResult{Summary: summarize(all), WindowStart: startTs, WindowEnd: endTs, Models: models}, nil
 }
 
 func recentSuccessRates(buckets map[int64]counters, limit int) []float64 {
@@ -325,6 +348,7 @@ func mergeCounters(merged map[bucketKey]counters, key bucketKey, value counters)
 
 func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResult {
 	groupBuckets := map[string]map[int64]counters{}
+	modelBuckets := map[string]map[int64]counters{}
 	for key, value := range merged {
 		if value.requestCount == 0 {
 			continue
@@ -333,6 +357,7 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 			groupBuckets[key.group] = map[int64]counters{}
 		}
 		groupBuckets[key.group][key.bucketTs] = value
+		mergeModelBucket(modelBuckets, modelName, key.bucketTs, value)
 	}
 
 	groups := make([]string, 0, len(groupBuckets))
@@ -341,6 +366,7 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 	}
 	sort.Strings(groups)
 
+	all := counters{}
 	results := make([]GroupResult, 0, len(groups))
 	for _, group := range groups {
 		buckets := groupBuckets[group]
@@ -365,6 +391,11 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 			total.generationMs += value.generationMs
 			series = append(series, bucketPoint(ts, value))
 		}
+		all.requestCount += total.requestCount
+		all.successCount += total.successCount
+		all.totalLatencyMs += total.totalLatencyMs
+		all.outputTokens += total.outputTokens
+		all.generationMs += total.generationMs
 
 		results = append(results, GroupResult{
 			Group:        group,
@@ -376,10 +407,33 @@ func buildQueryResult(modelName string, merged map[bucketKey]counters) QueryResu
 		})
 	}
 
+	modelSeries := make([]BucketPoint, 0, len(modelBuckets[modelName]))
+	for ts, value := range modelBuckets[modelName] {
+		modelSeries = append(modelSeries, bucketPoint(ts, value))
+	}
+	sort.Slice(modelSeries, func(i, j int) bool {
+		return modelSeries[i].Ts < modelSeries[j].Ts
+	})
+
 	return QueryResult{
 		ModelName:    modelName,
 		SeriesSchema: seriesSchema,
+		Summary:      summarize(all),
+		Series:       modelSeries,
 		Groups:       results,
+	}
+}
+
+// summarize returns nil when nothing was sampled, so clients can show
+// "no data" instead of a fabricated 0% success rate.
+func summarize(total counters) *Summary {
+	if total.requestCount <= 0 {
+		return nil
+	}
+	return &Summary{
+		AvgLatencyMs: avg(total.totalLatencyMs, total.requestCount),
+		SuccessRate:  math.Round(successRate(total)*100) / 100,
+		AvgTps:       math.Round(avgTps(total)*100) / 100,
 	}
 }
 

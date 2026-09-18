@@ -25,6 +25,10 @@ export const CHANNEL_TYPE_NEW_API = 61
 
 export const CHANNEL_TYPE_TASK_PLUGIN = 62
 
+export const CHANNEL_TYPE_VLLM = 62
+
+export const CHANNEL_TYPE_SGLANG = 63
+
 export const CHANNEL_TYPES = {
   0: 'Unknown',
   1: 'OpenAI',
@@ -165,6 +169,8 @@ export const CHANNEL_PROVIDER_PRESENTATION: Partial<
   61: {
     descriptionKey: 'Connect to model services from another New API instance',
   },
+  62: { descriptionKey: 'Connect to self-hosted models served by vLLM' },
+  63: { descriptionKey: 'Connect to self-hosted models served by SGLang' },
 } satisfies Record<
   Exclude<keyof typeof CHANNEL_TYPES, 0 | typeof CHANNEL_TYPE_TASK_PLUGIN>,
   ChannelProviderPresentation
@@ -498,6 +504,8 @@ export const FIELD_PASSTHROUGH_TYPES = new Set([
   58,
   59,
   CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_VLLM,
+  CHANNEL_TYPE_SGLANG,
 ])
 
 export const OPENAI_FIELD_PASSTHROUGH_TYPES = new Set([
@@ -506,6 +514,8 @@ export const OPENAI_FIELD_PASSTHROUGH_TYPES = new Set([
   58,
   59,
   CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_VLLM,
+  CHANNEL_TYPE_SGLANG,
 ])
 
 export const CLAUDE_FIELD_PASSTHROUGH_TYPES = new Set([
@@ -513,6 +523,8 @@ export const CLAUDE_FIELD_PASSTHROUGH_TYPES = new Set([
   58,
   59,
   CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_VLLM,
+  CHANNEL_TYPE_SGLANG,
 ])
 
 export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
@@ -526,6 +538,8 @@ export const TYPE_TO_KEY_PROMPT: Record<number, string> = {
   57: 'Paste Codex OAuth JSON credential (access_token / refresh_token / account_id)',
   59: 'Enter API key for this channel',
   60: 'Enter API key for this channel',
+  62: 'vLLM API key, or EMPTY if authentication is disabled',
+  63: 'SGLang API key, or EMPTY if authentication is disabled',
 }
 
 export const CHANNEL_TYPE_WARNINGS: Record<number, string> = {

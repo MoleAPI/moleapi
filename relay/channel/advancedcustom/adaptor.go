@@ -125,15 +125,7 @@ func (a *Adaptor) ConvertGeminiRequest(c *gin.Context, info *relaycommon.RelayIn
 		}
 		return claudeRequest, nil
 	case relayconvert.ConverterGeminiContentToOpenAIChat:
-		result, err := service.ConvertRequestByID(c, info, converter, request)
-		if err != nil {
-			return nil, err
-		}
-		chatRequest, ok := result.Value.(*dto.GeneralOpenAIRequest)
-		if !ok {
-			return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
-		}
-		return a.convertOpenAICompatibleRequest(c, info, chatRequest)
+		return a.convertCrossProtocolChatRequest(c, info, converter, request)
 	default:
 		return nil, fmt.Errorf("converter %q does not support Gemini generateContent requests", converter)
 	}
@@ -158,15 +150,7 @@ func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommo
 		}
 		return claudeRequest, nil
 	case relayconvert.ConverterOpenAIResponsesToOpenAIChat:
-		result, err := service.ConvertRequestByID(c, info, converter, request)
-		if err != nil {
-			return nil, err
-		}
-		chatRequest, ok := result.Value.(*dto.GeneralOpenAIRequest)
-		if !ok {
-			return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
-		}
-		return a.convertOpenAICompatibleRequest(c, info, chatRequest)
+		return a.convertCrossProtocolChatRequest(c, info, converter, request)
 	case relayconvert.ConverterOpenAIResponsesToGemini:
 		result, err := service.ConvertRequestByID(c, info, converter, request)
 		if err != nil {
@@ -320,7 +304,7 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if err := a.resolve(c, info); err != nil {
 		return nil, err
 	}
-	if !a.converted && a.converter != relayconvert.ConverterNone {
+	if !a.converted && !a.route.SupportsPassThroughBody() {
 		return nil, errors.New("advanced custom converter routes cannot be used with pass-through request body")
 	}
 
@@ -341,6 +325,8 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 	}
 
 	switch a.converter {
+	case dto.AdvancedCustomConverterSGLangRerank:
+		return a.doSGLangRerankResponse(c, resp, info)
 	case relayconvert.ConverterNone:
 		return a.doNativeResponse(c, resp, info)
 	case relayconvert.ConverterClaudeMessagesToOpenAIChat,
@@ -886,6 +872,25 @@ func isJSONRequest(c *gin.Context) bool {
 		return false
 	}
 	return strings.Contains(strings.ToLower(c.Request.Header.Get("Content-Type")), "application/json")
+}
+
+// convertCrossProtocolChatRequest converts a Claude, Gemini, or Responses request into an
+// OpenAI chat completions request for an OpenAI-compatible upstream. Streaming requests
+// always ask the upstream for usage, because the downstream protocol reports usage in its
+// own format and never carries stream_options itself.
+func (a *Adaptor) convertCrossProtocolChatRequest(c *gin.Context, info *relaycommon.RelayInfo, converter string, request any) (any, error) {
+	result, err := service.ConvertRequestByID(c, info, converter, request)
+	if err != nil {
+		return nil, err
+	}
+	chatRequest, ok := result.Value.(*dto.GeneralOpenAIRequest)
+	if !ok {
+		return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", result.Value)
+	}
+	if info.SupportStreamOptions && info.IsStream {
+		chatRequest.StreamOptions = &dto.StreamOptions{IncludeUsage: true}
+	}
+	return a.convertOpenAICompatibleRequest(c, info, chatRequest)
 }
 
 func (a *Adaptor) convertOpenAICompatibleRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {

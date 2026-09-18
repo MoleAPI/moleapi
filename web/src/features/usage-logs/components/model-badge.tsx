@@ -30,6 +30,9 @@ import { getLobeIcon } from "@/lib/lobe-icon";
 import { resolveModelProvider } from "@/lib/model-provider";
 import { cn } from "@/lib/utils";
 
+import type { LogOtherData } from '../types'
+import { DetailRow } from './dialogs/log-detail-layout'
+
 interface ModelBadgeProps {
   modelName: string;
   actualModel?: string;
@@ -135,4 +138,50 @@ export function ModelBadge(props: ModelBadgeProps) {
       </PopoverContent>
     </Popover>
   );
+}
+
+export function ResponseModelDetails(props: {
+  observation: NonNullable<LogOtherData['response_model']>
+}) {
+  const { t } = useTranslation()
+
+  return (
+    <div className='min-w-0 space-y-2'>
+      {props.observation.mismatch && (
+        <StatusBadge
+          icon={AlertTriangle}
+          label={t('Response model: {{model}}', {
+            model: props.observation.returned_model,
+          })}
+          variant='warning'
+          copyable={false}
+          className='h-auto whitespace-normal'
+        />
+      )}
+      <DetailRow
+        label={t('Request Model')}
+        value={props.observation.requested_model}
+        mono
+      />
+      <DetailRow
+        label={t('Upstream Model')}
+        value={
+          props.observation.upstream_model || props.observation.requested_model
+        }
+        mono
+      />
+      <DetailRow
+        label={t('Response Model')}
+        value={props.observation.returned_model}
+        mono
+      />
+      {props.observation.mismatch && (
+        <p className='text-muted-foreground text-xs'>
+          {t(
+            'The upstream returned a model name different from both the requested and upstream models. Aliases or dated versions may also cause this; this warning alone does not prove model substitution.'
+          )}
+        </p>
+      )}
+    </div>
+  )
 }

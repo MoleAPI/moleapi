@@ -20,6 +20,7 @@ import { getGroups as getUserGroups } from '@/features/users/api'
 import { api, type ApiRequestConfig } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
+import type { InferenceStatus } from './lib/inference-status'
 import type {
   AddChannelRequest,
   BatchDeleteParams,
@@ -48,6 +49,18 @@ const channelActionConfig = (
   skipBusinessError: true,
   skipErrorHandler: true,
 })
+
+export async function getInferenceStatus(
+  channelId: number,
+  provider: 'vllm' | 'sglang',
+  signal?: AbortSignal
+): Promise<InferenceStatus> {
+  const response = await api.get<{ success: boolean; data: InferenceStatus }>(
+    `/api/channel/${channelId}/${provider}/status`,
+    { signal, disableDuplicate: true }
+  )
+  return requireServerSuccess(response.data).data
+}
 
 export type TaskPluginOption = {
   sortPriority?: number
@@ -130,8 +143,13 @@ export async function getChannel(id: number): Promise<GetChannelResponse> {
 /**
  * Get channel operations summary for administrators
  */
-export async function getChannelOps(): Promise<ChannelOpsResponse> {
-  const res = await api.get('/api/channel/ops', channelActionConfig())
+export async function getChannelOps(
+  autoBan?: boolean
+): Promise<ChannelOpsResponse> {
+  const res = await api.get('/api/channel/ops', {
+    ...channelActionConfig(),
+    params: autoBan === undefined ? undefined : { auto_ban: autoBan },
+  })
   return res.data
 }
 

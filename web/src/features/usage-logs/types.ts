@@ -1,3 +1,4 @@
+import type { PolicyEvent } from '@/features/system-settings/request-policies/api'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -129,6 +130,7 @@ export interface LogOtherData {
   billing_unit?: 'token' | 'request'
   fixed_price?: number
   admin_info?: {
+    request_policy?: PolicyEvent[]
     is_multi_key?: boolean
     multi_key_index?: number
     use_channel?: number[]
@@ -225,6 +227,12 @@ export interface LogOtherData {
   cache_creation_ratio_1h?: number
   is_model_mapped?: boolean
   upstream_model_name?: string
+  response_model?: {
+    requested_model: string
+    upstream_model: string
+    returned_model: string
+    mismatch: boolean
+  }
   audio_ratio?: number
   audio_completion_ratio?: number
   frt?: number

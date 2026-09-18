@@ -59,15 +59,19 @@ import { getChannelSuccessMetrics } from '@/features/dashboard/api'
 import { parseHttpStatusCodeRules } from '@/lib/http-status-code-rules'
 
 import {
+  SettingsControlChildren,
+  SettingsControlGroup,
   SettingsForm,
+  SettingsFormGrid,
   SettingsSwitchContent,
   SettingsSwitchItem,
 } from '../components/settings-form-layout'
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useResetForm } from '../hooks/use-reset-form'
-import { useUpdateOption } from '../hooks/use-update-option'
 import { safeNumberFieldProps } from '../utils/numeric-field'
+import type { HealthSettings } from './defaults'
+import { useSavePolicy } from './use-save-policy'
 
 const numericString = z.string().refine((value) => {
   const trimmed = value.trim()
@@ -86,18 +90,16 @@ const channelTestTypes = ['hi', 'intelligence', 'custom'] as const
 type ChannelTestType = (typeof channelTestTypes)[number]
 const MAX_CHANNEL_TEST_CONCURRENCY = 32
 
-const createRoutingReliabilitySchema = (
+const createChannelHealthSchema = (
   t: (key: string, options?: Record<string, unknown>) => string
 ) =>
   z
     .object({
-      RetryTimes: z.coerce.number().min(0).max(10),
       ChannelDisableThreshold: numericString,
       AutomaticDisableChannelEnabled: z.boolean(),
       AutomaticEnableChannelEnabled: z.boolean(),
       AutomaticDisableKeywords: z.string(),
       AutomaticDisableStatusCodes: z.string(),
-      AutomaticRetryStatusCodes: z.string(),
       monitor_setting: z.object({
         auto_test_channel_enabled: z.boolean(),
         auto_test_channel_minutes: z.coerce
@@ -162,11 +164,9 @@ const createRoutingReliabilitySchema = (
       }
     })
 
-type RoutingReliabilitySchema = ReturnType<
-  typeof createRoutingReliabilitySchema
->
-type RoutingReliabilityFormValues = z.output<RoutingReliabilitySchema>
-type RoutingReliabilityFormInput = z.input<RoutingReliabilitySchema>
+type ChannelHealthSchema = ReturnType<typeof createChannelHealthSchema>
+type ChannelHealthFormValues = z.output<ChannelHealthSchema>
+type ChannelHealthFormInput = z.input<ChannelHealthSchema>
 
 type RoutingReliabilitySectionProps = {
   defaultValues: {
@@ -191,14 +191,12 @@ function normalizeLineEndings(value: string) {
   return value.replaceAll('\r\n', '\n')
 }
 
-type NormalizedRoutingReliabilityValues = {
-  RetryTimes: number
+type NormalizedChannelHealthValues = {
   ChannelDisableThreshold: string
   AutomaticDisableChannelEnabled: boolean
   AutomaticEnableChannelEnabled: boolean
   AutomaticDisableKeywords: string
   AutomaticDisableStatusCodes: string
-  AutomaticRetryStatusCodes: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
@@ -228,9 +226,8 @@ function normalizeChannelTestType(value?: string): ChannelTestType {
 }
 
 const buildFormDefaults = (
-  defaults: RoutingReliabilitySectionProps['defaultValues']
-): RoutingReliabilityFormInput => ({
-  RetryTimes: defaults.RetryTimes ?? 0,
+  defaults: ChannelHealthSectionProps['defaultValues']
+): ChannelHealthFormInput => ({
   ChannelDisableThreshold: defaults.ChannelDisableThreshold ?? '',
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
@@ -238,7 +235,6 @@ const buildFormDefaults = (
     defaults.AutomaticDisableKeywords ?? ''
   ),
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
-  AutomaticRetryStatusCodes: defaults.AutomaticRetryStatusCodes ?? '',
   monitor_setting: {
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
@@ -260,9 +256,8 @@ const buildFormDefaults = (
 })
 
 const normalizeDefaults = (
-  defaults: RoutingReliabilitySectionProps['defaultValues']
-): NormalizedRoutingReliabilityValues => ({
-  RetryTimes: defaults.RetryTimes ?? 0,
+  defaults: ChannelHealthSectionProps['defaultValues']
+): NormalizedChannelHealthValues => ({
   ChannelDisableThreshold: (defaults.ChannelDisableThreshold ?? '').trim(),
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
@@ -271,9 +266,6 @@ const normalizeDefaults = (
   ),
   AutomaticDisableStatusCodes: parseHttpStatusCodeRules(
     defaults.AutomaticDisableStatusCodes ?? ''
-  ).normalized,
-  AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
-    defaults.AutomaticRetryStatusCodes ?? ''
   ).normalized,
   'monitor_setting.auto_test_channel_enabled':
     defaults['monitor_setting.auto_test_channel_enabled'],
@@ -294,9 +286,8 @@ const normalizeDefaults = (
 })
 
 const normalizeFormValues = (
-  values: RoutingReliabilityFormValues
-): NormalizedRoutingReliabilityValues => ({
-  RetryTimes: values.RetryTimes,
+  values: ChannelHealthFormValues
+): NormalizedChannelHealthValues => ({
   ChannelDisableThreshold: values.ChannelDisableThreshold.trim(),
   AutomaticDisableChannelEnabled: values.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: values.AutomaticEnableChannelEnabled,
@@ -305,9 +296,6 @@ const normalizeFormValues = (
   ),
   AutomaticDisableStatusCodes: parseHttpStatusCodeRules(
     values.AutomaticDisableStatusCodes
-  ).normalized,
-  AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
-    values.AutomaticRetryStatusCodes
   ).normalized,
   'monitor_setting.auto_test_channel_enabled':
     values.monitor_setting.auto_test_channel_enabled,
@@ -323,13 +311,13 @@ const normalizeFormValues = (
   'monitor_setting.channel_test_mode': values.monitor_setting.channel_test_mode,
 })
 
-export function RoutingReliabilitySection({
+export function ChannelHealthSection({
   defaultValues,
-}: RoutingReliabilitySectionProps) {
+}: ChannelHealthSectionProps) {
   const { t } = useTranslation()
-  const updateOption = useUpdateOption()
-  const routingReliabilitySchema = createRoutingReliabilitySchema(t)
-  const baselineRef = useRef<NormalizedRoutingReliabilityValues>(
+  const updateOption = useSavePolicy()
+  const channelHealthSchema = createChannelHealthSchema(t)
+  const baselineRef = useRef<NormalizedChannelHealthValues>(
     normalizeDefaults(defaultValues)
   )
 
@@ -339,18 +327,20 @@ export function RoutingReliabilitySection({
   )
 
   const form = useForm<
-    RoutingReliabilityFormInput,
+    ChannelHealthFormInput,
     unknown,
-    RoutingReliabilityFormValues
+    ChannelHealthFormValues
   >({
-    resolver: zodResolver(routingReliabilitySchema),
+    resolver: zodResolver(channelHealthSchema),
     defaultValues: formDefaults,
   })
 
   useResetForm(form, formDefaults)
+  useEffect(() => {
+    baselineRef.current = normalizeDefaults(defaultValues)
+  }, [defaultValues])
 
   const autoDisableStatusCodes = form.watch('AutomaticDisableStatusCodes')
-  const autoRetryStatusCodes = form.watch('AutomaticRetryStatusCodes')
   const channelTestMode = form.watch('monitor_setting.channel_test_mode')
   const channelTestType = form.watch('monitor_setting.channel_test_type')
   const probeOverviewQuery = useQuery({
@@ -386,15 +376,11 @@ export function RoutingReliabilitySection({
     () => parseHttpStatusCodeRules(autoDisableStatusCodes),
     [autoDisableStatusCodes]
   )
-  const autoRetryParsed = useMemo(
-    () => parseHttpStatusCodeRules(autoRetryStatusCodes),
-    [autoRetryStatusCodes]
-  )
 
-  const onSubmit = async (values: RoutingReliabilityFormValues) => {
+  const onSubmit = async (values: ChannelHealthFormValues) => {
     const normalized = normalizeFormValues(values)
     const updates = (
-      Object.keys(normalized) as Array<keyof NormalizedRoutingReliabilityValues>
+      Object.keys(normalized) as Array<keyof NormalizedChannelHealthValues>
     ).filter((key) => normalized[key] !== baselineRef.current[key])
 
     if (updates.length === 0) {
@@ -402,24 +388,43 @@ export function RoutingReliabilitySection({
       return
     }
 
-    for (const key of updates) {
-      const value = normalized[key]
-      await updateOption.mutateAsync({
-        key,
-        value,
-      })
+    try {
+      await updateOption.mutateAsync(
+        Object.fromEntries(updates.map((key) => [key, String(normalized[key])]))
+      )
+      baselineRef.current = normalized
+    } catch (error) {
+      handleServerError(error)
     }
-
-    baselineRef.current = normalized
   }
 
   return (
-    <SettingsSection title={t('Routing Reliability')}>
+    <SettingsSection title={t('Channel health')}>
+      <div className='text-muted-foreground space-y-1 text-sm'>
+        <p>{t('Source: global settings. Changes take effect after saving.')}</p>
+        <p>
+          {form.watch('AutomaticDisableChannelEnabled')
+            ? t(
+                'Channels must also enable Auto Ban before automatic disabling can take effect.'
+              )
+            : t(
+                'With these settings, automatic disabling is off for all channels.'
+              )}
+        </p>
+        {form.watch('AutomaticEnableChannelEnabled') &&
+          !form.watch('monitor_setting.auto_test_channel_enabled') && (
+            <p>
+              {t(
+                'Scheduled recovery is off. Bulk channel tests can still re-enable automatically disabled channels.'
+              )}
+            </p>
+          )}
+      </div>
       <Form {...form}>
         <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
           <SettingsPageFormActions
             onSave={form.handleSubmit(onSubmit)}
-            isSaving={updateOption.isPending}
+            isSaving={form.formState.isSubmitting}
           />
 
           <div className='flex min-w-0 flex-col gap-4'>
@@ -544,9 +549,10 @@ export function RoutingReliabilitySection({
                       onValueChange={field.onChange}
                     >
                       <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        />
                       </FormControl>
                       <SelectContent alignItemWithTrigger={false}>
                         <SelectGroup>
@@ -831,7 +837,9 @@ export function RoutingReliabilitySection({
                 name='ChannelDisableThreshold'
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>{t('Disable threshold (seconds)')}</FormLabel>
+                    <FormLabel>
+                      {t('Health check timeout threshold (seconds)')}
+                    </FormLabel>
                     <FormControl>
                       <Input
                         type='number'
@@ -904,7 +912,7 @@ export function RoutingReliabilitySection({
                   </FormItem>
                 )}
               />
-            </div>
+            </SettingsFormGrid>
           </div>
         </SettingsForm>
       </Form>

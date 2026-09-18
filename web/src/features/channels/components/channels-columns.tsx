@@ -408,6 +408,17 @@ function ChannelSuccessRateCell({
   if (!stats) {
     return <span className='text-muted-foreground text-xs'>-</span>
   }
+  const remainingBadge = (
+    <StatusBadge
+      label={remainingBadgeLabel}
+      variant={remainingBadgeVariant}
+      size='sm'
+      copyable={false}
+      showDot={false}
+      className='cursor-pointer'
+      onClick={isInferenceChannel ? undefined : handleClickUpdate}
+    />
+  )
 
   return (
     <TooltipProvider>
