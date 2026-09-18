@@ -607,6 +607,24 @@ function isTicketClosed(ticket: SupportTicket) {
   return (ticket.statusType || ticket.status) === 'Closed'
 }
 
+function ticketStatusLabel(ticket: SupportTicket, t: (key: string) => string) {
+  if (ticket.status === 'On Hold') return t('Waiting')
+  if (ticket.status === 'Open') {
+    return ticket.activity === 'agent' ? t('In progress') : t('Unprocessed')
+  }
+  return t(ticket.status)
+}
+
+function ticketActivityLabel(
+  ticket: SupportTicket,
+  t: (key: string) => string
+) {
+  if (ticket.activity === 'customer') return t('Customer replied')
+  if (ticket.activity === 'agent') return t('Support replied')
+  if (ticket.activity === 'new') return t('New ticket')
+  return null
+}
+
 function TicketList(props: {
   tickets: SupportTicket[]
   selectedTicket: string | null
@@ -682,7 +700,8 @@ function TicketList(props: {
             onClick={() => props.onSelect(ticket.id)}
             className={cn(
               'hover:bg-muted/60 flex w-full flex-col gap-2 px-4 py-3.5 text-left transition-colors',
-              props.selectedTicket === ticket.id && 'bg-muted'
+              props.selectedTicket === ticket.id && 'bg-muted',
+              props.admin && needsReply(ticket) && 'border-l-2 border-amber-500 bg-amber-500/5'
             )}
           >
             <span className='flex w-full min-w-0 items-center gap-2'>
@@ -695,41 +714,53 @@ function TicketList(props: {
               <span className='min-w-0 flex-1 truncate text-sm font-medium'>
                 {ticket.subject}
               </span>
-              <Badge variant='outline' className='shrink-0'>
-                {ticket.status === 'Open' ? t('In progress') : t(ticket.status)}
-              </Badge>
+              <span className='flex shrink-0 flex-col items-end gap-1'>
+                <Badge variant='outline'>{ticketStatusLabel(ticket, t)}</Badge>
+                {ticketActivityLabel(ticket, t) && (
+                  <Badge
+                    variant='secondary'
+                    className={cn(
+                      'h-5 px-1.5 text-[10px] font-normal',
+                      needsReply(ticket) &&
+                        'bg-amber-500/15 text-amber-700 dark:text-amber-400'
+                    )}
+                  >
+                    {ticketActivityLabel(ticket, t)}
+                  </Badge>
+                )}
+              </span>
             </span>
             <span className='text-muted-foreground block w-full truncate text-xs'>
               #{ticket.ticketNumber} · {t(ticket.category)}
             </span>
             {props.admin && (
-              <span className='block w-full truncate text-xs'>
-                {ticket.user
-                  ? `${ticket.user.username} · ID ${ticket.user.id}`
-                  : ticket.email}
+              <span className='flex w-full min-w-0 items-center gap-2 text-xs'>
+                <span className='truncate'>
+                  {ticket.user
+                    ? `${ticket.user.username} · ID ${ticket.user.id}`
+                    : ticket.email}
+                </span>
+                <time
+                  className='text-muted-foreground ml-auto shrink-0'
+                  dateTime={ticket.modifiedTime}
+                >
+                  {ticket.modifiedTime &&
+                    new Date(ticket.modifiedTime).toLocaleDateString(
+                      toIntlLocale(i18n.language)
+                    )}
+                </time>
               </span>
             )}
-            <span className='text-muted-foreground flex w-full flex-wrap justify-between gap-x-2 gap-y-1 text-xs'>
-              <span
-                className={cn(
-                  props.admin &&
-                    needsReply(ticket) &&
-                    'text-amber-700 dark:text-amber-400'
-                )}
-              >
-                {ticket.activity === 'customer' && t('Customer replied')}
-                {ticket.activity === 'agent' && t('Support replied')}
-                {ticket.activity === 'new' && t('New ticket')}
-                {(!ticket.activity || ticket.activity === 'unknown') &&
-                  t('Reply status unavailable')}
+            {!props.admin && (
+              <span className='text-muted-foreground flex w-full justify-end text-xs'>
+                <time dateTime={ticket.modifiedTime}>
+                  {ticket.modifiedTime &&
+                    new Date(ticket.modifiedTime).toLocaleDateString(
+                      toIntlLocale(i18n.language)
+                    )}
+                </time>
               </span>
-              <time dateTime={ticket.modifiedTime}>
-                {ticket.modifiedTime &&
-                  new Date(ticket.modifiedTime).toLocaleDateString(
-                    toIntlLocale(i18n.language)
-                  )}
-              </time>
-            </span>
+            )}
           </button>
         ))}
         {visible.length === 0 && (
@@ -771,8 +802,8 @@ export function TicketDetail(props: {
     onError: handleServerError,
   })
   const statusOptions = [
-    { value: 'Open', label: t('In progress') },
-    { value: 'On Hold', label: t('On Hold') },
+    { value: 'Open', label: ticketStatusLabel(ticket, t) },
+    { value: 'On Hold', label: t('Waiting') },
     { value: 'Closed', label: t('Closed') },
   ]
   if (!statusOptions.some((option) => option.value === ticket.status)) {
@@ -811,7 +842,7 @@ export function TicketDetail(props: {
           </p>
         </div>
         <Badge variant='secondary'>
-          {ticket.status === 'Open' ? t('In progress') : t(ticket.status)}
+          {ticketStatusLabel(ticket, t)}
         </Badge>
       </div>
       <div className='flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2'>

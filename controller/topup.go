@@ -704,8 +704,13 @@ const inviteRewardHistoryDefaultWindowSeconds int64 = 7 * 24 * 60 * 60
 
 func GetInviteRebateTopUps(c *gin.Context) {
 	userId := c.GetInt("id")
+	allUsers := c.Query("all_users") == "1" || strings.EqualFold(c.Query("all_users"), "true")
+	if allUsers && c.GetInt("role") < common.RoleAdminUser {
+		common.ApiErrorMsg(c, "Admin access required")
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
-	params := model.InviteRewardHistoryParams{}
+	params := model.InviteRewardHistoryParams{AllUsers: allUsers, InviterKeyword: strings.TrimSpace(c.Query("inviter_keyword"))}
 	var err error
 	if value := c.Query("start_timestamp"); value != "" {
 		params.StartTimestamp, err = strconv.ParseInt(value, 10, 64)
@@ -721,7 +726,7 @@ func GetInviteRebateTopUps(c *gin.Context) {
 			return
 		}
 	}
-	if params.StartTimestamp == 0 && params.EndTimestamp == 0 {
+	if !allUsers && params.StartTimestamp == 0 && params.EndTimestamp == 0 {
 		params.EndTimestamp = common.GetTimestamp()
 		params.StartTimestamp = params.EndTimestamp - inviteRewardHistoryDefaultWindowSeconds
 	}

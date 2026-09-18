@@ -91,6 +91,21 @@ func (message zohoDeskConversation) public() bool {
 
 var supportPortalComment = regexp.MustCompile(`^[^\r\n<]+ \(UID [0-9]+\):`)
 
+func cleanSupportEmailText(value string) string {
+	lines := strings.Split(strings.ReplaceAll(value, "\r\n", "\n"), "\n")
+	cleaned := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		line = strings.TrimLeft(line, "#")
+		line = strings.TrimSpace(strings.ReplaceAll(line, "**", ""))
+		if strings.Trim(line, "| -:") == "" && strings.Contains(line, "|") {
+			continue
+		}
+		cleaned = append(cleaned, line)
+	}
+	return strings.TrimSpace(strings.Join(cleaned, "\n"))
+}
+
 func supportConversationActivity(messages []zohoDeskConversation) string {
 	var latest time.Time
 	activity := "unknown"
@@ -171,12 +186,16 @@ var zohoDeskTokenCache struct {
 func getZohoDeskConfig() zohoDeskConfig {
 	common.OptionMapRWMutex.RLock()
 	defer common.OptionMapRWMutex.RUnlock()
+	fromEmail := strings.TrimSpace(common.OptionMap["ZohoDeskFromEmail"])
+	if fromEmail == "" || strings.EqualFold(fromEmail, "support@moleapi.zohodesk.jp") {
+		fromEmail = "support@moleapi.com"
+	}
 	return zohoDeskConfig{
 		Enabled: common.OptionMap["ZohoDeskEnabled"], ClientID: common.OptionMap["ZohoDeskClientId"],
 		ClientSecret: common.OptionMap["ZohoDeskClientSecret"], RefreshToken: common.OptionMap["ZohoDeskRefreshToken"],
 		OrgID: common.OptionMap["ZohoDeskOrgId"], DepartmentID: common.OptionMap["ZohoDeskDepartmentId"],
 		APIDomain: common.OptionMap["ZohoDeskApiDomain"], AccountsDomain: common.OptionMap["ZohoDeskAccountsDomain"],
-		FromEmail: common.OptionMap["ZohoDeskFromEmail"],
+		FromEmail: fromEmail,
 	}
 }
 
@@ -449,7 +468,7 @@ func CreateSupportTicket(c *gin.Context) {
 		common.ApiErrorMsg(c, "Invalid request.")
 		return
 	}
-	input.Subject, input.Content, input.Type = strings.TrimSpace(input.Subject), strings.TrimSpace(input.Content), strings.TrimSpace(input.Type)
+	input.Subject, input.Content, input.Type = cleanSupportEmailText(input.Subject), cleanSupportEmailText(input.Content), strings.TrimSpace(input.Type)
 	if utf8.RuneCountInString(input.Subject) < 3 || utf8.RuneCountInString(input.Subject) > 200 || utf8.RuneCountInString(input.Content) < 10 || utf8.RuneCountInString(input.Content) > 10000 {
 		common.ApiErrorMsg(c, "Please check the subject and description length.")
 		return
@@ -721,7 +740,7 @@ func ReplySupportTicket(c *gin.Context) {
 			common.ApiErrorMsg(c, "Zoho Desk sender email is not configured.")
 			return
 		}
-		body := gin.H{"channel": "EMAIL", "content": input.Content, "contentType": "plainText", "fromEmailAddress": cfg.FromEmail, "to": ticket.Email}
+		body := gin.H{"channel": "EMAIL", "content": cleanSupportEmailText(input.Content), "contentType": "plainText", "fromEmailAddress": cfg.FromEmail, "to": ticket.Email}
 		if err := zohoDeskRequest(cfg, http.MethodPost, "/tickets/"+ticket.ID+"/sendReply", body, nil); err != nil {
 			common.ApiError(c, err)
 			return

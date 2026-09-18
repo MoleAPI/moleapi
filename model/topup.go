@@ -39,11 +39,13 @@ type TopUp struct {
 }
 
 type InviteRebateTopUp struct {
-	Id           int    `json:"id"`
-	Source       string `json:"source"`
-	Quota        int    `json:"quota"`
-	RelatedUser  string `json:"related_user,omitempty"`
-	CompleteTime int64  `json:"complete_time"`
+	Id              int    `json:"id"`
+	Source          string `json:"source"`
+	Quota           int    `json:"quota"`
+	RelatedUser     string `json:"related_user,omitempty"`
+	InviterId       int    `json:"inviter_id,omitempty"`
+	InviterUsername string `json:"inviter_username,omitempty"`
+	CompleteTime    int64  `json:"complete_time"`
 }
 
 type TopUpSearchParams struct {
@@ -108,6 +110,8 @@ type businessTopUpQuotaAggregate struct {
 type InviteRewardHistoryParams struct {
 	StartTimestamp int64
 	EndTimestamp   int64
+	AllUsers       bool
+	InviterKeyword string
 }
 
 const (
@@ -675,9 +679,28 @@ func GetInviteRebateTopUps(inviterId int, pageInfo *common.PageInfo, params Invi
 	if err != nil {
 		return nil, 0, err
 	}
+	usernames := map[int]string{}
+	if params.AllUsers && len(logs) > 0 {
+		ids := make([]int, 0, len(logs))
+		for _, log := range logs {
+			ids = append(ids, log.UserId)
+		}
+		var users []User
+		if err = DB.Unscoped().Select("id", "username").Where("id IN ?", ids).Find(&users).Error; err != nil {
+			return nil, 0, err
+		}
+		for _, user := range users {
+			usernames[user.Id] = user.Username
+		}
+		for _, log := range logs {
+			if log.Username == "" {
+				log.Username = usernames[log.UserId]
+			}
+		}
+	}
 
 	for _, log := range logs {
-		topups = append(topups, inviteRewardRecordFromLog(log))
+		topups = append(topups, inviteRewardRecordFromLog(log, params.AllUsers))
 	}
 	for i := range topups {
 		topups[i].Id = start + i + 1
@@ -695,13 +718,34 @@ func getInviteRewardSystemLogs(userId int, pageInfo *common.PageInfo, params Inv
 		"转移邀请奖励 %",
 		"管理员调整额度 %",
 	}
-	query := LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", userId, LogTypeSystem).Where(
-		contentQuery, contentArgs...,
-	)
-	limitedQuery := LOG_DB.Model(&Log{}).
-		Where("user_id = ? AND type = ?", userId, LogTypeSystem).
-		Where(contentQuery, contentArgs...).
-		Select("id").Limit(inviteRewardHistoryHardLimit)
+	userIDs := []int{userId}
+	if params.AllUsers {
+		userIDs = nil
+		if params.InviterKeyword != "" {
+			keyword := strings.TrimSpace(params.InviterKeyword)
+			if parsed, parseErr := strconv.Atoi(keyword); parseErr == nil && parsed > 0 {
+				userIDs = []int{parsed}
+			} else {
+				pattern := "%" + strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(keyword) + "%"
+				if err = DB.Unscoped().Model(&User{}).
+					Where("(username LIKE ? ESCAPE '!' OR email LIKE ? ESCAPE '!' OR display_name LIKE ? ESCAPE '!')", pattern, pattern, pattern).
+					Limit(1000).Pluck("id", &userIDs).Error; err != nil {
+					return nil, 0, err
+				}
+			}
+			if len(userIDs) == 0 {
+				return []*Log{}, 0, nil
+			}
+		}
+	}
+	applyUserFilter := func(query *gorm.DB) *gorm.DB {
+		if params.AllUsers && params.InviterKeyword == "" {
+			return query
+		}
+		return query.Where("user_id IN ?", userIDs)
+	}
+	query := applyUserFilter(LOG_DB.Model(&Log{})).Where("type = ?", LogTypeSystem).Where(contentQuery, contentArgs...)
+	limitedQuery := applyUserFilter(LOG_DB.Model(&Log{})).Where("type = ?", LogTypeSystem).Where(contentQuery, contentArgs...).Select("id").Limit(inviteRewardHistoryHardLimit)
 	if params.StartTimestamp > 0 {
 		query = query.Where("created_at >= ?", params.StartTimestamp)
 		limitedQuery = limitedQuery.Where("created_at >= ?", params.StartTimestamp)
@@ -728,7 +772,7 @@ func getInviteRewardSystemLogs(userId int, pageInfo *common.PageInfo, params Inv
 	return logs, total, err
 }
 
-func inviteRewardRecordFromLog(log *Log) *InviteRebateTopUp {
+func inviteRewardRecordFromLog(log *Log, includeInviter bool) *InviteRebateTopUp {
 	source := "system_reward"
 	if strings.HasPrefix(log.Content, "邀请好友充值返利 ") {
 		source = "topup_rebate"
@@ -743,13 +787,18 @@ func inviteRewardRecordFromLog(log *Log) *InviteRebateTopUp {
 	} else if strings.HasPrefix(log.Content, "转移邀请奖励 ") {
 		source = "reward_transfer"
 	}
-	return &InviteRebateTopUp{
+	record := &InviteRebateTopUp{
 		Id:           log.Id,
 		Source:       source,
 		Quota:        log.Quota,
 		RelatedUser:  inviteRewardRelatedUser(log),
 		CompleteTime: log.CreatedAt,
 	}
+	if includeInviter {
+		record.InviterId = log.UserId
+		record.InviterUsername = log.Username
+	}
+	return record
 }
 
 func inviteRewardRelatedUser(log *Log) string {
