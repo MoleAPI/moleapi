@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { GroupOption, ModelOption } from '../../types'
+import { DEFAULT_MODEL } from '../../constants'
 
 export function getModelFallback(
   models: ModelOption[],
@@ -28,7 +29,10 @@ export function getModelFallback(
     return null
   }
 
-  return models[0].value
+  return (
+    models.find((model) => model.value === DEFAULT_MODEL)?.value ??
+    models[0].value
+  )
 }
 
 export function shouldClearModelForGroup(

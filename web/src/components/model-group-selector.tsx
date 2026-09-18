@@ -61,6 +61,7 @@ import {
 } from '@/components/ui/popover'
 import { useIsMobile } from '@/hooks/use-mobile'
 import { cn } from '@/lib/utils'
+import { Input } from '@/components/ui/input'
 
 import {
   modelGroupSelectorLayoutClasses,
@@ -749,12 +750,16 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
       filter={() => 1}
       shouldFilter={false}
     >
-      <CommandInput
-        className='h-8 text-[13px]'
-        onValueChange={setSearchQuery}
-        placeholder={t('Search models...')}
-        value={searchQuery}
-      />
+      <div className='p-1'>
+        <Input
+          aria-label={t('Search models...')}
+          className='h-8 text-[13px]'
+          onChange={(event) => setSearchQuery(event.target.value)}
+          onKeyDown={(event) => event.stopPropagation()}
+          placeholder={t('Search models...')}
+          value={searchQuery}
+        />
+      </div>
       <CommandList
         className={
           isMobile ? 'max-h-[45vh]' : modelGroupSelectorLayoutClasses.modelList

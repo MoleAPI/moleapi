@@ -136,7 +136,7 @@ export function AttachmentPicker(props: {
               <Button
                 type='button'
                 variant='ghost'
-                size='icon-sm'
+                size='sm'
                 className='shrink-0'
                 aria-label={t('Attach files or screenshots')}
                 disabled={
@@ -151,6 +151,7 @@ export function AttachmentPicker(props: {
               icon={DocumentAttachmentIcon}
               data-icon='inline-start'
             />
+            <span>{t('Attach files or screenshots')}</span>
           </TooltipTrigger>
           <TooltipContent>
             {t('Attach files or screenshots')} · {t('Up to 3 files, 5 MB each')}

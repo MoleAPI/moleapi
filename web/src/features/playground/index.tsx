@@ -23,6 +23,7 @@ import { PlaygroundHistorySidebar } from './components/history/playground-histor
 import { PlaygroundInput } from './components/input/playground-input'
 import {
   useChatHandler,
+  useConversationTitle,
   usePlaygroundConversation,
   usePlaygroundOptions,
   usePlaygroundState,
@@ -65,7 +66,17 @@ function PlaygroundWorkspace(props: {
     createConversation,
     deleteConversation,
     selectConversation,
+    renameConversation,
   } = usePlaygroundState(props.conversationScope)
+
+  const activeSession = sessions.find((session) => session.id === activeSessionId)
+  useConversationTitle({
+    messages,
+    sessionId: activeSessionId,
+    currentTitle: activeSession?.title ?? '',
+    group: config.group,
+    onRename: renameConversation,
+  })
 
   const { sendChat, stopGeneration, isGenerating } = useChatHandler({
     config,

@@ -16,36 +16,25 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import {
-  AiChat02Icon,
-  ArrowUp02Icon,
-  PlusSignIcon,
-} from '@hugeicons/core-free-icons'
+import { ArrowUp02Icon, PlusSignIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useMutation } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
-import { Response } from '@/components/ai-elements/response'
 import { ModelGroupSelector } from '@/components/model-group-selector'
 import { Button } from '@/components/ui/button'
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from '@/components/ui/empty'
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupTextarea,
 } from '@/components/ui/input-group'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
 import { sendChatCompletion } from '@/features/playground/api'
 import {
+  useConversationTitle,
+  usePlaygroundConversation,
   usePlaygroundOptions,
   type usePlaygroundState,
 } from '@/features/playground/hooks'
@@ -53,6 +42,8 @@ import {
   buildChatCompletionPayload,
   getMessageContent,
 } from '@/features/playground/lib'
+import { PlaygroundChat } from '@/features/playground/components/chat/playground-chat'
+import type { Message } from '@/features/playground/types'
 
 import {
   TICKET_TYPES,
@@ -96,9 +87,11 @@ export function SupportAssistant(props: {
     updateConfig,
     updateMessages,
     createConversation,
+    renameConversation,
+    sessions,
   } = props.state
   const activeSessionRef = useRef(activeSessionId)
-  const messageEndRef = useRef<HTMLDivElement>(null)
+  const pendingFilesRef = useRef<File[]>([])
   activeSessionRef.current = activeSessionId
   const { isLoadingModels } = usePlaygroundOptions({
     currentGroup: config.group,
@@ -115,9 +108,11 @@ export function SupportAssistant(props: {
   )
 
   const ask = useMutation({
-    mutationFn: async (question: string) => {
+    mutationFn: async ({ conversationMessages, files }: { conversationMessages: Message[]; files: File[] }) => {
+      const questionMessage = [...conversationMessages].reverse().find((message) => message.from === 'user')
+      if (!questionMessage) throw new Error('A user message is required.')
       const textFiles = await Promise.all(
-        props.files
+        files
           .filter(
             (file) => file.type === 'text/plain' || file.name.endsWith('.log')
           )
@@ -126,21 +121,22 @@ export function SupportAssistant(props: {
               `${file.name}:\n${(await file.text()).slice(0, 6000)}`
           )
       )
-      const content = [question, ...textFiles].filter(Boolean).join('\n\n')
-      const userMessage = {
-        key: crypto.randomUUID(),
-        from: 'user' as const,
-        versions: [{ id: crypto.randomUUID(), content }],
-      }
+      const content = [getMessageContent(questionMessage), ...textFiles].filter(Boolean).join('\n\n')
+      const requestMessages = conversationMessages
+        .filter((message) => message.from !== 'assistant' || getMessageContent(message).trim())
+        .slice(-10)
+        .map((message) => message.key === questionMessage.key
+          ? { ...message, versions: [{ ...message.versions[0], content }] }
+          : message)
       // ponytail: ten recent messages keep support costs bounded without a
       // separate server-side conversation store.
       const payload = buildChatCompletionPayload(
-        [...messages, userMessage].slice(-10),
+        requestMessages,
         { ...config, stream: false },
         parameterEnabled
       )
       const images = await Promise.all(
-        props.files
+        files
           .filter((file) => file.type.startsWith('image/'))
           .map(
             (file) =>
@@ -181,44 +177,61 @@ export function SupportAssistant(props: {
       const answer = response.choices?.[0]?.message?.content?.trim()
       if (!answer) throw new Error('AI support returned an empty response.')
       return {
-        userMessage,
+        assistantKey: conversationMessages.at(-1)?.key ?? '',
         parsed: parseAssistantReply(answer),
         sessionId: activeSessionId,
       }
     },
-    onSuccess: ({ userMessage, parsed, sessionId }) => {
+    onSuccess: ({ assistantKey, parsed, sessionId }) => {
       if (sessionId !== activeSessionRef.current) {
         return
       }
-      updateMessages((current) => [
-        ...current,
-        userMessage,
-        {
-          key: crypto.randomUUID(),
-          from: 'assistant',
-          versions: [{ id: crypto.randomUUID(), content: parsed.answer }],
-          status: 'complete',
-        },
-      ])
+      updateMessages((current) => current.map((message) =>
+        message.key === assistantKey
+          ? { ...message, versions: [{ ...message.versions[0], content: parsed.answer }], status: 'complete' as const, completedAt: Date.now() }
+          : message
+      ))
       setSuggestion({ type: parsed.type, subject: parsed.subject, sessionId })
       setInput('')
     },
-    onError: () =>
-      toast.error(
-        t(
-          'AI support is temporarily unavailable. You can create a ticket directly.'
+    onError: () => {
+      updateMessages((current) => {
+        const last = current.at(-1)
+        if (!last || last.from !== 'assistant') return current
+        return current.map((message) =>
+          message.key === last.key ? { ...message, status: 'error' as const } : message
         )
-      ),
+      })
+      toast.error(t('AI support is temporarily unavailable. You can create a ticket directly.'))
+    },
+  })
+
+  const sendChat = (conversationMessages: Message[]) => {
+    ask.mutate({ conversationMessages, files: pendingFilesRef.current })
+    pendingFilesRef.current = []
+  }
+  const {
+    editingMessageKey,
+    handleSendMessage,
+    handleRegenerateMessage,
+    handleEditMessage,
+    handleEditOpenChange,
+    applyEdit,
+    handleDeleteMessage,
+  } = usePlaygroundConversation({ messages, updateMessages, sendChat })
+
+  useConversationTitle({
+    messages,
+    sessionId: activeSessionId,
+    currentTitle: sessions.find((session) => session.id === activeSessionId)?.title ?? '',
+    group: config.group,
+    onRename: renameConversation,
   })
 
   useEffect(() => {
     onBusyChange?.(ask.isPending)
     return () => onBusyChange?.(false)
   }, [ask.isPending, onBusyChange])
-
-  useEffect(() => {
-    messageEndRef.current?.scrollIntoView?.({ block: 'end' })
-  }, [messages.length, ask.isPending])
 
   const createTicket = () => {
     const firstQuestion = messages.find((message) => message.from === 'user')
@@ -256,7 +269,9 @@ export function SupportAssistant(props: {
     ) {
       return
     }
-    ask.mutate(question)
+    pendingFilesRef.current = props.files
+    props.onFilesChange([])
+    handleSendMessage(question || t('Please inspect the attached files.'))
   }
 
   return (
@@ -264,7 +279,10 @@ export function SupportAssistant(props: {
       <div className='border-b px-4 py-3 sm:px-5'>
         <div className='flex flex-wrap items-center justify-between gap-3'>
           <div>
-            <h2 className='font-semibold'>{t('Ask AI')}</h2>
+            <h2 className='font-semibold'>
+              {sessions.find((session) => session.id === activeSessionId)?.title || t('Ask AI')}
+            </h2>
+            <p className='text-muted-foreground text-xs'>{t('Ask AI')}</p>
           </div>
           <div className='flex flex-wrap items-center gap-2'>
             <Button
@@ -298,70 +316,39 @@ export function SupportAssistant(props: {
         </div>
       </div>
 
-      <ScrollArea className='min-h-0 flex-1'>
-        {messages.length === 0 && !ask.isPending ? (
-          <Empty className='min-h-full'>
-            <EmptyHeader>
-              <EmptyMedia variant='icon'>
-                <HugeiconsIcon icon={AiChat02Icon} />
-              </EmptyMedia>
-              <EmptyTitle>
-                {t('Describe the problem you are seeing')}
-              </EmptyTitle>
-              <EmptyDescription>
-                {t(
-                  'AI can suggest checks, identify the right ticket type, and prepare the details for support.'
-                )}
-              </EmptyDescription>
-              <p className='text-muted-foreground text-xs leading-relaxed'>
-                {t(
-                  'Uses your Playground model and balance. Do not share secrets.'
-                )}
-              </p>
-              <p className='text-muted-foreground text-xs leading-relaxed'>
-                {t(
-                  'AI can read images and text files. Other files will be included with a human support request.'
-                )}
-              </p>
-            </EmptyHeader>
-          </Empty>
-        ) : (
-          <div className='mx-auto flex w-full max-w-3xl flex-col gap-5 p-4 sm:p-6'>
-            {messages.map((message) => (
-              <article
-                key={message.key}
-                className={
-                  message.from === 'user'
-                    ? 'bg-primary text-primary-foreground ml-auto max-w-[85%] rounded-xl px-4 py-3'
-                    : 'bg-muted max-w-[92%] rounded-xl px-4 py-3'
-                }
-              >
-                {message.from === 'assistant' ? (
-                  <Response>{getMessageContent(message)}</Response>
-                ) : (
-                  <p className='text-sm leading-relaxed whitespace-pre-wrap'>
-                    {getMessageContent(message)}
-                  </p>
-                )}
-              </article>
-            ))}
-            {ask.isPending && (
-              <div className='bg-muted flex w-fit items-center gap-2 rounded-xl px-4 py-3 text-sm'>
-                <Spinner data-icon='inline-start' />
-                {t('AI is checking...')}
-              </div>
-            )}
-            {ask.isError && (
-              <p className='text-destructive text-sm'>
-                {t(
-                  'AI support is temporarily unavailable. You can create a ticket directly.'
-                )}
-              </p>
-            )}
-            <div ref={messageEndRef} aria-hidden='true' />
-          </div>
+      <div className='min-h-0 flex-1'>
+        <PlaygroundChat
+          messages={messages}
+          isLoadingMessages={isLoadingMessages}
+          isGenerating={ask.isPending}
+          onSelectPrompt={handleSendMessage}
+          editingKey={editingMessageKey}
+          onEditMessage={handleEditMessage}
+          onRegenerateMessage={handleRegenerateMessage}
+          onDeleteMessage={handleDeleteMessage}
+          onCancelEdit={handleEditOpenChange}
+          onSaveEdit={(content) => applyEdit(content, false)}
+          onSaveEditAndSubmit={(content) => applyEdit(content, true)}
+          afterMessage={(message) => {
+            const answer = getMessageContent(message)
+            if (
+              message.from !== 'assistant' ||
+              message.status !== 'complete' ||
+              !/(已|已经).{0,8}(记录|提交|转交|反馈)|\b(logged|submitted|reported|recorded)\b/i.test(answer)
+            ) return null
+            return (
+              <Button className='mt-2' size='sm' variant='outline' onClick={createTicket}>
+                {t('Report this as a ticket')}
+              </Button>
+            )
+          }}
+        />
+        {ask.isError && (
+          <p className='text-destructive mx-auto max-w-4xl px-4 pb-2 text-sm'>
+            {t('AI support is temporarily unavailable. You can create a ticket directly.')}
+          </p>
         )}
-      </ScrollArea>
+      </div>
 
       <div className='shrink-0 p-3 sm:p-4'>
         <form

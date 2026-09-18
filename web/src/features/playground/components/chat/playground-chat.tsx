@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
@@ -60,6 +60,7 @@ interface PlaygroundChatProps {
   onCancelEdit?: (open: boolean) => void
   onSaveEditAndSubmit?: (newContent: string) => void
   messageLayoutMode?: PlaygroundMessageLayoutMode
+  afterMessage?: (message: MessageType) => ReactNode
 }
 
 export function PlaygroundChat({
@@ -76,6 +77,7 @@ export function PlaygroundChat({
   onCancelEdit,
   onSaveEditAndSubmit,
   messageLayoutMode = 'alternating',
+  afterMessage,
 }: PlaygroundChatProps) {
   const { t } = useTranslation()
   const [editText, setEditText] = useState('')
@@ -145,6 +147,7 @@ export function PlaygroundChat({
               originalText={originalText}
             />
           ) : (
+            <>
             <PlaygroundMessageContent
               alignment={alignment}
               actions={
@@ -187,6 +190,8 @@ export function PlaygroundChat({
               }
               versionContent={content}
             />
+            {afterMessage?.(message)}
+            </>
           )}
         </div>
       </Message>
