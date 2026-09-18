@@ -36,7 +36,7 @@ import {
   useQueryClient,
 } from '@tanstack/react-query'
 import DOMPurify from 'dompurify'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -55,8 +55,13 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
-import { Field, FieldLabel } from '@/components/ui/field'
+import { FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupTextarea,
+} from '@/components/ui/input-group'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -68,7 +73,6 @@ import {
 } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Tooltip,
   TooltipTrigger,
@@ -91,13 +95,13 @@ import {
   updateSupportTicketStatus,
   type SupportTicket,
 } from './api'
+import { AttachmentPicker } from './components/attachment-picker'
 import { CommunityChannels } from './components/community-channels'
 import {
   SupportAssistant,
   type AssistantTicketDraft,
 } from './components/support-assistant'
 import { TicketCreateForm } from './components/ticket-create-form'
-import { AttachmentPicker } from './components/attachment-picker'
 
 export function Support() {
   const { t } = useTranslation()
@@ -138,6 +142,12 @@ export function Support() {
     enabled:
       config.data?.enabled === true && (isAdmin || Boolean(accountEmail)),
   })
+  const [showRefreshLabel, setShowRefreshLabel] = useState(false)
+  useEffect(() => {
+    setShowRefreshLabel(false)
+    const timer = window.setTimeout(() => setShowRefreshLabel(true), 60_000)
+    return () => window.clearTimeout(timer)
+  }, [tickets.dataUpdatedAt])
   const ticketList = tickets.data?.pages.flatMap((page) => page.tickets) ?? []
   const detail = useQuery({
     queryKey: ['support', 'ticket', selectedTicket],
@@ -149,7 +159,15 @@ export function Support() {
     staleTime: 30_000,
   })
   const sendReply = useMutation({
-    mutationFn: async ({ id, content, files }: { id: string; content: string; files: File[] }) => {
+    mutationFn: async ({
+      id,
+      content,
+      files,
+    }: {
+      id: string
+      content: string
+      files: File[]
+    }) => {
       await replySupportTicket(id, content)
       let attachmentsFailed = false
       if (files.length > 0) {
@@ -171,7 +189,9 @@ export function Support() {
         queryClient.invalidateQueries({ queryKey: ['support', 'tickets'] }),
       ])
       toast[attachmentsFailed ? 'warning' : 'success'](
-        attachmentsFailed ? t('Reply sent, but attachments could not be uploaded.') : t('Reply sent')
+        attachmentsFailed
+          ? t('Reply sent, but attachments could not be uploaded.')
+          : t('Reply sent')
       )
     },
     onError: (error) => handleServerError(error),
@@ -186,9 +206,10 @@ export function Support() {
             render={
               <Button
                 variant='outline'
-                size='icon-sm'
+                size={showRefreshLabel ? 'sm' : 'icon-sm'}
                 disabled={tickets.isFetching || detail.isFetching}
                 onClick={() => {
+                  setShowRefreshLabel(false)
                   void queryClient.invalidateQueries({ queryKey: ['support'] })
                 }}
                 aria-label={t('Refresh')}
@@ -196,8 +217,11 @@ export function Support() {
             }
           >
             <HugeiconsIcon icon={RefreshIcon} />
+            {showRefreshLabel && <span>{t('Refresh replies')}</span>}
           </TooltipTrigger>
-          <TooltipContent>{t('Refresh')}</TooltipContent>
+          <TooltipContent>
+            {t('Refresh to check for support replies')}
+          </TooltipContent>
         </Tooltip>
         <CommunityChannels links={config.data?.community_links ?? {}} />
       </SectionPageLayout.Actions>
@@ -236,7 +260,11 @@ export function Support() {
                 onReplyChange={setReply}
                 onSend={() =>
                   selectedTicket &&
-                  sendReply.mutate({ id: selectedTicket, content: reply, files })
+                  sendReply.mutate({
+                    id: selectedTicket,
+                    content: reply,
+                    files,
+                  })
                 }
                 files={files}
                 onFilesChange={setFiles}
@@ -276,7 +304,11 @@ export function Support() {
                 onReplyChange={setReply}
                 onSend={() =>
                   selectedTicket &&
-                  sendReply.mutate({ id: selectedTicket, content: reply, files })
+                  sendReply.mutate({
+                    id: selectedTicket,
+                    content: reply,
+                    files,
+                  })
                 }
                 files={files}
                 onFilesChange={setFiles}
@@ -325,11 +357,19 @@ function UserSupportWorkspace(props: {
   const assistantState = usePlaygroundState('support')
   const [assistantFiles, setAssistantFiles] = useState<File[]>([])
   const [assistantBusy, setAssistantBusy] = useState(false)
+  const [sidebarView, setSidebarView] = useState<'ai' | 'tickets'>('tickets')
   const showingPanel =
     Boolean(props.selectedTicket) || props.panel !== 'overview'
   const goBack = () => {
+    setSidebarView('tickets')
     props.onSelectTicket(null)
     props.onPanelChange('overview')
+  }
+  const startNewAIConversation = () => {
+    assistantState.createConversation()
+    setAssistantFiles([])
+    setSidebarView('ai')
+    props.onPanelChange('ai')
   }
 
   return (
@@ -344,35 +384,43 @@ function UserSupportWorkspace(props: {
           <Button
             variant={props.panel === 'ai' ? 'secondary' : 'outline'}
             disabled={assistantBusy}
-            onClick={() => {
-              assistantState.createConversation()
-              setAssistantFiles([])
-              props.onPanelChange('ai')
-            }}
+            onClick={startNewAIConversation}
           >
             <HugeiconsIcon icon={AiChat02Icon} data-icon='inline-start' />
             {t('Ask AI')}
           </Button>
           <Button
             disabled={assistantBusy}
-            onClick={() => props.onPanelChange('create')}
+            onClick={() => {
+              setSidebarView('tickets')
+              props.onPanelChange('create')
+            }}
           >
             <HugeiconsIcon icon={Add01Icon} data-icon='inline-start' />
             {t('Create ticket')}
           </Button>
         </div>
-        <div className='flex h-12 items-center gap-2 border-b px-4 font-medium'>
-          {t('My tickets')}
-          <Badge variant='secondary'>{props.tickets.length}</Badge>
+        <div className='border-b p-3'>
+          <Tabs
+            value={sidebarView}
+            onValueChange={(value) => setSidebarView(value as 'ai' | 'tickets')}
+          >
+            <TabsList className='w-full'>
+              <TabsTrigger value='ai' className='flex-1'>
+                {t('AI conversations')}
+              </TabsTrigger>
+              <TabsTrigger value='tickets' className='flex-1 gap-1.5'>
+                {t('My tickets')}
+                <Badge variant='secondary' className='h-5 min-w-5 px-1.5'>
+                  {props.tickets.length}
+                </Badge>
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
         </div>
         <ScrollArea className='min-h-0 flex-1'>
-          {assistantState.sessions.some(
-            (session) => session.messages.length > 0
-          ) && (
-            <div className='border-b py-2'>
-              <p className='text-muted-foreground px-4 py-1 text-xs font-medium'>
-                {t('AI conversations')}
-              </p>
+          {sidebarView === 'ai' && (
+            <div className='py-2'>
               {[...assistantState.sessions]
                 .filter((session) => session.messages.length > 0)
                 .sort((a, b) => b.updatedAt - a.updatedAt)
@@ -398,6 +446,7 @@ function UserSupportWorkspace(props: {
                     onClick={() => {
                       assistantState.selectConversation(session.id)
                       setAssistantFiles([])
+                      setSidebarView('ai')
                       props.onPanelChange('ai')
                     }}
                   >
@@ -411,31 +460,35 @@ function UserSupportWorkspace(props: {
                     </span>
                   </button>
                 ))}
+              {assistantState.sessions.every(
+                (session) => session.messages.length === 0
+              ) && (
+                <div className='text-muted-foreground px-4 py-8 text-center text-sm'>
+                  {t('No AI conversations yet')}
+                </div>
+              )}
             </div>
           )}
-          {props.loading && <LoadingState />}
-          {!props.loading &&
-            props.tickets.length === 0 &&
-            assistantState.sessions.every(
-              (session) => session.messages.length === 0
-            ) && (
+          {sidebarView === 'tickets' && props.loading && <LoadingState />}
+          {sidebarView === 'tickets' &&
+            !props.loading &&
+            props.tickets.length === 0 && (
               <div className='text-muted-foreground px-4 py-8 text-center text-sm'>
                 {t('No tickets yet')}
               </div>
             )}
-          {!props.loading && props.tickets.length > 0 && (
-            <div className='border-t'>
-              <p className='text-muted-foreground px-4 py-2 text-xs font-medium'>
-                {t('Support tickets')}
-              </p>
-              <TicketList
-                tickets={props.tickets}
-                selectedTicket={props.selectedTicket}
-                onSelect={props.onSelectTicket}
-                disabled={assistantBusy}
-              />
-            </div>
-          )}
+          {sidebarView === 'tickets' &&
+            !props.loading &&
+            props.tickets.length > 0 && (
+              <div>
+                <TicketList
+                  tickets={props.tickets}
+                  selectedTicket={props.selectedTicket}
+                  onSelect={props.onSelectTicket}
+                  disabled={assistantBusy}
+                />
+              </div>
+            )}
         </ScrollArea>
       </aside>
 
@@ -448,11 +501,12 @@ function UserSupportWorkspace(props: {
         {!showingPanel && (
           <SupportOverview
             onAskAI={() => {
-              assistantState.createConversation()
-              setAssistantFiles([])
-              props.onPanelChange('ai')
+              startNewAIConversation()
             }}
-            onCreateTicket={() => props.onPanelChange('create')}
+            onCreateTicket={() => {
+              setSidebarView('tickets')
+              props.onPanelChange('create')
+            }}
           />
         )}
         {!props.selectedTicket && props.panel !== 'overview' && (
@@ -474,6 +528,10 @@ function UserSupportWorkspace(props: {
             files={assistantFiles}
             onFilesChange={setAssistantFiles}
             onBusyChange={setAssistantBusy}
+            onCreateBlankTicket={() => {
+              setSidebarView('tickets')
+              props.onPanelChange('create')
+            }}
             onCreateTicket={(draft) => {
               props.onAssistantDraft({ ...draft, files: assistantFiles })
             }}
@@ -776,12 +834,14 @@ function TicketList(props: {
             }
             onClick={() => props.onSelect(ticket.id)}
             className={cn(
-              'hover:bg-muted/60 flex w-full flex-col gap-2 px-4 py-3.5 text-left transition-colors',
+              'hover:bg-muted/60 grid w-full grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-2 px-4 py-3.5 text-left transition-colors',
               props.selectedTicket === ticket.id && 'bg-muted',
-              props.admin && needsReply(ticket) && 'border-l-2 border-amber-500 bg-amber-500/5'
+              props.admin &&
+                needsReply(ticket) &&
+                'border-l-2 border-amber-500 bg-amber-500/5'
             )}
           >
-            <span className='flex w-full min-w-0 items-center gap-2'>
+            <span className='col-span-2 flex w-full min-w-0 items-start gap-2'>
               {props.admin && needsReply(ticket) && (
                 <span
                   className='size-2 shrink-0 rounded-full bg-amber-500'
@@ -807,17 +867,22 @@ function TicketList(props: {
                 )}
               </span>
             </span>
-            <span className='text-muted-foreground flex w-full flex-wrap gap-x-2 text-xs'>
-              <span>#{ticket.ticketNumber} · {t(ticket.category)}</span>
-              <time dateTime={ticket.modifiedTime}>
+            <span className='text-muted-foreground col-span-2 flex w-full min-w-0 flex-wrap gap-x-2 text-xs'>
+              <span>
+                #{ticket.ticketNumber} · {t(ticket.category)}
+              </span>
+              <time
+                className='ml-auto text-right'
+                dateTime={ticket.modifiedTime}
+              >
                 {formatSupportDate(ticket.modifiedTime, i18n.language)}
               </time>
             </span>
             {props.admin && (
-              <span className='flex w-full min-w-0 items-center gap-2 text-xs'>
+              <span className='col-span-2 flex w-full min-w-0 items-center gap-2 text-xs'>
                 <span className='truncate'>
                   {ticket.user
-                    ? `${ticket.user.username} · ID ${ticket.user.id}`
+                    ? `${ticket.user.username} · ID ${ticket.user.id} · ${ticket.email}`
                     : ticket.email}
                 </span>
               </span>
@@ -891,7 +956,7 @@ export function TicketDetail(props: {
   }
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
-      <div className='flex min-h-14 shrink-0 items-center gap-2 border-b px-3 py-2.5 sm:px-4'>
+      <div className='flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b px-3 py-2.5 sm:px-4'>
         <Button variant='ghost' size='icon-sm' onClick={props.onBack}>
           <HugeiconsIcon icon={ArrowLeft01Icon} />
           <span className='sr-only'>{t('Back to tickets')}</span>
@@ -901,24 +966,25 @@ export function TicketDetail(props: {
             {props.data.ticket.subject}
           </h2>
           <p className='text-muted-foreground flex flex-wrap gap-x-2 text-xs'>
-            #{props.data.ticket.ticketNumber} · {t(props.data.ticket.category)} ·{' '}
-            {formatSupportDate(ticket.createdTime, i18n.language)}
+            #{props.data.ticket.ticketNumber} · {t(props.data.ticket.category)}{' '}
+            · {formatSupportDate(ticket.createdTime, i18n.language)}
           </p>
         </div>
-        <Badge variant='secondary'>
-          {ticketStatusLabel(ticket, t)}
-        </Badge>
-      </div>
-      <div className='flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2'>
-        <div className='min-w-0 text-xs'>
+        <div className='flex min-w-0 flex-wrap items-center justify-end gap-2'>
+          <Badge variant='secondary' className='shrink-0'>
+            {ticketStatusLabel(ticket, t)}
+          </Badge>
+          <span
+            className='text-muted-foreground max-w-56 truncate text-xs'
+            title={ticket.email}
+          >
+            {ticket.email}
+          </span>
           {isAdmin && ticket.user && (
-            <p className='font-medium'>
+            <span className='text-muted-foreground hidden text-xs xl:inline'>
               {ticket.user.username} · ID {ticket.user.id}
-            </p>
+            </span>
           )}
-          <p className='text-muted-foreground break-all'>{ticket.email}</p>
-        </div>
-        <div className='flex flex-wrap items-center gap-2'>
           {isAdmin && ticket.user && (
             <Button
               variant='outline'
@@ -968,8 +1034,8 @@ export function TicketDetail(props: {
           )}
           {!isAdmin && !closed && (
             <Button
-              variant='outline'
               size='sm'
+              className='bg-primary text-primary-foreground hover:bg-primary/90'
               disabled={status.isPending || props.sending}
               onClick={() => setClosing(true)}
             >
@@ -981,7 +1047,7 @@ export function TicketDetail(props: {
       </div>
 
       <ScrollArea className='min-h-0 flex-1'>
-        <div className='mx-auto w-full max-w-3xl px-5'>
+        <div className='w-full px-4 sm:px-6 lg:px-8'>
           <Message
             sender={props.data.ticket.email}
             content={props.data.ticket.description}
@@ -1015,7 +1081,11 @@ export function TicketDetail(props: {
                     ? !message.isPublic
                     : message.visibility !== 'public'
                 }
-                customer={message.direction === 'in' || message.author?.type === 'END_USER' || message.commenter?.type === 'END_USER'}
+                customer={
+                  message.direction === 'in' ||
+                  message.author?.type === 'END_USER' ||
+                  message.commenter?.type === 'END_USER'
+                }
               />
             ))}
           {props.data.attachments.length > 0 && (
@@ -1051,40 +1121,52 @@ export function TicketDetail(props: {
           </Button>
         </div>
       ) : (
-        <Field className='shrink-0 gap-2 border-t p-4'>
-          <FieldLabel htmlFor='ticket-reply'>{t('Reply')}</FieldLabel>
-          <Textarea
-            id='ticket-reply'
-            rows={3}
-            maxLength={10000}
-            disabled={props.sending || status.isPending}
-            value={props.reply}
-            onChange={(event) => props.onReplyChange(event.target.value)}
-          />
-          <AttachmentPicker
-            compact
-            files={props.files ?? []}
-            onFilesChange={props.onFilesChange ?? (() => undefined)}
-            disabled={props.sending || status.isPending}
-            onRejected={(fileName) =>
-              toast.error(t('{{file}} exceeds the 5 MB attachment limit.', { file: fileName }))
-            }
-          />
-          <div className='flex items-center justify-between gap-3'>
+        <div className='shrink-0 border-t p-3 sm:p-4'>
+          <div className='mb-2 flex items-center justify-between gap-2'>
+            <FieldLabel htmlFor='ticket-reply'>{t('Reply')}</FieldLabel>
             <span className='text-muted-foreground text-xs'>
               {isAdmin && t('Replying here also sends an email to the user.')}
             </span>
-            <Button
-              onClick={props.onSend}
-              disabled={
-                !props.reply.trim() || props.sending || status.isPending
-              }
-            >
-              {props.sending && <Spinner data-icon='inline-start' />}
-              {props.sending ? t('Sending...') : t('Send reply')}
-            </Button>
           </div>
-        </Field>
+          <InputGroup className='bg-background overflow-hidden'>
+            <InputGroupTextarea
+              id='ticket-reply'
+              aria-label={t('Reply')}
+              rows={3}
+              maxLength={10000}
+              disabled={props.sending || status.isPending}
+              value={props.reply}
+              onChange={(event) => props.onReplyChange(event.target.value)}
+            />
+            <InputGroupAddon
+              align='block-end'
+              className='bg-muted/20 flex-wrap justify-between gap-2 border-t px-2 py-2'
+            >
+              <AttachmentPicker
+                compact
+                files={props.files ?? []}
+                onFilesChange={props.onFilesChange ?? (() => undefined)}
+                disabled={props.sending || status.isPending}
+                onRejected={(fileName) =>
+                  toast.error(
+                    t('{{file}} exceeds the 5 MB attachment limit.', {
+                      file: fileName,
+                    })
+                  )
+                }
+              />
+              <Button
+                onClick={props.onSend}
+                disabled={
+                  !props.reply.trim() || props.sending || status.isPending
+                }
+              >
+                {props.sending && <Spinner data-icon='inline-start' />}
+                {props.sending ? t('Sending...') : t('Send reply')}
+              </Button>
+            </InputGroupAddon>
+          </InputGroup>
+        </div>
       )}
       <ConfirmDialog
         open={closing}
@@ -1146,30 +1228,65 @@ function Message(props: {
     [props.content, props.html]
   )
   return (
-    <div className={cn('flex border-b py-5 last:border-b-0', props.customer ? 'justify-end' : 'justify-start')}>
-      <article className={cn('w-fit max-w-[88%] rounded-2xl px-4 py-3', props.customer ? 'bg-primary text-primary-foreground' : 'bg-muted')}>
-      <div className={cn('mb-2 flex flex-wrap items-center gap-2 text-xs', props.customer ? 'text-primary-foreground/75 justify-end' : 'text-muted-foreground')}>
-        <span className='break-all'>{props.sender}</span>
-        {props.internal && (
-          <Badge variant='outline'>{t('Internal note')}</Badge>
-        )}
-        {props.time && (
-          <time dateTime={props.time}>
-            {formatSupportDate(props.time, i18n.language)}
-          </time>
-        )}
-      </div>
-      {props.html ? (
-        <HtmlContent
-          content={safeContent}
-          className='overflow-x-auto text-sm leading-relaxed break-words whitespace-pre-wrap'
-        />
-      ) : (
-        <p className='text-sm leading-relaxed break-words whitespace-pre-wrap'>
-          {props.content}
-        </p>
+    <div
+      className={cn(
+        'flex border-b py-5 last:border-b-0',
+        props.customer ? 'justify-end' : 'justify-start'
       )}
+    >
+      <article
+        className={cn(
+          'w-fit max-w-[88%] rounded-2xl px-4 py-3',
+          props.customer ? 'bg-primary text-primary-foreground' : 'bg-muted'
+        )}
+      >
+        <div
+          className={cn(
+            'mb-2 flex flex-wrap items-center gap-2 text-xs',
+            props.customer
+              ? 'text-primary-foreground/75 justify-end'
+              : 'text-muted-foreground'
+          )}
+        >
+          <span className='break-all'>{props.sender}</span>
+          {props.internal && (
+            <Badge variant='outline'>{t('Internal note')}</Badge>
+          )}
+          {props.time && (
+            <time dateTime={props.time}>
+              {formatSupportDate(props.time, i18n.language)}
+            </time>
+          )}
+        </div>
+        {props.html ? (
+          <HtmlContent
+            content={safeContent}
+            className='overflow-x-auto text-sm leading-relaxed break-words whitespace-pre-wrap'
+          />
+        ) : (
+          <p className='text-sm leading-relaxed break-words whitespace-pre-wrap'>
+            {props.content}
+          </p>
+        )}
       </article>
     </div>
   )
 }
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/

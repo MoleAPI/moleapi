@@ -7098,6 +7098,11 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "AI can suggest checks and prepare a support request. It cannot confirm that a ticket was submitted until you create one.": "AI can suggest checks and prepare a support request. It cannot confirm that a ticket was submitted until you create one.",
+    "Join community": "Join community",
+    "No AI conversations yet": "No AI conversations yet",
+    "Refresh replies": "Refresh replies",
+    "Refresh to check for support replies": "Refresh to check for support replies"
   }
 }

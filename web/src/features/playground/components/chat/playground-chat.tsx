@@ -26,6 +26,7 @@ import {
 } from '@/components/ai-elements/conversation'
 import { Loader } from '@/components/ai-elements/loader'
 import { Message } from '@/components/ai-elements/message'
+import { cn } from '@/lib/utils'
 
 import {
   getChatMessageRenderState,
@@ -61,6 +62,8 @@ interface PlaygroundChatProps {
   onSaveEditAndSubmit?: (newContent: string) => void
   messageLayoutMode?: PlaygroundMessageLayoutMode
   afterMessage?: (message: MessageType) => ReactNode
+  fullWidth?: boolean
+  emptyState?: ReactNode
 }
 
 export function PlaygroundChat({
@@ -78,6 +81,8 @@ export function PlaygroundChat({
   onSaveEditAndSubmit,
   messageLayoutMode = 'alternating',
   afterMessage,
+  fullWidth = false,
+  emptyState,
 }: PlaygroundChatProps) {
   const { t } = useTranslation()
   const [editText, setEditText] = useState('')
@@ -114,93 +119,93 @@ export function PlaygroundChat({
     setOriginalText(content)
   }, [editingKey, messages])
 
-  let chatContent = visibleMessages.map((message, visibleMessageIndex) => {
-    const messageIndex = visibleMessageOffset + visibleMessageIndex
-    const { alwaysShowActions, content, isEditing } = getChatMessageRenderState(
-      messages,
-      message,
-      messageIndex,
-      editingKey
-    )
-    const isError = isErrorMessage(message)
-    const previousUserMessage = isError
-      ? getPreviousUserMessage(messages, messageIndex)
-      : null
-    const alignment = getMessageAlignment(message, messageLayoutMode)
-    const isSourceVisible = sourceMessageKeys.has(message.key)
+  let chatContent: ReactNode[] = visibleMessages.map(
+    (message, visibleMessageIndex) => {
+      const messageIndex = visibleMessageOffset + visibleMessageIndex
+      const { alwaysShowActions, content, isEditing } =
+        getChatMessageRenderState(messages, message, messageIndex, editingKey)
+      const isError = isErrorMessage(message)
+      const previousUserMessage = isError
+        ? getPreviousUserMessage(messages, messageIndex)
+        : null
+      const alignment = getMessageAlignment(message, messageLayoutMode)
+      const isSourceVisible = sourceMessageKeys.has(message.key)
 
-    return (
-      <Message
-        className='group flex-row-reverse py-2.5'
-        from={message.from}
-        key={message.key}
-      >
-        <div className='w-full min-w-0 flex-1 basis-full'>
-          {isEditing ? (
-            <PlaygroundMessageEditor
-              editText={editText}
-              message={message}
-              onCancelEdit={onCancelEdit}
-              onEditTextChange={setEditText}
-              onSaveEdit={onSaveEdit}
-              onSaveEditAndSubmit={onSaveEditAndSubmit}
-              originalText={originalText}
-            />
-          ) : (
-            <>
-            <PlaygroundMessageContent
-              alignment={alignment}
-              actions={
-                <MessageActions
-                  message={message}
-                  onCopy={onCopyMessage}
-                  onRegenerate={onRegenerateMessage}
-                  onToggleSource={handleToggleMessageSource}
-                  onEdit={onEditMessage}
-                  onDelete={onDeleteMessage}
+      return (
+        <Message
+          className='group flex-row-reverse py-2.5'
+          from={message.from}
+          key={message.key}
+        >
+          <div className='w-full min-w-0 flex-1 basis-full'>
+            {isEditing ? (
+              <PlaygroundMessageEditor
+                editText={editText}
+                message={message}
+                onCancelEdit={onCancelEdit}
+                onEditTextChange={setEditText}
+                onSaveEdit={onSaveEdit}
+                onSaveEditAndSubmit={onSaveEditAndSubmit}
+                originalText={originalText}
+              />
+            ) : (
+              <>
+                <PlaygroundMessageContent
+                  alignment={alignment}
+                  actions={
+                    <MessageActions
+                      message={message}
+                      onCopy={onCopyMessage}
+                      onRegenerate={onRegenerateMessage}
+                      onToggleSource={handleToggleMessageSource}
+                      onEdit={onEditMessage}
+                      onDelete={onDeleteMessage}
+                      isSourceVisible={isSourceVisible}
+                      isGenerating={isGenerating}
+                      alwaysVisible={alwaysShowActions}
+                      className='mt-1.5'
+                    />
+                  }
                   isSourceVisible={isSourceVisible}
-                  isGenerating={isGenerating}
-                  alwaysVisible={alwaysShowActions}
-                  className='mt-1.5'
+                  message={message}
+                  errorActions={
+                    isError ? (
+                      <MessageErrorActions
+                        disabled={isGenerating}
+                        onRetry={
+                          onRegenerateMessage
+                            ? () => onRegenerateMessage(message)
+                            : undefined
+                        }
+                        onEditPrompt={
+                          onEditMessage && previousUserMessage
+                            ? () => onEditMessage(previousUserMessage)
+                            : undefined
+                        }
+                        onDelete={
+                          onDeleteMessage
+                            ? () => onDeleteMessage(message)
+                            : undefined
+                        }
+                      />
+                    ) : undefined
+                  }
+                  versionContent={content}
                 />
-              }
-              isSourceVisible={isSourceVisible}
-              message={message}
-              errorActions={
-                isError ? (
-                  <MessageErrorActions
-                    disabled={isGenerating}
-                    onRetry={
-                      onRegenerateMessage
-                        ? () => onRegenerateMessage(message)
-                        : undefined
-                    }
-                    onEditPrompt={
-                      onEditMessage && previousUserMessage
-                        ? () => onEditMessage(previousUserMessage)
-                        : undefined
-                    }
-                    onDelete={
-                      onDeleteMessage
-                        ? () => onDeleteMessage(message)
-                        : undefined
-                    }
-                  />
-                ) : undefined
-              }
-              versionContent={content}
-            />
-            {afterMessage?.(message)}
-            </>
-          )}
-        </div>
-      </Message>
-    )
-  })
+                {afterMessage?.(message)}
+              </>
+            )}
+          </div>
+        </Message>
+      )
+    }
+  )
 
   if (visibleMessages.length === 0 && onSelectPrompt) {
     chatContent = [
-      <PlaygroundEmptyState key='empty' onSelectPrompt={onSelectPrompt} />,
+      emptyState ?? (
+        <PlaygroundEmptyState key='empty' onSelectPrompt={onSelectPrompt} />
+      ),
     ]
   }
 
@@ -220,9 +225,31 @@ export function PlaygroundChat({
     <Conversation>
       {/* Remove outer padding; apply padding to inner centered container to align with input */}
       <ConversationContent className='p-0'>
-        <div className='mx-auto w-full max-w-4xl px-4 py-4'>{chatContent}</div>
+        <div
+          className={cn('w-full px-4 py-4', !fullWidth && 'mx-auto max-w-4xl')}
+        >
+          {chatContent}
+        </div>
       </ConversationContent>
       <ConversationScrollButton />
     </Conversation>
   )
 }
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/

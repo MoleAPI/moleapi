@@ -11,7 +11,7 @@ import (
 )
 
 var StartTime = time.Now().Unix() // unit: second
-var Version = "v0.10.9.1-dev10"  // this hard coding will be replaced automatically when building, no need to manually change
+var Version = "v0.10.9.1-dev11"  // this hard coding will be replaced automatically when building, no need to manually change
 var UpstreamVersion = "v1.0.0-rc.37"
 var Commit = ""
 var SystemName = "New API"
