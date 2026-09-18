@@ -38,6 +38,7 @@ import {
   FieldSet,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { ModelGroupSelector } from '@/components/model-group-selector'
 import {
   Select,
   SelectContent,
@@ -54,6 +55,12 @@ import {
   getInitialParameterEnabled,
   getInitialPlaygroundConfig,
 } from '@/features/playground/lib'
+import { usePlaygroundOptions } from '@/features/playground/hooks'
+import type {
+  GroupOption,
+  ModelOption,
+  PlaygroundConfig,
+} from '@/features/playground/types'
 import { getUserBillingHistory } from '@/features/wallet/api'
 import { handleServerError } from '@/lib/handle-server-error'
 
@@ -91,6 +98,20 @@ export function TicketCreateForm(props: {
     subject: string
     content: string
   } | null>(null)
+  const [polishConfig, setPolishConfig] = useState<PlaygroundConfig>(() => ({
+    ...getInitialPlaygroundConfig(),
+    model: 'deepseek-flash',
+  }))
+  const [polishModels, setPolishModels] = useState<ModelOption[]>([])
+  const [polishGroups, setPolishGroups] = useState<GroupOption[]>([])
+  const { isLoadingModels } = usePlaygroundOptions({
+    currentGroup: polishConfig.group,
+    currentModel: polishConfig.model,
+    setGroups: setPolishGroups,
+    setModels: setPolishModels,
+    updateConfig: (key, value) =>
+      setPolishConfig((current) => ({ ...current, [key]: value })),
+  })
   const [selectedBillingIds, setSelectedBillingIds] = useState<number[]>([])
   const form = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
@@ -168,7 +189,6 @@ export function TicketCreateForm(props: {
       subject: string
       content: string
     }) => {
-      const config = getInitialPlaygroundConfig()
       const payload = buildChatCompletionPayload(
         [
           {
@@ -182,7 +202,7 @@ export function TicketCreateForm(props: {
             ],
           },
         ],
-        { ...config, stream: false },
+        { ...polishConfig, stream: false },
         getInitialParameterEnabled()
       )
       payload.messages.unshift({
@@ -344,6 +364,19 @@ export function TicketCreateForm(props: {
                   {t('Undo polish')}
                 </Button>
               )}
+              <ModelGroupSelector
+                selectedModel={polishConfig.model}
+                models={polishModels}
+                onModelChange={(value) =>
+                  setPolishConfig((current) => ({ ...current, model: value }))
+                }
+                selectedGroup={polishConfig.group}
+                groups={polishGroups}
+                onGroupChange={(value) =>
+                  setPolishConfig((current) => ({ ...current, group: value }))
+                }
+                disabled={polishDescription.isPending || isLoadingModels}
+              />
               <Button
                 type='button'
                 size='sm'
@@ -373,7 +406,7 @@ export function TicketCreateForm(props: {
           </div>
           <Textarea
             id='ticket-content'
-            rows={8}
+            rows={4}
             aria-invalid={Boolean(form.formState.errors.content)}
             placeholder={t(selectedType.template)}
             {...form.register('content')}
