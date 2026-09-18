@@ -7098,6 +7098,11 @@
     "Zhipu": "智譜",
     "Zhipu GLM": "智譜GLM",
     "Zhipu V4": "智譜 V4",
-    "Zoom": "縮放"
+    "Zoom": "縮放",
+    "AI can suggest checks and prepare a support request. It cannot confirm that a ticket was submitted until you create one.": "AI 可以建議排查步驟並準備支援請求。只有在你建立工單後，才能確認工單已提交。",
+    "Join community": "加入社群",
+    "No AI conversations yet": "暫無 AI 對話",
+    "Refresh replies": "重新整理回覆",
+    "Refresh to check for support replies": "重新整理以查看客服回覆"
   }
 }
