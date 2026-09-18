@@ -61,6 +61,12 @@ import {
   InputGroupAddon,
   InputGroupTextarea,
 } from '@/components/ui/input-group'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -917,6 +923,10 @@ export function TicketDetail(props: {
   const isAdmin = useIsAdmin()
   const queryClient = useQueryClient()
   const [closing, setClosing] = useState(false)
+  const [preview, setPreview] = useState<{
+    filename: string
+    url: string
+  } | null>(null)
   const ticket = props.data.ticket
   const closed = isTicketClosed(ticket)
   const status = useMutation({
@@ -949,6 +959,13 @@ export function TicketDetail(props: {
         props.data.ticket.id,
         attachment
       )
+      if (/\.(gif|jpe?g|png|webp)$/i.test(attachment.name)) {
+        setPreview((current) => {
+          if (current) URL.revokeObjectURL(current.url)
+          return file
+        })
+        return
+      }
       const link = document.createElement('a')
       link.href = file.url
       link.download = file.filename
@@ -975,6 +992,11 @@ export function TicketDetail(props: {
           </p>
         </div>
         <div className='flex min-w-0 flex-wrap items-center justify-end gap-2'>
+          {isAdmin && ticket.user && (
+            <span className='text-muted-foreground hidden text-xs xl:inline'>
+              {ticket.user.username} · ID {ticket.user.id}
+            </span>
+          )}
           <span
             className='text-muted-foreground max-w-56 truncate text-xs'
             title={ticket.email}
@@ -984,11 +1006,6 @@ export function TicketDetail(props: {
           <Badge variant='secondary' className='shrink-0'>
             {ticketStatusLabel(ticket, t)}
           </Badge>
-          {isAdmin && ticket.user && (
-            <span className='text-muted-foreground hidden text-xs xl:inline'>
-              {ticket.user.username} · ID {ticket.user.id}
-            </span>
-          )}
           {isAdmin && ticket.user && (
             <Button
               variant='outline'
@@ -1177,6 +1194,28 @@ export function TicketDetail(props: {
         isLoading={status.isPending}
         handleConfirm={() => status.mutate('Closed')}
       />
+      <Dialog
+        open={preview != null}
+        onOpenChange={(open) => {
+          if (!open && preview) {
+            URL.revokeObjectURL(preview.url)
+            setPreview(null)
+          }
+        }}
+      >
+        <DialogContent className='max-w-5xl'>
+          <DialogHeader>
+            <DialogTitle>{preview?.filename}</DialogTitle>
+          </DialogHeader>
+          {preview && (
+            <img
+              src={preview.url}
+              alt={preview.filename}
+              className='max-h-[75vh] w-full object-contain'
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

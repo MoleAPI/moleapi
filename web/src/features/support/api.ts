@@ -138,6 +138,7 @@ export type SupportAttachment = {
   name: string
   size: string
   href: string
+  contentType?: string
 }
 
 function billingRecordLine(record: TopupRecord) {
