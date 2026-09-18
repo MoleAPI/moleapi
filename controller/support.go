@@ -186,16 +186,12 @@ var zohoDeskTokenCache struct {
 func getZohoDeskConfig() zohoDeskConfig {
 	common.OptionMapRWMutex.RLock()
 	defer common.OptionMapRWMutex.RUnlock()
-	fromEmail := strings.TrimSpace(common.OptionMap["ZohoDeskFromEmail"])
-	if fromEmail == "" || strings.EqualFold(fromEmail, "support@moleapi.zohodesk.jp") {
-		fromEmail = "support@moleapi.com"
-	}
 	return zohoDeskConfig{
 		Enabled: common.OptionMap["ZohoDeskEnabled"], ClientID: common.OptionMap["ZohoDeskClientId"],
 		ClientSecret: common.OptionMap["ZohoDeskClientSecret"], RefreshToken: common.OptionMap["ZohoDeskRefreshToken"],
 		OrgID: common.OptionMap["ZohoDeskOrgId"], DepartmentID: common.OptionMap["ZohoDeskDepartmentId"],
 		APIDomain: common.OptionMap["ZohoDeskApiDomain"], AccountsDomain: common.OptionMap["ZohoDeskAccountsDomain"],
-		FromEmail: fromEmail,
+		FromEmail: strings.TrimSpace(common.OptionMap["ZohoDeskFromEmail"]),
 	}
 }
 

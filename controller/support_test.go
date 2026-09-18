@@ -138,7 +138,7 @@ func TestSupportConversationActivity(t *testing.T) {
 	}
 }
 
-func TestSupportEmailConfigUsesMoleAPIAddress(t *testing.T) {
+func TestSupportEmailConfigPreservesConfiguredAddress(t *testing.T) {
 	common.OptionMapRWMutex.Lock()
 	previous := common.OptionMap
 	common.OptionMap = map[string]string{"ZohoDeskFromEmail": "support@moleapi.zohodesk.jp"}
@@ -148,7 +148,7 @@ func TestSupportEmailConfigUsesMoleAPIAddress(t *testing.T) {
 		common.OptionMap = previous
 		common.OptionMapRWMutex.Unlock()
 	})
-	assert.Equal(t, "support@moleapi.com", getZohoDeskConfig().FromEmail)
+	assert.Equal(t, "support@moleapi.zohodesk.jp", getZohoDeskConfig().FromEmail)
 	assert.Equal(t, "A clean reply\nwith emphasis", cleanSupportEmailText("## **A clean reply**\nwith emphasis"))
 }
 

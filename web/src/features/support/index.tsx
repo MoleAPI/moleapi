@@ -881,11 +881,6 @@ function TicketList(props: {
                     : null}
                 </span>
               )}
-              {props.admin && (
-                <span className='min-w-0 max-w-[42%] truncate text-right'>
-                  {ticket.email}
-                </span>
-              )}
               <time
                 className='ml-auto text-right'
                 dateTime={ticket.modifiedTime || ticket.createdTime}
