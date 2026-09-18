@@ -794,7 +794,10 @@ function TicketList(props: {
       if (props.admin && needsReply(a) !== needsReply(b)) {
         return Number(needsReply(b)) - Number(needsReply(a))
       }
-      return Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime)
+      return (
+        Date.parse(b.modifiedTime || b.createdTime) -
+        Date.parse(a.modifiedTime || a.createdTime)
+      )
     })
   return (
     <>
@@ -874,9 +877,12 @@ function TicketList(props: {
               </span>
               <time
                 className='ml-auto text-right'
-                dateTime={ticket.modifiedTime}
+                dateTime={ticket.modifiedTime || ticket.createdTime}
               >
-                {formatSupportDate(ticket.modifiedTime, i18n.language)}
+                {formatSupportDate(
+                  ticket.modifiedTime || ticket.createdTime,
+                  i18n.language
+                )}
               </time>
             </span>
             {props.admin && (
