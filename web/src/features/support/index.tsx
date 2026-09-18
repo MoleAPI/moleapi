@@ -23,13 +23,26 @@ import {
   CustomerSupportIcon,
   File01Icon,
   Message01Icon,
+  RefreshIcon,
+  LinkSquare02Icon,
+  Tick02Icon,
+  RotateLeft01Icon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query'
+import DOMPurify from 'dompurify'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ConfirmDialog } from '@/components/confirm-dialog'
+import { ErrorState } from '@/components/error-state'
+import { HtmlContent } from '@/components/html-content'
 import { SectionPageLayout } from '@/components/layout'
 import { LoadingState } from '@/components/loading-state'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -43,12 +56,27 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty'
 import { Field, FieldLabel } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Textarea } from '@/components/ui/textarea'
-import { TitledCard } from '@/components/ui/titled-card'
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+} from '@/components/ui/tooltip'
 import { usePlaygroundState } from '@/features/playground/hooks'
 import { useIsAdmin } from '@/hooks/use-admin'
+import { toIntlLocale } from '@/i18n/languages'
 import { handleServerError } from '@/lib/handle-server-error'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
@@ -59,6 +87,8 @@ import {
   getSupportTicket,
   getSupportTickets,
   replySupportTicket,
+  updateSupportTicketStatus,
+  type SupportTicket,
 } from './api'
 import { CommunityChannels } from './components/community-channels'
 import {
@@ -79,17 +109,27 @@ export function Support() {
   const [ticketDraft, setTicketDraft] = useState<AssistantTicketDraft | null>(
     null
   )
-  const [reply, setReply] = useState('')
+  const [replies, setReplies] = useState<Record<string, string>>({})
+  const reply = selectedTicket ? (replies[selectedTicket] ?? '') : ''
+  const setReply = (value: string) => {
+    if (selectedTicket) {
+      setReplies((current) => ({ ...current, [selectedTicket]: value }))
+    }
+  }
   const config = useQuery({
     queryKey: ['support', 'config'],
     queryFn: getSupportConfig,
   })
-  const tickets = useQuery({
+  const tickets = useInfiniteQuery({
     queryKey: ['support', 'tickets'],
-    queryFn: getSupportTickets,
+    queryFn: ({ pageParam }) => getSupportTickets(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (page) => (page.has_more ? page.next_from : undefined),
+    staleTime: 60_000,
     enabled:
       config.data?.enabled === true && (isAdmin || Boolean(accountEmail)),
   })
+  const ticketList = tickets.data?.pages.flatMap((page) => page.tickets) ?? []
   const detail = useQuery({
     queryKey: ['support', 'ticket', selectedTicket],
     queryFn: () => {
@@ -97,18 +137,19 @@ export function Support() {
       return getSupportTicket(selectedTicket)
     },
     enabled: selectedTicket != null,
+    staleTime: 30_000,
   })
   const sendReply = useMutation({
-    mutationFn: () => {
-      if (!selectedTicket) throw new Error('Ticket ID is required')
-      return replySupportTicket(selectedTicket, reply)
-    },
-    onSuccess: async () => {
-      setReply('')
-      await queryClient.invalidateQueries({
-        queryKey: ['support', 'ticket', selectedTicket],
-      })
-      await queryClient.invalidateQueries({ queryKey: ['support', 'tickets'] })
+    mutationFn: ({ id, content }: { id: string; content: string }) =>
+      replySupportTicket(id, content),
+    onSuccess: async (_, { id, content }) => {
+      setReplies((current) =>
+        current[id] === content ? { ...current, [id]: '' } : current
+      )
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['support', 'ticket', id] }),
+        queryClient.invalidateQueries({ queryKey: ['support', 'tickets'] }),
+      ])
       toast.success(t('Reply sent'))
     },
     onError: (error) => handleServerError(error),
@@ -118,12 +159,33 @@ export function Support() {
     <SectionPageLayout fixedContent>
       <SectionPageLayout.Title>{t('Support center')}</SectionPageLayout.Title>
       <SectionPageLayout.Actions>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant='outline'
+                size='icon-sm'
+                disabled={tickets.isFetching || detail.isFetching}
+                onClick={() => {
+                  void queryClient.invalidateQueries({ queryKey: ['support'] })
+                }}
+                aria-label={t('Refresh')}
+              />
+            }
+          >
+            <HugeiconsIcon icon={RefreshIcon} />
+          </TooltipTrigger>
+          <TooltipContent>{t('Refresh')}</TooltipContent>
+        </Tooltip>
         <CommunityChannels links={config.data?.community_links ?? {}} />
       </SectionPageLayout.Actions>
       <SectionPageLayout.Content>
         <div className='flex h-full min-h-0 w-full flex-col gap-4'>
           {config.isLoading && <LoadingState />}
-          {!config.isLoading && !config.data?.enabled && (
+          {config.isError && (
+            <ErrorState onRetry={() => void config.refetch()} />
+          )}
+          {!config.isLoading && !config.isError && !config.data?.enabled && (
             <Alert>
               <AlertTitle>{t('Ticket service is being prepared')}</AlertTitle>
               <AlertDescription>
@@ -134,47 +196,37 @@ export function Support() {
             </Alert>
           )}
 
-          {config.data?.enabled && isAdmin && (
-            <TitledCard
-              className='min-h-0 flex-1'
-              title={t('Ticket management')}
-              description={t('Replying here also sends an email to the user.')}
-              icon={<HugeiconsIcon icon={CustomerSupportIcon} />}
-              iconTone='info'
-              contentClassName='min-h-0 flex-1 p-0 sm:p-0'
-              disableHoverEffect
-            >
+          {config.data?.enabled && tickets.isError && (
+            <ErrorState onRetry={() => void tickets.refetch()} />
+          )}
+          {config.data?.enabled && isAdmin && !tickets.isError && (
+            <div className='min-h-0 flex-1 overflow-hidden border-y'>
               <TicketBrowser
                 loading={tickets.isLoading}
-                tickets={tickets.data ?? []}
+                tickets={ticketList}
                 selectedTicket={selectedTicket}
                 onSelect={setSelectedTicket}
                 detail={detail.data}
                 detailLoading={detail.isLoading}
+                detailError={detail.isError}
+                onRetry={() => void detail.refetch()}
                 reply={reply}
                 onReplyChange={setReply}
-                onSend={() => sendReply.mutate(undefined)}
+                onSend={() =>
+                  selectedTicket &&
+                  sendReply.mutate({ id: selectedTicket, content: reply })
+                }
                 sending={sendReply.isPending}
               />
-            </TitledCard>
+            </div>
           )}
 
-          {config.data?.enabled && !isAdmin && (
-            <TitledCard
-              className='min-h-0 flex-1'
-              title={t('Support tickets')}
-              description={t(
-                'Submit a request or continue a conversation with support.'
-              )}
-              icon={<HugeiconsIcon icon={CustomerSupportIcon} />}
-              iconTone='info'
-              contentClassName='min-h-0 flex-1 p-0 sm:p-0'
-              disableHoverEffect
-            >
+          {config.data?.enabled && !isAdmin && !tickets.isError && (
+            <div className='min-h-0 flex-1 overflow-hidden border-y'>
               <UserSupportWorkspace
                 accountEmail={accountEmail}
                 loading={tickets.isLoading}
-                tickets={tickets.data ?? []}
+                tickets={ticketList}
                 selectedTicket={selectedTicket}
                 onSelectTicket={(id) => {
                   setSelectedTicket(id)
@@ -194,12 +246,27 @@ export function Support() {
                 }}
                 detail={detail.data}
                 detailLoading={detail.isLoading}
+                detailError={detail.isError}
+                onRetry={() => void detail.refetch()}
                 reply={reply}
                 onReplyChange={setReply}
-                onSend={() => sendReply.mutate(undefined)}
+                onSend={() =>
+                  selectedTicket &&
+                  sendReply.mutate({ id: selectedTicket, content: reply })
+                }
                 sending={sendReply.isPending}
               />
-            </TitledCard>
+            </div>
+          )}
+          {tickets.hasNextPage && (
+            <Button
+              variant='ghost'
+              size='sm'
+              disabled={tickets.isFetchingNextPage}
+              onClick={() => void tickets.fetchNextPage()}
+            >
+              {t('Load more tickets')}
+            </Button>
           )}
         </div>
       </SectionPageLayout.Content>
@@ -210,7 +277,7 @@ export function Support() {
 function UserSupportWorkspace(props: {
   accountEmail?: string
   loading: boolean
-  tickets: Awaited<ReturnType<typeof getSupportTickets>>
+  tickets: SupportTicket[]
   selectedTicket: string | null
   onSelectTicket: (id: string | null) => void
   panel: 'overview' | 'ai' | 'create'
@@ -219,6 +286,8 @@ function UserSupportWorkspace(props: {
   onAssistantDraft: (draft: AssistantTicketDraft) => void
   detail: Awaited<ReturnType<typeof getSupportTicket>> | undefined
   detailLoading: boolean
+  detailError: boolean
+  onRetry: () => void
   reply: string
   onReplyChange: (value: string) => void
   onSend: () => void
@@ -236,7 +305,7 @@ function UserSupportWorkspace(props: {
   }
 
   return (
-    <div className='grid h-full min-h-0 overflow-hidden md:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]'>
+    <div className='grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden md:grid-cols-[minmax(16rem,20rem)_minmax(0,1fr)]'>
       <aside
         className={cn(
           'min-h-0 flex-col border-r',
@@ -323,42 +392,19 @@ function UserSupportWorkspace(props: {
               </div>
             )}
           {!props.loading && props.tickets.length > 0 && (
-            <div className='divide-y'>
-              {props.tickets.map((ticket) => (
-                <button
-                  key={ticket.id}
-                  type='button'
-                  disabled={assistantBusy}
-                  className={cn(
-                    'hover:bg-muted/60 flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors',
-                    props.selectedTicket === ticket.id && 'bg-muted'
-                  )}
-                  onClick={() => props.onSelectTicket(ticket.id)}
-                >
-                  <HugeiconsIcon
-                    icon={File01Icon}
-                    className='text-muted-foreground mt-0.5 size-4 shrink-0'
-                    aria-hidden='true'
-                  />
-                  <span className='min-w-0 flex-1'>
-                    <span className='block truncate text-sm font-medium'>
-                      {ticket.subject}
-                    </span>
-                    <span className='text-muted-foreground mt-1 block truncate text-xs'>
-                      #{ticket.ticketNumber} · {t(ticket.category)}
-                    </span>
-                  </span>
-                  <Badge variant='secondary'>{t(ticket.status)}</Badge>
-                </button>
-              ))}
-            </div>
+            <TicketList
+              tickets={props.tickets}
+              selectedTicket={props.selectedTicket}
+              onSelect={props.onSelectTicket}
+              disabled={assistantBusy}
+            />
           )}
         </ScrollArea>
       </aside>
 
       <section
         className={cn(
-          'min-h-0 flex-col',
+          'min-h-0 min-w-0 flex-col',
           showingPanel ? 'flex' : 'hidden md:flex'
         )}
       >
@@ -414,11 +460,13 @@ function UserSupportWorkspace(props: {
             </div>
           </ScrollArea>
         )}
-        {props.selectedTicket && (props.detailLoading || !props.detail) && (
-          <LoadingState />
+        {props.selectedTicket && props.detailError && (
+          <ErrorState onRetry={props.onRetry} />
         )}
-        {props.selectedTicket && props.detail && (
+        {props.selectedTicket && props.detailLoading && <LoadingState />}
+        {props.selectedTicket && !props.detailError && props.detail && (
           <TicketDetail
+            key={props.detail.ticket.id}
             data={props.detail}
             reply={props.reply}
             onReplyChange={props.onReplyChange}
@@ -460,13 +508,15 @@ function SupportOverview() {
   )
 }
 
-function TicketBrowser(props: {
+export function TicketBrowser(props: {
   loading: boolean
-  tickets: Awaited<ReturnType<typeof getSupportTickets>>
+  tickets: SupportTicket[]
   selectedTicket: string | null
   onSelect: (id: string | null) => void
   detail: Awaited<ReturnType<typeof getSupportTicket>> | undefined
   detailLoading: boolean
+  detailError: boolean
+  onRetry: () => void
   reply: string
   onReplyChange: (value: string) => void
   onSend: () => void
@@ -491,7 +541,7 @@ function TicketBrowser(props: {
   }
 
   return (
-    <div className='grid h-full min-h-0 overflow-hidden md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]'>
+    <div className='grid h-full min-h-0 grid-cols-[minmax(0,1fr)] overflow-hidden md:grid-cols-[minmax(16rem,22rem)_minmax(0,1fr)]'>
       <aside
         className={cn(
           'min-h-0 flex-col border-r',
@@ -503,40 +553,18 @@ function TicketBrowser(props: {
           <Badge variant='secondary'>{props.tickets.length}</Badge>
         </div>
         <ScrollArea className='min-h-0 flex-1'>
-          <div className='divide-y'>
-            {props.tickets.map((ticket) => (
-              <button
-                key={ticket.id}
-                type='button'
-                className={cn(
-                  'hover:bg-muted/60 flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors',
-                  props.selectedTicket === ticket.id && 'bg-muted'
-                )}
-                onClick={() => props.onSelect(ticket.id)}
-              >
-                <HugeiconsIcon
-                  icon={File01Icon}
-                  className='text-muted-foreground mt-0.5 size-4 shrink-0'
-                  aria-hidden='true'
-                />
-                <span className='min-w-0 flex-1'>
-                  <span className='block truncate text-sm font-medium'>
-                    {ticket.subject}
-                  </span>
-                  <span className='text-muted-foreground mt-1 block truncate text-xs'>
-                    #{ticket.ticketNumber} · {t(ticket.category)}
-                  </span>
-                </span>
-                <Badge variant='secondary'>{t(ticket.status)}</Badge>
-              </button>
-            ))}
-          </div>
+          <TicketList
+            tickets={props.tickets}
+            selectedTicket={props.selectedTicket}
+            onSelect={props.onSelect}
+            admin
+          />
         </ScrollArea>
       </aside>
 
       <section
         className={cn(
-          'min-h-0 flex-col',
+          'min-h-0 min-w-0 flex-col',
           props.selectedTicket ? 'flex' : 'hidden md:flex'
         )}
       >
@@ -555,11 +583,13 @@ function TicketBrowser(props: {
             </EmptyHeader>
           </Empty>
         )}
-        {props.selectedTicket && (props.detailLoading || !props.detail) && (
-          <LoadingState />
+        {props.selectedTicket && props.detailError && (
+          <ErrorState onRetry={props.onRetry} />
         )}
-        {props.selectedTicket && props.detail && (
+        {props.selectedTicket && props.detailLoading && <LoadingState />}
+        {props.selectedTicket && !props.detailError && props.detail && (
           <TicketDetail
+            key={props.detail.ticket.id}
             data={props.detail}
             reply={props.reply}
             onReplyChange={props.onReplyChange}
@@ -573,7 +603,146 @@ function TicketBrowser(props: {
   )
 }
 
-function TicketDetail(props: {
+function isTicketClosed(ticket: SupportTicket) {
+  return (ticket.statusType || ticket.status) === 'Closed'
+}
+
+function TicketList(props: {
+  tickets: SupportTicket[]
+  selectedTicket: string | null
+  onSelect: (id: string) => void
+  admin?: boolean
+  disabled?: boolean
+}) {
+  const { t, i18n } = useTranslation()
+  const [filter, setFilter] = useState('active')
+  const [search, setSearch] = useState('')
+  const needsReply = (ticket: SupportTicket) =>
+    !isTicketClosed(ticket) &&
+    (ticket.activity === 'customer' || ticket.activity === 'new')
+  const visible = props.tickets
+    .filter((ticket) => {
+      if (filter === 'active' && isTicketClosed(ticket)) return false
+      if (filter === 'attention' && !needsReply(ticket)) return false
+      if (filter === 'closed' && !isTicketClosed(ticket)) return false
+      return [
+        ticket.subject,
+        ticket.ticketNumber,
+        ticket.email,
+        ticket.user?.username,
+        ticket.user?.id,
+      ]
+        .join(' ')
+        .toLocaleLowerCase()
+        .includes(search.trim().toLocaleLowerCase())
+    })
+    .sort((a, b) => {
+      if (props.admin && needsReply(a) !== needsReply(b)) {
+        return Number(needsReply(b)) - Number(needsReply(a))
+      }
+      return Date.parse(b.modifiedTime) - Date.parse(a.modifiedTime)
+    })
+  return (
+    <>
+      <div className='space-y-2 border-b p-3'>
+        <Input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder={t('Search tickets')}
+          aria-label={t('Search tickets')}
+        />
+        <Tabs value={filter} onValueChange={setFilter}>
+          <TabsList className='w-full flex-wrap group-data-horizontal/tabs:h-auto'>
+            <TabsTrigger value='active' className='h-7 flex-1'>
+              {t('Unresolved')}
+            </TabsTrigger>
+            {props.admin && (
+              <TabsTrigger value='attention' className='h-7 flex-1'>
+                {t('Needs reply')}
+              </TabsTrigger>
+            )}
+            <TabsTrigger value='closed' className='h-7 flex-1'>
+              {t('Closed')}
+            </TabsTrigger>
+            <TabsTrigger value='all' className='h-7 flex-1'>
+              {t('All')}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+      <div className='divide-y'>
+        {visible.map((ticket) => (
+          <button
+            key={ticket.id}
+            type='button'
+            disabled={props.disabled}
+            aria-current={
+              props.selectedTicket === ticket.id ? 'page' : undefined
+            }
+            onClick={() => props.onSelect(ticket.id)}
+            className={cn(
+              'hover:bg-muted/60 flex w-full flex-col gap-2 px-4 py-3.5 text-left transition-colors',
+              props.selectedTicket === ticket.id && 'bg-muted'
+            )}
+          >
+            <span className='flex w-full min-w-0 items-center gap-2'>
+              {props.admin && needsReply(ticket) && (
+                <span
+                  className='size-2 shrink-0 rounded-full bg-amber-500'
+                  aria-label={t('Needs reply')}
+                />
+              )}
+              <span className='min-w-0 flex-1 truncate text-sm font-medium'>
+                {ticket.subject}
+              </span>
+              <Badge variant='outline' className='shrink-0'>
+                {ticket.status === 'Open' ? t('In progress') : t(ticket.status)}
+              </Badge>
+            </span>
+            <span className='text-muted-foreground block w-full truncate text-xs'>
+              #{ticket.ticketNumber} · {t(ticket.category)}
+            </span>
+            {props.admin && (
+              <span className='block w-full truncate text-xs'>
+                {ticket.user
+                  ? `${ticket.user.username} · ID ${ticket.user.id}`
+                  : ticket.email}
+              </span>
+            )}
+            <span className='text-muted-foreground flex w-full flex-wrap justify-between gap-x-2 gap-y-1 text-xs'>
+              <span
+                className={cn(
+                  props.admin &&
+                    needsReply(ticket) &&
+                    'text-amber-700 dark:text-amber-400'
+                )}
+              >
+                {ticket.activity === 'customer' && t('Customer replied')}
+                {ticket.activity === 'agent' && t('Support replied')}
+                {ticket.activity === 'new' && t('New ticket')}
+                {(!ticket.activity || ticket.activity === 'unknown') &&
+                  t('Reply status unavailable')}
+              </span>
+              <time dateTime={ticket.modifiedTime}>
+                {ticket.modifiedTime &&
+                  new Date(ticket.modifiedTime).toLocaleDateString(
+                    toIntlLocale(i18n.language)
+                  )}
+              </time>
+            </span>
+          </button>
+        ))}
+        {visible.length === 0 && (
+          <p className='text-muted-foreground px-4 py-8 text-center text-sm'>
+            {t('No matching tickets')}
+          </p>
+        )}
+      </div>
+    </>
+  )
+}
+
+export function TicketDetail(props: {
   data: Awaited<ReturnType<typeof getSupportTicket>>
   reply: string
   onReplyChange: (value: string) => void
@@ -582,6 +751,33 @@ function TicketDetail(props: {
   sending: boolean
 }) {
   const { t } = useTranslation()
+  const isAdmin = useIsAdmin()
+  const queryClient = useQueryClient()
+  const [closing, setClosing] = useState(false)
+  const ticket = props.data.ticket
+  const closed = isTicketClosed(ticket)
+  const status = useMutation({
+    mutationFn: (value: string) => updateSupportTicketStatus(ticket.id, value),
+    onSuccess: async () => {
+      setClosing(false)
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ['support', 'ticket', ticket.id],
+        }),
+        queryClient.invalidateQueries({ queryKey: ['support', 'tickets'] }),
+      ])
+      toast.success(t('Ticket status updated'))
+    },
+    onError: handleServerError,
+  })
+  const statusOptions = [
+    { value: 'Open', label: t('In progress') },
+    { value: 'On Hold', label: t('On Hold') },
+    { value: 'Closed', label: t('Closed') },
+  ]
+  if (!statusOptions.some((option) => option.value === ticket.status)) {
+    statusOptions.push({ value: ticket.status, label: ticket.status })
+  }
   const downloadAttachment = async (
     attachment: (typeof props.data.attachments)[number]
   ) => {
@@ -601,7 +797,7 @@ function TicketDetail(props: {
   }
   return (
     <div className='flex min-h-0 flex-1 flex-col'>
-      <div className='flex min-h-14 shrink-0 items-center gap-2 border-b px-4 py-2.5'>
+      <div className='flex min-h-14 shrink-0 items-center gap-2 border-b px-3 py-2.5 sm:px-4'>
         <Button variant='ghost' size='icon-sm' onClick={props.onBack}>
           <HugeiconsIcon icon={ArrowLeft01Icon} />
           <span className='sr-only'>{t('Back to tickets')}</span>
@@ -614,7 +810,79 @@ function TicketDetail(props: {
             #{props.data.ticket.ticketNumber} · {t(props.data.ticket.category)}
           </p>
         </div>
-        <Badge variant='secondary'>{t(props.data.ticket.status)}</Badge>
+        <Badge variant='secondary'>
+          {ticket.status === 'Open' ? t('In progress') : t(ticket.status)}
+        </Badge>
+      </div>
+      <div className='flex shrink-0 flex-wrap items-center justify-between gap-2 border-b px-4 py-2'>
+        <div className='min-w-0 text-xs'>
+          {isAdmin && ticket.user && (
+            <p className='font-medium'>
+              {ticket.user.username} · ID {ticket.user.id}
+            </p>
+          )}
+          <p className='text-muted-foreground break-all'>{ticket.email}</p>
+        </div>
+        <div className='flex flex-wrap items-center gap-2'>
+          {isAdmin && ticket.user && (
+            <Button
+              variant='outline'
+              size='sm'
+              role='link'
+              render={
+                <a
+                  href={`/usage-logs/common?username=${encodeURIComponent(ticket.user.username)}`}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                />
+              }
+              nativeButton={false}
+            >
+              <HugeiconsIcon icon={LinkSquare02Icon} data-icon='inline-start' />
+              {t('User logs')}
+            </Button>
+          )}
+          {isAdmin && (
+            <Select
+              items={statusOptions}
+              value={ticket.status}
+              disabled={status.isPending || props.sending}
+              onValueChange={(value) => {
+                if (!value || value === ticket.status) return
+                if (value === 'Closed') setClosing(true)
+                else status.mutate(value)
+              }}
+            >
+              <SelectTrigger
+                size='sm'
+                aria-label={t('Ticket status')}
+                className='w-32'
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {statusOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
+          {!isAdmin && !closed && (
+            <Button
+              variant='outline'
+              size='sm'
+              disabled={status.isPending || props.sending}
+              onClick={() => setClosing(true)}
+            >
+              <HugeiconsIcon icon={Tick02Icon} data-icon='inline-start' />
+              {t('Close ticket')}
+            </Button>
+          )}
+        </div>
       </div>
 
       <ScrollArea className='min-h-0 flex-1'>
@@ -622,16 +890,37 @@ function TicketDetail(props: {
           <Message
             sender={props.data.ticket.email}
             content={props.data.ticket.description}
+            html
+            time={ticket.createdTime}
           />
-          {props.data.conversations.map((message) => (
-            <Message
-              key={message.id}
-              sender={
-                message.fromEmailAddress || message.direction || message.type
-              }
-              content={message.content || message.summary}
-            />
-          ))}
+          {[...props.data.conversations]
+            .sort(
+              (a, b) =>
+                Date.parse(a.createdTime || a.commentedTime || '') -
+                Date.parse(b.createdTime || b.commentedTime || '')
+            )
+            .map((message) => (
+              <Message
+                key={message.id}
+                sender={
+                  message.fromEmailAddress ||
+                  message.author?.name ||
+                  message.commenter?.name ||
+                  t('Support')
+                }
+                content={message.content || message.summary}
+                html={
+                  message.contentType === 'text/html' ||
+                  message.type === 'comment'
+                }
+                time={message.createdTime || message.commentedTime}
+                internal={
+                  message.type === 'comment'
+                    ? !message.isPublic
+                    : message.visibility !== 'public'
+                }
+              />
+            ))}
           {props.data.attachments.length > 0 && (
             <div className='flex flex-wrap gap-2 border-b py-5'>
               <p className='w-full text-sm font-medium'>{t('Attachments')}</p>
@@ -643,7 +932,7 @@ function TicketDetail(props: {
                   onClick={() => downloadAttachment(attachment)}
                 >
                   <HugeiconsIcon icon={File01Icon} data-icon='inline-start' />
-                  {attachment.name}
+                  <span className='max-w-48 truncate'>{attachment.name}</span>
                 </Button>
               ))}
             </div>
@@ -651,35 +940,127 @@ function TicketDetail(props: {
         </div>
       </ScrollArea>
 
-      <Field className='shrink-0 gap-2 border-t p-4'>
-        <FieldLabel htmlFor='ticket-reply'>{t('Reply')}</FieldLabel>
-        <Textarea
-          id='ticket-reply'
-          rows={4}
-          value={props.reply}
-          onChange={(event) => props.onReplyChange(event.target.value)}
-        />
-        <div className='flex justify-end'>
+      {closed ? (
+        <div className='flex shrink-0 flex-wrap items-center justify-between gap-2 border-t p-4 text-sm'>
+          <p className='text-muted-foreground'>{t('This ticket is closed.')}</p>
           <Button
-            onClick={props.onSend}
-            disabled={!props.reply.trim() || props.sending}
+            variant='outline'
+            size='sm'
+            disabled={status.isPending}
+            onClick={() => status.mutate('Open')}
           >
-            {props.sending && <Spinner data-icon='inline-start' />}
-            {props.sending ? t('Sending...') : t('Send reply')}
+            <HugeiconsIcon icon={RotateLeft01Icon} data-icon='inline-start' />
+            {t('Reopen ticket')}
           </Button>
         </div>
-      </Field>
+      ) : (
+        <Field className='shrink-0 gap-2 border-t p-4'>
+          <FieldLabel htmlFor='ticket-reply'>{t('Reply')}</FieldLabel>
+          <Textarea
+            id='ticket-reply'
+            rows={3}
+            maxLength={10000}
+            disabled={props.sending || status.isPending}
+            value={props.reply}
+            onChange={(event) => props.onReplyChange(event.target.value)}
+          />
+          <div className='flex items-center justify-between gap-3'>
+            <span className='text-muted-foreground text-xs'>
+              {isAdmin && t('Replying here also sends an email to the user.')}
+            </span>
+            <Button
+              onClick={props.onSend}
+              disabled={
+                !props.reply.trim() || props.sending || status.isPending
+              }
+            >
+              {props.sending && <Spinner data-icon='inline-start' />}
+              {props.sending ? t('Sending...') : t('Send reply')}
+            </Button>
+          </div>
+        </Field>
+      )}
+      <ConfirmDialog
+        open={closing}
+        onOpenChange={(open) => {
+          if (!status.isPending) setClosing(open)
+        }}
+        title={t('Close ticket')}
+        desc={t('Close this ticket? You can reopen it if the issue returns.')}
+        confirmText={t('Close ticket')}
+        isLoading={status.isPending}
+        handleConfirm={() => status.mutate('Closed')}
+      />
     </div>
   )
 }
 
-function Message(props: { sender: string; content: string }) {
+function Message(props: {
+  sender: string
+  content: string
+  html?: boolean
+  time?: string
+  internal?: boolean
+}) {
+  const { t, i18n } = useTranslation()
+  const safeContent = useMemo(
+    () =>
+      props.html
+        ? DOMPurify.sanitize(props.content, {
+            ALLOWED_TAGS: [
+              'p',
+              'br',
+              'div',
+              'span',
+              'strong',
+              'b',
+              'em',
+              'i',
+              'u',
+              's',
+              'blockquote',
+              'pre',
+              'code',
+              'ul',
+              'ol',
+              'li',
+              'a',
+              'table',
+              'thead',
+              'tbody',
+              'tr',
+              'th',
+              'td',
+            ],
+            ALLOWED_ATTR: ['href', 'title'],
+            ALLOW_DATA_ATTR: false,
+          })
+        : props.content,
+    [props.content, props.html]
+  )
   return (
     <article className='border-b py-5 last:border-b-0'>
-      <p className='text-muted-foreground mb-2 text-xs'>{props.sender}</p>
-      <p className='text-sm leading-relaxed whitespace-pre-wrap'>
-        {props.content}
-      </p>
+      <div className='text-muted-foreground mb-2 flex flex-wrap items-center gap-2 text-xs'>
+        <span className='break-all'>{props.sender}</span>
+        {props.internal && (
+          <Badge variant='outline'>{t('Internal note')}</Badge>
+        )}
+        {props.time && (
+          <time dateTime={props.time}>
+            {new Date(props.time).toLocaleString(toIntlLocale(i18n.language))}
+          </time>
+        )}
+      </div>
+      {props.html ? (
+        <HtmlContent
+          content={safeContent}
+          className='overflow-x-auto text-sm leading-relaxed break-words whitespace-pre-wrap'
+        />
+      ) : (
+        <p className='text-sm leading-relaxed break-words whitespace-pre-wrap'>
+          {props.content}
+        </p>
+      )}
     </article>
   )
 }

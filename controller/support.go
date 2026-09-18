@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -18,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/net/html"
 )
 
 type zohoDeskConfig struct {
@@ -36,23 +38,104 @@ type zohoDeskTicket struct {
 	Email        string `json:"email"`
 	CreatedTime  string `json:"createdTime"`
 	ModifiedTime string `json:"modifiedTime"`
+	DepartmentID string `json:"departmentId"`
+	StatusType   string `json:"statusType"`
+	CommentCount string `json:"commentCount"`
+	LastThread   *struct {
+		Direction string `json:"direction"`
+		IsDraft   bool   `json:"isDraft"`
+		IsForward bool   `json:"isForward"`
+	} `json:"lastThread"`
+	User     *supportTicketUser `json:"user,omitempty"`
+	Activity string             `json:"activity"`
+}
+
+type supportTicketUser struct {
+	ID       int    `json:"id"`
+	Username string `json:"username"`
 }
 
 type zohoDeskConversation struct {
-	ID          string `json:"id"`
-	Type        string `json:"type"`
-	Direction   string `json:"direction"`
-	Summary     string `json:"summary"`
-	Content     string `json:"content"`
-	CreatedTime string `json:"createdTime"`
-	FromEmail   string `json:"fromEmailAddress"`
+	ID            string `json:"id"`
+	Type          string `json:"type"`
+	Direction     string `json:"direction"`
+	Summary       string `json:"summary"`
+	Content       string `json:"content"`
+	CreatedTime   string `json:"createdTime"`
+	FromEmail     string `json:"fromEmailAddress"`
+	CommentedTime string `json:"commentedTime"`
+	Visibility    string `json:"visibility"`
+	IsPublic      bool   `json:"isPublic"`
+	IsDraft       bool   `json:"isDraft"`
+	IsForward     bool   `json:"isForward"`
+	ContentType   string `json:"contentType"`
+	Author        struct {
+		Type string `json:"type"`
+		Name string `json:"name"`
+	} `json:"author"`
+	Commenter struct {
+		Type string `json:"type"`
+		Name string `json:"name"`
+	} `json:"commenter"`
+}
+
+func (message zohoDeskConversation) public() bool {
+	if message.IsDraft || message.IsForward {
+		return false
+	}
+	if message.Type == "comment" {
+		return message.IsPublic
+	}
+	return message.Visibility == "public"
+}
+
+var supportPortalComment = regexp.MustCompile(`^[^\r\n<]+ \(UID [0-9]+\):`)
+
+func supportConversationActivity(messages []zohoDeskConversation) string {
+	var latest time.Time
+	activity := "unknown"
+	for _, message := range messages {
+		if !message.public() {
+			continue
+		}
+		created := message.CreatedTime
+		if created == "" {
+			created = message.CommentedTime
+		}
+		createdAt, err := time.Parse(time.RFC3339Nano, created)
+		if err != nil || !createdAt.After(latest) {
+			continue
+		}
+		latest = createdAt
+		activity = "unknown"
+		portalReply := false
+		if message.Type == "comment" {
+			tokens := html.NewTokenizer(strings.NewReader(message.Content))
+			for token := tokens.Next(); token != html.ErrorToken; token = tokens.Next() {
+				if token == html.TextToken {
+					text := strings.TrimSpace(string(tokens.Text()))
+					if text != "" {
+						portalReply = supportPortalComment.MatchString(text)
+						break
+					}
+				}
+			}
+		}
+		if message.Direction == "in" || message.Author.Type == "END_USER" || message.Commenter.Type == "END_USER" || portalReply {
+			activity = "customer"
+		} else if message.Direction == "out" || message.Author.Type == "AGENT" || message.Commenter.Type == "AGENT" {
+			activity = "agent"
+		}
+	}
+	return activity
 }
 
 type zohoDeskAttachment struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Size string `json:"size"`
-	Href string `json:"href"`
+	ID       string `json:"id"`
+	Name     string `json:"name"`
+	Size     string `json:"size"`
+	Href     string `json:"href"`
+	IsPublic *bool  `json:"isPublic,omitempty"`
 }
 
 const (
@@ -197,7 +280,7 @@ func zohoDeskUploadAttachment(cfg zohoDeskConfig, ticketID string, header *multi
 	if err != nil {
 		return zohoDeskAttachment{}, err
 	}
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(cfg.APIDomain, "/")+"/api/v1/tickets/"+ticketID+"/attachments", &body)
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(cfg.APIDomain, "/")+"/api/v1/tickets/"+ticketID+"/attachments?isPublic=true", &body)
 	if err != nil {
 		return zohoDeskAttachment{}, err
 	}
@@ -270,13 +353,21 @@ func ListSupportTickets(c *gin.Context) {
 		common.ApiErrorMsg(c, "Support tickets are not configured yet.")
 		return
 	}
-	path := "/tickets?limit=50&sortBy=-modifiedTime&departmentId=" + url.QueryEscape(cfg.DepartmentID)
+	from, err := strconv.Atoi(c.DefaultQuery("from", "0"))
+	if err != nil || from < 0 || from > 100000 {
+		common.ApiErrorMsg(c, "Invalid page.")
+		return
+	}
+	query := "?limit=20&from=" + strconv.Itoa(from) + "&sortBy=-modifiedTime&departmentId=" + url.QueryEscape(cfg.DepartmentID)
+	path := "/tickets" + query
+	email := ""
 	if c.GetInt("role") < common.RoleAdminUser {
 		user, ok := supportUser(c)
 		if !ok {
 			return
 		}
-		path = "/tickets/search?limit=50&sortBy=-modifiedTime&departmentId=" + url.QueryEscape(cfg.DepartmentID) + "&email=" + url.QueryEscape(user.Email)
+		email = user.Email
+		path = "/tickets/search" + query + "&email=" + url.QueryEscape(user.Email)
 	}
 	var result struct {
 		Data []zohoDeskTicket `json:"data"`
@@ -285,7 +376,58 @@ func ListSupportTickets(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, result.Data)
+	tickets := make([]zohoDeskTicket, 0, len(result.Data))
+	for _, ticket := range result.Data {
+		if ticket.DepartmentID != cfg.DepartmentID || (email != "" && !strings.EqualFold(ticket.Email, email)) {
+			continue
+		}
+		if c.GetInt("role") >= common.RoleAdminUser {
+			user, err := model.GetUniqueUserByEmail(ticket.Email)
+			if err == nil {
+				ticket.User = &supportTicketUser{ID: user.Id, Username: user.Username}
+			} else if !errors.Is(err, model.ErrEmailNotFound) && !errors.Is(err, model.ErrEmailAmbiguous) {
+				common.ApiError(c, err)
+				return
+			}
+		}
+		ticket.Activity = "new"
+		if ticket.LastThread != nil {
+			ticket.Activity = "unknown"
+			if !ticket.LastThread.IsDraft && !ticket.LastThread.IsForward {
+				if ticket.LastThread.Direction == "in" {
+					ticket.Activity = "customer"
+				}
+				if ticket.LastThread.Direction == "out" {
+					ticket.Activity = "agent"
+				}
+			}
+		}
+		tickets = append(tickets, ticket)
+	}
+	// Portal replies are public comments, not email threads. Bound concurrent
+	// lookups to avoid exhausting Zoho's per-organization request allowance.
+	var pending sync.WaitGroup
+	slots := make(chan struct{}, 4)
+	for i := range tickets {
+		if tickets[i].CommentCount == "" || tickets[i].CommentCount == "0" {
+			continue
+		}
+		slots <- struct{}{}
+		pending.Add(1)
+		go func(ticket *zohoDeskTicket) {
+			defer pending.Done()
+			defer func() { <-slots }()
+			var conversations struct {
+				Data []zohoDeskConversation `json:"data"`
+			}
+			ticket.Activity = "unknown"
+			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/conversations?limit=20", nil, &conversations); err == nil {
+				ticket.Activity = supportConversationActivity(conversations.Data)
+			}
+		}(&tickets[i])
+	}
+	pending.Wait()
+	common.ApiSuccess(c, gin.H{"tickets": tickets, "next_from": from + len(result.Data), "has_more": len(result.Data) == 20})
 }
 
 func CreateSupportTicket(c *gin.Context) {
@@ -406,6 +548,26 @@ func DownloadSupportAttachment(c *gin.Context) {
 		common.ApiErrorMsg(c, "Invalid attachment ID.")
 		return
 	}
+	if c.GetInt("role") < common.RoleAdminUser {
+		var attachments struct {
+			Data []zohoDeskAttachment `json:"data"`
+		}
+		if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/attachments", nil, &attachments); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		allowed := false
+		for _, attachment := range attachments.Data {
+			if attachment.ID == attachmentID && attachment.IsPublic != nil && *attachment.IsPublic {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			common.ApiErrorMsg(c, "Attachment not found.")
+			return
+		}
+	}
 	res, err := zohoDeskDownloadAttachment(cfg, ticket.ID, attachmentID)
 	if err != nil {
 		common.ApiError(c, err)
@@ -434,6 +596,10 @@ func loadSupportTicket(c *gin.Context, cfg zohoDeskConfig) (zohoDeskTicket, bool
 		common.ApiError(c, err)
 		return ticket, false
 	}
+	if ticket.DepartmentID != cfg.DepartmentID {
+		common.ApiErrorMsg(c, "Ticket not found.")
+		return ticket, false
+	}
 	if c.GetInt("role") < common.RoleAdminUser {
 		user, ok := supportUser(c)
 		if !ok {
@@ -457,6 +623,15 @@ func GetSupportTicket(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if c.GetInt("role") >= common.RoleAdminUser {
+		user, err := model.GetUniqueUserByEmail(ticket.Email)
+		if err == nil {
+			ticket.User = &supportTicketUser{ID: user.Id, Username: user.Username}
+		} else if !errors.Is(err, model.ErrEmailNotFound) && !errors.Is(err, model.ErrEmailAmbiguous) {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	var conversations struct {
 		Data []zohoDeskConversation `json:"data"`
 	}
@@ -471,7 +646,48 @@ func GetSupportTicket(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	common.ApiSuccess(c, gin.H{"ticket": ticket, "conversations": conversations.Data, "attachments": attachments.Data})
+	ticket.Activity = supportConversationActivity(conversations.Data)
+	visible := make([]zohoDeskConversation, 0, len(conversations.Data))
+	for _, message := range conversations.Data {
+		if c.GetInt("role") >= common.RoleAdminUser || message.public() {
+			visible = append(visible, message)
+		}
+	}
+	files := make([]zohoDeskAttachment, 0, len(attachments.Data))
+	for _, attachment := range attachments.Data {
+		if c.GetInt("role") >= common.RoleAdminUser || (attachment.IsPublic != nil && *attachment.IsPublic) {
+			files = append(files, attachment)
+		}
+	}
+	common.ApiSuccess(c, gin.H{"ticket": ticket, "conversations": visible, "attachments": files})
+}
+
+func UpdateSupportTicketStatus(c *gin.Context) {
+	cfg := getZohoDeskConfig()
+	if !cfg.ready() {
+		common.ApiErrorMsg(c, "Support tickets are not configured yet.")
+		return
+	}
+	ticket, ok := loadSupportTicket(c, cfg)
+	if !ok {
+		return
+	}
+	var input struct {
+		Status string `json:"status"`
+	}
+	if err := common.DecodeJson(c.Request.Body, &input); err != nil {
+		common.ApiErrorMsg(c, "Invalid request.")
+		return
+	}
+	if input.Status != "Open" && input.Status != "Closed" && !(input.Status == "On Hold" && c.GetInt("role") >= common.RoleAdminUser) {
+		common.ApiErrorMsg(c, "Invalid ticket status.")
+		return
+	}
+	if err := zohoDeskRequest(cfg, http.MethodPatch, "/tickets/"+ticket.ID, gin.H{"status": input.Status}, nil); err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, nil)
 }
 
 func ReplySupportTicket(c *gin.Context) {
@@ -482,6 +698,10 @@ func ReplySupportTicket(c *gin.Context) {
 	}
 	ticket, ok := loadSupportTicket(c, cfg)
 	if !ok {
+		return
+	}
+	if ticket.StatusType == "Closed" || ticket.Status == "Closed" {
+		common.ApiErrorMsg(c, "Reopen the ticket before replying.")
 		return
 	}
 	var input struct {

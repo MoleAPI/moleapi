@@ -65,6 +65,7 @@ func SetApiRouter(router *gin.Engine) {
 			supportRoute.GET("/tickets", controller.ListSupportTickets)
 			supportRoute.POST("/tickets", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.CreateSupportTicket)
 			supportRoute.GET("/tickets/:id", controller.GetSupportTicket)
+			supportRoute.PATCH("/tickets/:id/status", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.UpdateSupportTicketStatus)
 			supportRoute.POST("/tickets/:id/reply", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ReplySupportTicket)
 			supportRoute.POST("/tickets/:id/attachments", middleware.CriticalRateLimit(), controller.UploadSupportAttachments)
 			supportRoute.GET("/tickets/:id/attachments/:attachment_id", controller.DownloadSupportAttachment)

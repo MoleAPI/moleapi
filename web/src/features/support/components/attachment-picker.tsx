@@ -34,6 +34,11 @@ import {
   ItemMedia,
   ItemTitle,
 } from '@/components/ui/item'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 import {
@@ -47,19 +52,21 @@ export function AttachmentPicker(props: {
   onFilesChange: (files: File[]) => void
   onRejected: (fileName: string) => void
   compact?: boolean
+  disabled?: boolean
 }) {
   const { t } = useTranslation()
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
 
   const addFiles = (incoming: File[]) => {
+    if (props.disabled) return
     const result = mergeSupportFiles(props.files, incoming)
     if (result.oversized) props.onRejected(result.oversized.name)
     props.onFilesChange(result.files)
   }
 
   return (
-    <div className='flex flex-col gap-3'>
+    <div className={cn(props.compact ? 'contents' : 'flex flex-col gap-2')}>
       {!props.compact && (
         <div
           className={cn(
@@ -96,7 +103,9 @@ export function AttachmentPicker(props: {
             type='button'
             variant='outline'
             size='sm'
-            disabled={props.files.length >= SUPPORT_ATTACHMENT_LIMIT}
+            disabled={
+              props.disabled || props.files.length >= SUPPORT_ATTACHMENT_LIMIT
+            }
             onClick={() => inputRef.current?.click()}
           >
             <HugeiconsIcon icon={FolderOpenIcon} data-icon='inline-start' />
@@ -121,20 +130,32 @@ export function AttachmentPicker(props: {
       )}
 
       {props.compact && (
-        <Button
-          type='button'
-          variant='outline'
-          size='sm'
-          className='w-fit'
-          disabled={props.files.length >= SUPPORT_ATTACHMENT_LIMIT}
-          onClick={() => inputRef.current?.click()}
-        >
-          <HugeiconsIcon
-            icon={DocumentAttachmentIcon}
-            data-icon='inline-start'
-          />
-          {t('Choose files')}
-        </Button>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                type='button'
+                variant='ghost'
+                size='icon-sm'
+                className='shrink-0'
+                aria-label={t('Attach files or screenshots')}
+                disabled={
+                  props.disabled ||
+                  props.files.length >= SUPPORT_ATTACHMENT_LIMIT
+                }
+                onClick={() => inputRef.current?.click()}
+              />
+            }
+          >
+            <HugeiconsIcon
+              icon={DocumentAttachmentIcon}
+              data-icon='inline-start'
+            />
+          </TooltipTrigger>
+          <TooltipContent>
+            {t('Attach files or screenshots')} · {t('Up to 3 files, 5 MB each')}
+          </TooltipContent>
+        </Tooltip>
       )}
       {props.compact && (
         <input
@@ -143,6 +164,7 @@ export function AttachmentPicker(props: {
           multiple
           accept={SUPPORT_ATTACHMENT_ACCEPT}
           aria-label={t('Attachments')}
+          disabled={props.disabled}
           className='sr-only'
           onChange={(event) => {
             addFiles([...(event.target.files ?? [])])
@@ -152,20 +174,36 @@ export function AttachmentPicker(props: {
       )}
 
       {props.files.length > 0 && (
-        <ItemGroup className='gap-2'>
+        <ItemGroup
+          className={cn(
+            'gap-2',
+            props.compact && 'order-last min-w-0 basis-full flex-row flex-wrap'
+          )}
+        >
           {props.files.map((file) => (
-            <Item key={`${file.name}-${file.size}`} variant='outline' size='xs'>
+            <Item
+              key={`${file.name}-${file.size}`}
+              variant='outline'
+              size='xs'
+              className={cn(
+                props.compact &&
+                  'w-auto max-w-44 flex-nowrap gap-1 rounded-md px-2 py-0.5'
+              )}
+            >
               <ItemMedia variant='icon'>
                 <HugeiconsIcon icon={DocumentAttachmentIcon} />
               </ItemMedia>
-              <ItemContent>
-                <ItemTitle>{file.name}</ItemTitle>
+              <ItemContent className='min-w-0'>
+                <ItemTitle className='block w-full truncate' title={file.name}>
+                  {file.name}
+                </ItemTitle>
               </ItemContent>
-              <ItemActions>
+              <ItemActions className='shrink-0'>
                 <Button
                   type='button'
                   variant='ghost'
                   size='icon-sm'
+                  disabled={props.disabled}
                   onClick={() =>
                     props.onFilesChange(
                       props.files.filter((item) => item !== file)
