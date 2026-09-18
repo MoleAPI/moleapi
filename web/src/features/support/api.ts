@@ -67,6 +67,9 @@ export type SupportTicket = {
   email: string
   createdTime: string
   modifiedTime: string
+  statusType?: string
+  activity?: 'new' | 'customer' | 'agent' | 'unknown'
+  user?: { id: number; username: string }
 }
 
 export type SupportConversation = {
@@ -77,6 +80,12 @@ export type SupportConversation = {
   content: string
   createdTime: string
   fromEmailAddress: string
+  commentedTime?: string
+  visibility?: string
+  isPublic?: boolean
+  contentType?: string
+  author?: { name: string; type: string }
+  commenter?: { name: string; type: string }
 }
 
 type ApiResponse<T> = { success: boolean; message?: string; data: T }
@@ -91,10 +100,14 @@ export async function getSupportConfig() {
   return requireServerSuccess(response.data).data
 }
 
-export async function getSupportTickets() {
-  const response = await api.get<ApiResponse<SupportTicket[]>>(
-    '/api/support/tickets'
-  )
+export async function getSupportTickets(from = 0) {
+  const response = await api.get<
+    ApiResponse<{
+      tickets: SupportTicket[]
+      next_from: number
+      has_more: boolean
+    }>
+  >('/api/support/tickets', { params: { from } })
   return requireServerSuccess(response.data).data
 }
 
@@ -193,6 +206,14 @@ export async function replySupportTicket(id: string, content: string) {
   const response = await api.post<ApiResponse<null>>(
     `/api/support/tickets/${id}/reply`,
     { content }
+  )
+  return requireServerSuccess(response.data).data
+}
+
+export async function updateSupportTicketStatus(id: string, status: string) {
+  const response = await api.patch<ApiResponse<null>>(
+    `/api/support/tickets/${id}/status`,
+    { status }
   )
   return requireServerSuccess(response.data).data
 }

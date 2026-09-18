@@ -17,12 +17,12 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createInstance } from 'i18next'
 import { useState } from 'react'
 import { I18nextProvider } from 'react-i18next'
-import { describe, expect, test, vi } from 'vitest'
+import { beforeAll, describe, expect, test, vi } from 'vitest'
 
 import { sendChatCompletion } from '@/features/playground/api'
 import {
@@ -30,14 +30,22 @@ import {
   DEFAULT_PARAMETER_ENABLED,
 } from '@/features/playground/constants'
 import type { usePlaygroundState } from '@/features/playground/hooks'
+import { useIsAdmin } from '@/hooks/use-admin'
 import zh from '@/i18n/locales/zh.json'
 
+import { TicketBrowser, TicketDetail } from '..'
+import { updateSupportTicketStatus, type SupportTicket } from '../api'
 import { CommunityChannels } from '../components/community-channels'
 import { SupportAssistant } from '../components/support-assistant'
 import { TicketCreateForm } from '../components/ticket-create-form'
 
 vi.mock('@/features/playground/hooks', () => ({
   usePlaygroundOptions: () => ({ isLoadingModels: false }),
+}))
+vi.mock('@/hooks/use-admin', () => ({ useIsAdmin: vi.fn(() => false) }))
+vi.mock('../api', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../api')>()),
+  updateSupportTicketStatus: vi.fn().mockResolvedValue(null),
 }))
 vi.mock('@/features/playground/api', () => ({
   sendChatCompletion: vi.fn().mockResolvedValue({
@@ -54,6 +62,189 @@ vi.mock('@/features/playground/api', () => ({
 }))
 
 describe('support page layout', () => {
+  beforeAll(() => {
+    Element.prototype.getAnimations ??= () => []
+  })
+  const ticket: SupportTicket = {
+    id: '42',
+    ticketNumber: '1042',
+    subject: 'API request failed',
+    description:
+      '<p>Please investigate</p><img src="https://tracker.example/pixel"><div style="background:url(https://tracker.example/bg)">Request details</div>',
+    status: 'Open',
+    category: 'API Integration',
+    priority: 'Medium',
+    email: 'alice@example.com',
+    createdTime: '2026-09-18T08:00:00Z',
+    modifiedTime: '2026-09-18T09:00:00Z',
+    activity: 'customer',
+    user: { id: 11, username: 'alice & co' },
+  }
+
+  test('renders ticket and message dates with the Chinese interface locale', async () => {
+    vi.mocked(useIsAdmin).mockReturnValue(false)
+    const i18n = createInstance()
+    await i18n.init({ lng: 'zhCN', resources: { zhCN: zh } })
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={new QueryClient()}>
+          <TicketBrowser
+            loading={false}
+            tickets={[ticket]}
+            selectedTicket={ticket.id}
+            onSelect={vi.fn()}
+            detail={{
+              ticket,
+              conversations: [
+                {
+                  id: '1',
+                  type: 'thread',
+                  direction: 'out',
+                  visibility: 'public',
+                  summary: 'Support response',
+                  content: '',
+                  createdTime: ticket.modifiedTime,
+                  fromEmailAddress: 'support@example.com',
+                },
+              ],
+              attachments: [],
+            }}
+            detailLoading={false}
+            detailError={false}
+            onRetry={vi.fn()}
+            reply=''
+            onReplyChange={vi.fn()}
+            onSend={vi.fn()}
+            sending={false}
+          />
+        </QueryClientProvider>
+      </I18nextProvider>
+    )
+    expect(screen.getByText('Support response')).toBeVisible()
+    expect(screen.getAllByText(ticket.subject)).toHaveLength(2)
+  })
+
+  test('confirms closing, supports reopening, and blocks external message media', async () => {
+    vi.mocked(useIsAdmin).mockReturnValue(false)
+    const user = userEvent.setup()
+    const queryClient = new QueryClient()
+    const props = {
+      data: { ticket, conversations: [], attachments: [] },
+      reply: '',
+      onReplyChange: vi.fn(),
+      onBack: vi.fn(),
+      onSend: vi.fn(),
+      sending: false,
+    }
+    const view = render(
+      <QueryClientProvider client={queryClient}>
+        <TicketDetail {...props} />
+      </QueryClientProvider>
+    )
+    expect(view.container.querySelector('img')).toBeNull()
+    expect(
+      view.container.querySelector('[style*="tracker.example"]')
+    ).toBeNull()
+    expect(screen.getByText('Please investigate')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Close ticket' }))
+    expect(updateSupportTicketStatus).not.toHaveBeenCalled()
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: 'Close ticket',
+      })
+    )
+    await waitFor(() =>
+      expect(updateSupportTicketStatus).toHaveBeenCalledWith('42', 'Closed')
+    )
+    view.rerender(
+      <QueryClientProvider client={queryClient}>
+        <TicketDetail
+          {...props}
+          data={{ ...props.data, ticket: { ...ticket, status: 'Closed' } }}
+        />
+      </QueryClientProvider>
+    )
+    expect(
+      screen.queryByRole('textbox', { name: 'Reply' })
+    ).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Reopen ticket' }))
+    await waitFor(() =>
+      expect(updateSupportTicketStatus).toHaveBeenCalledWith('42', 'Open')
+    )
+  })
+
+  test('prioritizes customer replies, filters tickets and links admin to user logs', async () => {
+    vi.mocked(useIsAdmin).mockReturnValue(true)
+    const user = userEvent.setup()
+    const queryClient = new QueryClient()
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TicketBrowser
+          loading={false}
+          tickets={[
+            {
+              ...ticket,
+              id: '43',
+              subject: 'Answered request',
+              activity: 'agent',
+              modifiedTime: '2026-09-18T12:00:00Z',
+            },
+            {
+              ...ticket,
+              id: '44',
+              subject: 'Resolved request',
+              status: 'Closed',
+            },
+            ticket,
+          ]}
+          selectedTicket='42'
+          onSelect={vi.fn()}
+          detail={{ ticket, conversations: [], attachments: [] }}
+          detailLoading={false}
+          detailError={false}
+          onRetry={vi.fn()}
+          reply=''
+          onReplyChange={vi.fn()}
+          onSend={vi.fn()}
+          sending={false}
+        />
+      </QueryClientProvider>
+    )
+    const rows = screen.getAllByRole('button', {
+      name: /API request failed|Answered request/,
+    })
+    expect(rows[0]).toHaveTextContent('API request failed')
+    expect(rows[0]).toHaveTextContent('alice & co · ID 11')
+    expect(
+      screen.queryByRole('button', { name: /Resolved request/ })
+    ).not.toBeInTheDocument()
+    const logs = screen.getByRole('link', { name: 'User logs' })
+    expect(logs).toHaveAttribute(
+      'href',
+      '/usage-logs/common?username=alice%20%26%20co'
+    )
+    expect(logs).toHaveAttribute('target', '_blank')
+    await user.click(screen.getByRole('tab', { name: 'Needs reply' }))
+    expect(
+      screen.queryByRole('button', { name: /Answered request/ })
+    ).not.toBeInTheDocument()
+    await user.type(
+      screen.getByRole('textbox', { name: 'Search tickets' }),
+      'no-match'
+    )
+    expect(screen.getByText('No matching tickets')).toBeVisible()
+    await user.clear(screen.getByRole('textbox', { name: 'Search tickets' }))
+    await user.click(screen.getByRole('tab', { name: 'Closed' }))
+    expect(
+      screen.getByRole('button', { name: /Resolved request/ })
+    ).toBeVisible()
+    await user.click(screen.getByRole('combobox', { name: 'Ticket status' }))
+    await user.click(screen.getByRole('option', { name: 'On Hold' }))
+    await waitFor(() =>
+      expect(updateSupportTicketStatus).toHaveBeenCalledWith('42', 'On Hold')
+    )
+  })
+
   test('opens community channels on demand and disables unconfigured ones', async () => {
     const user = userEvent.setup()
     render(<CommunityChannels links={{}} />)

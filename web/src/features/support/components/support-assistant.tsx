@@ -37,9 +37,13 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupTextarea,
+} from '@/components/ui/input-group'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
 import { sendChatCompletion } from '@/features/playground/api'
 import {
   usePlaygroundOptions,
@@ -245,7 +249,13 @@ export function SupportAssistant(props: {
 
   const submit = () => {
     const question = input.trim()
-    if ((!question && !hasReadableFiles) || ask.isPending) return
+    if (
+      (!question && !hasReadableFiles) ||
+      ask.isPending ||
+      isLoadingMessages
+    ) {
+      return
+    }
     ask.mutate(question)
   }
 
@@ -275,6 +285,7 @@ export function SupportAssistant(props: {
               disabled={ask.isPending || isLoadingMessages}
               onClick={() => {
                 setSuggestion(null)
+                setInput('')
                 props.onFilesChange([])
                 createConversation()
               }}
@@ -302,6 +313,16 @@ export function SupportAssistant(props: {
                   'AI can suggest checks, identify the right ticket type, and prepare the details for support.'
                 )}
               </EmptyDescription>
+              <p className='text-muted-foreground text-xs leading-relaxed'>
+                {t(
+                  'Uses your Playground model and balance. Do not share secrets.'
+                )}
+              </p>
+              <p className='text-muted-foreground text-xs leading-relaxed'>
+                {t(
+                  'AI can read images and text files. Other files will be included with a human support request.'
+                )}
+              </p>
             </EmptyHeader>
           </Empty>
         ) : (
@@ -342,82 +363,84 @@ export function SupportAssistant(props: {
         )}
       </ScrollArea>
 
-      <div className='shrink-0 border-t p-4'>
-        <div className='mb-3 flex flex-wrap items-center gap-2'>
-          <ModelGroupSelector
-            selectedModel={config.model}
-            models={models}
-            onModelChange={(value) => updateConfig('model', value)}
-            selectedGroup={config.group}
-            groups={groups}
-            onGroupChange={(value) => updateConfig('group', value)}
-            disabled={ask.isPending || isLoadingModels}
-          />
-          <span className='text-muted-foreground text-xs'>
-            {t('Uses your Playground model and balance. Do not share secrets.')}
-          </span>
-        </div>
+      <div className='shrink-0 p-3 sm:p-4'>
         <form
-          className='flex items-end gap-2'
+          className='mx-auto w-full max-w-3xl'
           onSubmit={(event) => {
             event.preventDefault()
             submit()
           }}
         >
-          <Textarea
-            rows={3}
-            value={input}
-            placeholder={t(
-              'Describe the error, request ID, and what you already tried...'
-            )}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (
-                event.key === 'Enter' &&
-                !event.shiftKey &&
-                !event.nativeEvent.isComposing
-              ) {
-                event.preventDefault()
-                submit()
-              }
-            }}
-          />
-          <Button
-            type='submit'
-            size='icon'
-            disabled={
-              (!input.trim() && !hasReadableFiles) ||
-              ask.isPending ||
-              isLoadingMessages
-            }
-          >
-            {ask.isPending ? (
-              <Spinner />
-            ) : (
-              <HugeiconsIcon icon={ArrowUp02Icon} />
-            )}
-            <span className='sr-only'>{t('Send')}</span>
-          </Button>
+          <InputGroup className='bg-background overflow-hidden'>
+            <InputGroupTextarea
+              aria-label={t('Describe the problem you are seeing')}
+              className='min-h-20 px-4 py-3'
+              rows={3}
+              disabled={ask.isPending || isLoadingMessages}
+              value={input}
+              placeholder={t(
+                'Describe the error, request ID, and what you already tried...'
+              )}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter' &&
+                  !event.shiftKey &&
+                  !event.nativeEvent.isComposing
+                ) {
+                  event.preventDefault()
+                  submit()
+                }
+              }}
+            />
+            <InputGroupAddon
+              align='block-end'
+              className='bg-muted/20 flex-wrap justify-between gap-2 border-t px-2 py-2'
+            >
+              <div className='flex min-w-0 flex-1 flex-wrap items-center gap-2'>
+                <ModelGroupSelector
+                  selectedModel={config.model}
+                  models={models}
+                  onModelChange={(value) => updateConfig('model', value)}
+                  selectedGroup={config.group}
+                  groups={groups}
+                  onGroupChange={(value) => updateConfig('group', value)}
+                  disabled={ask.isPending || isLoadingModels}
+                />
+                <AttachmentPicker
+                  files={props.files}
+                  onFilesChange={props.onFilesChange}
+                  disabled={ask.isPending || isLoadingMessages}
+                  compact
+                  onRejected={(fileName) =>
+                    toast.error(
+                      t('{{file}} exceeds the 5 MB attachment limit.', {
+                        file: fileName,
+                      })
+                    )
+                  }
+                />
+              </div>
+              <Button
+                type='submit'
+                size='icon-sm'
+                className='shrink-0'
+                disabled={
+                  (!input.trim() && !hasReadableFiles) ||
+                  ask.isPending ||
+                  isLoadingMessages
+                }
+              >
+                {ask.isPending ? (
+                  <Spinner />
+                ) : (
+                  <HugeiconsIcon icon={ArrowUp02Icon} />
+                )}
+                <span className='sr-only'>{t('Send')}</span>
+              </Button>
+            </InputGroupAddon>
+          </InputGroup>
         </form>
-        <div className='mt-3'>
-          <AttachmentPicker
-            files={props.files}
-            onFilesChange={props.onFilesChange}
-            onRejected={(fileName) =>
-              toast.error(
-                t('{{file}} exceeds the 5 MB attachment limit.', {
-                  file: fileName,
-                })
-              )
-            }
-            compact
-          />
-          <p className='text-muted-foreground mt-1 text-xs'>
-            {t(
-              'AI can read images and text files. Other files will be included with a human support request.'
-            )}
-          </p>
-        </div>
       </div>
     </div>
   )
