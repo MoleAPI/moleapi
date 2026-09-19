@@ -189,6 +189,8 @@ func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
 			_, _ = w.Write([]byte(`{"access_token":"access","expires_in":3600}`))
 		case "/api/v1/tickets/42/threads":
 			_, _ = w.Write([]byte(`{"data":[{"id":"thread-1","direction":"in","channel":"EMAIL","createdTime":"2026-09-19T06:26:31Z","content":"","summary":"Inbound email body","contentType":"text/html","isDescriptionThread":true}]}`))
+		case "/api/v1/tickets/42/threads/thread-1/fullContent":
+			_, _ = w.Write([]byte(`{"id":"thread-1","content":"Full inbound email body","contentType":"text/html"}`))
 		case "/api/v1/tickets/43/threads":
 			_, _ = w.Write([]byte(`{"data":[]}`))
 		case "/api/v1/tickets/43/latestThread":
@@ -204,7 +206,7 @@ func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
 	}, "42")
 	require.NoError(t, err)
 	require.Len(t, threads, 1)
-	assert.Equal(t, "Inbound email body", threads[0].Content)
+	assert.Equal(t, "Full inbound email body", threads[0].Content)
 	assert.Equal(t, "public", threads[0].Visibility)
 	assert.True(t, threads[0].IsPublic)
 	threads, err = loadSupportEmailThreads(zohoDeskConfig{
