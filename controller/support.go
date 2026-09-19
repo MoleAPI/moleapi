@@ -219,6 +219,12 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads?limit=100&from=0&sortBy=sendDateTime", nil, &result); err != nil {
 		return nil, err
 	}
+	if len(result.Data) == 0 {
+		var latest zohoDeskThread
+		if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/latestThread?needIncomingThread=true&include=plainText", nil, &latest); err == nil && latest.ID != "" {
+			result.Data = []zohoDeskThread{latest}
+		}
+	}
 	conversations := make([]zohoDeskConversation, 0, len(result.Data))
 	for _, thread := range result.Data {
 		content := thread.Content

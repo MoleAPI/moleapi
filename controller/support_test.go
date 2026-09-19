@@ -189,6 +189,10 @@ func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
 			_, _ = w.Write([]byte(`{"access_token":"access","expires_in":3600}`))
 		case "/api/v1/tickets/42/threads":
 			_, _ = w.Write([]byte(`{"data":[{"id":"thread-1","direction":"in","channel":"EMAIL","createdTime":"2026-09-19T06:26:31Z","content":"","summary":"Inbound email body","contentType":"text/html","isDescriptionThread":true}]}`))
+		case "/api/v1/tickets/43/threads":
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case "/api/v1/tickets/43/latestThread":
+			_, _ = w.Write([]byte(`{"id":"thread-2","direction":"in","channel":"EMAIL","createdTime":"2026-09-19T06:26:31Z","content":"Latest inbound email body","contentType":"text/plain"}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -203,6 +207,13 @@ func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
 	assert.Equal(t, "Inbound email body", threads[0].Content)
 	assert.Equal(t, "public", threads[0].Visibility)
 	assert.True(t, threads[0].IsPublic)
+	threads, err = loadSupportEmailThreads(zohoDeskConfig{
+		ClientID: "client", ClientSecret: "secret", RefreshToken: "refresh",
+		OrgID: "org", APIDomain: server.URL, AccountsDomain: server.URL,
+	}, "43")
+	require.NoError(t, err)
+	require.Len(t, threads, 1)
+	assert.Equal(t, "Latest inbound email body", threads[0].Content)
 }
 
 func TestSupportTicketWorkflow(t *testing.T) {
