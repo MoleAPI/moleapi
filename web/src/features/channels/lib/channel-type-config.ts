@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { CHANNEL_TYPES } from '../constants'
+import {
+  CHANNEL_TYPES,
+  CHANNEL_TYPE_VLLM,
+  CHANNEL_TYPE_SGLANG,
+} from '../constants'
 
 // ============================================================================
 // Channel Type Configuration
@@ -45,6 +49,26 @@ export interface ChannelTypeConfig {
  * Configuration for each channel type
  */
 export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
+  [CHANNEL_TYPE_SGLANG]: {
+    id: CHANNEL_TYPE_SGLANG,
+    name: CHANNEL_TYPES[CHANNEL_TYPE_SGLANG],
+    icon: 'SGLang',
+    hints: {
+      baseUrl: 'SGLang server address, without /v1',
+      key: 'SGLang API key, or EMPTY if authentication is disabled',
+      models: 'Models fetched from upstream /v1/models',
+    },
+  },
+  [CHANNEL_TYPE_VLLM]: {
+    id: CHANNEL_TYPE_VLLM,
+    name: CHANNEL_TYPES[CHANNEL_TYPE_VLLM],
+    icon: 'Vllm',
+    hints: {
+      baseUrl: 'vLLM server address, without /v1',
+      key: 'vLLM API key, or EMPTY if authentication is disabled',
+      models: 'Models fetched from upstream /v1/models',
+    },
+  },
   1: {
     id: 1,
     name: CHANNEL_TYPES[1],
@@ -139,16 +163,6 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
   59: {
     id: 59,
     name: CHANNEL_TYPES[59],
-    icon: 'newapi',
-    hints: {
-      baseUrl: 'Provider preset',
-      key: 'Coding or token plan API key',
-      models: 'Models exposed by this plan',
-    },
-  },
-  60: {
-    id: 60,
-    name: CHANNEL_TYPES[60],
     icon: 'Sub2API',
     hints: {
       baseUrl: 'Sub2API gateway base URL',
@@ -156,9 +170,9 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'Models fetched from upstream /v1/models',
     },
   },
-  61: {
-    id: 61,
-    name: CHANNEL_TYPES[61],
+  60: {
+    id: 60,
+    name: CHANNEL_TYPES[60],
     icon: 'NewAPI',
     hints: {
       baseUrl: 'Base URL is required for this channel type',

@@ -40,6 +40,7 @@ type zohoDeskTicket struct {
 	ModifiedTime string `json:"modifiedTime"`
 	DepartmentID string `json:"departmentId"`
 	StatusType   string `json:"statusType"`
+	Archived     bool   `json:"isArchived"`
 	CommentCount string `json:"commentCount"`
 	LastThread   *struct {
 		Direction string `json:"direction"`
@@ -77,6 +78,7 @@ type zohoDeskConversation struct {
 		Type string `json:"type"`
 		Name string `json:"name"`
 	} `json:"commenter"`
+	Attachments []zohoDeskAttachment `json:"attachments,omitempty"`
 }
 
 func (message zohoDeskConversation) public() bool {
@@ -191,11 +193,14 @@ func supportConversationActivity(messages []zohoDeskConversation) string {
 }
 
 type zohoDeskAttachment struct {
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Size     string `json:"size"`
-	Href     string `json:"href"`
-	IsPublic *bool  `json:"isPublic,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Size        string `json:"size"`
+	Href        string `json:"href"`
+	IsPublic    *bool  `json:"isPublic,omitempty"`
+	CreatedTime string `json:"createdTime,omitempty"`
+	CreatorID   string `json:"creatorId,omitempty"`
+	ContentType string `json:"contentType,omitempty"`
 }
 
 const (
@@ -420,6 +425,10 @@ func ListSupportTickets(c *gin.Context) {
 	}
 	query := "?limit=20&from=" + strconv.Itoa(from) + "&sortBy=-modifiedTime&departmentId=" + url.QueryEscape(cfg.DepartmentID)
 	path := "/tickets" + query
+	archivedView := c.GetInt("role") >= common.RoleAdminUser && c.Query("view") == "archived"
+	if archivedView {
+		path = "/tickets/archivedTickets?limit=100&from=" + strconv.Itoa(from) + "&departmentId=" + url.QueryEscape(cfg.DepartmentID)
+	}
 	email := ""
 	if c.GetInt("role") < common.RoleAdminUser {
 		user, ok := supportUser(c)
@@ -464,6 +473,41 @@ func ListSupportTickets(c *gin.Context) {
 		}
 		tickets = append(tickets, ticket)
 	}
+	if archivedView {
+		for i := range tickets {
+			tickets[i].Archived = true
+			tickets[i].Activity = "archived"
+			user, err := model.GetUniqueUserByEmail(tickets[i].Email)
+			if err == nil {
+				tickets[i].User = &supportTicketUser{ID: user.Id, Username: user.Username}
+			} else if !errors.Is(err, model.ErrEmailNotFound) && !errors.Is(err, model.ErrEmailAmbiguous) {
+				common.ApiError(c, err)
+				return
+			}
+		}
+	} else if c.GetInt("role") >= common.RoleAdminUser && from == 0 {
+		var archived struct {
+			Data []zohoDeskTicket `json:"data"`
+		}
+		archivePath := "/tickets/archivedTickets?limit=100&from=0&departmentId=" + url.QueryEscape(cfg.DepartmentID)
+		if err := zohoDeskRequest(cfg, http.MethodGet, archivePath, nil, &archived); err == nil {
+			for _, ticket := range archived.Data {
+				if ticket.DepartmentID != cfg.DepartmentID {
+					continue
+				}
+				ticket.Archived = true
+				ticket.Activity = "archived"
+				user, userErr := model.GetUniqueUserByEmail(ticket.Email)
+				if userErr == nil {
+					ticket.User = &supportTicketUser{ID: user.Id, Username: user.Username}
+				} else if !errors.Is(userErr, model.ErrEmailNotFound) && !errors.Is(userErr, model.ErrEmailAmbiguous) {
+					common.ApiError(c, userErr)
+					return
+				}
+				tickets = append(tickets, ticket)
+			}
+		}
+	}
 	// Portal replies are public comments, not email threads. Bound concurrent
 	// lookups to avoid exhausting Zoho's per-organization request allowance.
 	var pending sync.WaitGroup
@@ -490,7 +534,7 @@ func ListSupportTickets(c *gin.Context) {
 		}(&tickets[i])
 	}
 	pending.Wait()
-	common.ApiSuccess(c, gin.H{"tickets": tickets, "next_from": from + len(result.Data), "has_more": len(result.Data) == 20})
+	common.ApiSuccess(c, gin.H{"tickets": tickets, "next_from": from + len(result.Data), "has_more": len(result.Data) == 20 && !archivedView})
 }
 
 func CreateSupportTicket(c *gin.Context) {
@@ -719,6 +763,15 @@ func GetSupportTicket(c *gin.Context) {
 				continue
 			}
 			normalizeSupportPortalComment(&message)
+			if c.GetInt("role") < common.RoleAdminUser {
+				publicAttachments := message.Attachments[:0]
+				for _, attachment := range message.Attachments {
+					if attachment.IsPublic != nil && *attachment.IsPublic {
+						publicAttachments = append(publicAttachments, attachment)
+					}
+				}
+				message.Attachments = publicAttachments
+			}
 			visible = append(visible, message)
 		}
 	}
@@ -746,6 +799,30 @@ func UpdateSupportTicketStatus(c *gin.Context) {
 	}
 	if err := common.DecodeJson(c.Request.Body, &input); err != nil {
 		common.ApiErrorMsg(c, "Invalid request.")
+		return
+	}
+	if input.Status == "Archived" {
+		if c.GetInt("role") < common.RoleAdminUser {
+			common.ApiErrorMsg(c, "Only administrators can archive tickets.")
+			return
+		}
+		if err := zohoDeskRequest(cfg, http.MethodPost, "/tickets/"+ticket.ID+"/archive", nil, nil); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, nil)
+		return
+	}
+	if input.Status == "Open" && ticket.Archived {
+		if c.GetInt("role") < common.RoleAdminUser {
+			common.ApiErrorMsg(c, "Only administrators can restore archived tickets.")
+			return
+		}
+		if err := zohoDeskRequest(cfg, http.MethodPost, "/tickets/"+ticket.ID+"/unarchive", nil, nil); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		common.ApiSuccess(c, nil)
 		return
 	}
 	if input.Status != "Open" && input.Status != "Closed" && !(input.Status == "On Hold" && c.GetInt("role") >= common.RoleAdminUser) {

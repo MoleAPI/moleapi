@@ -85,6 +85,23 @@ export function Profile() {
                 data-profile-column='left'
                 className='flex min-w-0 flex-col gap-4 sm:gap-6'
               >
+                <ProfileSettingsCard
+                  profile={profile}
+                  loading={loading}
+                  onProfileUpdate={refreshProfile}
+                />
+                <ProfileSecurityCard
+                  profile={profile}
+                  loading={loading}
+                  onProfileUpdate={refreshProfile}
+                />
+                <LoginSessionsCard />
+              </div>
+
+              <div
+                data-profile-column='right'
+                className='flex min-w-0 flex-col gap-4 sm:gap-6'
+              >
                 <AccountBindingsCard
                   profile={profile}
                   loading={loading}
@@ -94,23 +111,6 @@ export function Profile() {
                   profile={profile}
                   onProfileUpdate={refreshProfile}
                 />
-                <ProfileSecurityCard
-                  profile={profile}
-                  loading={loading}
-                  onProfileUpdate={refreshProfile}
-                />
-                <LoginSessionsCard />
-                <ProfileSettingsCard
-                  profile={profile}
-                  loading={loading}
-                  onProfileUpdate={refreshProfile}
-                />
-              </div>
-
-              <div
-                data-profile-column='right'
-                className='flex min-w-0 flex-col gap-4 sm:gap-6'
-              >
                 {checkinEnabled && (
                   <CheckinCalendarCard
                     checkinEnabled={checkinEnabled}

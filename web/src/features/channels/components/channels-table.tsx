@@ -42,10 +42,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { getChannelSuccessMetrics } from '@/features/dashboard/api'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
-import { getLobeIcon } from '@/lib/lobe-icon'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { getChannels, searchChannels, getGroups } from '../api'
@@ -59,12 +57,11 @@ import {
   aggregateChannelsByTag,
   getChannelTableRowId,
   isTagAggregateRow,
-  getChannelTypeIcon,
   getChannelTypeLabel,
 } from '../lib'
-import type { ChannelProbeMetric } from '../lib/channel-success'
 import type { Channel, ChannelSortBy } from '../types'
 import { ChannelCard } from './channel-card'
+import { ChannelTypeLogo } from './channel-type-badge'
 import { useChannelsColumns } from './channels-columns'
 import { useChannels } from './channels-provider'
 import { DataTableBulkActions } from './data-table-bulk-actions'
@@ -81,6 +78,7 @@ const CHANNEL_SORTABLE_COLUMNS = new Set<ChannelSortBy>([
   'priority',
   'balance',
   'response_time',
+  'test_time',
 ])
 
 function isDisabledChannelRow(channel: Channel) {
@@ -130,11 +128,7 @@ export function ChannelsTable() {
           const stored = localStorage.getItem(
             CHANNELS_STATUS_FILTER_STORAGE_KEY
           )
-          return stored === 'enabled' ||
-            stored === 'disabled' ||
-            stored === 'auto'
-            ? [stored]
-            : []
+          return stored === 'enabled' || stored === 'disabled' ? [stored] : []
         },
       },
       { columnId: 'type', searchKey: 'type', type: 'array' },
@@ -213,13 +207,6 @@ export function ChannelsTable() {
   const { data: groupsData } = useQuery({
     queryKey: ['groups'],
     queryFn: async () => requireServerSuccess(await getGroups()),
-  })
-
-  const { data: channelSuccessData } = useQuery({
-    queryKey: ['channel-success-metrics', 24],
-    queryFn: () => getChannelSuccessMetrics(24),
-    staleTime: 60 * 1000,
-    retry: false,
   })
 
   const groupOptions = useMemo(
@@ -320,33 +307,9 @@ export function ChannelsTable() {
 
   const totalCount = data?.data?.total || 0
   const typeCounts = data?.data?.type_counts
-  const channelSuccessById = useMemo(
-    () =>
-      new Map(
-        (channelSuccessData?.data.channels ?? []).map((channel) => [
-          channel.channel_id,
-          channel,
-        ])
-      ),
-    [channelSuccessData]
-  )
-  const channelProbeById = useMemo(() => {
-    const grouped = new Map<number, ChannelProbeMetric[]>()
-    for (const item of channelSuccessData?.data.probe_overview?.items ?? []) {
-      const current = grouped.get(item.channel_id) ?? []
-      current.push(item)
-      grouped.set(item.channel_id, current)
-    }
-    return grouped
-  }, [channelSuccessData])
 
   // Columns configuration
-  const columns = useChannelsColumns({
-    enableSelection: batchMode,
-    channelSuccessById,
-    channelProbeById,
-    probeEnabled: channelSuccessData?.data.probe_overview?.enabled,
-  })
+  const columns = useChannelsColumns({ enableSelection: batchMode })
 
   // React Table instance
   const { table } = useDataTable({
@@ -429,12 +392,11 @@ export function ChannelsTable() {
         count: totalTypes,
       },
       ...typeIds.map((item) => {
-        const iconName = getChannelTypeIcon(item.type)
         return {
           label: getChannelTypeLabel(item.type),
           value: String(item.type),
           count: item.count,
-          iconNode: getLobeIcon(`${iconName}.Color`, 16),
+          iconNode: <ChannelTypeLogo type={item.type} size={16} />,
         }
       }),
     ]

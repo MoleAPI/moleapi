@@ -315,7 +315,7 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Keep builtin://user-agreement to use the built-in translated agreement. Replace it with Markdown, HTML, or a full URL for custom content. Leave empty to disable.'
+                        'Leave empty to disable the agreement requirement. Supports Markdown, HTML, or a full URL to redirect users.'
                       )}
                     </FormDescription>
                     <FormMessage />
@@ -340,7 +340,7 @@ export function SystemInfoSection({ defaultValues }: SystemInfoSectionProps) {
                     </FormControl>
                     <FormDescription>
                       {t(
-                        'Keep builtin://privacy-policy to use the built-in translated privacy policy. Replace it with Markdown, HTML, or a full URL for custom content. Leave empty to disable.'
+                        'Leave empty to disable the privacy policy requirement. Supports Markdown, HTML, or a full URL to redirect users.'
                       )}
                     </FormDescription>
                     <FormMessage />

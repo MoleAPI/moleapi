@@ -25,20 +25,6 @@ import {
 } from '../constants'
 import type { PricingModel } from '../types'
 import { hasTaskUsageSchema } from './dynamic-price'
-import { getModelDescriptionSearchText } from './model-helpers'
-
-type ModelPopularity = {
-  model_name: string
-  request_count?: number
-}
-
-function modelFamilyRank(modelName: string): number {
-  const name = modelName.toLowerCase()
-  if (name.includes('gpt')) return 0
-  if (name.includes('claude')) return 1
-  if (name.includes('glm')) return 2
-  return 3
-}
 
 // ----------------------------------------------------------------------------
 // Filter Utilities
@@ -57,7 +43,7 @@ export function filterBySearch(
   return models.filter(
     (m) =>
       m.model_name?.toLowerCase().includes(lowerQuery) ||
-      getModelDescriptionSearchText(m).toLowerCase().includes(lowerQuery) ||
+      m.description?.toLowerCase().includes(lowerQuery) ||
       m.tags?.toLowerCase().includes(lowerQuery) ||
       m.vendor_name?.toLowerCase().includes(lowerQuery)
   )
@@ -131,32 +117,11 @@ function getModelPrice(model: PricingModel): number {
  */
 export function sortModels(
   models: PricingModel[],
-  sortBy: string,
-  popularModels?: ModelPopularity[]
+  sortBy: string
 ): PricingModel[] {
   const sorted = [...models]
-  const usage = new Map(
-    (popularModels || []).map((m) => [m.model_name, m.request_count || 0])
-  )
 
   switch (sortBy) {
-    case SORT_OPTIONS.POPULAR:
-      sorted.sort((a, b) => {
-        const aUsage = usage.get(a.model_name) || 0
-        const bUsage = usage.get(b.model_name) || 0
-        const usageDataDiff = Number(bUsage > 0) - Number(aUsage > 0)
-        const familyDiff =
-          modelFamilyRank(a.model_name || '') -
-          modelFamilyRank(b.model_name || '')
-        const usageDiff = bUsage - aUsage
-        return (
-          usageDataDiff ||
-          familyDiff ||
-          usageDiff ||
-          (a.model_name || '').localeCompare(b.model_name || '')
-        )
-      })
-      break
     case SORT_OPTIONS.NAME:
       sorted.sort((a, b) =>
         (a.model_name || '').localeCompare(b.model_name || '')
@@ -186,7 +151,6 @@ export function filterAndSortModels(
     endpointType: string
     tag: string
     sortBy: string
-    popularModels?: ModelPopularity[]
   }
 ): PricingModel[] {
   let result = filterBySearch(models, filters.search)
@@ -195,7 +159,7 @@ export function filterAndSortModels(
   result = filterByQuotaType(result, filters.quotaType)
   result = filterByEndpointType(result, filters.endpointType)
   result = filterByTag(result, filters.tag)
-  result = sortModels(result, filters.sortBy, filters.popularModels)
+  result = sortModels(result, filters.sortBy)
 
   return result
 }
@@ -226,7 +190,7 @@ export function extractAllTags(models: PricingModel[]): string[] {
     }
   })
 
-  return [...tagSet].sort((a, b) => a.localeCompare(b))
+  return Array.from(tagSet).sort((a, b) => a.localeCompare(b))
 }
 
 /**

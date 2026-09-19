@@ -227,6 +227,8 @@ func TestSupportTicketWorkflow(t *testing.T) {
 					assert.Equal(t, "20", r.URL.Query().Get("limit"))
 					assert.Equal(t, "7", r.URL.Query().Get("departmentId"))
 					_, _ = w.Write([]byte(`{"data":[{"id":"42","departmentId":"7","email":"alice@example.com","commentCount":"1"},{"id":"43","departmentId":"7","email":"bob@example.com"},{"id":"44","departmentId":"8","email":"alice@example.com"}]}`))
+				case "/api/v1/tickets/archivedTickets":
+					_, _ = w.Write([]byte(`{"data":[]}`))
 				case "/api/v1/tickets/42/conversations":
 					_, _ = w.Write([]byte(`{"data":[{"id":"1","type":"comment","isPublic":true,"content":"alice (UID 11): hello","commentedTime":"2026-09-18T10:00:00Z"},{"id":"2","type":"comment","isPublic":false,"content":"private note"},{"id":"3","type":"thread","visibility":"public","isDraft":true,"content":"draft"}]}`))
 				case "/api/v1/tickets/42/attachments":

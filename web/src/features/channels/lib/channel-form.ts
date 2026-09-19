@@ -21,7 +21,10 @@ import { z } from 'zod'
 import {
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_TYPE_NEW_API,
+  CHANNEL_TYPE_OLLAMA,
   CHANNEL_TYPE_TASK_PLUGIN,
+  CHANNEL_TYPE_VLLM,
+  CHANNEL_TYPE_SGLANG,
   CHANNEL_STATUS,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
@@ -37,11 +40,6 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
-import {
-  CHANNEL_TYPE_CODING_PLAN,
-  buildCodingPlanAdvancedCustomConfig,
-  normalizeCodingPlanProvider,
-} from './coding-plan'
 
 // ============================================================================
 // Form Validation Schema
@@ -223,8 +221,6 @@ export const channelFormSchema = z
     weight: z.number().optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
-    channel_probe_enabled: z.boolean().optional(),
-    channel_probe_models: z.string().optional(),
     status: z.number(),
     status_code_mapping: z
       .string()
@@ -287,6 +283,7 @@ export const channelFormSchema = z
     allow_inference_geo: z.boolean().optional(), // OpenAI/Anthropic: inference geography
     allow_speed: z.boolean().optional(), // Anthropic: speed mode control
     claude_beta_query: z.boolean().optional(), // Anthropic: beta query passthrough
+    ollama_openai_chat: z.boolean().optional(), // Ollama: OpenAI-compatible /v1/chat/completions instead of native /api/chat
     disable_task_polling_sleep: z.boolean().optional(),
     // Upstream model update settings (stored in settings JSON)
     upstream_model_update_check_enabled: z.boolean().optional(),
@@ -295,9 +292,16 @@ export const channelFormSchema = z
   })
   .superRefine((data, ctx) => {
     if (
-      [3, 8, 36, 45, CHANNEL_TYPE_NEW_API, CHANNEL_TYPE_TASK_PLUGIN].includes(
-        data.type
-      ) &&
+      [
+        3,
+        8,
+        36,
+        45,
+        CHANNEL_TYPE_NEW_API,
+        CHANNEL_TYPE_TASK_PLUGIN,
+        CHANNEL_TYPE_VLLM,
+        CHANNEL_TYPE_SGLANG,
+      ].includes(data.type) &&
       !data.base_url?.trim()
     ) {
       addRequiredIssue(
@@ -341,22 +345,6 @@ export const channelFormSchema = z
           'upstream_model_update_check_enabled',
           'OpenAI Models route is required to enable upstream model checks'
         )
-      }
-    }
-
-    if (data.type === CHANNEL_TYPE_CODING_PLAN) {
-      const provider = normalizeCodingPlanProvider(data.base_url)
-      const config = buildCodingPlanAdvancedCustomConfig(provider)
-      if (!provider || !config) {
-        addRequiredIssue(ctx, 'base_url', 'Coding plan provider is required')
-      }
-      const advancedCustomConfig = data.advanced_custom?.trim()
-        ? parseAdvancedCustomConfig(data.advanced_custom)
-        : config
-      const advancedCustomError =
-        validateAdvancedCustomConfig(advancedCustomConfig)
-      if (advancedCustomError) {
-        addRequiredIssue(ctx, 'advanced_custom', advancedCustomError.message)
       }
     }
 
@@ -449,8 +437,6 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   weight: 0,
   test_model: '',
   auto_ban: 1,
-  channel_probe_enabled: true,
-  channel_probe_models: '',
   status: CHANNEL_STATUS.ENABLED,
   status_code_mapping: '',
   tag: '',
@@ -487,6 +473,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   allow_inference_geo: false,
   allow_speed: false,
   claude_beta_query: false,
+  ollama_openai_chat: false,
   disable_task_polling_sleep: false,
   upstream_model_update_check_enabled: false,
   upstream_model_update_auto_sync_enabled: false,
@@ -556,13 +543,11 @@ export function transformChannelToFormDefaults(
   let allowInferenceGeo = false
   let allowSpeed = false
   let claudeBetaQuery = false
+  let ollamaOpenAIChat = false
   let disableTaskPollingSleep = false
   let upstreamModelUpdateCheckEnabled = false
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
-  let channelProbeEnabled = true
-  let channelProbeModels = ''
-  let codingPlanProvider = ''
   let advancedCustom = ''
 
   if (channel.settings) {
@@ -579,6 +564,7 @@ export function transformChannelToFormDefaults(
       allowInferenceGeo = parsed.allow_inference_geo === true
       allowSpeed = parsed.allow_speed === true
       claudeBetaQuery = parsed.claude_beta_query === true
+      ollamaOpenAIChat = parsed.ollama_openai_chat === true
       disableTaskPollingSleep = parsed.disable_task_polling_sleep === true
       upstreamModelUpdateCheckEnabled =
         parsed.upstream_model_update_check_enabled === true
@@ -589,11 +575,6 @@ export function transformChannelToFormDefaults(
       )
         ? parsed.upstream_model_update_ignored_models.join(',')
         : ''
-      channelProbeEnabled = parsed.channel_probe_enabled !== false
-      channelProbeModels = Array.isArray(parsed.channel_probe_models)
-        ? parsed.channel_probe_models.join(',')
-        : ''
-      codingPlanProvider = parsed.coding_plan_provider || ''
       if (parsed.advanced_custom) {
         advancedCustom = stringifyAdvancedCustomConfig(parsed.advanced_custom)
       }
@@ -602,29 +583,11 @@ export function transformChannelToFormDefaults(
       console.error('Failed to parse channel settings:', error)
     }
   }
-  if (!channelProbeModels) {
-    channelProbeModels =
-      (channel.models || '')
-        .split(/[\n,]/)
-        .map((model) => model.trim())
-        .find(Boolean) || ''
-  }
-  if (!advancedCustom && channel.type === CHANNEL_TYPE_CODING_PLAN) {
-    const config = buildCodingPlanAdvancedCustomConfig(
-      codingPlanProvider || channel.base_url || ''
-    )
-    if (config) {
-      advancedCustom = stringifyAdvancedCustomConfig(config)
-    }
-  }
 
   return {
     name: channel.name || '',
     type: channel.type,
-    base_url:
-      channel.type === CHANNEL_TYPE_CODING_PLAN
-        ? codingPlanProvider || channel.base_url || ''
-        : channel.base_url || '',
+    base_url: channel.base_url || '',
     key: '', // Never populate key from backend for security
     openai_organization: channel.openai_organization || '',
     models: channel.models || '',
@@ -632,16 +595,8 @@ export function transformChannelToFormDefaults(
     model_mapping: channel.model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,
-    test_model:
-      channel.test_model ||
-      (channel.models || '')
-        .split(/[\n,]/)
-        .map((model) => model.trim())
-        .find(Boolean) ||
-      '',
+    test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
-    channel_probe_enabled: channelProbeEnabled,
-    channel_probe_models: channelProbeModels,
     status: channel.status,
     status_code_mapping: channel.status_code_mapping || '',
     tag: channel.tag || '',
@@ -668,6 +623,7 @@ export function transformChannelToFormDefaults(
     allow_inference_geo: allowInferenceGeo,
     allow_speed: allowSpeed,
     claude_beta_query: claudeBetaQuery,
+    ollama_openai_chat: ollamaOpenAIChat,
     disable_task_polling_sleep: disableTaskPollingSleep,
     allow_safety_identifier: allowSafetyIdentifier,
     upstream_model_update_check_enabled: upstreamModelUpdateCheckEnabled,
@@ -689,7 +645,9 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     force_format: formData.force_format || false,
     thinking_to_content: formData.thinking_to_content || false,
     proxy: formData.proxy?.trim() || '',
-    pass_through_body_enabled: formData.pass_through_body_enabled || false,
+    pass_through_body_enabled:
+      formData.type !== CHANNEL_TYPE_ADVANCED_CUSTOM &&
+      formData.pass_through_body_enabled === true,
     responses_websocket_enabled:
       (formData.type === 1 || formData.type === 57) &&
       formData.responses_websocket_enabled === true,
@@ -807,32 +765,15 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.claude_beta_query
   }
 
+  // Only the Ollama adaptor can switch chat completions to the OpenAI-compatible endpoint.
+  if (formData.type === CHANNEL_TYPE_OLLAMA) {
+    settingsObj.ollama_openai_chat = formData.ollama_openai_chat === true
+  } else if ('ollama_openai_chat' in settingsObj) {
+    delete settingsObj.ollama_openai_chat
+  }
+
   settingsObj.disable_task_polling_sleep =
     formData.disable_task_polling_sleep === true
-
-  if (formData.channel_probe_enabled === false) {
-    settingsObj.channel_probe_enabled = false
-  } else {
-    delete settingsObj.channel_probe_enabled
-  }
-  const probeModels = [
-    ...new Set(
-      String(formData.channel_probe_models || '')
-        .split(',')
-        .map((model) => model.trim())
-        .filter(Boolean)
-    ),
-  ]
-  if (probeModels.length > 0) {
-    settingsObj.channel_probe_models = probeModels
-  } else {
-    const firstModel = String(formData.models || '')
-      .split(/[\n,]/)
-      .map((model) => model.trim())
-      .find(Boolean)
-    if (firstModel) settingsObj.channel_probe_models = [firstModel]
-    else delete settingsObj.channel_probe_models
-  }
 
   // Upstream model update settings (for model-fetchable channel types)
   if (MODEL_FETCHABLE_TYPES.has(formData.type)) {
@@ -867,30 +808,8 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     if (advancedCustomConfig) {
       settingsObj.advanced_custom = advancedCustomConfig
     }
-    if ('coding_plan_provider' in settingsObj) {
-      delete settingsObj.coding_plan_provider
-    }
-  } else if (formData.type === CHANNEL_TYPE_CODING_PLAN) {
-    const provider = normalizeCodingPlanProvider(formData.base_url)
-    settingsObj.coding_plan_provider = provider
-    const advancedCustomConfig = parseAdvancedCustomConfig(
-      formData.advanced_custom
-    )
-    if (advancedCustomConfig) {
-      settingsObj.advanced_custom = advancedCustomConfig
-      return JSON.stringify(settingsObj)
-    }
-    const codingPlanConfig = buildCodingPlanAdvancedCustomConfig(provider)
-    if (codingPlanConfig) {
-      settingsObj.advanced_custom = codingPlanConfig
-    }
-  } else {
-    if ('advanced_custom' in settingsObj) {
-      delete settingsObj.advanced_custom
-    }
-    if ('coding_plan_provider' in settingsObj) {
-      delete settingsObj.coding_plan_provider
-    }
+  } else if ('advanced_custom' in settingsObj) {
+    delete settingsObj.advanced_custom
   }
 
   return JSON.stringify(settingsObj)

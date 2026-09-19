@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 
-import { describe, test, expect } from 'vitest'
+import { describe, expect, test } from 'vitest'
 
 import { parseTiersFromExpr } from '../lib/billing-expr'
 import { getBillingModeLabelKey } from '../lib/billing-mode'
@@ -278,7 +278,7 @@ describe('task dynamic pricing', () => {
     assert.ok(summary)
     assert.match(summary.primaryEntries[0]?.formattedRange ?? '', /0[.,]4/)
     assert.match(summary.primaryEntries[0]?.formattedRange ?? '', /0[.,]8/)
-    assert.match(summary.primaryEntries[0]?.formattedRange ?? '', /–/)
+    assert.match(summary.primaryEntries[0]?.formattedRange ?? '', /\S – \S/)
     assert.match(summary.primaryEntries[0]?.formatted ?? '', /0[.,]4/)
   })
 

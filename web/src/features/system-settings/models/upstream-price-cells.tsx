@@ -41,10 +41,7 @@ export function SyncPriceCell(props: { values: PricingSyncValues }) {
     return <span className='text-muted-foreground'>{t('Unset price')}</span>
   }
   if (kind === 'expression') {
-    const parsed = getSyncExpressionPricing(
-      String(props.values.billing_expr),
-      t
-    )
+    const parsed = getSyncExpressionPricing(String(props.values.billing_expr), t)
     return (
       <div className='min-w-0 flex-1 space-y-1'>
         <div className='flex items-center gap-2'>
@@ -60,11 +57,8 @@ export function SyncPriceCell(props: { values: PricingSyncValues }) {
         </div>
         {parsed ? (
           <div className='space-y-2'>
-            {parsed.tiers.map((tier) => (
-              <div
-                key={`${tier.label}-${tier.condition}`}
-                className='space-y-1'
-              >
+            {parsed.tiers.map((tier, index) => (
+              <div key={`${tier.label}-${index}`} className='space-y-1'>
                 {parsed.tiers.length > 1 && (
                   <div className='text-muted-foreground text-xs!'>
                     {tier.condition || tier.label || t('Default')}
@@ -79,11 +73,7 @@ export function SyncPriceCell(props: { values: PricingSyncValues }) {
               </div>
             )}
           </div>
-        ) : (
-          <code className='block text-xs! leading-relaxed break-all whitespace-pre-wrap'>
-            {props.values.billing_expr}
-          </code>
-        )}
+        ) : <code className='block text-xs! leading-relaxed break-all whitespace-pre-wrap'>{props.values.billing_expr}</code>}
       </div>
     )
   }
@@ -99,9 +89,7 @@ export function SyncPriceCell(props: { values: PricingSyncValues }) {
   return <SyncPriceMetrics lines={lines} />
 }
 
-function SyncPriceMetrics(props: {
-  lines: Array<{ label: string; value: string }>
-}) {
+function SyncPriceMetrics(props: { lines: Array<{ label: string; value: string }> }) {
   return (
     <dl className='flex min-w-0 flex-1 flex-wrap gap-x-4 gap-y-2'>
       {props.lines.map((line) => (

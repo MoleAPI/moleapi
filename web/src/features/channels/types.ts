@@ -80,6 +80,7 @@ export type Channel = z.infer<typeof channelSchema>
 // ============================================================================
 
 export interface ChannelSettings {
+  task_plugin_key?: string
   force_format?: boolean
   thinking_to_content?: boolean
   proxy?: string
@@ -103,15 +104,13 @@ export interface ChannelOtherSettings {
   allow_inference_geo?: boolean
   allow_speed?: boolean
   claude_beta_query?: boolean
+  ollama_openai_chat?: boolean
   disable_task_polling_sleep?: boolean
   upstream_model_update_check_enabled?: boolean
   upstream_model_update_auto_sync_enabled?: boolean
   upstream_model_update_ignored_models?: string[]
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
-  channel_probe_enabled?: boolean
-  channel_probe_models?: string[]
-  coding_plan_provider?: string
   advanced_custom?: AdvancedCustomConfig
 }
 
@@ -125,6 +124,7 @@ export interface AdvancedCustomRoute {
   converter?: AdvancedCustomConverter
   models?: string[]
   auth?: AdvancedCustomRouteAuth
+  pass_through_body_enabled?: boolean
 }
 
 export interface AdvancedCustomRouteAuth {
@@ -136,12 +136,8 @@ export interface AdvancedCustomRouteAuth {
 export type AdvancedCustomConverter =
   | 'none'
   | 'anthropic_messages_to_openai_chat_completions'
-  | 'claude_messages_to_openai_responses'
-  | 'gemini_generate_content_to_claude_messages'
-  | 'openai_completions_to_openai_chat_completions'
   | 'openai_chat_completions_to_anthropic_messages'
   | 'openai_chat_completions_to_openai_responses'
-  | 'openai_responses_to_claude_messages'
   | 'openai_responses_to_openai_chat_completions'
   | 'openai_responses_to_gemini_generate_content'
   | 'gemini_generate_content_to_openai_chat_completions'
@@ -186,6 +182,10 @@ export interface ChannelOpsResponse {
   message?: string
   data?: {
     retry_times: number
+    request_policy?: {
+      automatic_disable: boolean
+      source: string
+    }
   }
 }
 
@@ -194,20 +194,11 @@ export interface ChannelTestResponse {
   message?: string
   error_code?: string
   time?: number
-  probe?: {
-    mode: 'hi' | 'intelligence' | 'custom'
-    question_id?: string
-    question_kind?: string
-    level?: 'basic' | 'standard' | 'advanced'
-    outcome: 'pass' | 'wrong' | 'no_answer' | 'completed'
-  }
   data?: {
     response_time?: number
     error?: string
   }
 }
-
-export type ChannelTestProbe = NonNullable<ChannelTestResponse['probe']>
 
 export interface ChannelBalanceResponse {
   success: boolean
@@ -286,7 +277,7 @@ export type ChannelSortOrder = 'asc' | 'desc'
 export interface GetChannelsParams {
   p?: number
   page_size?: number
-  status?: string // 'enabled', 'disabled', 'auto', or empty for all
+  status?: string // 'enabled', 'disabled', or empty for all
   type?: number
   group?: string
   id_sort?: boolean
