@@ -228,7 +228,7 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 	conversations := make([]zohoDeskConversation, 0, len(result.Data))
 	for _, thread := range result.Data {
 		content := thread.Content
-		if content == "" && thread.FullContentURL != "" {
+		if content == "" && thread.ID != "" {
 			var full zohoDeskThread
 			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/fullContent", nil, &full); err == nil {
 				content = full.Content
@@ -241,7 +241,7 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 			content = thread.Summary
 		}
 		visibility := thread.Visibility
-		if visibility == "" && thread.Direction == "in" && thread.Channel == "EMAIL" {
+		if thread.Direction == "in" && (thread.Channel == "EMAIL" || visibility == "private" || visibility == "") {
 			visibility = "public"
 		}
 		conversations = append(conversations, zohoDeskConversation{
