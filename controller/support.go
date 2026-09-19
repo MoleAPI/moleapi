@@ -236,6 +236,18 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 					thread.ContentType = full.ContentType
 				}
 			}
+			if content == "" {
+				var original zohoDeskThread
+				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/originalContent", nil, &original); err == nil {
+					content = original.Content
+				}
+			}
+			if content == "" {
+				var detail zohoDeskThread
+				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID, nil, &detail); err == nil {
+					content = detail.Content
+				}
+			}
 		}
 		if content == "" {
 			content = thread.Summary
