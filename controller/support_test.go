@@ -195,6 +195,8 @@ func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
 			_, _ = w.Write([]byte(`{"data":[]}`))
 		case "/api/v1/tickets/43/latestThread":
 			_, _ = w.Write([]byte(`{"id":"thread-2","direction":"in","channel":"EMAIL","createdTime":"2026-09-19T06:26:31Z","content":"Latest inbound email body","contentType":"text/plain"}`))
+		case "/api/v1/tickets/44/comments":
+			_, _ = w.Write([]byte(`{"data":[{"id":"comment-1","content":"Comment inbound email body","isPublic":true}]}`))
 		default:
 			http.NotFound(w, r)
 		}
@@ -216,6 +218,14 @@ func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, threads, 1)
 	assert.Equal(t, "Latest inbound email body", threads[0].Content)
+	comments, err := loadSupportEmailComments(zohoDeskConfig{
+		ClientID: "client", ClientSecret: "secret", RefreshToken: "refresh",
+		OrgID: "org", APIDomain: server.URL, AccountsDomain: server.URL,
+	}, "44")
+	require.NoError(t, err)
+	require.Len(t, comments, 1)
+	assert.Equal(t, "Comment inbound email body", comments[0].Content)
+	assert.Equal(t, "in", comments[0].Direction)
 }
 
 func TestSupportTicketWorkflow(t *testing.T) {

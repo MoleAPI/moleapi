@@ -267,6 +267,23 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 	return conversations, nil
 }
 
+func loadSupportEmailComments(cfg zohoDeskConfig, ticketID string) ([]zohoDeskConversation, error) {
+	var result struct {
+		Data []zohoDeskConversation `json:"data"`
+	}
+	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/comments?limit=100&from=0", nil, &result); err != nil {
+		return nil, err
+	}
+	for i := range result.Data {
+		result.Data[i].Type = "comment"
+		if result.Data[i].Direction == "" {
+			result.Data[i].Direction = "in"
+		}
+		result.Data[i].IsPublic = result.Data[i].IsPublic || result.Data[i].Visibility == "public"
+	}
+	return result.Data, nil
+}
+
 type zohoDeskAttachment struct {
 	ID          string `json:"id"`
 	Name        string `json:"name"`
@@ -830,14 +847,33 @@ func GetSupportTicket(c *gin.Context) {
 	}
 	// Zoho stores inbound email bodies as threads. The conversations endpoint
 	// can be empty for email-created tickets even though the ticket has content.
-	if len(conversations.Data) == 0 {
+	usedEmailFallback := len(conversations.Data) == 0
+	if usedEmailFallback {
 		if threads, err := loadSupportEmailThreads(cfg, ticket.ID); err == nil {
 			conversations.Data = threads
-			for _, message := range threads {
-				if ticket.Description == "" && message.Content != "" {
-					ticket.Description = message.Content
-					break
-				}
+		}
+	}
+	contentAvailable := false
+	for _, message := range conversations.Data {
+		if strings.TrimSpace(message.Content) != "" || strings.TrimSpace(message.Summary) != "" {
+			contentAvailable = true
+			break
+		}
+	}
+	if usedEmailFallback && !contentAvailable {
+		if comments, err := loadSupportEmailComments(cfg, ticket.ID); err == nil && len(comments) > 0 {
+			conversations.Data = append(conversations.Data, comments...)
+		}
+	}
+	if usedEmailFallback && ticket.Description == "" {
+		for _, message := range conversations.Data {
+			content := message.Content
+			if content == "" {
+				content = message.Summary
+			}
+			if strings.TrimSpace(content) != "" {
+				ticket.Description = content
+				break
 			}
 		}
 	}
