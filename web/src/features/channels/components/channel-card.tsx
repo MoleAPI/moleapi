@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { flexRender, type Row } from '@tanstack/react-table'
-import { memo } from 'react'
+import { memo, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { GroupBadge } from '@/components/group-badge'
@@ -60,7 +60,9 @@ function ChannelCardComponent({
   }
 
   const fieldLabels: Record<string, string> = {
-    balance: t('Used / Remaining'),
+    used_quota: t('Used'),
+    success_rate: t('Success rate'),
+    reliability: t('Reliability'),
     response_time: t('Response'),
     test_time: t('Last Tested'),
   }
@@ -74,7 +76,14 @@ function ChannelCardComponent({
   const actionsCell = renderCell('actions')
   const priorityCell = renderCell('priority')
   const weightCell = renderCell('weight')
-  const balanceCell = renderCell('balance')
+  const usedCell = renderCell('used_quota')
+  const successCell = renderCell('success_rate')
+  const reliabilityCell = renderCell('reliability')
+  const metricCells: Array<[string, ReactNode]> = [
+    ['used_quota', usedCell],
+    ['success_rate', successCell],
+    ['reliability', reliabilityCell],
+  ]
   const responseCell = renderCell('response_time')
   const testCell = renderCell('test_time')
 
@@ -121,15 +130,17 @@ function ChannelCardComponent({
               )}
               {nameCell}
             </div>
-            <div className='min-w-0'>
-              <div className={cn('mb-1', labelClass)}>
-                {fieldLabels.balance}
-              </div>
-              <div className='min-w-0 overflow-hidden text-sm'>
-                {balanceCell ?? (
-                  <span className='text-muted-foreground'>-</span>
-                )}
-              </div>
+            <div className='grid grid-cols-3 gap-2'>
+              {metricCells.map(([key, cell]) => (
+                <div key={key} className='min-w-0'>
+                  <div className={cn('mb-1', labelClass)}>
+                    {fieldLabels[key]}
+                  </div>
+                  <div className='min-w-0 overflow-hidden text-sm'>
+                    {cell ?? <span className='text-muted-foreground'>-</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
