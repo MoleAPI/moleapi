@@ -433,7 +433,7 @@ func isNilRequest(request any) bool {
 	}
 }
 
-func convertChatRequestToResponses(c context.Context, _ convmeta.Meta, request any) (any, error) {
+func convertChatRequestToResponses(_ context.Context, _ convmeta.Meta, request any) (any, error) {
 	chatRequest, ok := request.(*dto.GeneralOpenAIRequest)
 	if !ok {
 		if value, ok := request.(dto.GeneralOpenAIRequest); ok {
@@ -443,10 +443,10 @@ func convertChatRequestToResponses(c context.Context, _ convmeta.Meta, request a
 	if chatRequest == nil {
 		return nil, fmt.Errorf("expected OpenAI chat completions request, got %T", request)
 	}
-	return oaichat.ChatCompletionsRequestToResponsesRequest(c, chatRequest)
+	return oaichat.ChatCompletionsRequestToResponsesRequest(chatRequest)
 }
 
-func convertClaudeRequestToOpenAI(c context.Context, info convmeta.Meta, request any) (any, error) {
+func convertClaudeRequestToOpenAI(_ context.Context, info convmeta.Meta, request any) (any, error) {
 	claudeRequest, ok := request.(*dto.ClaudeRequest)
 	if !ok {
 		if value, ok := request.(dto.ClaudeRequest); ok {
@@ -456,10 +456,10 @@ func convertClaudeRequestToOpenAI(c context.Context, info convmeta.Meta, request
 	if claudeRequest == nil {
 		return nil, fmt.Errorf("expected Anthropic Messages request, got %T", request)
 	}
-	return claudemessages.ClaudeMessagesRequestToOpenAIChat(c, *claudeRequest, info)
+	return claudemessages.ClaudeMessagesRequestToOpenAIChat(*claudeRequest, info)
 }
 
-func convertClaudeRequestToOpenAIResponses(c context.Context, info convmeta.Meta, request any) (any, error) {
+func convertClaudeRequestToOpenAIResponses(_ context.Context, info convmeta.Meta, request any) (any, error) {
 	claudeRequest, ok := request.(*dto.ClaudeRequest)
 	if !ok {
 		if value, ok := request.(dto.ClaudeRequest); ok {
@@ -469,7 +469,7 @@ func convertClaudeRequestToOpenAIResponses(c context.Context, info convmeta.Meta
 	if claudeRequest == nil {
 		return nil, fmt.Errorf("expected Anthropic Messages request, got %T", request)
 	}
-	return claudemessages.ClaudeMessagesRequestToOpenAIResponses(c, *claudeRequest, info)
+	return claudemessages.ClaudeMessagesRequestToOpenAIResponses(*claudeRequest, info)
 }
 
 func convertOpenAIRequestToClaude(c context.Context, info convmeta.Meta, request any) (any, error) {
@@ -485,7 +485,7 @@ func convertOpenAIRequestToClaude(c context.Context, info convmeta.Meta, request
 	return oaichat.OpenAIChatRequestToClaudeMessages(c, info, *openAIRequest)
 }
 
-func convertGeminiRequestToOpenAI(c context.Context, info convmeta.Meta, request any) (any, error) {
+func convertGeminiRequestToOpenAI(_ context.Context, info convmeta.Meta, request any) (any, error) {
 	geminiRequest, ok := request.(*dto.GeminiChatRequest)
 	if !ok {
 		if value, ok := request.(dto.GeminiChatRequest); ok {
@@ -495,7 +495,7 @@ func convertGeminiRequestToOpenAI(c context.Context, info convmeta.Meta, request
 	if geminiRequest == nil {
 		return nil, fmt.Errorf("expected Gemini generateContent request, got %T", request)
 	}
-	return geminichat.GeminiGenerateContentRequestToOpenAIChat(c, geminiRequest, info)
+	return geminichat.GeminiGenerateContentRequestToOpenAIChat(geminiRequest, info)
 }
 
 func convertOpenAIRequestToGemini(c context.Context, info convmeta.Meta, request any) (any, error) {
@@ -532,7 +532,7 @@ func convertOpenAIResponsesRequestToGeminiChat(c context.Context, info convmeta.
 	return oairesponses.OpenAIResponsesRequestToGeminiChat(c, &prepared, info)
 }
 
-func convertResponsesRequestToChat(c context.Context, _ convmeta.Meta, request any) (any, error) {
+func convertResponsesRequestToChat(_ context.Context, _ convmeta.Meta, request any) (any, error) {
 	responsesRequest, ok := request.(*dto.OpenAIResponsesRequest)
 	if !ok {
 		if value, ok := request.(dto.OpenAIResponsesRequest); ok {
@@ -542,5 +542,5 @@ func convertResponsesRequestToChat(c context.Context, _ convmeta.Meta, request a
 	if responsesRequest == nil {
 		return nil, fmt.Errorf("expected OpenAI responses request, got %T", request)
 	}
-	return oairesponses.ResponsesRequestToChatCompletionsRequest(c, responsesRequest)
+	return oairesponses.ResponsesRequestToChatCompletionsRequest(responsesRequest)
 }

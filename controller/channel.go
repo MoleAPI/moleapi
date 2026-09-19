@@ -164,25 +164,8 @@ func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm
 }
 
 func GetChannelOps(c *gin.Context) {
-	snapshot := model.CurrentRequestPolicy()
-	automaticDisable, source := snapshot.AutoDisable, "global"
-	if value, present := c.GetQuery("auto_ban"); present {
-		autoBan, err := strconv.ParseBool(value)
-		if err != nil {
-			common.ApiError(c, err)
-			return
-		}
-		automaticDisable = snapshot.AutoDisable && autoBan
-		if snapshot.AutoDisable {
-			source = "global_and_channel"
-			if !autoBan {
-				source = "channel"
-			}
-		}
-	}
 	common.ApiSuccess(c, gin.H{
-		"retry_times":    snapshot.RetryTimes,
-		"request_policy": gin.H{"automatic_disable": automaticDisable, "source": source},
+		"retry_times": common.RetryTimes,
 	})
 }
 
@@ -592,12 +575,6 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 
 	if channel.Type == constant.ChannelTypeNewAPI && strings.TrimSpace(channel.GetBaseURL()) == "" {
 		return fmt.Errorf("New API channel base URL cannot be empty")
-	}
-	if channel.Type == constant.ChannelTypeVLLM && strings.TrimSpace(channel.GetBaseURL()) == "" {
-		return fmt.Errorf("vLLM channel base URL cannot be empty")
-	}
-	if channel.Type == constant.ChannelTypeSGLang && strings.TrimSpace(channel.GetBaseURL()) == "" {
-		return fmt.Errorf("SGLang channel base URL cannot be empty")
 	}
 
 	// 如果是添加操作，检查 channel 和 key 是否为空

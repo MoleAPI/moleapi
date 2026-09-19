@@ -93,8 +93,7 @@ export function buildModelRatioColumns({
         const showTaskPricingBadge = isTaskModel && hasConfiguredTaskPricing
         const showTieredBadge =
           row.original.billingMode === 'tiered_expr' && !isTaskModel
-        const showUnconfiguredTaskBadge =
-          isTaskModel && !hasConfiguredTaskPricing
+        const showUnconfiguredTaskBadge = isTaskModel && !hasConfiguredTaskPricing
 
         return (
           <div className='flex min-w-0 items-center gap-2 font-medium'>
@@ -152,10 +151,7 @@ export function buildModelRatioColumns({
       ),
       filterFn: (row, id, value) => {
         if (filterBySelectedValues(row.getValue(id), value)) return true
-        if (
-          !Array.isArray(value) ||
-          !value.includes(TASK_PRICING_MODE_FILTER)
-        ) {
+        if (!Array.isArray(value) || !value.includes(TASK_PRICING_MODE_FILTER)) {
           return false
         }
         return (

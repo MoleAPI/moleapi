@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -31,7 +31,6 @@ import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   buildPricingChanges,
-  invalidateModelPricing,
   useModelPricing,
   useSaveModelPricing,
   type ModelPricingConfig,
@@ -39,11 +38,9 @@ import {
 import { pricingOptions } from '@/features/model-pricing/pricing'
 import { handleServerError } from '@/lib/handle-server-error'
 
-import { exportModelPricing, importModelPricing } from '../api'
 import { SettingsPageTitleStatusPortal } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
-import type { ModelPricingExport } from '../types'
 import { positiveIntegerSchema } from '../utils/numeric-field'
 import { GroupRatioForm } from './group-ratio-form'
 import { ModelRatioForm } from './model-ratio-form'
@@ -125,7 +122,6 @@ const createModelSchema = (t: Translate) =>
     CreateCacheRatio: createJsonStringField(t),
     CompletionRatio: createJsonStringField(t),
     ImageRatio: createJsonStringField(t),
-    ImageOutputRatio: createJsonStringField(t),
     AudioRatio: createJsonStringField(t),
     AudioCompletionRatio: createJsonStringField(t),
     ExposeRatioEnabled: z.boolean(),
@@ -177,7 +173,6 @@ export function RatioSettingsCard({
 }: RatioSettingsCardProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
-  const queryClient = useQueryClient()
   const [confirmOpen, setConfirmOpen] = useState(false)
 
   const pricingQuery = useModelPricing()
@@ -226,45 +221,6 @@ export function RatioSettingsCard({
     onError: (error) => handleServerError(error),
   })
 
-  const exportPricingMutation = useMutation({
-    mutationFn: exportModelPricing,
-    onSuccess: (data) => {
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: 'application/json',
-      })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `model-pricing-${new Date().toISOString().slice(0, 10)}.json`
-      a.click()
-      URL.revokeObjectURL(url)
-      toast.success(t('Model pricing exported'))
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || t('Failed to export model pricing'))
-    },
-  })
-
-  const importPricingMutation = useMutation({
-    mutationFn: importModelPricing,
-    onSuccess: (data) => {
-      if (!data.success) {
-        toast.error(data.message || t('Failed to import model pricing'))
-        return
-      }
-      toast.success(
-        t('Imported {{count}} pricing settings', {
-          count: data.data?.updated_options || 0,
-        })
-      )
-      setPricingBaseline(null)
-      return invalidateModelPricing(queryClient)
-    },
-    onError: (error: Error) => {
-      toast.error(error.message || t('Failed to import model pricing'))
-    },
-  })
-
   const modelNormalizedDefaults = useRef({
     ModelPrice: normalizeJsonString(modelDefaults.ModelPrice),
     ModelRatio: normalizeJsonString(modelDefaults.ModelRatio),
@@ -272,7 +228,6 @@ export function RatioSettingsCard({
     CreateCacheRatio: normalizeJsonString(modelDefaults.CreateCacheRatio),
     CompletionRatio: normalizeJsonString(modelDefaults.CompletionRatio),
     ImageRatio: normalizeJsonString(modelDefaults.ImageRatio),
-    ImageOutputRatio: normalizeJsonString(modelDefaults.ImageOutputRatio),
     AudioRatio: normalizeJsonString(modelDefaults.AudioRatio),
     AudioCompletionRatio: normalizeJsonString(
       modelDefaults.AudioCompletionRatio
@@ -312,7 +267,6 @@ export function RatioSettingsCard({
       CreateCacheRatio: formatJsonForTextarea(modelDefaults.CreateCacheRatio),
       CompletionRatio: formatJsonForTextarea(modelDefaults.CompletionRatio),
       ImageRatio: formatJsonForTextarea(modelDefaults.ImageRatio),
-      ImageOutputRatio: formatJsonForTextarea(modelDefaults.ImageOutputRatio),
       AudioRatio: formatJsonForTextarea(modelDefaults.AudioRatio),
       AudioCompletionRatio: formatJsonForTextarea(
         modelDefaults.AudioCompletionRatio
@@ -347,7 +301,6 @@ export function RatioSettingsCard({
       CreateCacheRatio: normalizeJsonString(modelDefaults.CreateCacheRatio),
       CompletionRatio: normalizeJsonString(modelDefaults.CompletionRatio),
       ImageRatio: normalizeJsonString(modelDefaults.ImageRatio),
-      ImageOutputRatio: normalizeJsonString(modelDefaults.ImageOutputRatio),
       AudioRatio: normalizeJsonString(modelDefaults.AudioRatio),
       AudioCompletionRatio: normalizeJsonString(
         modelDefaults.AudioCompletionRatio
@@ -367,7 +320,6 @@ export function RatioSettingsCard({
       CreateCacheRatio: formatJsonForTextarea(modelDefaults.CreateCacheRatio),
       CompletionRatio: formatJsonForTextarea(modelDefaults.CompletionRatio),
       ImageRatio: formatJsonForTextarea(modelDefaults.ImageRatio),
-      ImageOutputRatio: formatJsonForTextarea(modelDefaults.ImageOutputRatio),
       AudioRatio: formatJsonForTextarea(modelDefaults.AudioRatio),
       AudioCompletionRatio: formatJsonForTextarea(
         modelDefaults.AudioCompletionRatio
@@ -414,7 +366,6 @@ export function RatioSettingsCard({
         CreateCacheRatio: normalizeJsonString(values.CreateCacheRatio),
         CompletionRatio: normalizeJsonString(values.CompletionRatio),
         ImageRatio: normalizeJsonString(values.ImageRatio),
-        ImageOutputRatio: normalizeJsonString(values.ImageOutputRatio),
         AudioRatio: normalizeJsonString(values.AudioRatio),
         AudioCompletionRatio: normalizeJsonString(values.AudioCompletionRatio),
         ExposeRatioEnabled: values.ExposeRatioEnabled,
@@ -502,26 +453,6 @@ export function RatioSettingsCard({
     resetMutate()
   }, [resetMutate])
 
-  const { mutate: exportPricingMutate } = exportPricingMutation
-  const handleExportPricing = useCallback(() => {
-    exportPricingMutate()
-  }, [exportPricingMutate])
-
-  const { mutate: importPricingMutate } = importPricingMutation
-  const handleImportPricing = useCallback(
-    async (file: File) => {
-      try {
-        const data = JSON.parse(await file.text()) as ModelPricingExport
-        importPricingMutate(data)
-      } catch (error) {
-        toast.error(
-          (error as Error)?.message || t('Invalid model pricing backup')
-        )
-      }
-    },
-    [importPricingMutate, t]
-  )
-
   const tabLabels: Record<RatioTabId, string> = {
     models: 'Model prices',
     'unset-models': 'Unset price models',
@@ -570,10 +501,6 @@ export function RatioSettingsCard({
             savedValues={savedModelValues}
             onSave={saveModelRatios}
             onReset={handleResetRatios}
-            onExport={handleExportPricing}
-            onImport={handleImportPricing}
-            isExporting={exportPricingMutation.isPending}
-            isImporting={importPricingMutation.isPending}
             isSaving={updateOption.isPending || savePricing.isPending}
             isResetting={resetMutation.isPending}
             variant={tab === 'unset-models' ? 'unset' : 'default'}

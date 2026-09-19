@@ -140,7 +140,8 @@ export function ChannelProviderPicker(props: ChannelProviderPickerProps) {
         const isCustom =
           option.value === 8 || option.value === CHANNEL_TYPE_ADVANCED_CUSTOM
         const isGateway =
-          option.value === CHANNEL_TYPE_NEW_API || option.value === 60
+          option.value === CHANNEL_TYPE_NEW_API ||
+          option.value === CHANNEL_TYPE_SUB2API
         if (filter === 'gateway' && !isGateway) continue
         if (filter === 'custom' && !isCustom) continue
         if (filter === 'builtin' && isCustom) continue

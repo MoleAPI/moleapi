@@ -40,23 +40,7 @@ const SECURITY_SECTIONS = [
       />
     ),
   },
-  {
-    id: 'sensitive-words',
-    titleKey: 'Sensitive Words',
-    build: (settings: SecuritySettings) => (
-      <SensitiveWordsSection
-        defaultValues={{
-          CheckSensitiveEnabled: settings.CheckSensitiveEnabled,
-          CheckSensitiveOnPromptEnabled: settings.CheckSensitiveOnPromptEnabled,
-          CheckSensitiveWaffoPancakeEnabled:
-            settings.CheckSensitiveWaffoPancakeEnabled,
-          CheckSensitiveModerationEnabled:
-            settings.CheckSensitiveModerationEnabled,
-          SensitiveWords: settings.SensitiveWords,
-        }}
-      />
-    ),
-  },
+
   {
     id: 'ssrf',
     titleKey: 'SSRF Protection',

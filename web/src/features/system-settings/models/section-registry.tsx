@@ -63,38 +63,7 @@ const MODELS_SECTIONS = [
       />
     ),
   },
-  {
-    id: 'routing-reliability',
-    titleKey: 'Routing Reliability',
-    build: (settings: ModelSettings) => (
-      <RoutingReliabilitySection
-        defaultValues={{
-          RetryTimes: settings.RetryTimes,
-          ChannelDisableThreshold: settings.ChannelDisableThreshold,
-          AutomaticDisableChannelEnabled:
-            settings.AutomaticDisableChannelEnabled,
-          AutomaticEnableChannelEnabled: settings.AutomaticEnableChannelEnabled,
-          AutomaticDisableKeywords: settings.AutomaticDisableKeywords,
-          AutomaticDisableStatusCodes: settings.AutomaticDisableStatusCodes,
-          AutomaticRetryStatusCodes: settings.AutomaticRetryStatusCodes,
-          'monitor_setting.auto_test_channel_enabled':
-            settings['monitor_setting.auto_test_channel_enabled'],
-          'monitor_setting.auto_test_channel_minutes':
-            settings['monitor_setting.auto_test_channel_minutes'],
-          'monitor_setting.channel_test_concurrency':
-            settings['monitor_setting.channel_test_concurrency'],
-          'monitor_setting.channel_test_type':
-            settings['monitor_setting.channel_test_type'],
-          'monitor_setting.channel_test_custom_prompt':
-            settings['monitor_setting.channel_test_custom_prompt'],
-          'monitor_setting.channel_test_custom_answer':
-            settings['monitor_setting.channel_test_custom_answer'],
-          'monitor_setting.channel_test_mode':
-            settings['monitor_setting.channel_test_mode'],
-        }}
-      />
-    ),
-  },
+
   {
     id: 'gemini',
     titleKey: 'Gemini',

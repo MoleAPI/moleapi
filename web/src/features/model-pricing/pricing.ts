@@ -36,7 +36,6 @@ export const PRICING_KEYS = [
   'CacheRatio',
   'CreateCacheRatio',
   'ImageRatio',
-  'ImageOutputRatio',
   'AudioRatio',
   'AudioCompletionRatio',
   'billing_setting.billing_mode',
@@ -99,10 +98,6 @@ export function modelPricingDisplay(
       values.ImageRatio === undefined || Number(values.ImageRatio) === 1
         ? undefined
         : Number(values.ImageRatio),
-    image_output_ratio:
-      values.ImageOutputRatio === undefined
-        ? undefined
-        : Number(values.ImageOutputRatio),
     audio_ratio:
       values.AudioRatio === undefined ? undefined : Number(values.AudioRatio),
     audio_completion_ratio:
@@ -128,7 +123,6 @@ export const pricingFieldMap = {
   cacheRatio: 'CacheRatio',
   createCacheRatio: 'CreateCacheRatio',
   imageRatio: 'ImageRatio',
-  imageOutputRatio: 'ImageOutputRatio',
   audioRatio: 'AudioRatio',
   audioCompletionRatio: 'AudioCompletionRatio',
 } as const
@@ -157,7 +151,6 @@ export function pricingRows(options: PricingOptions): ModelPricingSnapshot[] {
     cacheRatio: options.CacheRatio,
     createCacheRatio: options.CreateCacheRatio,
     imageRatio: options.ImageRatio,
-    imageOutputRatio: options.ImageOutputRatio,
     audioRatio: options.AudioRatio,
     audioCompletionRatio: options.AudioCompletionRatio,
     billingMode: options['billing_setting.billing_mode'],

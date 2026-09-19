@@ -17,11 +17,19 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createJSONStorage } from 'zustand/middleware'
 
+import { api } from '@/lib/api'
 import {
   DEFAULT_CURRENCY_CONFIG,
   useSystemConfigStore,
@@ -107,7 +115,7 @@ describe('model cards', () => {
       <ModelCard model={model} onClick={vi.fn()} tokenUnit='K' />
     )
     expect(screen.getByText('$0.01')).toBeVisible()
-    expect(screen.getAllByText('/ request')).toHaveLength(2)
+    expect(screen.getByText('/ request')).toBeVisible()
     rerender(<ModelCard model={model} onClick={vi.fn()} tokenUnit='M' />)
     expect(screen.getByText('$0.01')).toBeVisible()
     expect(screen.queryByText('/ 1M')).not.toBeInTheDocument()
@@ -162,9 +170,7 @@ describe('model cards', () => {
       })
     ).toBeVisible()
     expect(screen.getByText('No description available.')).toBeVisible()
-    expect(
-      within(metrics).getByRole('button', { name: 'Details' })
-    ).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Details' })).toBeEnabled()
   })
 
   it('uses fixed spacing between hourly status bars', () => {
@@ -172,14 +178,7 @@ describe('model cards', () => {
     const statusStrip = screen.getByRole('img', {
       name: 'Recent success-rate samples; gray bars indicate missing data.',
     })
-    expect(statusStrip).toHaveClass('gap-px', 'w-20')
-    const metrics = screen.getByLabelText(
-      'Performance metrics for the last 24 hours'
-    )
-    expect(metrics).toHaveClass('ml-auto', 'w-auto')
-    expect(metrics.parentElement).toContainElement(
-      screen.getByRole('heading', { name: 'example-model' })
-    )
+    expect(statusStrip).toHaveClass('gap-px')
     expect(statusStrip).not.toHaveClass('justify-between')
   })
 
@@ -205,18 +204,30 @@ describe('model cards', () => {
       />
     )
 
-    for (const group of groups.slice(0, 2)) {
-      expect(screen.getByText(group)).toBeVisible()
+    const groupField = screen.getByText('Groups').parentElement
+    const endpointField = screen.getByText('Endpoints').parentElement
+    if (!groupField || !endpointField) {
+      throw new Error('Expected labeled group and endpoint fields')
     }
-    expect(screen.queryByText('Endpoints:')).not.toBeInTheDocument()
-    for (const endpoint of endpoints) {
-      expect(screen.getByText(endpoint)).toHaveAttribute('data-slot', 'badge')
-    }
-    for (const tag of tags.slice(0, 5)) {
-      expect(screen.getByText(tag)).toBeVisible()
-    }
-    expect(screen.getByText('+1')).toHaveAttribute('title', 'pro')
-    expect(screen.getByText('Token-based')).toBeVisible()
+    const tagField = screen.getByRole('group', { name: 'Tags' })
+    expect(within(groupField).getByText(groups[0])).toBeVisible()
+    expect(within(groupField).getByText('+2')).toHaveAttribute(
+      'title',
+      groups.slice(1).join(', ')
+    )
+    expect(
+      within(endpointField).getByText('openai-response, openai')
+    ).toHaveAttribute('title', endpoints.join(', '))
+    expect(within(endpointField).getByText('+3')).toBeVisible()
+    expect(
+      within(tagField).getByText('video-generation, high-resolution')
+    ).toHaveAttribute('title', tags.join(', '))
+    expect(within(tagField).getByText('+4')).toBeVisible()
+    expect(
+      within(screen.getByRole('group', { name: 'Pricing' })).getByText(
+        'Token-based'
+      )
+    ).toBeVisible()
   })
 
   it('omits metadata fields when the model has no groups, endpoints or tags', () => {
@@ -300,11 +311,9 @@ describe('model cards', () => {
         tokenUnit='K'
       />
     )
-    expect(screen.getByText(/\$0.6/).parentElement).toHaveTextContent(
-      /\$0.6\s*\/\s*request/
-    )
+    expect(screen.getByText(/\$0.6/)).toHaveTextContent(/\$0.6\s*\/\s*request/)
     expect(screen.queryByText(/1K|1M/)).not.toBeInTheDocument()
-    expect(screen.getAllByText('Per Request')).toHaveLength(2)
+    expect(screen.getAllByText('Per Request')).toHaveLength(1)
     expect(screen.queryByText('Per-request')).not.toBeInTheDocument()
   })
 
@@ -348,7 +357,7 @@ describe('model cards', () => {
       />
     )
     expect(screen.getByText(/0.4.*0.8/)).toHaveTextContent(/0.4 – \$0.8/)
-    expect(screen.getAllByText(/^\/\s*s$/)).toHaveLength(2)
+    expect(screen.getByText(/^\/\s*s$/)).toBeVisible()
     expect(screen.queryByText(/1K|1M/)).not.toBeInTheDocument()
   })
 
@@ -362,8 +371,8 @@ describe('model cards', () => {
       />
     )
     expect(
-      screen.getAllByText('Usage-based billing · price not configured')
-    ).toHaveLength(2)
+      screen.getByText('Usage-based billing · price not configured')
+    ).toBeVisible()
     expect(screen.queryByText('Input')).not.toBeInTheDocument()
   })
 
@@ -389,7 +398,7 @@ describe('model cards', () => {
     expect(screen.getByText('$42 – $70').parentElement).toHaveTextContent(
       '$42 – $70 / 1M token'
     )
-    expect(screen.getAllByText(/480p · 5s ≈/)).toHaveLength(2)
+    expect(screen.getByText(/480p · 5s ≈/)).toBeVisible()
   })
 
   it('keeps an unrecognized expression visible with the special billing message', () => {
@@ -409,13 +418,24 @@ describe('model cards', () => {
     expect(screen.getByText(expression)).toBeVisible()
   })
 
-  it('keeps browsing and neutral health placeholders when the parent has no metrics', async () => {
+  it('keeps browsing and neutral health placeholders available after the metrics request fails', async () => {
+    const request = vi
+      .spyOn(api, 'get')
+      .mockRejectedValue(new Error('metrics unavailable'))
     const onModelClick = vi.fn()
     render(
       <QueryClientProvider client={queryClient}>
         <ModelCardGrid models={[pricingModel()]} onModelClick={onModelClick} />
       </QueryClientProvider>
     )
+    await waitFor(() =>
+      expect(
+        queryClient.getQueryState(['perf-metrics-summary', 24])?.status
+      ).toBe('error')
+    )
+    expect(request).toHaveBeenCalledWith('/api/perf-metrics/summary', {
+      params: { hours: 24 },
+    })
     expect(
       within(
         screen.getByLabelText('Performance metrics for the last 24 hours')
@@ -448,6 +468,24 @@ describe('model cards', () => {
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled()
     await user.click(screen.getByRole('button', { name: 'Previous page' }))
     expect(screen.getByRole('heading', { name: 'model-1' })).toBeVisible()
+  })
+
+  it('switches the card grid to three columns at the xl breakpoint instead of 2xl', () => {
+    queryClient.setQueryData(['perf-metrics-summary', 24], {
+      success: true,
+      data: { models: [] },
+    })
+    render(
+      <QueryClientProvider client={queryClient}>
+        <ModelCardGrid models={[pricingModel()]} onModelClick={vi.fn()} />
+      </QueryClientProvider>
+    )
+    const grid = screen
+      .getByRole('heading', { name: 'example-model' })
+      .closest('.grid')
+    expect(grid).toHaveClass('xl:grid-cols-3')
+    expect(grid).not.toHaveClass('2xl:grid-cols-3')
+    expect(grid).not.toHaveClass('min-[1440px]:grid-cols-3')
   })
 
   it('lights slots 23 and 18 when series has the current hour and five hours earlier', () => {

@@ -40,11 +40,6 @@ import {
   stringifyAdvancedCustomConfig,
   validateAdvancedCustomConfig,
 } from './advanced-custom'
-import {
-  CHANNEL_TYPE_CODING_PLAN,
-  buildCodingPlanAdvancedCustomConfig,
-  normalizeCodingPlanProvider,
-} from './coding-plan'
 
 // ============================================================================
 // Form Validation Schema
@@ -226,8 +221,6 @@ export const channelFormSchema = z
     weight: z.number().optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
-    channel_probe_enabled: z.boolean().optional(),
-    channel_probe_models: z.string().optional(),
     status: z.number(),
     status_code_mapping: z
       .string()
@@ -355,22 +348,6 @@ export const channelFormSchema = z
       }
     }
 
-    if (data.type === CHANNEL_TYPE_CODING_PLAN) {
-      const provider = normalizeCodingPlanProvider(data.base_url)
-      const config = buildCodingPlanAdvancedCustomConfig(provider)
-      if (!provider || !config) {
-        addRequiredIssue(ctx, 'base_url', 'Coding plan provider is required')
-      }
-      const advancedCustomConfig = data.advanced_custom?.trim()
-        ? parseAdvancedCustomConfig(data.advanced_custom)
-        : config
-      const advancedCustomError =
-        validateAdvancedCustomConfig(advancedCustomConfig)
-      if (advancedCustomError) {
-        addRequiredIssue(ctx, 'advanced_custom', advancedCustomError.message)
-      }
-    }
-
     if ([3, 18, 21, 39, 41, 49].includes(data.type) && !data.other?.trim()) {
       addRequiredIssue(
         ctx,
@@ -460,8 +437,6 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   weight: 0,
   test_model: '',
   auto_ban: 1,
-  channel_probe_enabled: true,
-  channel_probe_models: '',
   status: CHANNEL_STATUS.ENABLED,
   status_code_mapping: '',
   tag: '',
@@ -573,9 +548,6 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateCheckEnabled = false
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
-  let channelProbeEnabled = true
-  let channelProbeModels = ''
-  let codingPlanProvider = ''
   let advancedCustom = ''
 
   if (channel.settings) {
@@ -603,11 +575,6 @@ export function transformChannelToFormDefaults(
       )
         ? parsed.upstream_model_update_ignored_models.join(',')
         : ''
-      channelProbeEnabled = parsed.channel_probe_enabled !== false
-      channelProbeModels = Array.isArray(parsed.channel_probe_models)
-        ? parsed.channel_probe_models.join(',')
-        : ''
-      codingPlanProvider = parsed.coding_plan_provider || ''
       if (parsed.advanced_custom) {
         advancedCustom = stringifyAdvancedCustomConfig(parsed.advanced_custom)
       }
@@ -616,29 +583,11 @@ export function transformChannelToFormDefaults(
       console.error('Failed to parse channel settings:', error)
     }
   }
-  if (!channelProbeModels) {
-    channelProbeModels =
-      (channel.models || '')
-        .split(/[\n,]/)
-        .map((model) => model.trim())
-        .find(Boolean) || ''
-  }
-  if (!advancedCustom && channel.type === CHANNEL_TYPE_CODING_PLAN) {
-    const config = buildCodingPlanAdvancedCustomConfig(
-      codingPlanProvider || channel.base_url || ''
-    )
-    if (config) {
-      advancedCustom = stringifyAdvancedCustomConfig(config)
-    }
-  }
 
   return {
     name: channel.name || '',
     type: channel.type,
-    base_url:
-      channel.type === CHANNEL_TYPE_CODING_PLAN
-        ? codingPlanProvider || channel.base_url || ''
-        : channel.base_url || '',
+    base_url: channel.base_url || '',
     key: '', // Never populate key from backend for security
     openai_organization: channel.openai_organization || '',
     models: channel.models || '',
@@ -646,16 +595,8 @@ export function transformChannelToFormDefaults(
     model_mapping: channel.model_mapping || '',
     priority: channel.priority || 0,
     weight: channel.weight || 0,
-    test_model:
-      channel.test_model ||
-      (channel.models || '')
-        .split(/[\n,]/)
-        .map((model) => model.trim())
-        .find(Boolean) ||
-      '',
+    test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
-    channel_probe_enabled: channelProbeEnabled,
-    channel_probe_models: channelProbeModels,
     status: channel.status,
     status_code_mapping: channel.status_code_mapping || '',
     tag: channel.tag || '',
@@ -834,30 +775,6 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
   settingsObj.disable_task_polling_sleep =
     formData.disable_task_polling_sleep === true
 
-  if (formData.channel_probe_enabled === false) {
-    settingsObj.channel_probe_enabled = false
-  } else {
-    delete settingsObj.channel_probe_enabled
-  }
-  const probeModels = [
-    ...new Set(
-      String(formData.channel_probe_models || '')
-        .split(',')
-        .map((model) => model.trim())
-        .filter(Boolean)
-    ),
-  ]
-  if (probeModels.length > 0) {
-    settingsObj.channel_probe_models = probeModels
-  } else {
-    const firstModel = String(formData.models || '')
-      .split(/[\n,]/)
-      .map((model) => model.trim())
-      .find(Boolean)
-    if (firstModel) settingsObj.channel_probe_models = [firstModel]
-    else delete settingsObj.channel_probe_models
-  }
-
   // Upstream model update settings (for model-fetchable channel types)
   if (MODEL_FETCHABLE_TYPES.has(formData.type)) {
     settingsObj.upstream_model_update_check_enabled =
@@ -891,30 +808,8 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     if (advancedCustomConfig) {
       settingsObj.advanced_custom = advancedCustomConfig
     }
-    if ('coding_plan_provider' in settingsObj) {
-      delete settingsObj.coding_plan_provider
-    }
-  } else if (formData.type === CHANNEL_TYPE_CODING_PLAN) {
-    const provider = normalizeCodingPlanProvider(formData.base_url)
-    settingsObj.coding_plan_provider = provider
-    const advancedCustomConfig = parseAdvancedCustomConfig(
-      formData.advanced_custom
-    )
-    if (advancedCustomConfig) {
-      settingsObj.advanced_custom = advancedCustomConfig
-      return JSON.stringify(settingsObj)
-    }
-    const codingPlanConfig = buildCodingPlanAdvancedCustomConfig(provider)
-    if (codingPlanConfig) {
-      settingsObj.advanced_custom = codingPlanConfig
-    }
-  } else {
-    if ('advanced_custom' in settingsObj) {
-      delete settingsObj.advanced_custom
-    }
-    if ('coding_plan_provider' in settingsObj) {
-      delete settingsObj.coding_plan_provider
-    }
+  } else if ('advanced_custom' in settingsObj) {
+    delete settingsObj.advanced_custom
   }
 
   return JSON.stringify(settingsObj)

@@ -16,40 +16,42 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { CoinsDollarIcon } from '@hugeicons/core-free-icons'
-import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 
+import { StatusBadge, type StatusVariant } from '@/components/status-badge'
 import { cn } from '@/lib/utils'
 
 import { getBillingModeLabelKey } from '../lib/billing-mode'
+import { isDynamicPricingModel } from '../lib/dynamic-price'
 import type { PricingModel } from '../types'
 
 interface ModelBillingModeBadgeProps {
   model: PricingModel
+  appearance?: 'default' | 'caption'
   className?: string
 }
 
 export function ModelBillingModeBadge(props: ModelBillingModeBadgeProps) {
   const { t } = useTranslation()
-  const label = t(getBillingModeLabelKey(props.model))
+  const labelKey = getBillingModeLabelKey(props.model)
+  const label = t(labelKey)
+  const isCaption = props.appearance === 'caption'
+  let variant: StatusVariant = 'purple'
+
+  if (isDynamicPricingModel(props.model)) {
+    variant = 'warning'
+  } else if (labelKey === 'Token-based') {
+    variant = 'info'
+  }
 
   return (
-    <span
-      title={label}
-      className={cn(
-        'inline-flex h-[22px] max-w-36 min-w-0 items-center gap-1 overflow-hidden rounded-full border border-orange-300/60 bg-orange-50 px-2 text-[13px] leading-none font-medium whitespace-nowrap text-orange-600 dark:border-orange-400/30 dark:bg-orange-400/10 dark:text-orange-300',
-        props.className
-      )}
-    >
-      <HugeiconsIcon
-        icon={CoinsDollarIcon}
-        size={13}
-        strokeWidth={2}
-        aria-hidden='true'
-        className='shrink-0'
-      />
-      <span className='min-w-0 truncate'>{label}</span>
-    </span>
+    <StatusBadge
+      label={label}
+      variant={variant}
+      type={isCaption ? 'text' : undefined}
+      copyable={false}
+      size='sm'
+      className={cn(isCaption && 'text-xs font-normal', props.className)}
+    />
   )
 }

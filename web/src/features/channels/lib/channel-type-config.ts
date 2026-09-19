@@ -163,16 +163,6 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
   59: {
     id: 59,
     name: CHANNEL_TYPES[59],
-    icon: 'newapi',
-    hints: {
-      baseUrl: 'Provider preset',
-      key: 'Coding or token plan API key',
-      models: 'Models exposed by this plan',
-    },
-  },
-  60: {
-    id: 60,
-    name: CHANNEL_TYPES[60],
     icon: 'Sub2API',
     hints: {
       baseUrl: 'Sub2API gateway base URL',
@@ -180,9 +170,9 @@ export const CHANNEL_TYPE_CONFIGS: Record<number, ChannelTypeConfig> = {
       models: 'Models fetched from upstream /v1/models',
     },
   },
-  61: {
-    id: 61,
-    name: CHANNEL_TYPES[61],
+  60: {
+    id: 60,
+    name: CHANNEL_TYPES[60],
     icon: 'NewAPI',
     hints: {
       baseUrl: 'Base URL is required for this channel type',

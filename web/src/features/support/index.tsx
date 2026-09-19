@@ -98,6 +98,7 @@ import {
   replySupportTicket,
   uploadSupportAttachments,
   updateSupportTicketStatus,
+  type SupportAttachment,
   type SupportTicket,
 } from './api'
 import { AttachmentPicker } from './components/attachment-picker'
@@ -386,26 +387,6 @@ function UserSupportWorkspace(props: {
           showingPanel ? 'hidden md:flex' : 'flex'
         )}
       >
-        <div className='grid grid-cols-2 gap-2 border-b p-3'>
-          <Button
-            variant={props.panel === 'ai' ? 'secondary' : 'outline'}
-            disabled={assistantBusy}
-            onClick={startNewAIConversation}
-          >
-            <HugeiconsIcon icon={AiChat02Icon} data-icon='inline-start' />
-            {t('Ask AI')}
-          </Button>
-          <Button
-            disabled={assistantBusy}
-            onClick={() => {
-              setSidebarView('tickets')
-              props.onPanelChange('create')
-            }}
-          >
-            <HugeiconsIcon icon={Add01Icon} data-icon='inline-start' />
-            {t('Create ticket')}
-          </Button>
-        </div>
         <div className='border-b p-3'>
           <Tabs
             value={sidebarView}
@@ -733,10 +714,11 @@ export function TicketBrowser(props: {
 }
 
 function isTicketClosed(ticket: SupportTicket) {
-  return (ticket.statusType || ticket.status) === 'Closed'
+  return ticket.isArchived || (ticket.statusType || ticket.status) === 'Closed'
 }
 
 function ticketStatusLabel(ticket: SupportTicket, t: (key: string) => string) {
+  if (ticket.isArchived) return t('Archived')
   if (ticket.status === 'On Hold') return t('Waiting')
   if (ticket.status === 'Open') {
     return ticket.activity === 'agent' ? t('In progress') : t('Unprocessed')
@@ -781,9 +763,9 @@ function TicketList(props: {
     (ticket.activity === 'customer' || ticket.activity === 'new')
   const visible = props.tickets
     .filter((ticket) => {
-      if (filter === 'active' && isTicketClosed(ticket)) return false
-      if (filter === 'attention' && !needsReply(ticket)) return false
-      if (filter === 'closed' && !isTicketClosed(ticket)) return false
+      if (filter === 'active' && (isTicketClosed(ticket) || ticket.isArchived)) return false
+      if (filter === 'archived' && !ticket.isArchived) return false
+      if (filter === 'closed' && (!isTicketClosed(ticket) || ticket.isArchived)) return false
       return [
         ticket.subject,
         ticket.ticketNumber,
@@ -796,6 +778,9 @@ function TicketList(props: {
         .includes(search.trim().toLocaleLowerCase())
     })
     .sort((a, b) => {
+      if (props.admin && Boolean(a.isArchived) !== Boolean(b.isArchived)) {
+        return Number(Boolean(a.isArchived)) - Number(Boolean(b.isArchived))
+      }
       if (props.admin && needsReply(a) !== needsReply(b)) {
         return Number(needsReply(b)) - Number(needsReply(a))
       }
@@ -819,8 +804,8 @@ function TicketList(props: {
               {t('Unresolved')}
             </TabsTrigger>
             {props.admin && (
-              <TabsTrigger value='attention' className='h-7 flex-1'>
-                {t('Needs reply')}
+              <TabsTrigger value='archived' className='h-7 flex-1'>
+                {t('Archived')}
               </TabsTrigger>
             )}
             <TabsTrigger value='closed' className='h-7 flex-1'>
@@ -944,9 +929,10 @@ export function TicketDetail(props: {
     onError: handleServerError,
   })
   const statusOptions = [
-    { value: 'Open', label: ticketStatusLabel(ticket, t) },
+    { value: 'Open', label: ticket.isArchived ? t('Restore ticket') : ticketStatusLabel(ticket, t) },
     { value: 'On Hold', label: t('Waiting') },
     { value: 'Closed', label: t('Closed') },
+    { value: 'Archived', label: t('Archived') },
   ]
   if (!statusOptions.some((option) => option.value === ticket.status)) {
     statusOptions.push({ value: ticket.status, label: ticket.status })
@@ -955,6 +941,14 @@ export function TicketDetail(props: {
     (a, b) =>
       Date.parse(a.createdTime || a.commentedTime || '') -
       Date.parse(b.createdTime || b.commentedTime || '')
+  )
+  const attachedIds = new Set(
+    conversations.flatMap((message) =>
+      (message.attachments ?? []).map((attachment) => attachment.id)
+    )
+  )
+  const unassignedAttachments = props.data.attachments.filter(
+    (attachment) => !attachedIds.has(attachment.id)
   )
   const hasInitialConversation = conversations.some(
     (message) =>
@@ -1086,6 +1080,8 @@ export function TicketDetail(props: {
               html
               time={ticket.createdTime}
               customer
+              attachments={[]}
+              onAttachmentClick={downloadAttachment}
             />
           )}
           {conversations.map((message) => (
@@ -1113,12 +1109,14 @@ export function TicketDetail(props: {
                   message.author?.type === 'END_USER' ||
                   message.commenter?.type === 'END_USER'
                 }
+                attachments={message.attachments}
+                onAttachmentClick={downloadAttachment}
               />
             ))}
-          {props.data.attachments.length > 0 && (
+          {unassignedAttachments.length > 0 && (
             <div className='flex flex-wrap gap-2 border-b py-5'>
-              <p className='w-full text-sm font-medium'>{t('Attachments')}</p>
-              {props.data.attachments.map((attachment) => (
+              <p className='w-full text-sm font-medium'>{t('Other attachments')}</p>
+              {unassignedAttachments.map((attachment) => (
                 <Button
                   key={attachment.id}
                   variant='outline'
@@ -1136,7 +1134,9 @@ export function TicketDetail(props: {
 
       {closed ? (
         <div className='flex shrink-0 flex-wrap items-center justify-between gap-2 border-t p-4 text-sm'>
-          <p className='text-muted-foreground'>{t('This ticket is closed.')}</p>
+          <p className='text-muted-foreground'>
+            {ticket.isArchived ? t('This ticket is archived.') : t('This ticket is closed.')}
+          </p>
           <Button
             variant='outline'
             size='sm'
@@ -1144,7 +1144,7 @@ export function TicketDetail(props: {
             onClick={() => status.mutate('Open')}
           >
             <HugeiconsIcon icon={RotateLeft01Icon} data-icon='inline-start' />
-            {t('Reopen ticket')}
+            {ticket.isArchived ? t('Restore ticket') : t('Reopen ticket')}
           </Button>
         </div>
       ) : (
@@ -1240,6 +1240,8 @@ function Message(props: {
   time?: string
   internal?: boolean
   customer?: boolean
+  attachments?: SupportAttachment[]
+  onAttachmentClick?: (attachment: SupportAttachment) => void
 }) {
   const { t, i18n } = useTranslation()
   const safeContent = useMemo(
@@ -1317,6 +1319,22 @@ function Message(props: {
           <p className='text-sm leading-relaxed break-words whitespace-pre-wrap'>
             {props.content}
           </p>
+        )}
+        {props.attachments && props.attachments.length > 0 && (
+          <div className='mt-3 flex flex-wrap gap-2 border-t border-current/15 pt-3'>
+            {props.attachments.map((attachment) => (
+              <Button
+                key={attachment.id}
+                variant='outline'
+                size='sm'
+                className={props.customer ? 'border-primary-foreground/30' : undefined}
+                onClick={() => props.onAttachmentClick?.(attachment)}
+              >
+                <HugeiconsIcon icon={File01Icon} data-icon='inline-start' />
+                <span className='max-w-48 truncate'>{attachment.name}</span>
+              </Button>
+            ))}
+          </div>
         )}
       </article>
     </div>

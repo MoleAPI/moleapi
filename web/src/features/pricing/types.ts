@@ -33,8 +33,8 @@ export type BillingUsageFieldSchema = {
   type?: 'number' | 'boolean'
   unit?: BillingUsageUnit
   unitLabel?: string | Record<string, string>
-  enumLabels?: Record<string, string | Record<string, string>>
   enum?: string[]
+  enumLabels?: Record<string, string | Record<string, string>>
   description?: string | Record<string, string>
 }
 
@@ -60,7 +60,6 @@ export type PricingModel = {
   id: number
   model_name: string
   description?: string
-  description_i18n?: Record<string, string> | string
   icon?: string
   vendor_id?: number
   vendor_name?: string
@@ -73,13 +72,11 @@ export type PricingModel = {
   cache_ratio?: number | null
   create_cache_ratio?: number | null
   image_ratio?: number | null
-  image_output_ratio?: number | null
   audio_ratio?: number | null
   audio_completion_ratio?: number | null
   enable_groups: string[]
   tags?: string
   supported_endpoint_types?: string[]
-  supported_endpoints?: Record<string, { path?: string; method?: string }>
   key?: string
   group_ratio?: Record<string, number>
   /** Billing mode (e.g. "tiered_expr") used to flag dynamic pricing */
@@ -131,7 +128,7 @@ export type PricingData = {
   vendors: PricingVendor[]
   group_ratio: Record<string, number>
   usable_group: Record<string, { desc: string; ratio: number }>
-  supported_endpoint: Record<string, { path?: string; method?: string }>
+  supported_endpoint: Record<string, string>
   auto_groups: string[]
 }
 
@@ -142,7 +139,6 @@ export type PriceType =
   | 'cache'
   | 'create_cache'
   | 'image'
-  | 'image_output'
   | 'audio_input'
   | 'audio_output'
 export type QuotaType = 0 | 1 // 0: token-based, 1: per-request

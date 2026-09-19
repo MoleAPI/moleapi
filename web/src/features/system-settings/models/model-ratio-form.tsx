@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { Code2, Eye, RotateCcw, Save, Download, Upload } from 'lucide-react'
+import { Code2, Eye, RotateCcw, Save } from 'lucide-react'
 import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import type { UseFormReturn } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -57,7 +57,6 @@ type ModelFormValues = {
   CreateCacheRatio: string
   CompletionRatio: string
   ImageRatio: string
-  ImageOutputRatio: string
   AudioRatio: string
   AudioCompletionRatio: string
   ExposeRatioEnabled: boolean
@@ -73,10 +72,6 @@ type ModelRatioFormProps = {
   onReset: () => void
   isSaving: boolean
   isResetting: boolean
-  onExport?: () => void
-  onImport?: (file: File) => void
-  isExporting?: boolean
-  isImporting?: boolean
   variant?: 'default' | 'unset'
 }
 
@@ -87,7 +82,6 @@ type ModelJsonFieldName =
   | 'CreateCacheRatio'
   | 'CompletionRatio'
   | 'ImageRatio'
-  | 'ImageOutputRatio'
   | 'AudioRatio'
   | 'AudioCompletionRatio'
 
@@ -128,11 +122,6 @@ const modelJsonFields: Array<{
     name: 'ImageRatio',
     labelKey: 'Image ratio',
     descriptionKey: 'Configure per-model ratio for image inputs or outputs.',
-  },
-  {
-    name: 'ImageOutputRatio',
-    labelKey: 'Image output ratio',
-    descriptionKey: 'Image output price',
   },
   {
     name: 'AudioRatio',
@@ -184,16 +173,11 @@ export const ModelRatioForm = memo(function ModelRatioForm({
   savedValues,
   onSave,
   onReset,
-  onExport,
-  onImport,
-  isExporting,
-  isImporting,
   isSaving,
   isResetting,
   variant = 'default',
 }: ModelRatioFormProps) {
   const { t } = useTranslation()
-  const importInputRef = useRef<HTMLInputElement>(null)
   const isUnsetVariant = variant === 'unset'
   const [editMode, setEditMode] = useState<'visual' | 'json'>('visual')
   const visualEditorRef = useRef<ModelRatioVisualEditorHandle>(null)
@@ -282,37 +266,6 @@ export const ModelRatioForm = memo(function ModelRatioForm({
                 )}
               />
             </SettingsPageActionsPortal>
-            <input
-              ref={importInputRef}
-              type='file'
-              accept='application/json'
-              className='hidden'
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                event.target.value = ''
-                if (file) onImport?.(file)
-              }}
-            />
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              onClick={onExport}
-              disabled={isExporting}
-            >
-              <Download data-icon='inline-start' />
-              {t('Export Pricing')}
-            </Button>
-            <Button
-              type='button'
-              variant='outline'
-              size='sm'
-              onClick={() => importInputRef.current?.click()}
-              disabled={isImporting}
-            >
-              <Upload data-icon='inline-start' />
-              {t('Import Pricing')}
-            </Button>
             <Button
               type='button'
               variant='destructive'
@@ -360,7 +313,6 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               savedCreateCacheRatio={savedValues.CreateCacheRatio}
               savedCompletionRatio={savedValues.CompletionRatio}
               savedImageRatio={savedValues.ImageRatio}
-              savedImageOutputRatio={savedValues.ImageOutputRatio}
               savedAudioRatio={savedValues.AudioRatio}
               savedAudioCompletionRatio={savedValues.AudioCompletionRatio}
               savedBillingMode={savedValues.BillingMode}
@@ -372,7 +324,6 @@ export const ModelRatioForm = memo(function ModelRatioForm({
               createCacheRatio={form.watch('CreateCacheRatio')}
               completionRatio={form.watch('CompletionRatio')}
               imageRatio={form.watch('ImageRatio')}
-              imageOutputRatio={form.watch('ImageOutputRatio')}
               audioRatio={form.watch('AudioRatio')}
               audioCompletionRatio={form.watch('AudioCompletionRatio')}
               billingMode={form.watch('BillingMode')}

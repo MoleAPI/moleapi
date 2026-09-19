@@ -29,6 +29,7 @@ import {
 } from 'lucide-react'
 import { useState, useMemo, useContext, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { BadgeListCell } from '@/components/data-table'
@@ -45,18 +46,29 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import {
-  formatUptimePct,
-  getSuccessRateLevel,
-} from '@/features/performance-metrics/lib/format'
 import { toIntlLocale } from '@/i18n/languages'
-import { formatQuotaWithCurrency, getCurrencyLabel } from '@/lib/currency'
+import {
+  formatCurrencyFromUSD,
+  formatQuotaWithCurrency,
+  getCurrencyLabel,
+} from '@/lib/currency'
 import { formatTimestampToDate } from '@/lib/format'
+import { handleServerError } from '@/lib/handle-server-error'
+import { createServerError } from '@/lib/server-error-message'
 import { truncateText } from '@/lib/utils'
 
-import { CHANNEL_STATUS_CONFIG, MODEL_FETCHABLE_TYPES } from '../constants'
+import { getCodexUsage, updateChannelBalance } from '../api'
 import {
+  CHANNEL_STATUS_CONFIG,
+  CHANNEL_TYPE_TASK_PLUGIN,
+  CHANNEL_TYPE_VLLM,
+  CHANNEL_TYPE_SGLANG,
+  MODEL_FETCHABLE_TYPES,
+} from '../constants'
+import {
+  formatRelativeTime,
   formatResponseTime,
+  getBalanceVariant,
   getChannelTypeIcon,
   getChannelTypeLabel,
   getResponseTimeConfig,
@@ -64,26 +76,25 @@ import {
   parseModelsList,
   parseGroupsList,
   parseChannelSettings,
-  parseChannelOtherSettings,
+  channelsQueryKeys,
   handleUpdateChannelField,
   handleUpdateTagField,
   createChannelFieldUpdateScheduler,
   isTagAggregateRow,
   type TagRow,
 } from '../lib'
-import {
-  getChannelSuccessStats,
-  getChannelProbeStats,
-  type ChannelProbeMetric,
-  type ChannelSuccessMetric,
-  type ChannelSuccessStats,
-} from '../lib/channel-success'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
+import { TaskPluginChannelBadge } from './channel-type-badge'
 import { useChannels } from './channels-provider'
 import { DataTableRowActions } from './data-table-row-actions'
 import { DataTableTagRowActions } from './data-table-tag-row-actions'
+import { BalanceQueryDialog } from './dialogs/balance-query-dialog'
+import {
+  CodexUsageDialog,
+  type CodexUsageDialogData,
+} from './dialogs/codex-usage-dialog'
 import { NumericSpinnerInput } from './numeric-spinner-input'
 
 function parseIonetMeta(otherInfo: string | null | undefined): null | {
@@ -315,24 +326,43 @@ function TagWeightCell({ channel }: { channel: TagRow }) {
 }
 
 /**
- * Long used-quota values switch to locale-aware compact notation (e.g. "$28万");
- * the precise value stays available in the tooltip.
+ * Inline balance/used values longer than this switch to locale-aware compact
+ * notation (e.g. "$28万"); the precise value stays available in the tooltip.
  */
-const MAX_INLINE_USED_CHARS = 8
+const MAX_INLINE_BALANCE_CHARS = 8
 const SENSITIVE_MASK = '••••'
 
-/** Used quota stays visible here; balance lookup remains in the row actions. */
-function UsedQuotaCell({ channel }: { channel: Channel }) {
+/**
+ * Balance cell component with click to update
+ */
+export function BalanceCell({ channel }: { channel: Channel }) {
   const { t, i18n } = useTranslation()
+  const queryClient = useQueryClient()
   const layout = useContext(ChannelRowActionsLayoutContext)
-  const { sensitiveVisible } = useChannels()
+  const { sensitiveVisible, setCurrentRow, setOpen } = useChannels()
+  const isTagRow = isTagAggregateRow(channel)
+  const balance = channel.balance || 0
   const usedQuota = channel.used_quota || 0
+  const [isUpdating, setIsUpdating] = useState(false)
+  const [rawBalanceResponse, setRawBalanceResponse] = useState<string | null>(
+    null
+  )
+  const [codexUsageOpen, setCodexUsageOpen] = useState(false)
+  const [codexUsageResponse, setCodexUsageResponse] =
+    useState<CodexUsageDialogData | null>(null)
   const currencyLabel = getCurrencyLabel()
   const tokenSuffix = currencyLabel === 'Tokens' ? ' Tokens' : ''
   const withSuffix = (value: string) =>
     tokenSuffix && value !== '-' ? `${value}${tokenSuffix}` : value
 
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const balanceFormatOptions = {
+    digitsLarge: 2,
+    digitsSmall: 4,
+    abbreviate: false,
+    showSymbol: layout !== 'card',
+  } as const
+  // Precise values are kept for the tooltip; long values are shown compactly inline.
   const usedFull = withSuffix(
     formatQuotaWithCurrency(usedQuota, {
       digitsLarge: 2,
@@ -341,8 +371,11 @@ function UsedQuotaCell({ channel }: { channel: Channel }) {
       showSymbol: layout !== 'card',
     })
   )
+  const remainingFull = withSuffix(
+    formatCurrencyFromUSD(balance, balanceFormatOptions)
+  )
   const usedDisplay =
-    usedFull.length > MAX_INLINE_USED_CHARS
+    usedFull.length > MAX_INLINE_BALANCE_CHARS
       ? withSuffix(
           formatQuotaWithCurrency(usedQuota, {
             compact: true,
@@ -351,62 +384,132 @@ function UsedQuotaCell({ channel }: { channel: Channel }) {
           })
         )
       : usedFull
+  const remainingDisplay =
+    remainingFull.length > MAX_INLINE_BALANCE_CHARS
+      ? withSuffix(
+          formatCurrencyFromUSD(balance, {
+            compact: true,
+            locale,
+            showSymbol: layout !== 'card',
+          })
+        )
+      : remainingFull
   const usedLabel = `${t('Used:')} ${usedFull}`
+  const remainingLabel = `${t('Remaining:')} ${remainingFull}`
   const maskedUsedLabel = `${t('Used:')} ${SENSITIVE_MASK}`
+  const maskedRemainingLabel = `${t('Remaining:')} ${SENSITIVE_MASK}`
 
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <StatusBadge
-              label={sensitiveVisible ? usedDisplay : SENSITIVE_MASK}
-              variant='neutral'
-              size='sm'
-              copyable={false}
-              showDot={false}
-              className='-ml-1.5 cursor-help'
-            />
-          }
-        />
-        <TooltipContent>
-          <p>{sensitiveVisible ? usedLabel : maskedUsedLabel}</p>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
-}
+  // Tag row: only show cumulative used quota
+  if (isTagRow) {
+    return (
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <StatusBadge
+                label={
+                  sensitiveVisible
+                    ? `${t('Used:')} ${usedDisplay}`
+                    : maskedUsedLabel
+                }
+                variant='neutral'
+                size='sm'
+                copyable={false}
+                showDot={false}
+                className='-ml-1.5 cursor-help'
+              />
+            }
+          />
+          <TooltipContent>
+            <p>{sensitiveVisible ? usedLabel : maskedUsedLabel}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    )
+  }
 
-function getSuccessRateVariant(
-  stats: ChannelSuccessStats
-): StatusBadgeProps['variant'] {
-  const level = getSuccessRateLevel(stats.success_rate)
-  if (level === 'warning') return 'warning'
-  if (level === 'critical') return 'danger'
-  if (level === 'unknown') return 'neutral'
-  return 'success'
-}
+  // Regular channel row: show used and remaining with click to update
+  const variant = getBalanceVariant(balance)
+  const isInferenceChannel =
+    channel.type === CHANNEL_TYPE_VLLM || channel.type === CHANNEL_TYPE_SGLANG
+  const inferenceStatusLabel =
+    channel.type === CHANNEL_TYPE_SGLANG ? t('SGLang status') : t('vLLM status')
 
-function getProbeStatusVariant(
-  status: 'pending' | 'healthy' | 'degraded'
-): StatusBadgeProps['variant'] {
-  if (status === 'healthy') return 'success'
-  if (status === 'degraded') return 'danger'
-  return 'neutral'
-}
+  const handleClickUpdate = async () => {
+    if (isInferenceChannel) {
+      setCurrentRow(channel)
+      setOpen('inference-status')
+      return
+    }
+    if (isUpdating) {
+      return
+    }
 
-function ChannelSuccessRateCell({
-  channel,
-  channelSuccessById,
-}: {
-  channel: Channel
-  channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
-}) {
-  const { t } = useTranslation()
-  const stats = getChannelSuccessStats(channel, channelSuccessById)
+    setIsUpdating(true)
+    if (channel.type === 57) {
+      try {
+        const res = await getCodexUsage(channel.id)
+        if (!res.success) {
+          throw createServerError(res, t('Failed to fetch usage'))
+        }
+        setCodexUsageResponse(res)
+        setCodexUsageOpen(true)
+      } catch (error) {
+        handleServerError(error, t('Failed to fetch usage'))
+      } finally {
+        setIsUpdating(false)
+      }
+      return
+    }
 
-  if (!stats) {
-    return <span className='text-muted-foreground text-xs'>-</span>
+    try {
+      const response = await updateChannelBalance(channel.id)
+      if (response.success && response.balance !== undefined) {
+        toast.success(
+          t('Balance updated: {{balance}}', {
+            balance: formatCurrencyFromUSD(response.balance, {
+              digitsLarge: 2,
+              digitsSmall: 4,
+              abbreviate: false,
+            }),
+          })
+        )
+        void queryClient.invalidateQueries({
+          queryKey: channelsQueryKeys.lists(),
+        })
+      } else if (response.success && response.raw_response !== undefined) {
+        setCurrentRow(channel)
+        setRawBalanceResponse(response.raw_response)
+      } else {
+        handleServerError(response, t('Failed to update balance'))
+      }
+    } catch (error: unknown) {
+      handleServerError(error, t('Failed to update balance'))
+    } finally {
+      setIsUpdating(false)
+    }
+  }
+  let remainingBadgeLabel = sensitiveVisible ? remainingDisplay : SENSITIVE_MASK
+  if (sensitiveVisible && isUpdating) {
+    remainingBadgeLabel = t('Updating...')
+  } else if (sensitiveVisible && channel.type === 57) {
+    remainingBadgeLabel = t('Account Info')
+  } else if (sensitiveVisible && isInferenceChannel) {
+    remainingBadgeLabel = inferenceStatusLabel
+  }
+  let remainingTooltipLabel = remainingLabel
+  if (!sensitiveVisible) {
+    remainingTooltipLabel = maskedRemainingLabel
+  } else if (channel.type === 57) {
+    remainingTooltipLabel = t('Click to view Codex usage')
+  } else if (isInferenceChannel) {
+    remainingTooltipLabel = inferenceStatusLabel
+  }
+  let remainingBadgeVariant: StatusBadgeProps['variant'] = variant
+  if (channel.type === 57 || isInferenceChannel) {
+    remainingBadgeVariant = 'info'
+  } else if (isUpdating) {
+    remainingBadgeVariant = 'neutral'
   }
   const remainingBadge = (
     <StatusBadge
@@ -422,114 +525,89 @@ function ChannelSuccessRateCell({
 
   return (
     <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <StatusBadge
-              label={formatUptimePct(stats.success_rate)}
-              variant={getSuccessRateVariant(stats)}
-              size='sm'
-              copyable={false}
-              className='-ml-1.5 font-mono tabular-nums'
-            />
-          }
-        />
-        <TooltipContent side='top'>
-          <div className='text-xs'>
-            <div>{t('Success rate')}</div>
-            <div className='text-muted-foreground font-mono'>
-              {stats.success_count.toLocaleString()} /{' '}
-              {stats.request_count.toLocaleString()} {t('Requests')}
-            </div>
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
-}
-
-function ChannelReliabilityCell({
-  channel,
-  channelProbeById,
-  probeEnabled,
-}: {
-  channel: Channel
-  channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
-  probeEnabled?: boolean
-}) {
-  const { t } = useTranslation()
-  const probeStats = getChannelProbeStats(channel, channelProbeById)
-  const probeDisabled = isTagAggregateRow(channel)
-    ? channel.children.every(
-        (child) =>
-          parseChannelOtherSettings(child.settings).channel_probe_enabled ===
-          false
-      )
-    : parseChannelOtherSettings(channel.settings).channel_probe_enabled ===
-      false
-
-  if (probeDisabled) {
-    return <span className='text-muted-foreground text-xs'>-</span>
-  }
-
-  if (!probeStats) {
-    if (probeEnabled) {
-      return (
-        <StatusBadge
-          label={t('Pending')}
-          variant='neutral'
-          size='sm'
-          copyable={false}
-        />
-      )
-    }
-    return <span className='text-muted-foreground text-xs'>-</span>
-  }
-
-  const degradedCount =
-    probeStats?.items.filter((item) => item.status === 'degraded').length ?? 0
-  let probeLabel = probeStats ? t(probeStats.status) : ''
-  if (probeStats?.status === 'degraded') {
-    probeLabel = t('Degraded {{count}}', { count: degradedCount })
-  }
-
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <div className='-ml-1.5 flex items-center gap-1'>
-              {probeStats && (
-                <StatusBadge
-                  label={probeLabel}
-                  variant={getProbeStatusVariant(probeStats.status)}
+      <div className='-ml-1.5 flex items-center gap-1'>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <StatusBadge
+                label={sensitiveVisible ? usedDisplay : SENSITIVE_MASK}
+                variant='neutral'
+                size='sm'
+                copyable={false}
+                showDot={false}
+                className='cursor-help'
+              />
+            }
+          />
+          <TooltipContent>
+            <p>{sensitiveVisible ? usedLabel : maskedUsedLabel}</p>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              isInferenceChannel ? (
+                <Button
+                  variant='ghost'
                   size='sm'
-                  copyable={false}
-                />
-              )}
-            </div>
+                  className='h-auto rounded-full p-0'
+                  aria-haspopup='dialog'
+                  onClick={handleClickUpdate}
+                >
+                  {remainingBadge}
+                </Button>
+              ) : (
+                remainingBadge
+              )
+            }
+          />
+          <TooltipContent>
+            <p>{remainingTooltipLabel}</p>
+            {channel.type !== 57 && !isInferenceChannel && (
+              <p>{t('Click to update balance')}</p>
+            )}
+          </TooltipContent>
+        </Tooltip>
+      </div>
+
+      <CodexUsageDialog
+        open={codexUsageOpen}
+        onOpenChange={setCodexUsageOpen}
+        channelName={channel.name}
+        channelId={channel.id}
+        channelDisplayName={sensitiveVisible ? undefined : SENSITIVE_MASK}
+        channelDisplayId={sensitiveVisible ? undefined : SENSITIVE_MASK}
+        response={codexUsageResponse}
+        onRefresh={async () => {
+          if (isUpdating) {
+            return
           }
+          setIsUpdating(true)
+          try {
+            const res = await getCodexUsage(channel.id)
+            if (!res.success) {
+              throw createServerError(res, t('Failed to fetch usage'))
+            }
+            setCodexUsageResponse(res)
+          } catch (error) {
+            handleServerError(error, t('Failed to fetch usage'))
+          } finally {
+            setIsUpdating(false)
+          }
+        }}
+        isRefreshing={isUpdating}
+      />
+      {rawBalanceResponse !== null && (
+        <BalanceQueryDialog
+          initialRawResponse={rawBalanceResponse}
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setRawBalanceResponse(null)
+            }
+          }}
         />
-        <TooltipContent side='top'>
-          <div className='max-h-72 space-y-2 overflow-y-auto text-xs'>
-            {probeStats?.items.map((item) => (
-              <div
-                key={`${item.channel_id}-${item.model}`}
-                className='border-t pt-1.5'
-              >
-                <div className='font-medium'>{item.model}</div>
-                <div className='text-muted-foreground'>
-                  {t(item.status)}
-                  {item.level ? ` · ${t(item.level)}` : ''}
-                  {item.recent_total > 0
-                    ? ` · ${item.recent_pass}/${item.recent_total}`
-                    : ''}
-                </div>
-              </div>
-            ))}
-          </div>
-        </TooltipContent>
-      </Tooltip>
+      )}
     </TooltipProvider>
   )
 }
@@ -540,14 +618,12 @@ function ChannelReliabilityCell({
 export function useChannelsColumns(
   options: {
     enableSelection?: boolean
-    channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
-    channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
-    probeEnabled?: boolean
   } = {}
 ): ColumnDef<Channel>[] {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const { sensitiveVisible } = useChannels()
   const enableSelection = options.enableSelection ?? true
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   // The column definitions only depend on the translation function, the active
   // locale, and sensitive-data visibility. Memoizing keeps the array (and every
   // cell renderer reference) stable across unrelated re-renders, so react-table
@@ -774,26 +850,34 @@ export function useChannelsColumns(
                   </Tooltip>
                 </TooltipProvider>
               )}
-              <TooltipProvider delay={300}>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <div className='max-w-full min-w-0 overflow-hidden' />
-                    }
-                  >
-                    <ProviderBadge
-                      iconKey={`${iconName}.Color`}
-                      iconSize={18}
-                      label={typeName}
-                      colorText={false}
-                      copyable={false}
-                      showDot={false}
-                      className='max-w-full min-w-0 overflow-hidden'
-                    />
-                  </TooltipTrigger>
-                  <TooltipContent side='top'>{typeName}</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              {type === CHANNEL_TYPE_TASK_PLUGIN ? (
+                <TaskPluginChannelBadge
+                  pluginKey={
+                    parseChannelSettings(channel.setting)?.task_plugin_key
+                  }
+                />
+              ) : (
+                <TooltipProvider delay={300}>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={
+                        <div className='max-w-full min-w-0 overflow-hidden' />
+                      }
+                    >
+                      <ProviderBadge
+                        iconKey={`${iconName}.Color`}
+                        iconSize={18}
+                        label={typeName}
+                        colorText={false}
+                        copyable={false}
+                        showDot={false}
+                        className='max-w-full min-w-0 overflow-hidden'
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent side='top'>{typeName}</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
               {isIonet && (
                 <TooltipProvider delay={100}>
                   <Tooltip>
@@ -1084,44 +1168,12 @@ export function useChannelsColumns(
         enableSorting: false,
       },
 
-      // Used quota column
+      // Balance column (Used/Remaining)
       {
-        accessorKey: 'used_quota',
-        header: t('Used'),
-        cell: ({ row }) => <UsedQuotaCell channel={row.original} />,
-        size: 120,
-        enableSorting: false,
-      },
-
-      // Success rate column
-      {
-        id: 'success_rate',
-        header: t('Success rate'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => (
-          <ChannelSuccessRateCell
-            channel={row.original}
-            channelSuccessById={options.channelSuccessById}
-          />
-        ),
-        size: 110,
-        enableSorting: false,
-      },
-
-      // Reliability column
-      {
-        id: 'reliability',
-        header: t('Reliability'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => (
-          <ChannelReliabilityCell
-            channel={row.original}
-            channelProbeById={options.channelProbeById}
-            probeEnabled={options.probeEnabled}
-          />
-        ),
-        size: 140,
-        enableSorting: false,
+        accessorKey: 'balance',
+        header: t('Used / Remaining'),
+        cell: ({ row }) => <BalanceCell channel={row.original} />,
+        size: 180,
       },
 
       // Response Time column
@@ -1144,6 +1196,48 @@ export function useChannelsColumns(
           )
         },
         size: 110,
+      },
+
+      // Test Time column
+      {
+        accessorKey: 'test_time',
+        header: t('Last Tested'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => {
+          const testTime = row.getValue('test_time') as number
+
+          // For invalid timestamps, show "Never" badge
+          if (!testTime || testTime === 0) {
+            return <span className='text-muted-foreground text-xs'>-</span>
+          }
+
+          const timeText = formatRelativeTime(testTime, locale)
+          const fullDate = formatTimestampToDate(testTime)
+
+          // For valid timestamps, show tooltip with full date
+          return (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <StatusBadge
+                      label={timeText}
+                      variant='neutral'
+                      size='sm'
+                      copyable={false}
+                      className='-ml-1.5 cursor-pointer'
+                    />
+                  }
+                />
+                <TooltipContent side='top'>
+                  <p className='font-mono text-sm'>{fullDate}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )
+        },
+        size: 120,
+        enableSorting: false,
       },
 
       // Actions column
@@ -1170,13 +1264,6 @@ export function useChannelsColumns(
         meta: { pinned: 'right' as const },
       },
     ],
-    [
-      enableSelection,
-      t,
-      sensitiveVisible,
-      options.channelSuccessById,
-      options.channelProbeById,
-      options.probeEnabled,
-    ]
+    [enableSelection, t, locale, sensitiveVisible]
   )
 }

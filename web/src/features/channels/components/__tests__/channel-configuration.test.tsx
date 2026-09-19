@@ -448,7 +448,7 @@ test('selecting a plugin opens a prefilled channel and creates its explicit bind
     mode: 'single',
     channel: {
       name: 'Video A',
-      type: 62,
+      type: 61,
       key: 'channel-secret',
       models: 'video-a-1',
       base_url: 'https://a.example',
@@ -662,7 +662,7 @@ test('creating a migrated provider uses its plugin binding instead of the legacy
     expect(post).toHaveBeenCalledWith(
       '/api/channel',
       expect.objectContaining({
-        channel: expect.objectContaining({ type: 62 }),
+        channel: expect.objectContaining({ type: 61 }),
       }),
       expect.anything()
     )
@@ -1035,7 +1035,7 @@ test.each([
         mode,
         channel: expect.objectContaining({
           key: 'first-key\nsecond-key',
-          type: 62,
+          type: 61,
         }),
       }),
       expect.anything()
@@ -1365,7 +1365,7 @@ test('editing legacy channels retains the full provider list and saves the origi
 test('opening and reselecting an existing plugin preserves its saved configuration', async () => {
   editingChannel = {
     ...editingChannel,
-    type: 62,
+    type: 61,
     setting: '{"task_plugin_key":"video-a"}',
     priority: 7,
   }
@@ -1399,7 +1399,7 @@ test('opening and reselecting an existing plugin preserves its saved configurati
 test('an unavailable plugin keeps its identifier and binding when other fields are updated', async () => {
   editingChannel = {
     ...editingChannel,
-    type: 62,
+    type: 61,
     setting: '{"task_plugin_key":"removed-plugin"}',
   }
   const put = vi
@@ -1457,7 +1457,6 @@ test('restoring routing defaults clears the configured indicator for both the bl
   expect(within(block).getByRole('img', { name: 'Configured' })).toBeVisible()
   expect(block).toHaveClass('border-primary/35')
   await user.click(screen.getByRole('switch', { name: 'Auto Ban' }))
-  await user.clear(screen.getByLabelText('Test Model'))
   expect(tab).not.toHaveAccessibleName(/Configured/)
   expect(
     within(block).queryByRole('img', { name: 'Configured' })
@@ -1558,7 +1557,7 @@ test.each([
 test('configuration from fields unsupported by the selected provider stays unmarked', async () => {
   editingChannel = {
     ...editingChannel,
-    type: 62,
+    type: 61,
     setting:
       '{"task_plugin_key":"video-a","force_format":true,"responses_websocket_enabled":true}',
     settings:
@@ -2168,7 +2167,7 @@ test('a background refresh updates untouched values without moving the selected 
   await waitFor(() => expect(screen.getByLabelText('Priority')).toHaveValue(5))
 })
 
-test('closing an edited channel retains its right exit direction after the parent clears the row', async () => {
+test('closing an edited channel retains its left exit direction after the parent clears the row', async () => {
   const animation = deferredResponse<void>()
   const originalGetAnimations = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,
@@ -2189,13 +2188,13 @@ test('closing an edited channel retains its right exit direction after the paren
     )
     await screen.findByDisplayValue('Existing channel')
     const drawer = screen.getByRole('dialog')
-    expect(drawer).toHaveAttribute('data-side', 'right')
+    expect(drawer).toHaveAttribute('data-side', 'left')
     await user.click(screen.getByRole('button', { name: 'Cancel' }))
     await waitFor(() => expect(drawer).toHaveAttribute('data-ending-style'))
     expect(drawer).toBeInTheDocument()
-    expect(drawer).toHaveAttribute('data-side', 'right')
-    expect(drawer).toHaveClass('right-0')
-    expect(drawer).not.toHaveClass('left-0')
+    expect(drawer).toHaveAttribute('data-side', 'left')
+    expect(drawer).toHaveClass('left-0')
+    expect(drawer).not.toHaveClass('right-0')
     await act(async () => {
       animation.resolve()
     })

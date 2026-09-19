@@ -96,7 +96,7 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	setupLogin(&user, nil, c)
+	setupLogin(&user, c)
 }
 
 // loginMethodFromContext 根据请求路径推导登录方式，用于登录审计日志。

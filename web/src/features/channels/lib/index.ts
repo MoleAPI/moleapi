@@ -20,7 +20,6 @@ For commercial licensing, please contact support@quantumnous.com
 export * from './channel-actions'
 export * from './channel-field-update'
 export * from './advanced-custom'
-export * from './coding-plan'
 export * from './channel-form-errors'
 export * from './channel-form'
 export * from './channel-type-config'

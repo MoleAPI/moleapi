@@ -107,41 +107,26 @@ function SubscriptionBadge(props: { quota: number }) {
 }
 
 export function LogCostDisplay(props: LogCostDisplayProps) {
-  const { t } = useTranslation()
   const isSubscription = props.other?.billing_source === 'subscription'
   const showToolSurcharge = hasToolSurcharge(props.other)
-  const quota = isSubscription
-    ? (props.other?.subscription_consumed ?? props.quota)
-    : props.quota
-  let source: string | undefined
 
-  if (isSubscription) {
-    source = t('Subscription')
-  } else if (
-    props.showWalletSource &&
-    props.other?.billing_source === 'wallet'
-  ) {
-    source = t('Wallet')
+  if (!isSubscription && !showToolSurcharge) {
+    return (
+      <div className='flex flex-col gap-0.5'>
+        <QuotaBadge quota={props.quota} />
+      </div>
+    )
   }
 
   return (
     <TooltipProvider>
-      <div className='flex w-fit flex-col items-start gap-0.5'>
-        <div className='flex items-center gap-1.5'>
-          <span className='text-foreground text-sm leading-5 font-semibold whitespace-nowrap tabular-nums'>
-            {formatLogQuota(quota)}
-          </span>
-          {showToolSurcharge ? <ToolSurchargeMarker /> : null}
-        </div>
-        {source ? (
-          <StatusBadge
-            label={source}
-            type='text'
-            variant={isSubscription ? 'success' : 'neutral'}
-            size='sm'
-            copyable={false}
-          />
-        ) : null}
+      <div className='inline-flex items-center gap-1'>
+        {isSubscription ? (
+          <SubscriptionBadge quota={props.quota} />
+        ) : (
+          <QuotaBadge quota={props.quota} />
+        )}
+        {showToolSurcharge ? <ToolSurchargeMarker /> : null}
       </div>
     </TooltipProvider>
   )

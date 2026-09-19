@@ -127,7 +127,6 @@ import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
 import {
-  testChannel,
   getAllModels,
   getChannel,
   getChannelDefaultBaseURLs,
@@ -198,7 +197,7 @@ import {
   getChannelPluginExtensions,
   supportsChannelPluginExtensions,
 } from '../../lib/channel-plugin-extensions'
-import { parseChannelOtherSettings } from '../../lib/channel-utils'
+import { getChannelTypeConfig } from '../../lib/channel-type-config'
 import {
   collectInvalidStatusCodeEntries,
   collectNewDisallowedStatusCodeRedirects,
@@ -459,6 +458,13 @@ export function ChannelMutateDrawer({
     useState<ChannelConnectionInfo | null>(null)
 
   const isEditing = Boolean(currentRow)
+  const requestedSide = isEditing ? 'left' : 'right'
+  const [drawerSide, setDrawerSide] = useState<'left' | 'right'>(requestedSide)
+  // The parent clears currentRow as soon as closing starts. Keep the last
+  // open direction until the next opening, including the entire exit animation.
+  if (open && drawerSide !== requestedSide) {
+    setDrawerSide(requestedSide)
+  }
   const channelId = currentRow?.id ?? null
   const sensitiveLocked = isEditing && !canEditSensitive
   const [providerTarget, setProviderTarget] =
@@ -881,27 +887,6 @@ export function ChannelMutateDrawer({
     () => extractMappingSourceModels(currentModelMapping || ''),
     [currentModelMapping]
   )
-
-  const currentChannelProbeModels = form.watch('channel_probe_models')
-  const scheduledProbeModels = useMemo(() => {
-    const configured = parseModelsString(currentChannelProbeModels || '')
-    return configured.length
-      ? configured.filter((model) => currentModelsArray.includes(model))
-      : currentModelsArray.slice(0, 1)
-  }, [currentChannelProbeModels, currentModelsArray])
-
-  // Transform models to multi-select options
-  const modelOptions = useMemo(() => {
-    const allModels = new Set([
-      ...allModelsList,
-      ...currentModelsArray,
-      ...pluginExtensions.flatMap((plugin) => plugin.models),
-    ])
-    return [...allModels].map((model) => ({
-      value: model,
-      label: model,
-    }))
-  }, [allModelsList, currentModelsArray, pluginExtensions])
 
   const modelMappingGuardrail = useMemo<ModelMappingGuardrail>(() => {
     if (!currentModelMapping?.trim()) {
@@ -1721,22 +1706,7 @@ export function ChannelMutateDrawer({
       }
 
       try {
-        const wasDisabled =
-          parseChannelOtherSettings(
-            channelData?.data?.settings ?? currentRow?.settings
-          ).channel_probe_enabled === false
         await channelMutation.mutateAsync(data)
-        if (
-          isEditing &&
-          channelId != null &&
-          wasDisabled &&
-          data.channel_probe_enabled !== false
-        ) {
-          await testChannel(channelId, { scheduled: true })
-          await queryClient.invalidateQueries({
-            queryKey: channelsQueryKeys.lists(),
-          })
-        }
       } catch {
         // The mutation reports the server error; keep the draft open for correction.
       }
@@ -1751,9 +1721,6 @@ export function ChannelMutateDrawer({
       confirmMissingModelMappings,
       confirmStatusCodeRisk,
       channelMutation,
-      channelId,
-      currentRow?.settings,
-      queryClient,
       t,
     ]
   )
@@ -2253,52 +2220,6 @@ export function ChannelMutateDrawer({
             </FormControl>
             <FormDescription>
               {t(FIELD_DESCRIPTIONS.TEST_MODEL)}
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={form.control}
-        name='channel_probe_enabled'
-        render={({ field }) => (
-          <FormItem className='flex items-center justify-between'>
-            <div className='space-y-0.5'>
-              <FormLabel>{t('Scheduled probe')}</FormLabel>
-              <FormDescription>
-                {t('Include this channel in scheduled reliability tests.')}
-              </FormDescription>
-            </div>
-            <FormControl>
-              <Switch
-                checked={field.value !== false}
-                onCheckedChange={field.onChange}
-              />
-            </FormControl>
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={form.control}
-        name='channel_probe_models'
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('Scheduled probe models')}</FormLabel>
-            <FormControl>
-              <MultiSelect
-                options={modelOptions}
-                selected={scheduledProbeModels}
-                onChange={(values) => field.onChange(values.join(','))}
-                placeholder={t('Select models from this channel')}
-                maxVisibleChips={6}
-              />
-            </FormControl>
-            <FormDescription>
-              {t(
-                'Defaults to the first channel model; choose more models from this channel when needed.'
-              )}
             </FormDescription>
             <FormMessage />
           </FormItem>
@@ -4755,7 +4676,7 @@ export function ChannelMutateDrawer({
     <>
       <Sheet open={open} onOpenChange={handleOpenChange}>
         <SheetContent
-          side='right'
+          side={drawerSide}
           className={sideDrawerContentClassName('sm:max-w-7xl')}
         >
           <SheetHeader className={sideDrawerHeaderClassName('pr-12 sm:pr-14')}>

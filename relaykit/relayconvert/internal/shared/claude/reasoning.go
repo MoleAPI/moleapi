@@ -52,24 +52,21 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 		return nil
 	}
 
-	native, diagnostics, err := reasoning.FromClaude(req)
+	native, err := reasoning.FromClaude(req)
 	if err != nil {
 		return err
 	}
-	convdiag.Add(ctx, diagnostics...)
-	explicit, diagnostics, err := reasoning.MergeExplicit(native, source, req.Model)
+	explicit, err := reasoning.MergeExplicit(native, source, req.Model)
 	if err != nil {
 		return err
 	}
-	convdiag.Add(ctx, diagnostics...)
 	if info != nil && !reasoning.IsKnownClaudeModel(capabilityModel) && reasoning.IsKnownClaudeModel(info.GetOriginModelName()) {
 		capabilityModel = info.GetOriginModelName()
 	}
-	intent, diagnostics, err := reasoning.MergeExplicitAndSuffix(explicit, suffix, req.Model)
+	intent, err := reasoning.MergeExplicitAndSuffix(explicit, suffix, req.Model)
 	if err != nil {
 		return err
 	}
-	convdiag.Add(ctx, diagnostics...)
 	knownClaudeModel := reasoning.IsKnownClaudeModel(capabilityModel)
 	if !knownClaudeModel && intent.Mode == reasoning.ModeAdaptive {
 		// Cross-protocol pivots cannot safely assume that an unknown
@@ -83,8 +80,8 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 	}
 	if req.MaxTokens == nil && intent.HasStrength() {
 		// Adapter-provided defaults may be raised to accommodate an exact
-		// cross-protocol budget. Values too small for manual thinking are
-		// raised again by the renderer, which reports the change.
+		// cross-protocol budget. Explicit client max_tokens values are never
+		// expanded and remain subject to the renderer's strict validation.
 		minimum := uint(1280)
 		if configuredDefault, configured := opts.Claude.DefaultMaxTokensFor(capabilityModel); configured && configuredDefault > 0 {
 			minimum = uint(configuredDefault)
@@ -111,9 +108,6 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 	}
 	convdiag.Add(ctx, rendered.Diagnostics...)
 	req.Model = baseModel
-	if rendered.MaxTokens != nil {
-		req.MaxTokens = rendered.MaxTokens
-	}
 	if rendered.Thinking != nil {
 		req.Thinking = rendered.Thinking
 	}

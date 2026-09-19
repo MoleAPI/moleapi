@@ -68,6 +68,7 @@ export type SupportTicket = {
   createdTime: string
   modifiedTime: string
   statusType?: string
+  isArchived?: boolean
   activity?: 'new' | 'customer' | 'agent' | 'unknown'
   user?: { id: number; username: string }
 }
@@ -86,6 +87,7 @@ export type SupportConversation = {
   contentType?: string
   author?: { name: string; type: string }
   commenter?: { name: string; type: string }
+  attachments?: SupportAttachment[]
 }
 
 type ApiResponse<T> = { success: boolean; message?: string; data: T }
@@ -100,14 +102,14 @@ export async function getSupportConfig() {
   return requireServerSuccess(response.data).data
 }
 
-export async function getSupportTickets(from = 0) {
+export async function getSupportTickets(from = 0, view?: 'archived') {
   const response = await api.get<
     ApiResponse<{
       tickets: SupportTicket[]
       next_from: number
       has_more: boolean
     }>
-  >('/api/support/tickets', { params: { from } })
+  >('/api/support/tickets', { params: { from, ...(view ? { view } : {}) } })
   return requireServerSuccess(response.data).data
 }
 
@@ -139,6 +141,8 @@ export type SupportAttachment = {
   size: string
   href: string
   contentType?: string
+  createdTime?: string
+  creatorId?: string
 }
 
 function billingRecordLine(record: TopupRecord) {
