@@ -46,6 +46,10 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import {
+  formatUptimePct,
+  getSuccessRateLevel,
+} from '@/features/performance-metrics/lib/format'
 import { toIntlLocale } from '@/i18n/languages'
 import {
   formatCurrencyFromUSD,
@@ -76,6 +80,7 @@ import {
   parseModelsList,
   parseGroupsList,
   parseChannelSettings,
+  parseChannelOtherSettings,
   channelsQueryKeys,
   handleUpdateChannelField,
   handleUpdateTagField,
@@ -83,6 +88,13 @@ import {
   isTagAggregateRow,
   type TagRow,
 } from '../lib'
+import {
+  getChannelProbeStats,
+  getChannelSuccessStats,
+  type ChannelProbeMetric,
+  type ChannelSuccessMetric,
+  type ChannelSuccessStats,
+} from '../lib/channel-success'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
@@ -612,12 +624,198 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   )
 }
 
+function UsedQuotaCell({ channel }: { channel: Channel }) {
+  const { t, i18n } = useTranslation()
+  const layout = useContext(ChannelRowActionsLayoutContext)
+  const { sensitiveVisible } = useChannels()
+  const usedQuota = channel.used_quota || 0
+  const tokenSuffix = getCurrencyLabel() === 'Tokens' ? ' Tokens' : ''
+  const withSuffix = (value: string) =>
+    tokenSuffix && value !== '-' ? `${value}${tokenSuffix}` : value
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const usedFull = withSuffix(
+    formatQuotaWithCurrency(usedQuota, {
+      digitsLarge: 2,
+      digitsSmall: 4,
+      abbreviate: true,
+      showSymbol: layout !== 'card',
+    })
+  )
+  const usedDisplay =
+    usedFull.length > 8
+      ? withSuffix(
+          formatQuotaWithCurrency(usedQuota, {
+            compact: true,
+            locale,
+            showSymbol: layout !== 'card',
+          })
+        )
+      : usedFull
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <StatusBadge
+              label={sensitiveVisible ? usedDisplay : SENSITIVE_MASK}
+              variant='neutral'
+              size='sm'
+              copyable={false}
+              showDot={false}
+              className='-ml-1.5 cursor-help'
+            />
+          }
+        />
+        <TooltipContent>
+          <p>
+            {t('Used:')} {sensitiveVisible ? usedFull : SENSITIVE_MASK}
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+function getSuccessRateVariant(
+  stats: ChannelSuccessStats
+): StatusBadgeProps['variant'] {
+  const level = getSuccessRateLevel(stats.success_rate)
+  if (level === 'warning') return 'warning'
+  if (level === 'critical') return 'danger'
+  if (level === 'unknown') return 'neutral'
+  return 'success'
+}
+
+function ChannelSuccessRateCell({
+  channel,
+  channelSuccessById,
+}: {
+  channel: Channel
+  channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
+}) {
+  const { t } = useTranslation()
+  const stats = getChannelSuccessStats(channel, channelSuccessById)
+  if (!stats) return <span className='text-muted-foreground text-xs'>-</span>
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <StatusBadge
+              label={formatUptimePct(stats.success_rate)}
+              variant={getSuccessRateVariant(stats)}
+              size='sm'
+              copyable={false}
+              className='-ml-1.5 font-mono tabular-nums'
+            />
+          }
+        />
+        <TooltipContent side='top'>
+          <div className='text-xs'>
+            <div>{t('Success rate')}</div>
+            <div className='text-muted-foreground font-mono'>
+              {stats.success_count.toLocaleString()} /{' '}
+              {stats.request_count.toLocaleString()} {t('Requests')}
+            </div>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
+function ChannelReliabilityCell({
+  channel,
+  channelProbeById,
+  probeMode,
+}: {
+  channel: Channel
+  channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
+  probeMode?: 'hi' | 'intelligence' | 'custom'
+}) {
+  const { t } = useTranslation()
+  const probeStats =
+    probeMode === 'hi'
+      ? undefined
+      : getChannelProbeStats(channel, channelProbeById)
+  const probeDisabled = isTagAggregateRow(channel)
+    ? channel.children.every(
+        (child) =>
+          parseChannelOtherSettings(child.settings).channel_probe_enabled ===
+          false
+      )
+    : parseChannelOtherSettings(channel.settings).channel_probe_enabled ===
+      false
+  if (!probeStats && !probeDisabled) {
+    return <span className='text-muted-foreground text-xs'>-</span>
+  }
+  const degradedCount =
+    probeStats?.items.filter((item) => item.status === 'degraded').length ?? 0
+  let probeLabel = probeStats ? t(probeStats.status) : ''
+  if (probeStats?.status === 'degraded') {
+    probeLabel = t('Degraded {{count}}', { count: degradedCount })
+  }
+  let variant: StatusBadgeProps['variant'] = 'neutral'
+  if (probeStats?.status === 'healthy') variant = 'success'
+  if (probeStats?.status === 'degraded') variant = 'danger'
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <div className='-ml-1.5 flex items-center gap-1'>
+              {probeStats && (
+                <StatusBadge
+                  label={probeLabel}
+                  variant={variant}
+                  size='sm'
+                  copyable={false}
+                />
+              )}
+              {probeDisabled && (
+                <StatusBadge
+                  label={t('Disabled')}
+                  variant='neutral'
+                  size='sm'
+                  copyable={false}
+                />
+              )}
+            </div>
+          }
+        />
+        <TooltipContent side='top'>
+          <div className='max-h-72 space-y-2 overflow-y-auto text-xs'>
+            {probeStats?.items.map((item) => (
+              <div
+                key={`${item.channel_id}-${item.model}`}
+                className='border-t pt-1.5'
+              >
+                <div className='font-medium'>{item.model}</div>
+                <div className='text-muted-foreground'>
+                  {t(item.status)}
+                  {item.level ? ` · ${t(item.level)}` : ''}
+                  {item.recent_total > 0
+                    ? ` · ${item.recent_pass}/${item.recent_total}`
+                    : ''}
+                </div>
+              </div>
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+}
+
 /**
  * Generate channels columns configuration
  */
 export function useChannelsColumns(
   options: {
     enableSelection?: boolean
+    channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
+    channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
+    probeMode?: 'hi' | 'intelligence' | 'custom'
   } = {}
 ): ColumnDef<Channel>[] {
   const { t, i18n } = useTranslation()
@@ -1168,12 +1366,44 @@ export function useChannelsColumns(
         enableSorting: false,
       },
 
-      // Balance column (Used/Remaining)
+      // Used quota column
       {
-        accessorKey: 'balance',
-        header: t('Used / Remaining'),
-        cell: ({ row }) => <BalanceCell channel={row.original} />,
-        size: 180,
+        accessorKey: 'used_quota',
+        header: t('Used'),
+        cell: ({ row }) => <UsedQuotaCell channel={row.original} />,
+        size: 120,
+        enableSorting: false,
+      },
+
+      // Success rate column
+      {
+        id: 'success_rate',
+        header: t('Success rate'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => (
+          <ChannelSuccessRateCell
+            channel={row.original}
+            channelSuccessById={options.channelSuccessById}
+          />
+        ),
+        size: 110,
+        enableSorting: false,
+      },
+
+      // Reliability column
+      {
+        id: 'reliability',
+        header: t('Reliability'),
+        meta: { mobileHidden: true },
+        cell: ({ row }) => (
+          <ChannelReliabilityCell
+            channel={row.original}
+            channelProbeById={options.channelProbeById}
+            probeMode={options.probeMode}
+          />
+        ),
+        size: 140,
+        enableSorting: false,
       },
 
       // Response Time column
@@ -1264,6 +1494,14 @@ export function useChannelsColumns(
         meta: { pinned: 'right' as const },
       },
     ],
-    [enableSelection, t, locale, sensitiveVisible]
+    [
+      enableSelection,
+      t,
+      locale,
+      sensitiveVisible,
+      options.channelSuccessById,
+      options.channelProbeById,
+      options.probeMode,
+    ]
   )
 }
