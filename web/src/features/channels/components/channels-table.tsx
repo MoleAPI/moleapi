@@ -341,7 +341,7 @@ export function ChannelsTable() {
     enableSelection: batchMode,
     channelSuccessById,
     channelProbeById,
-    probeMode: channelSuccessData?.data.probe_overview?.mode,
+    probeEnabled: channelSuccessData?.data.probe_overview?.enabled,
   })
 
   // React Table instance

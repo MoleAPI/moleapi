@@ -693,7 +693,8 @@ function ChannelSuccessRateCell({
   channel: Channel
   channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const stats = getChannelSuccessStats(channel, channelSuccessById)
   if (!stats) return <span className='text-muted-foreground text-xs'>-</span>
   return (
@@ -714,8 +715,8 @@ function ChannelSuccessRateCell({
           <div className='text-xs'>
             <div>{t('Success rate')}</div>
             <div className='text-muted-foreground font-mono'>
-              {stats.success_count.toLocaleString()} /{' '}
-              {stats.request_count.toLocaleString()} {t('Requests')}
+              {stats.success_count.toLocaleString(locale)} /{' '}
+              {stats.request_count.toLocaleString(locale)} {t('Requests')}
             </div>
           </div>
         </TooltipContent>
@@ -727,17 +728,14 @@ function ChannelSuccessRateCell({
 function ChannelReliabilityCell({
   channel,
   channelProbeById,
-  probeMode,
+  probeEnabled,
 }: {
   channel: Channel
   channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
-  probeMode?: 'hi' | 'intelligence' | 'custom'
+  probeEnabled?: boolean
 }) {
   const { t } = useTranslation()
-  const probeStats =
-    probeMode === 'hi'
-      ? undefined
-      : getChannelProbeStats(channel, channelProbeById)
+  const probeStats = getChannelProbeStats(channel, channelProbeById)
   const probeDisabled = isTagAggregateRow(channel)
     ? channel.children.every(
         (child) =>
@@ -746,8 +744,21 @@ function ChannelReliabilityCell({
       )
     : parseChannelOtherSettings(channel.settings).channel_probe_enabled ===
       false
-  if (!probeStats && !probeDisabled) {
+  if (probeDisabled) {
     return <span className='text-muted-foreground text-xs'>-</span>
+  }
+  if (!probeStats) {
+    return probeEnabled ? (
+      <StatusBadge
+        label={t('Pending')}
+        variant='neutral'
+        size='sm'
+        copyable={false}
+        className='-ml-1.5'
+      />
+    ) : (
+      <span className='text-muted-foreground text-xs'>-</span>
+    )
   }
   const degradedCount =
     probeStats?.items.filter((item) => item.status === 'degraded').length ?? 0
@@ -768,14 +779,6 @@ function ChannelReliabilityCell({
                 <StatusBadge
                   label={probeLabel}
                   variant={variant}
-                  size='sm'
-                  copyable={false}
-                />
-              )}
-              {probeDisabled && (
-                <StatusBadge
-                  label={t('Disabled')}
-                  variant='neutral'
                   size='sm'
                   copyable={false}
                 />
@@ -815,7 +818,7 @@ export function useChannelsColumns(
     enableSelection?: boolean
     channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
     channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
-    probeMode?: 'hi' | 'intelligence' | 'custom'
+    probeEnabled?: boolean
   } = {}
 ): ColumnDef<Channel>[] {
   const { t, i18n } = useTranslation()
@@ -1399,7 +1402,7 @@ export function useChannelsColumns(
           <ChannelReliabilityCell
             channel={row.original}
             channelProbeById={options.channelProbeById}
-            probeMode={options.probeMode}
+            probeEnabled={options.probeEnabled}
           />
         ),
         size: 140,
@@ -1501,7 +1504,7 @@ export function useChannelsColumns(
       sensitiveVisible,
       options.channelSuccessById,
       options.channelProbeById,
-      options.probeMode,
+      options.probeEnabled,
     ]
   )
 }
