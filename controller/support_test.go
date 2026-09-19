@@ -180,6 +180,31 @@ func TestSupportEmailConfigPreservesConfiguredAddress(t *testing.T) {
 	assert.Equal(t, "A clean reply\nwith emphasis", cleanSupportEmailText("## **A clean reply**\nwith emphasis"))
 }
 
+func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
+	resetZohoDeskTokenCache()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth/v2/token":
+			_, _ = w.Write([]byte(`{"access_token":"access","expires_in":3600}`))
+		case "/api/v1/tickets/42/threads":
+			_, _ = w.Write([]byte(`{"data":[{"id":"thread-1","direction":"in","channel":"EMAIL","createdTime":"2026-09-19T06:26:31Z","content":"","summary":"Inbound email body","contentType":"text/html","isDescriptionThread":true}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	threads, err := loadSupportEmailThreads(zohoDeskConfig{
+		ClientID: "client", ClientSecret: "secret", RefreshToken: "refresh",
+		OrgID: "org", APIDomain: server.URL, AccountsDomain: server.URL,
+	}, "42")
+	require.NoError(t, err)
+	require.Len(t, threads, 1)
+	assert.Equal(t, "Inbound email body", threads[0].Content)
+	assert.Equal(t, "public", threads[0].Visibility)
+	assert.True(t, threads[0].IsPublic)
+}
+
 func TestSupportTicketWorkflow(t *testing.T) {
 	for _, kind := range []string{"sqlite", "mysql", "postgres"} {
 		t.Run(kind, func(t *testing.T) {
