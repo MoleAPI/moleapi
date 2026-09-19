@@ -42,6 +42,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { getChannelSuccessMetrics } from '@/features/dashboard/api'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { requireServerSuccess } from '@/lib/server-error-message'
@@ -59,6 +60,7 @@ import {
   isTagAggregateRow,
   getChannelTypeLabel,
 } from '../lib'
+import type { ChannelProbeMetric } from '../lib/channel-success'
 import type { Channel, ChannelSortBy } from '../types'
 import { ChannelCard } from './channel-card'
 import { ChannelTypeLogo } from './channel-type-badge'
@@ -209,6 +211,13 @@ export function ChannelsTable() {
     queryFn: async () => requireServerSuccess(await getGroups()),
   })
 
+  const { data: channelSuccessData } = useQuery({
+    queryKey: ['channel-success-metrics', 24],
+    queryFn: () => getChannelSuccessMetrics(24),
+    staleTime: 60 * 1000,
+    retry: false,
+  })
+
   const groupOptions = useMemo(
     () =>
       (groupsData?.data || []).map((g) => ({
@@ -307,9 +316,33 @@ export function ChannelsTable() {
 
   const totalCount = data?.data?.total || 0
   const typeCounts = data?.data?.type_counts
+  const channelSuccessById = useMemo(
+    () =>
+      new Map(
+        (channelSuccessData?.data.channels ?? []).map((channel) => [
+          channel.channel_id,
+          channel,
+        ])
+      ),
+    [channelSuccessData]
+  )
+  const channelProbeById = useMemo(() => {
+    const grouped = new Map<number, ChannelProbeMetric[]>()
+    for (const item of channelSuccessData?.data.probe_overview?.items ?? []) {
+      const current = grouped.get(item.channel_id) ?? []
+      current.push(item)
+      grouped.set(item.channel_id, current)
+    }
+    return grouped
+  }, [channelSuccessData])
 
   // Columns configuration
-  const columns = useChannelsColumns({ enableSelection: batchMode })
+  const columns = useChannelsColumns({
+    enableSelection: batchMode,
+    channelSuccessById,
+    channelProbeById,
+    probeMode: channelSuccessData?.data.probe_overview?.mode,
+  })
 
   // React Table instance
   const { table } = useDataTable({
