@@ -39,7 +39,8 @@ import { CommunityChannels } from '../components/community-channels'
 import { SupportAssistant } from '../components/support-assistant'
 import { TicketCreateForm } from '../components/ticket-create-form'
 
-vi.mock('@/features/playground/hooks', () => ({
+vi.mock('@/features/playground/hooks', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/playground/hooks')>()),
   usePlaygroundOptions: () => ({ isLoadingModels: false }),
 }))
 vi.mock('@/hooks/use-admin', () => ({ useIsAdmin: vi.fn(() => false) }))
@@ -224,7 +225,7 @@ describe('support page layout', () => {
       '/usage-logs/common?username=alice%20%26%20co'
     )
     expect(logs).toHaveAttribute('target', '_blank')
-    await user.click(screen.getByRole('tab', { name: 'Needs reply' }))
+    await user.click(screen.getByRole('tab', { name: 'Closed' }))
     expect(
       screen.queryByRole('button', { name: /Answered request/ })
     ).not.toBeInTheDocument()
@@ -285,17 +286,48 @@ describe('support page layout', () => {
 
     const description = screen.getByLabelText('详细描述')
     const subject = screen.getByLabelText('标题')
+    expect(description).toHaveAttribute('rows', '4')
+    expect(description).toHaveClass('min-h-28')
     await user.type(subject, '原始标题')
     await user.type(description, '调用接口后持续出现 400 错误，请帮忙排查。')
     await user.click(screen.getByRole('button', { name: 'AI 润色' }))
 
     await waitFor(() => expect(subject).toHaveValue('接口返回 400 错误'))
+    expect(vi.mocked(sendChatCompletion).mock.lastCall?.[0].model).toBe(
+      'deepseek-flash'
+    )
     expect(description).toHaveValue(
       '整理后的错误描述，包含请求 ID 和复现步骤。'
     )
     await user.click(screen.getByRole('button', { name: '撤销润色' }))
     expect(subject).toHaveValue('原始标题')
     expect(description).toHaveValue('调用接口后持续出现 400 错误，请帮忙排查。')
+  })
+
+  test('shows invoice eligibility when the invoice ticket type is selected', async () => {
+    const user = userEvent.setup()
+    const i18n = createInstance()
+    await i18n.init({ lng: 'zh', resources: { zh } })
+
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider client={new QueryClient()}>
+          <TicketCreateForm
+            accountEmail='user@example.com'
+            onCreated={() => undefined}
+          />
+        </QueryClientProvider>
+      </I18nextProvider>
+    )
+
+    await user.click(screen.getByLabelText('工单类型'))
+    await user.click(screen.getByRole('option', { name: '开票' }))
+
+    expect(
+      screen.getByText(
+        '仅通过微信或支付宝支付的账单支持开票。发票将由合作机构开出，支持普通发票和增值税专用发票。'
+      )
+    ).toBeVisible()
   })
 
   test('sends selected text files with an AI question', async () => {
@@ -360,7 +392,7 @@ describe('support page layout', () => {
     )
     await user.click(screen.getByRole('button', { name: 'Send' }))
 
-    expect(screen.getByText('Responding...')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Send/ })).toBeDisabled()
     complete({
       choices: [
         {

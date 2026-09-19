@@ -4264,6 +4264,7 @@
     "Only Mine": "僅自己",
     "Only one catch-all route is allowed for the same incoming path": "同一入口路徑只允許一個兜底路由",
     "Only one OpenAI Models route is allowed": "僅允許設定一條 OpenAI 模型路由",
+    "Only orders paid with WeChat Pay or Alipay are eligible for invoicing. Invoices are issued by our partner and are available as ordinary or special VAT invoices.": "僅通過微信或支付寶支付的帳單支援開立發票。發票將由合作機構開立，支援普通發票和增值稅專用發票。",
     "Only selected fields will be overwritten. You can re-run the sync wizard if new conflicts appear.": "僅選定的欄位將會被覆蓋。如果出現新的衝突，您可以重新執行同步精靈。",
     "Only show syncable models": "僅看可同步",
     "Only successful requests": "僅成功的請求",

@@ -62,6 +62,7 @@ type zohoDeskConversation struct {
 	Direction     string `json:"direction"`
 	Summary       string `json:"summary"`
 	Content       string `json:"content"`
+	PlainText     string `json:"plainText"`
 	CreatedTime   string `json:"createdTime"`
 	FromEmail     string `json:"fromEmailAddress"`
 	CommentedTime string `json:"commentedTime"`
@@ -87,6 +88,7 @@ type zohoDeskThread struct {
 	Direction           string `json:"direction"`
 	Summary             string `json:"summary"`
 	Content             string `json:"content"`
+	PlainText           string `json:"plainText"`
 	CreatedTime         string `json:"createdTime"`
 	Visibility          string `json:"visibility"`
 	ContentType         string `json:"contentType"`
@@ -216,7 +218,7 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 	var result struct {
 		Data []zohoDeskThread `json:"data"`
 	}
-	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads?limit=100&from=0&sortBy=sendDateTime", nil, &result); err != nil {
+	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads?limit=100&from=0&sortBy=sendDateTime&include=plainText", nil, &result); err != nil {
 		return nil, err
 	}
 	if len(result.Data) == 0 {
@@ -228,24 +230,36 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 	conversations := make([]zohoDeskConversation, 0, len(result.Data))
 	for _, thread := range result.Data {
 		content := thread.Content
+		if content == "" {
+			content = thread.PlainText
+		}
 		if content == "" && thread.ID != "" {
 			var full zohoDeskThread
-			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/fullContent", nil, &full); err == nil {
+			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/fullContent?include=plainText", nil, &full); err == nil {
 				content = full.Content
+				if content == "" {
+					content = full.PlainText
+				}
 				if thread.ContentType == "" {
 					thread.ContentType = full.ContentType
 				}
 			}
 			if content == "" {
 				var original zohoDeskThread
-				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/originalContent", nil, &original); err == nil {
+				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/originalContent?include=plainText", nil, &original); err == nil {
 					content = original.Content
+					if content == "" {
+						content = original.PlainText
+					}
 				}
 			}
 			if content == "" {
 				var detail zohoDeskThread
-				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID, nil, &detail); err == nil {
+				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"?include=plainText", nil, &detail); err == nil {
 					content = detail.Content
+					if content == "" {
+						content = detail.PlainText
+					}
 				}
 			}
 		}
@@ -258,7 +272,7 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 		}
 		conversations = append(conversations, zohoDeskConversation{
 			ID: thread.ID, Type: "thread", Direction: thread.Direction,
-			Summary: thread.Summary, Content: content, CreatedTime: thread.CreatedTime,
+			Summary: thread.Summary, Content: content, PlainText: thread.PlainText, CreatedTime: thread.CreatedTime,
 			Visibility: visibility, IsPublic: visibility == "public", IsForward: thread.IsForward,
 			ContentType: thread.ContentType, Author: thread.Author, Attachments: thread.Attachments,
 			IsDescriptionThread: thread.IsDescriptionThread,
@@ -271,10 +285,13 @@ func loadSupportEmailComments(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCo
 	var result struct {
 		Data []zohoDeskConversation `json:"data"`
 	}
-	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/comments?limit=100&from=0", nil, &result); err != nil {
+	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/comments?limit=100&from=0&include=plainText", nil, &result); err != nil {
 		return nil, err
 	}
 	for i := range result.Data {
+		if result.Data[i].Content == "" {
+			result.Data[i].Content = result.Data[i].PlainText
+		}
 		result.Data[i].Type = "comment"
 		if result.Data[i].Direction == "" {
 			result.Data[i].Direction = "in"

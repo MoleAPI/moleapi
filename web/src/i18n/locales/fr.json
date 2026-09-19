@@ -4264,6 +4264,7 @@
     "Only Mine": "Uniquement les miens",
     "Only one catch-all route is allowed for the same incoming path": "Un seul routage de secours est autorisé pour le même chemin d'entrée",
     "Only one OpenAI Models route is allowed": "Une seule route Modèles OpenAI est autorisée",
+    "Only orders paid with WeChat Pay or Alipay are eligible for invoicing. Invoices are issued by our partner and are available as ordinary or special VAT invoices.": "Seules les commandes payées avec WeChat Pay ou Alipay sont éligibles à la facturation. Les factures sont émises par notre partenaire et peuvent être ordinaires ou spéciales avec TVA.",
     "Only selected fields will be overwritten. You can re-run the sync wizard if new conflicts appear.": "Seuls les champs sélectionnés seront écrasés. Vous pouvez relancer l'assistant de synchronisation si de nouveaux conflits apparaissent.",
     "Only show syncable models": "Afficher les modèles synchronisables",
     "Only successful requests": "Uniquement les requêtes réussies",
