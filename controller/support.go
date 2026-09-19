@@ -845,6 +845,12 @@ func GetSupportTicket(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	for i := range conversations.Data {
+		if conversations.Data[i].Type == "thread" && conversations.Data[i].Direction == "in" {
+			conversations.Data[i].Visibility = "public"
+			conversations.Data[i].IsPublic = true
+		}
+	}
 	// Zoho stores inbound email bodies as threads. The conversations endpoint
 	// can be empty for email-created tickets even though the ticket has content.
 	usedEmailFallback := len(conversations.Data) == 0
