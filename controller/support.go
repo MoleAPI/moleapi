@@ -78,6 +78,26 @@ type zohoDeskConversation struct {
 		Type string `json:"type"`
 		Name string `json:"name"`
 	} `json:"commenter"`
+	Attachments         []zohoDeskAttachment `json:"attachments,omitempty"`
+	IsDescriptionThread bool                 `json:"isDescriptionThread,omitempty"`
+}
+
+type zohoDeskThread struct {
+	ID                  string `json:"id"`
+	Direction           string `json:"direction"`
+	Summary             string `json:"summary"`
+	Content             string `json:"content"`
+	CreatedTime         string `json:"createdTime"`
+	Visibility          string `json:"visibility"`
+	ContentType         string `json:"contentType"`
+	Channel             string `json:"channel"`
+	IsForward           bool   `json:"isForward"`
+	IsDescriptionThread bool   `json:"isDescriptionThread"`
+	FullContentURL      string `json:"fullContentURL"`
+	Author              struct {
+		Type string `json:"type"`
+		Name string `json:"name"`
+	} `json:"author"`
 	Attachments []zohoDeskAttachment `json:"attachments,omitempty"`
 }
 
@@ -190,6 +210,43 @@ func supportConversationActivity(messages []zohoDeskConversation) string {
 		}
 	}
 	return activity
+}
+
+func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskConversation, error) {
+	var result struct {
+		Data []zohoDeskThread `json:"data"`
+	}
+	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads?limit=100&from=0&sortBy=sendDateTime", nil, &result); err != nil {
+		return nil, err
+	}
+	conversations := make([]zohoDeskConversation, 0, len(result.Data))
+	for _, thread := range result.Data {
+		content := thread.Content
+		if content == "" && thread.FullContentURL != "" {
+			var full zohoDeskThread
+			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/fullContent", nil, &full); err == nil {
+				content = full.Content
+				if thread.ContentType == "" {
+					thread.ContentType = full.ContentType
+				}
+			}
+		}
+		if content == "" {
+			content = thread.Summary
+		}
+		visibility := thread.Visibility
+		if visibility == "" && thread.Direction == "in" && thread.Channel == "EMAIL" {
+			visibility = "public"
+		}
+		conversations = append(conversations, zohoDeskConversation{
+			ID: thread.ID, Type: "thread", Direction: thread.Direction,
+			Summary: thread.Summary, Content: content, CreatedTime: thread.CreatedTime,
+			Visibility: visibility, IsPublic: visibility == "public", IsForward: thread.IsForward,
+			ContentType: thread.ContentType, Author: thread.Author, Attachments: thread.Attachments,
+			IsDescriptionThread: thread.IsDescriptionThread,
+		})
+	}
+	return conversations, nil
 }
 
 type zohoDeskAttachment struct {
@@ -752,6 +809,19 @@ func GetSupportTicket(c *gin.Context) {
 	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/conversations", nil, &conversations); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	// Zoho stores inbound email bodies as threads. The conversations endpoint
+	// can be empty for email-created tickets even though the ticket has content.
+	if len(conversations.Data) == 0 {
+		if threads, err := loadSupportEmailThreads(cfg, ticket.ID); err == nil {
+			conversations.Data = threads
+			for _, message := range threads {
+				if ticket.Description == "" && message.Content != "" {
+					ticket.Description = message.Content
+					break
+				}
+			}
+		}
 	}
 	ticket.Activity = supportConversationActivity(conversations.Data)
 	visible := make([]zohoDeskConversation, 0, len(conversations.Data))
