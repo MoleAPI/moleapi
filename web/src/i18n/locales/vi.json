@@ -4264,6 +4264,7 @@
     "Only Mine": "Chỉ của tôi",
     "Only one catch-all route is allowed for the same incoming path": "Mỗi đường dẫn đầu vào chỉ được có một tuyến dự phòng",
     "Only one OpenAI Models route is allowed": "Chỉ được phép có một tuyến Mô hình OpenAI",
+    "Only orders paid with WeChat Pay or Alipay are eligible for invoicing. Invoices are issued by our partner and are available as ordinary or special VAT invoices.": "Chỉ các đơn hàng thanh toán qua WeChat Pay hoặc Alipay mới được xuất hóa đơn. Hóa đơn do đối tác của chúng tôi phát hành, gồm hóa đơn VAT thông thường và chuyên dùng.",
     "Only selected fields will be overwritten. You can re-run the sync wizard if new conflicts appear.": "Chỉ các trường được chọn sẽ bị ghi đè. Bạn có thể chạy lại trình hướng dẫn đồng bộ hóa nếu có xung đột mới xuất hiện.",
     "Only show syncable models": "Chỉ hiện mô hình có thể đồng bộ",
     "Only successful requests": "Chỉ các yêu cầu thành công",

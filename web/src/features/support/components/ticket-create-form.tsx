@@ -62,6 +62,7 @@ import type {
   PlaygroundConfig,
 } from '@/features/playground/types'
 import { getUserBillingHistory } from '@/features/wallet/api'
+import { toIntlLocale } from '@/i18n/languages'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import {
@@ -406,6 +407,7 @@ export function TicketCreateForm(props: {
           </div>
           <Textarea
             id='ticket-content'
+            className='min-h-28'
             rows={4}
             aria-invalid={Boolean(form.formState.errors.content)}
             placeholder={t(selectedType.template)}
@@ -434,6 +436,11 @@ export function TicketCreateForm(props: {
         {type === INVOICE_TYPE && (
           <FieldSet>
             <FieldLegend>{t('Invoice information')}</FieldLegend>
+            <FieldDescription>
+              {t(
+                'Only orders paid with WeChat Pay or Alipay are eligible for invoicing. Invoices are issued by our partner and are available as ordinary or special VAT invoices.'
+              )}
+            </FieldDescription>
             <FieldGroup>
               <Field data-invalid={Boolean(form.formState.errors.invoiceTitle)}>
                 <FieldLabel htmlFor='invoice-title'>
@@ -520,7 +527,7 @@ export function TicketCreateForm(props: {
                         className='font-normal'
                       >
                         {record.trade_no} ·{' '}
-                        {new Intl.NumberFormat(i18n.language, {
+                        {new Intl.NumberFormat(toIntlLocale(i18n.language), {
                           style: 'currency',
                           currency: record.payment_currency || 'USD',
                         }).format(record.money)}
