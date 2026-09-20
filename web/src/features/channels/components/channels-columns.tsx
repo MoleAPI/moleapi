@@ -1139,7 +1139,7 @@ export function useChannelsColumns(
           }
           return value.includes(String(row.getValue(id)))
         },
-        size: 220,
+        size: 160,
         enableSorting: false,
       },
 
@@ -1385,6 +1385,32 @@ export function useChannelsColumns(
         enableSorting: false,
       },
 
+      {
+        id: 'usage_24h',
+        header: t('24 Hours'),
+        cell: ({ row }) => {
+          if (!options.usage24h) {
+            return <span className='text-muted-foreground'>-</span>
+          }
+          const channel = row.original
+          const quota = isTagAggregateRow(channel)
+            ? channel.children.reduce(
+                (sum, child) => sum + (options.usage24h?.[child.id] ?? 0),
+                0
+              )
+            : (options.usage24h[channel.id] ?? 0)
+          return (
+            <UsedQuotaCell
+              channel={channel}
+              quota={quota}
+              label='Last 24h usage'
+            />
+          )
+        },
+        size: 100,
+        enableSorting: false,
+      },
+
       // Success rate column
       {
         id: 'success_rate',
@@ -1436,32 +1462,6 @@ export function useChannelsColumns(
           )
         },
         size: 110,
-      },
-
-      {
-        id: 'usage_24h',
-        header: t('Last 24h usage'),
-        cell: ({ row }) => {
-          if (!options.usage24h) {
-            return <span className='text-muted-foreground'>-</span>
-          }
-          const channel = row.original
-          const quota = isTagAggregateRow(channel)
-            ? channel.children.reduce(
-                (sum, child) => sum + (options.usage24h?.[child.id] ?? 0),
-                0
-              )
-            : (options.usage24h[channel.id] ?? 0)
-          return (
-            <UsedQuotaCell
-              channel={channel}
-              quota={quota}
-              label='Last 24h usage'
-            />
-          )
-        },
-        size: 120,
-        enableSorting: false,
       },
 
       // Actions column

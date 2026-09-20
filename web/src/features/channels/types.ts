@@ -196,11 +196,20 @@ export interface ChannelTestResponse {
   message?: string
   error_code?: string
   time?: number
+  probe?: {
+    mode: 'hi' | 'intelligence' | 'custom'
+    question_id?: string
+    question_kind?: string
+    level?: 'basic' | 'standard' | 'advanced'
+    outcome: 'pass' | 'wrong' | 'no_answer' | 'completed'
+  }
   data?: {
     response_time?: number
     error?: string
   }
 }
+
+export type ChannelTestProbe = NonNullable<ChannelTestResponse['probe']>
 
 export interface ChannelBalanceResponse {
   success: boolean
