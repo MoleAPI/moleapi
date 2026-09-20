@@ -677,18 +677,22 @@ func RequestAmount(c *gin.Context) {
 func GetUserTopUps(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
-	keyword := c.Query("keyword")
-
-	var (
-		topups []*model.TopUp
-		total  int64
-		err    error
-	)
-	if keyword != "" {
-		topups, total, err = model.SearchUserTopUps(userId, keyword, pageInfo)
-	} else {
-		topups, total, err = model.GetUserTopUps(userId, pageInfo)
+	params := model.TopUpSearchParams{Keyword: strings.TrimSpace(c.Query("keyword"))}
+	for key, target := range map[string]*int64{"start_timestamp": &params.StartTimestamp, "end_timestamp": &params.EndTimestamp} {
+		if value := c.Query(key); value != "" {
+			parsed, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || parsed < 0 {
+				common.ApiErrorMsg(c, "Invalid date range")
+				return
+			}
+			*target = parsed
+		}
 	}
+	if params.EndTimestamp > 0 && params.StartTimestamp > params.EndTimestamp {
+		common.ApiErrorMsg(c, "Invalid date range")
+		return
+	}
+	topups, total, err := model.SearchUserTopUpsWithParams(userId, params, pageInfo)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("failed to load top-up history user_id=%d error=%q", userId, err.Error()))
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)

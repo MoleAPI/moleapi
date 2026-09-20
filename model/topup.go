@@ -1036,6 +1036,10 @@ const inviteRewardHistoryHardLimit = 1000
 
 // SearchUserTopUps 按订单号搜索某用户的充值记录
 func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
+	return SearchUserTopUpsWithParams(userId, TopUpSearchParams{Keyword: keyword}, pageInfo)
+}
+
+func SearchUserTopUpsWithParams(userId int, params TopUpSearchParams, pageInfo *common.PageInfo) (topups []*TopUp, total int64, err error) {
 	tx := DB.Begin()
 	if tx.Error != nil {
 		return nil, 0, tx.Error
@@ -1046,9 +1050,18 @@ func SearchUserTopUps(userId int, keyword string, pageInfo *common.PageInfo) (to
 		}
 	}()
 
-	query := tx.Model(&TopUp{}).Where("user_id = ? AND create_time >= ?", userId, topUpQueryCutoff())
-	if keyword != "" {
-		pattern, perr := sanitizeLikePattern(keyword)
+	query := tx.Model(&TopUp{}).Where("user_id = ?", userId)
+	if params.StartTimestamp == 0 && params.EndTimestamp == 0 {
+		query = query.Where("create_time >= ?", topUpQueryCutoff())
+	}
+	if params.StartTimestamp > 0 {
+		query = query.Where("create_time >= ?", params.StartTimestamp)
+	}
+	if params.EndTimestamp > 0 {
+		query = query.Where("create_time <= ?", params.EndTimestamp)
+	}
+	if params.Keyword != "" {
+		pattern, perr := sanitizeLikePattern(params.Keyword)
 		if perr != nil {
 			tx.Rollback()
 			return nil, 0, perr

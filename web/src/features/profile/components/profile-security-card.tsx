@@ -5,7 +5,6 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { IconBadge } from '@/components/ui/icon-badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { TitledCard } from '@/components/ui/titled-card'
-import { AccessTokenCard } from '@/features/security/components/access-token-card'
 import { useDialogs } from '@/hooks/use-dialog'
 
 import type { UserProfile } from '../types'
@@ -82,7 +81,9 @@ export function ProfileSecurityCard(props: ProfileSecurityCardProps) {
               aria-label={item.title}
               onClick={item.action}
               className={`flex items-center gap-3 rounded-lg border p-3 text-left md:flex-col md:gap-2 md:p-4 md:text-center ${
-                item.variant === 'destructive' ? 'border-destructive/30' : ''
+                item.variant === 'destructive'
+                  ? 'border-destructive/30 text-destructive'
+                  : ''
               }`}
             >
               <IconBadge tone='neutral' size='sm'>
@@ -108,8 +109,6 @@ export function ProfileSecurityCard(props: ProfileSecurityCardProps) {
         hasPassword={props.profile.has_password}
         onSuccess={props.onProfileUpdate}
       />
-
-      <AccessTokenCard />
 
       <DeleteAccountDialog
         open={dialogs.isOpen('delete')}

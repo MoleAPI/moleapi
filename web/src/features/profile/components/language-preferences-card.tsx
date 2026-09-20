@@ -105,16 +105,16 @@ export function LanguagePreferencesCard(props: LanguagePreferencesCardProps) {
       iconTone='chart-4'
       disableHoverEffect
     >
-      <div className='flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4'>
+      <div className='flex min-w-0 flex-col gap-3'>
         <div className='space-y-1'>
           <div className='text-sm font-medium'>{t('Interface Language')}</div>
-          <p className='text-muted-foreground line-clamp-2 text-xs sm:text-sm'>
+          <p className='text-muted-foreground text-xs leading-relaxed sm:text-sm'>
             {t(
               'Language preferences sync across your signed-in devices and affect API error messages.'
             )}
           </p>
         </div>
-        <div className='flex items-center gap-2 sm:min-w-48'>
+        <div className='flex min-w-0 items-center gap-2'>
           <Combobox
             options={INTERFACE_LANGUAGE_OPTIONS.map((language) => ({
               value: language.code,
@@ -123,7 +123,8 @@ export function LanguagePreferencesCard(props: LanguagePreferencesCardProps) {
             value={currentLanguage}
             onValueChange={handleLanguageChange}
             disabled={saving}
-            className='w-full sm:w-48'
+            className='w-full'
+            aria-label={t('Interface Language')}
             placeholder={t('Select language')}
           />
           {saving && (

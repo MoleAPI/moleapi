@@ -48,6 +48,7 @@ import { getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
+import { LogExportDialog } from './dialogs/log-export-dialog'
 import {
   LogsFilterField,
   LogsFilterInput,
@@ -283,7 +284,12 @@ export function CommonLogsFilterBar<TData>(
   const logTypeLabel =
     logTypeItems.find((type) => type.value === logType)?.label ?? t('All Types')
 
-  const statsBar = <CommonLogsStats />
+  const statsBar = (
+    <div className='flex flex-wrap items-center gap-2'>
+      <CommonLogsStats />
+      <LogExportDialog />
+    </div>
+  )
   const sensitiveToggle = (
     <Tooltip>
       <TooltipTrigger
