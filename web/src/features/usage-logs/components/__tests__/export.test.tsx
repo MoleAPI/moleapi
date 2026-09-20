@@ -117,13 +117,25 @@ test('export dialog validates range, shows progress, prevents duplicate starts a
   render(
     <I18nextProvider i18n={i18n}>
       <UsageLogsProvider>
-        <LogExportDialog />
+        <LogExportDialog
+          startTime={new Date('2026-01-01T08:30:15')}
+          endTime={new Date('2026-01-01T09:30:25')}
+        />
       </UsageLogsProvider>
     </I18nextProvider>
   )
   fireEvent.click(screen.getByRole('button', { name: 'Export logs' }))
   const download = await screen.findByRole('button', { name: 'Download CSV' })
-  expect(download).toBeDisabled()
+  expect(download).not.toBeDisabled()
+  expect(screen.getByLabelText('Start time')).toHaveValue(
+    '2026-01-01T08:30:15.000'
+  )
+  expect(screen.getByLabelText('End time')).toHaveValue(
+    '2026-01-01T09:30:25.000'
+  )
+  expect(
+    screen.getByText(/The current log list time range/)
+  ).toBeInTheDocument()
   fireEvent.change(screen.getByLabelText('Start time'), {
     target: { value: '2026-01-02T00:00:00' },
   })
@@ -141,6 +153,7 @@ test('export dialog validates range, shows progress, prevents duplicate starts a
   )
   expect(download).toBeDisabled()
   expect(post).toHaveBeenCalledTimes(1)
+  expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow')
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
   await waitFor(() => expect(download).not.toBeDisabled())
   expect(signal?.aborted).toBe(true)

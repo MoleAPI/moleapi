@@ -23,7 +23,7 @@ func ExportLogs(c *gin.Context) {
 		End      int64 `json:"end_timestamp"`
 		AllUsers bool  `json:"all_users"`
 	}
-	if err := c.ShouldBindJSON(&request); err != nil || request.Start <= 0 || request.End < request.Start || request.End > time.Now().Unix() {
+	if err := c.ShouldBindJSON(&request); err != nil || request.Start <= 0 || request.End < request.Start {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid date range"})
 		return
 	}

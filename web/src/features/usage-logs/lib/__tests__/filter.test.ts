@@ -18,11 +18,95 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import assert from 'node:assert/strict'
 
-import { describe, test } from 'vitest'
+import { describe, test, vi } from 'vitest'
 
+import { getChannels, searchChannels } from '@/features/channels/api'
+import { api } from '@/lib/api'
+
+import {
+  getAllLogs,
+  getUserLogs,
+  getAllMidjourneyLogs,
+  getUserMidjourneyLogs,
+  getAllTaskLogs,
+  getUserTaskLogs,
+  getLogStats,
+  getUserLogStats,
+} from '../../api'
+import { getAuditLogs } from '../../audit/api'
 import { buildQuickFilterSearch, buildSearchParams } from '../filter'
 
+vi.mock('@/lib/api', () => ({ api: { get: vi.fn() } }))
+
 describe('usage log filters', () => {
+  test('all log and channel requests trim outer whitespace without altering names', async () => {
+    const get = vi.mocked(api.get).mockResolvedValue({
+      data: { success: true, data: { items: [], total: 0 } },
+    })
+    for (const fetch of [
+      getAllLogs,
+      getUserLogs,
+      getLogStats,
+      getUserLogStats,
+    ]) {
+      await fetch({ model_name: '  model name\t', token_name: '   ' })
+      const url = new URL(
+        String(get.mock.lastCall?.[0]),
+        'https://test.invalid'
+      )
+      assert.equal(url.searchParams.get('model_name'), 'model name')
+      assert.equal(url.searchParams.has('token_name'), false)
+    }
+    for (const fetch of [
+      getAllMidjourneyLogs,
+      getUserMidjourneyLogs,
+      getAllTaskLogs,
+      getUserTaskLogs,
+    ]) {
+      await fetch({
+        channel_id: ' 325 ',
+        task_id: '  task id\t',
+        mj_id: '  drawing id ',
+      })
+      const url = new URL(
+        String(get.mock.lastCall?.[0]),
+        'https://test.invalid'
+      )
+      assert.equal(url.searchParams.get('channel_id'), '325')
+      assert.equal(url.searchParams.get('task_id'), 'task id')
+      assert.equal(url.searchParams.get('mj_id'), 'drawing id')
+    }
+    for (const scope of ['all', 'self'] as const) {
+      await getAuditLogs(scope, {
+        p: 1,
+        page_size: 20,
+        username: '  user name ',
+        request_id: '\t ',
+      })
+      assert.equal(get.mock.lastCall?.[1]?.params.username, 'user name')
+      assert.equal(get.mock.lastCall?.[1]?.params.request_id, undefined)
+      assert.equal(get.mock.lastCall?.[1]?.params.page_size, 20)
+    }
+    await getChannels({
+      group: '  group name ',
+      status: '  enabled  ',
+      tag_mode: false,
+    })
+    assert.equal(get.mock.lastCall?.[1]?.params.group, 'group name')
+    assert.equal(get.mock.lastCall?.[1]?.params.status, 'enabled')
+    assert.equal(get.mock.lastCall?.[1]?.params.tag_mode, false)
+    await searchChannels({
+      keyword: '  channel name ',
+      model: ' model ',
+      group: ' \t ',
+      p: 2,
+    })
+    assert.equal(get.mock.lastCall?.[1]?.params.keyword, 'channel name')
+    assert.equal(get.mock.lastCall?.[1]?.params.model, 'model')
+    assert.equal(get.mock.lastCall?.[1]?.params.group, undefined)
+    assert.equal(get.mock.lastCall?.[1]?.params.p, 2)
+  })
+
   test('trims text filters and merges request id filters', () => {
     assert.deepEqual(
       buildSearchParams(

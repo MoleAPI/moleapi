@@ -24,13 +24,21 @@ import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Progress } from '@/components/ui/progress'
 import { toIntlLocale } from '@/i18n/languages'
+import dayjs from '@/lib/dayjs'
 import { formatNumber } from '@/lib/format'
 
 import { exportUsageLogs, type ExportProgress } from '../../lib/export'
 import { useLogsViewScope } from '../usage-logs-provider'
 
-export function LogExportDialog() {
+export function LogExportDialog({
+  startTime,
+  endTime,
+}: {
+  startTime?: Date
+  endTime?: Date
+}) {
   const { t, i18n } = useTranslation()
   const { isAdminView } = useLogsViewScope()
   const [open, setOpen] = useState(false)
@@ -42,6 +50,7 @@ export function LogExportDialog() {
   })
   const [busy, setBusy] = useState(false)
   const [finished, setFinished] = useState(false)
+  const completedProgress = finished ? 100 : 0
   const [error, setError] = useState('')
   const controller = useRef<AbortController | null>(null)
   useEffect(() => () => controller.current?.abort(), [])
@@ -52,8 +61,7 @@ export function LogExportDialog() {
     Number.isFinite(startTimestamp) &&
     startTimestamp > 0 &&
     Number.isFinite(endTimestamp) &&
-    endTimestamp >= startTimestamp &&
-    endTimestamp <= Date.now() / 1000
+    endTimestamp >= startTimestamp
 
   async function download() {
     if (!valid || controller.current) return
@@ -98,7 +106,20 @@ export function LogExportDialog() {
 
   return (
     <>
-      <Button variant='outline' size='sm' onClick={() => setOpen(true)}>
+      <Button
+        variant='outline'
+        size='sm'
+        onClick={() => {
+          setStart(
+            startTime ? dayjs(startTime).format('YYYY-MM-DDTHH:mm:ss') : ''
+          )
+          setEnd(endTime ? dayjs(endTime).format('YYYY-MM-DDTHH:mm:ss') : '')
+          setProgress({ count: 0, bytes: 0 })
+          setFinished(false)
+          setError('')
+          setOpen(true)
+        }}
+      >
         <Download />
         {t('Export logs')}
       </Button>
@@ -118,6 +139,11 @@ export function LogExportDialog() {
         }
       >
         <FieldGroup>
+          <p className='text-muted-foreground text-sm'>
+            {t(
+              'The current log list time range is selected by default. To preview another range, set the dates and search the log list, then choose Export logs.'
+            )}
+          </p>
           <p className='text-muted-foreground text-sm'>
             {isAdminView ? t('All users') : t('Only my logs')}
           </p>
@@ -172,6 +198,15 @@ export function LogExportDialog() {
               {formatNumber(progress.bytes, locale)} B
             </p>
           </div>
+          <Progress
+            value={busy ? null : completedProgress}
+            aria-label={busy ? t('Fetching logs...') : t('Export logs')}
+            className={
+              busy
+                ? '[&_[data-slot=progress-indicator]]:w-2/5 [&_[data-slot=progress-indicator]]:motion-safe:animate-pulse'
+                : undefined
+            }
+          />
           {error && (
             <p role='alert' className='text-destructive text-sm'>
               {t(error)}

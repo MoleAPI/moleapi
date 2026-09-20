@@ -6254,6 +6254,7 @@
     "The change succeeded, but the notification email could not be sent.": "The change succeeded, but the notification email could not be sent.",
     "The changelog could not be fetched or parsed. Please try again.": "The changelog could not be fetched or parsed. Please try again.",
     "The converted price must be a finite, non-negative number.": "The converted price must be a finite, non-negative number.",
+    "The current log list time range is selected by default. To preview another range, set the dates and search the log list, then choose Export logs.": "The current log list time range is selected by default. To preview another range, set the dates and search the log list, then choose Export logs.",
     "The current setting could not be loaded. You can still enter the website domain yourself.": "The current setting could not be loaded. You can still enter the website domain yourself.",
     "The deployment node that handled the requests": "The deployment node that handled the requests",
     "The downloaded source does not match the sha256 declared in the index. Do not install it.": "The downloaded source does not match the sha256 declared in the index. Do not install it.",

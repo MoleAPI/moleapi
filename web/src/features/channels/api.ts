@@ -118,7 +118,13 @@ export type CodexCredentialRefreshResponse = {
 export async function getChannels(
   params: GetChannelsParams = {}
 ): Promise<GetChannelsResponse> {
-  const res = await api.get('/api/channel', { params })
+  const res = await api.get('/api/channel', {
+    params: {
+      ...params,
+      group: params.group?.trim() || undefined,
+      status: params.status?.trim() || undefined,
+    },
+  })
   return res.data
 }
 
@@ -128,7 +134,15 @@ export async function getChannels(
 export async function searchChannels(
   params: SearchChannelsParams
 ): Promise<SearchChannelsResponse> {
-  const res = await api.get('/api/channel/search', { params })
+  const res = await api.get('/api/channel/search', {
+    params: {
+      ...params,
+      keyword: params.keyword?.trim() || undefined,
+      model: params.model?.trim() || undefined,
+      group: params.group?.trim() || undefined,
+      status: params.status?.trim() || undefined,
+    },
+  })
   return res.data
 }
 

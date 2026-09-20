@@ -6254,6 +6254,7 @@
     "The change succeeded, but the notification email could not be sent.": "変更は完了しましたが、通知メールを送信できませんでした。",
     "The changelog could not be fetched or parsed. Please try again.": "変更履歴を取得または解析できませんでした。もう一度お試しください。",
     "The converted price must be a finite, non-negative number.": "換算後の価格は有限の非負数である必要があります。",
+    "The current log list time range is selected by default. To preview another range, set the dates and search the log list, then choose Export logs.": "現在のログ一覧の期間が初期選択されています。別の期間を確認するには、一覧で日時を設定して検索してから「ログをエクスポート」を選んでください。",
     "The current setting could not be loaded. You can still enter the website domain yourself.": "現在の設定を読み込めません。サイトのドメインを手動で入力できます。",
     "The deployment node that handled the requests": "リクエストを処理したデプロイノード",
     "The downloaded source does not match the sha256 declared in the index. Do not install it.": "ダウンロードしたソースがインデックスに記載された sha256 と一致しません。インストールしないでください。",
