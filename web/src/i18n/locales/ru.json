@@ -7342,6 +7342,17 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "API format": "Формат API",
+    "API key and endpoint": "Ключ API и адрес подключения",
+    "Anyone with this key can use its quota. Store it in an environment variable and never expose it in browser code.": "Любой, у кого есть этот ключ, может использовать его квоту. Храните ключ в переменной окружения и не раскрывайте его в коде браузера.",
+    "Authentication header": "Заголовок авторизации",
+    "Connection details and examples for {{name}}": "Параметры подключения и примеры для {{name}}",
+    "Copy and use": "Копировать и использовать",
+    "Copy the connection details or start with a working example.": "Скопируйте параметры подключения или начните с рабочего примера.",
+    "Copy {{label}}": "Копировать {{label}}",
+    "cURL example": "Пример cURL",
+    "Keep this key secret": "Храните этот ключ в секрете",
+    "SDK Base URL": "Базовый URL SDK"
   }
 }

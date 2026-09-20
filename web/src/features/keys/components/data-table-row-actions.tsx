@@ -192,6 +192,14 @@ export function DataTableRowActions<TData>({
     }
   }
 
+  const handleOpenUsageGuide = async () => {
+    const realKey = await resolveRealKey(apiKey.id)
+    if (!realKey) return
+    setResolvedKey(realKey)
+    setCurrentRow(apiKey)
+    setOpen('usage')
+  }
+
   let statusIcon = <Power className='size-4' />
   if (isTogglingStatus) {
     statusIcon = <Loader2 className='size-4 animate-spin' />
@@ -200,7 +208,23 @@ export function DataTableRowActions<TData>({
   }
 
   return (
-    <div className='-ml-1.5 flex items-center gap-1'>
+    <div className='flex items-center justify-end gap-1'>
+      <Button
+        type='button'
+        variant='outline'
+        size='sm'
+        className='h-8 gap-1.5 px-2.5'
+        onClick={handleOpenUsageGuide}
+        disabled={isRealKeyLoading}
+      >
+        {isRealKeyLoading ? (
+          <Loader2 className='size-3.5 animate-spin' />
+        ) : (
+          <Copy className='size-3.5' />
+        )}
+        {t('Copy and use')}
+      </Button>
+
       <Tooltip>
         <TooltipTrigger
           render={
@@ -248,19 +272,6 @@ export function DataTableRowActions<TData>({
         modal={false}
         onOpenChange={handleMenuOpenChange}
       >
-        <DropdownMenuItem
-          onClick={async () => {
-            const realKey = getCachedRealKey()
-            if (!realKey) return
-            const ok = await copyToClipboard(realKey)
-            if (ok) toast.success(t('Copied'))
-          }}
-        >
-          {t('Copy Key')}
-          <DropdownMenuShortcut>
-            <Copy size={16} />
-          </DropdownMenuShortcut>
-        </DropdownMenuItem>
         <DropdownMenuItem
           onClick={async () => {
             const realKey = getCachedRealKey()

@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Check, Copy, Loader2 } from 'lucide-react'
+import { Loader2 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -33,7 +33,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
-import { copyToClipboard } from '@/lib/copy-to-clipboard'
 import { formatQuota } from '@/lib/format'
 
 import type { ApiKey } from '../types'
@@ -41,18 +40,11 @@ import { useApiKeys } from './api-keys-provider'
 
 export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
   const { t } = useTranslation()
-  const {
-    resolveRealKey,
-    resolvedKeys,
-    loadingKeys,
-    copiedKeyId,
-    markKeyCopied,
-  } = useApiKeys()
+  const { resolveRealKey, resolvedKeys, loadingKeys } = useApiKeys()
   const [popoverOpen, setPopoverOpen] = useState(false)
 
   const isLoading = !!loadingKeys[apiKey.id]
   const resolvedFullKey = resolvedKeys[apiKey.id]
-  const isCopied = copiedKeyId === apiKey.id
   const maskedKey = `sk-${apiKey.key}`
 
   const handlePopoverOpen = useCallback(
@@ -64,24 +56,6 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
     },
     [resolvedFullKey, resolveRealKey, apiKey.id]
   )
-
-  const handleCopy = useCallback(async () => {
-    const realKey = resolvedFullKey || (await resolveRealKey(apiKey.id))
-    if (!realKey) return
-
-    const ok = await copyToClipboard(realKey)
-    if (ok) markKeyCopied(apiKey.id)
-  }, [resolvedFullKey, resolveRealKey, apiKey.id, markKeyCopied])
-
-  let copyIcon = <Copy className='size-3.5' />
-  let copyTooltip = t('Copy API key')
-  if (isLoading) {
-    copyIcon = <Loader2 className='size-3.5 animate-spin' />
-    copyTooltip = t('Loading...')
-  } else if (isCopied) {
-    copyIcon = <Check className='size-3.5 text-green-600' />
-    copyTooltip = t('Copied!')
-  }
 
   return (
     <div className='flex max-w-full min-w-0 items-center'>
@@ -122,22 +96,6 @@ export function ApiKeyCell({ apiKey }: { apiKey: ApiKey }) {
           </div>
         </PopoverContent>
       </Popover>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant='ghost'
-              size='icon'
-              className='size-7 shrink-0'
-              onClick={handleCopy}
-              disabled={isLoading}
-            />
-          }
-        >
-          {copyIcon}
-        </TooltipTrigger>
-        <TooltipContent>{copyTooltip}</TooltipContent>
-      </Tooltip>
     </div>
   )
 }

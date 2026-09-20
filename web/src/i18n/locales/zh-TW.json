@@ -7342,6 +7342,17 @@
     "Zhipu": "智譜",
     "Zhipu GLM": "智譜GLM",
     "Zhipu V4": "智譜 V4",
-    "Zoom": "縮放"
+    "Zoom": "縮放",
+    "API format": "API 介面格式",
+    "API key and endpoint": "API 金鑰與接入位址",
+    "Anyone with this key can use its quota. Store it in an environment variable and never expose it in browser code.": "取得此金鑰的任何人都能消耗其額度。請將其保存在環境變數中，切勿暴露在瀏覽器程式碼裡。",
+    "Authentication header": "認證請求標頭",
+    "Connection details and examples for {{name}}": "{{name}} 的連線資訊與呼叫範例",
+    "Copy and use": "複製與使用",
+    "Copy the connection details or start with a working example.": "可複製連線資訊，或直接從可用範例開始。",
+    "Copy {{label}}": "複製{{label}}",
+    "cURL example": "cURL 呼叫範例",
+    "Keep this key secret": "請妥善保管此金鑰",
+    "SDK Base URL": "SDK Base URL"
   }
 }

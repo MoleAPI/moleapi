@@ -7342,6 +7342,17 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "API format": "API format",
+    "API key and endpoint": "API key and endpoint",
+    "Anyone with this key can use its quota. Store it in an environment variable and never expose it in browser code.": "Anyone with this key can use its quota. Store it in an environment variable and never expose it in browser code.",
+    "Authentication header": "Authentication header",
+    "Connection details and examples for {{name}}": "Connection details and examples for {{name}}",
+    "Copy and use": "Copy and use",
+    "Copy the connection details or start with a working example.": "Copy the connection details or start with a working example.",
+    "Copy {{label}}": "Copy {{label}}",
+    "cURL example": "cURL example",
+    "Keep this key secret": "Keep this key secret",
+    "SDK Base URL": "SDK Base URL"
   }
 }

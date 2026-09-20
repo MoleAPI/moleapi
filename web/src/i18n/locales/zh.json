@@ -7342,6 +7342,17 @@
     "Zhipu": "智谱",
     "Zhipu GLM": "智谱GLM",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "API format": "API 接口格式",
+    "API key and endpoint": "API 密钥与接入地址",
+    "Anyone with this key can use its quota. Store it in an environment variable and never expose it in browser code.": "获得此密钥的任何人都能消耗其额度。请将其保存在环境变量中，切勿暴露在浏览器代码里。",
+    "Authentication header": "认证请求头",
+    "Connection details and examples for {{name}}": "{{name}} 的连接信息与调用示例",
+    "Copy and use": "复制与使用",
+    "Copy the connection details or start with a working example.": "可复制连接信息，或直接从可用示例开始。",
+    "Copy {{label}}": "复制{{label}}",
+    "cURL example": "cURL 调用示例",
+    "Keep this key secret": "请妥善保管此密钥",
+    "SDK Base URL": "SDK Base URL"
   }
 }
