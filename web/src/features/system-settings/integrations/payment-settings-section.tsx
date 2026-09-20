@@ -46,7 +46,6 @@ import {
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
 import { handleServerError } from '@/lib/handle-server-error'
 import { cn } from '@/lib/utils'
 
@@ -143,26 +142,12 @@ const paymentSchema = z.object({
       })
     }
   }),
-  AmountBonus: z.string().superRefine((value, ctx) => {
-    const error = getJsonError(
-      value,
-      (parsed) =>
-        !!parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-    )
-    if (error) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: error,
-      })
-    }
-  }),
   StripeApiSecret: z.string(),
   StripeWebhookSecret: z.string(),
   StripePriceId: z.string(),
   StripeUnitPrice: z.coerce.number().min(0),
   StripeMinTopUp: z.coerce.number().min(0),
   StripePromotionCodesEnabled: z.boolean(),
-  CreemEnabled: z.boolean(),
   CreemApiKey: z.string(),
   CreemWebhookSecret: z.string(),
   CreemTestMode: z.boolean(),
@@ -175,17 +160,6 @@ const paymentSchema = z.object({
       })
     }
   }),
-  LantuEnabled: z.boolean(),
-  LantuMchId: z.string(),
-  LantuSecretKey: z.string(),
-  LantuMinTopUp: z.coerce.number().min(1),
-  NowPaymentsEnabled: z.boolean(),
-  NowPaymentsApiKey: z.string(),
-  NowPaymentsIPNSecret: z.string(),
-  NowPaymentsSandbox: z.boolean(),
-  NowPaymentsCurrency: z.string(),
-  NowPaymentsUnitPrice: z.coerce.number().min(0),
-  NowPaymentsMinTopUp: z.coerce.number().min(1),
   WaffoEnabled: z.boolean(),
   WaffoApiKey: z.string(),
   WaffoPrivateKey: z.string(),
@@ -203,7 +177,6 @@ const paymentSchema = z.object({
   WaffoPancakeMerchantID: z.string(),
   WaffoPancakePrivateKey: z.string(),
   WaffoPancakeReturnURL: z.string(),
-  WaffoPancakeEnvironment: z.enum(['test', 'prod']),
 })
 
 type PaymentFormValues = z.infer<typeof paymentSchema>
@@ -383,7 +356,6 @@ export function PaymentSettingsSection({
       PayMethods: formatJsonForEditor(initialFormValues.PayMethods),
       AmountOptions: formatJsonForEditor(initialFormValues.AmountOptions),
       AmountDiscount: formatJsonForEditor(initialFormValues.AmountDiscount),
-      AmountBonus: formatJsonForEditor(initialFormValues.AmountBonus),
       CreemProducts: formatJsonForEditor(initialFormValues.CreemProducts),
     },
   })
@@ -441,7 +413,6 @@ export function PaymentSettingsSection({
       PayMethods: formatJsonForEditor(parsedDefaults.PayMethods),
       AmountOptions: formatJsonForEditor(parsedDefaults.AmountOptions),
       AmountDiscount: formatJsonForEditor(parsedDefaults.AmountDiscount),
-      AmountBonus: formatJsonForEditor(parsedDefaults.AmountBonus),
       CreemProducts: formatJsonForEditor(parsedDefaults.CreemProducts),
     })
   }, [defaultsSignature, form])
@@ -457,29 +428,16 @@ export function PaymentSettingsSection({
       PayMethods: values.PayMethods.trim(),
       AmountOptions: values.AmountOptions.trim(),
       AmountDiscount: values.AmountDiscount.trim(),
-      AmountBonus: values.AmountBonus.trim(),
       StripeApiSecret: values.StripeApiSecret.trim(),
       StripeWebhookSecret: values.StripeWebhookSecret.trim(),
       StripePriceId: values.StripePriceId.trim(),
       StripeUnitPrice: values.StripeUnitPrice,
       StripeMinTopUp: values.StripeMinTopUp,
       StripePromotionCodesEnabled: values.StripePromotionCodesEnabled,
-      CreemEnabled: values.CreemEnabled,
       CreemApiKey: values.CreemApiKey.trim(),
       CreemWebhookSecret: values.CreemWebhookSecret.trim(),
       CreemTestMode: values.CreemTestMode,
       CreemProducts: values.CreemProducts.trim(),
-      LantuEnabled: values.LantuEnabled,
-      LantuMchId: values.LantuMchId.trim(),
-      LantuSecretKey: values.LantuSecretKey.trim(),
-      LantuMinTopUp: values.LantuMinTopUp,
-      NowPaymentsEnabled: values.NowPaymentsEnabled,
-      NowPaymentsApiKey: values.NowPaymentsApiKey.trim(),
-      NowPaymentsIPNSecret: values.NowPaymentsIPNSecret.trim(),
-      NowPaymentsSandbox: values.NowPaymentsSandbox,
-      NowPaymentsCurrency: values.NowPaymentsCurrency.trim() || 'USD',
-      NowPaymentsUnitPrice: values.NowPaymentsUnitPrice,
-      NowPaymentsMinTopUp: values.NowPaymentsMinTopUp,
       WaffoEnabled: values.WaffoEnabled,
       WaffoSandbox: values.WaffoSandbox,
       WaffoMerchantId: values.WaffoMerchantId.trim(),
@@ -500,7 +458,6 @@ export function PaymentSettingsSection({
       WaffoPancakeReturnURL: removeTrailingSlash(
         values.WaffoPancakeReturnURL.trim()
       ),
-      WaffoPancakeEnvironment: values.WaffoPancakeEnvironment,
     }
 
     const initial = {
@@ -515,7 +472,6 @@ export function PaymentSettingsSection({
       PayMethods: initialRef.current.PayMethods.trim(),
       AmountOptions: initialRef.current.AmountOptions.trim(),
       AmountDiscount: initialRef.current.AmountDiscount.trim(),
-      AmountBonus: initialRef.current.AmountBonus.trim(),
       StripeApiSecret: initialRef.current.StripeApiSecret.trim(),
       StripeWebhookSecret: initialRef.current.StripeWebhookSecret.trim(),
       StripePriceId: initialRef.current.StripePriceId.trim(),
@@ -523,23 +479,10 @@ export function PaymentSettingsSection({
       StripeMinTopUp: initialRef.current.StripeMinTopUp,
       StripePromotionCodesEnabled:
         initialRef.current.StripePromotionCodesEnabled,
-      CreemEnabled: initialRef.current.CreemEnabled,
       CreemApiKey: initialRef.current.CreemApiKey.trim(),
       CreemWebhookSecret: initialRef.current.CreemWebhookSecret.trim(),
       CreemTestMode: initialRef.current.CreemTestMode,
       CreemProducts: initialRef.current.CreemProducts.trim(),
-      LantuEnabled: initialRef.current.LantuEnabled,
-      LantuMchId: initialRef.current.LantuMchId.trim(),
-      LantuSecretKey: initialRef.current.LantuSecretKey.trim(),
-      LantuMinTopUp: initialRef.current.LantuMinTopUp,
-      NowPaymentsEnabled: initialRef.current.NowPaymentsEnabled,
-      NowPaymentsApiKey: initialRef.current.NowPaymentsApiKey.trim(),
-      NowPaymentsIPNSecret: initialRef.current.NowPaymentsIPNSecret.trim(),
-      NowPaymentsSandbox: initialRef.current.NowPaymentsSandbox,
-      NowPaymentsCurrency:
-        initialRef.current.NowPaymentsCurrency.trim() || 'USD',
-      NowPaymentsUnitPrice: initialRef.current.NowPaymentsUnitPrice,
-      NowPaymentsMinTopUp: initialRef.current.NowPaymentsMinTopUp,
       WaffoEnabled: initialRef.current.WaffoEnabled,
       WaffoSandbox: initialRef.current.WaffoSandbox,
       WaffoMerchantId: initialRef.current.WaffoMerchantId.trim(),
@@ -562,7 +505,6 @@ export function PaymentSettingsSection({
       WaffoPancakeReturnURL: removeTrailingSlash(
         initialRef.current.WaffoPancakeReturnURL.trim()
       ),
-      WaffoPancakeEnvironment: initialRef.current.WaffoPancakeEnvironment,
     }
 
     const updates: Array<{ key: string; value: string | number | boolean }> = []
@@ -622,16 +564,6 @@ export function PaymentSettingsSection({
     }
 
     if (
-      normalizeJsonForComparison(sanitized.AmountBonus) !==
-      normalizeJsonForComparison(initial.AmountBonus)
-    ) {
-      updates.push({
-        key: 'payment_setting.amount_bonus',
-        value: sanitized.AmountBonus,
-      })
-    }
-
-    if (
       sanitized.StripeApiSecret &&
       sanitized.StripeApiSecret !== initial.StripeApiSecret
     ) {
@@ -670,10 +602,6 @@ export function PaymentSettingsSection({
       })
     }
 
-    if (sanitized.CreemEnabled !== initial.CreemEnabled) {
-      updates.push({ key: 'CreemEnabled', value: sanitized.CreemEnabled })
-    }
-
     if (
       sanitized.CreemApiKey &&
       sanitized.CreemApiKey !== initial.CreemApiKey
@@ -700,68 +628,6 @@ export function PaymentSettingsSection({
       normalizeJsonForComparison(initial.CreemProducts)
     ) {
       updates.push({ key: 'CreemProducts', value: sanitized.CreemProducts })
-    }
-
-    if (sanitized.LantuEnabled !== initial.LantuEnabled) {
-      updates.push({ key: 'LantuEnabled', value: sanitized.LantuEnabled })
-    }
-    if (sanitized.LantuMchId !== initial.LantuMchId) {
-      updates.push({ key: 'LantuMchId', value: sanitized.LantuMchId })
-    }
-    if (sanitized.LantuSecretKey) {
-      updates.push({ key: 'LantuSecretKey', value: sanitized.LantuSecretKey })
-    }
-    if (sanitized.LantuMinTopUp !== initial.LantuMinTopUp) {
-      updates.push({ key: 'LantuMinTopUp', value: sanitized.LantuMinTopUp })
-    }
-
-    if (sanitized.NowPaymentsEnabled !== initial.NowPaymentsEnabled) {
-      updates.push({
-        key: 'NowPaymentsEnabled',
-        value: sanitized.NowPaymentsEnabled,
-      })
-    }
-    if (
-      sanitized.NowPaymentsApiKey &&
-      sanitized.NowPaymentsApiKey !== initial.NowPaymentsApiKey
-    ) {
-      updates.push({
-        key: 'NowPaymentsApiKey',
-        value: sanitized.NowPaymentsApiKey,
-      })
-    }
-    if (
-      sanitized.NowPaymentsIPNSecret &&
-      sanitized.NowPaymentsIPNSecret !== initial.NowPaymentsIPNSecret
-    ) {
-      updates.push({
-        key: 'NowPaymentsIPNSecret',
-        value: sanitized.NowPaymentsIPNSecret,
-      })
-    }
-    if (sanitized.NowPaymentsSandbox !== initial.NowPaymentsSandbox) {
-      updates.push({
-        key: 'NowPaymentsSandbox',
-        value: sanitized.NowPaymentsSandbox,
-      })
-    }
-    if (sanitized.NowPaymentsCurrency !== initial.NowPaymentsCurrency) {
-      updates.push({
-        key: 'NowPaymentsCurrency',
-        value: sanitized.NowPaymentsCurrency,
-      })
-    }
-    if (sanitized.NowPaymentsUnitPrice !== initial.NowPaymentsUnitPrice) {
-      updates.push({
-        key: 'NowPaymentsUnitPrice',
-        value: sanitized.NowPaymentsUnitPrice,
-      })
-    }
-    if (sanitized.NowPaymentsMinTopUp !== initial.NowPaymentsMinTopUp) {
-      updates.push({
-        key: 'NowPaymentsMinTopUp',
-        value: sanitized.NowPaymentsMinTopUp,
-      })
     }
 
     if (sanitized.WaffoEnabled !== initial.WaffoEnabled) {
@@ -840,7 +706,6 @@ export function PaymentSettingsSection({
       sanitized.WaffoPancakeMerchantID !== initial.WaffoPancakeMerchantID ||
       sanitized.WaffoPancakePrivateKey.length > 0 ||
       sanitized.WaffoPancakeReturnURL !== initial.WaffoPancakeReturnURL ||
-      sanitized.WaffoPancakeEnvironment !== initial.WaffoPancakeEnvironment ||
       waffoPancakeSelection.storeID !== waffoPancakeSavedBinding.storeID ||
       waffoPancakeSelection.productID !== waffoPancakeSavedBinding.productID
 
@@ -874,7 +739,6 @@ export function PaymentSettingsSection({
         returnURL: sanitized.WaffoPancakeReturnURL,
         storeID: waffoPancakeSelection.storeID,
         productID: waffoPancakeSelection.productID,
-        environment: sanitized.WaffoPancakeEnvironment,
       })
 
       if (
@@ -932,7 +796,6 @@ export function PaymentSettingsSection({
     WaffoPancakeMerchantID: currentFormValues.WaffoPancakeMerchantID,
     WaffoPancakePrivateKey: currentFormValues.WaffoPancakePrivateKey,
     WaffoPancakeReturnURL: currentFormValues.WaffoPancakeReturnURL,
-    WaffoPancakeEnvironment: currentFormValues.WaffoPancakeEnvironment,
   }
 
   return (
@@ -1016,13 +879,11 @@ export function PaymentSettingsSection({
           />
           <Tabs defaultValue='general' className='min-w-0'>
             <div className='overflow-x-auto pb-1'>
-              <TabsList className='grid min-w-[58rem] grid-cols-8'>
+              <TabsList className='grid min-w-[44rem] grid-cols-6'>
                 <TabsTrigger value='general'>{t('General')}</TabsTrigger>
                 <TabsTrigger value='epay'>Epay</TabsTrigger>
                 <TabsTrigger value='stripe'>{t('Stripe')}</TabsTrigger>
                 <TabsTrigger value='creem'>Creem</TabsTrigger>
-                <TabsTrigger value='lantu'>LanTu</TabsTrigger>
-                <TabsTrigger value='nowpayments'>NOWPayments</TabsTrigger>
                 <TabsTrigger value='waffo-pancake'>Waffo Pancake</TabsTrigger>
                 <TabsTrigger value='waffo'>Waffo</TabsTrigger>
               </TabsList>
@@ -1143,7 +1004,7 @@ export function PaymentSettingsSection({
                       </FormControl>
                       <FormDescription>
                         {t(
-                          'Configured as PayMethods JSON. The type value decides which payment flow is used: stripe for Stripe, nowpayments for NOWPayments, waffo_pancake for Waffo Pancake, and other values are sent to Epay as the type parameter.'
+                          'Configured as PayMethods JSON. The type value decides which payment flow is used: stripe for Stripe, waffo_pancake for Waffo Pancake, and other values are sent to Epay as the type parameter.'
                         )}
                       </FormDescription>
                       <FormMessage />
@@ -1266,343 +1127,6 @@ export function PaymentSettingsSection({
                         </FormControl>
                         <FormDescription>
                           {t('Discount map by recharge amount (JSON object)')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='AmountBonus'
-                    render={({ field }) => (
-                      <FormItem className='md:col-span-2'>
-                        <FormLabel>{t('Top-up bonus tiers')}</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            rows={4}
-                            placeholder='{"100":0.05,"200":0.1}'
-                            {...field}
-                            onChange={(event) =>
-                              field.onChange(event.target.value)
-                            }
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Bonus quota by minimum top-up amount (JSON object; 0.05 means 5% extra quota)'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent value='lantu' className={paymentTabContentClassName}>
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>{t('LanTu Gateway')}</h3>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Configuration for LanTu WeChat Pay integration')}
-                  </p>
-                </div>
-
-                <Alert>
-                  <ShieldAlert className='h-4 w-4' />
-                  <AlertTitle>{t('Webhook Configuration:')}</AlertTitle>
-                  <AlertDescription className='space-y-1'>
-                    <code className='bg-muted block rounded px-2 py-1 text-xs'>
-                      {'<ServerAddress>/api/user/lantu/notify'}
-                    </code>
-                    <p>
-                      {t(
-                        'Configure this callback URL and your server IP allowlist in the LanTu dashboard.'
-                      )}
-                    </p>
-                  </AlertDescription>
-                </Alert>
-
-                <FormField
-                  control={form.control}
-                  name='LantuEnabled'
-                  render={({ field }) => (
-                    <SettingsSwitchItem>
-                      <SettingsSwitchContent>
-                        <FormLabel>{t('Enable LanTu payments')}</FormLabel>
-                        <FormDescription>
-                          {t('WeChat Pay through the LanTu gateway')}
-                        </FormDescription>
-                      </SettingsSwitchContent>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </SettingsSwitchItem>
-                  )}
-                />
-
-                <div className='grid gap-6 md:grid-cols-3'>
-                  <FormField
-                    control={form.control}
-                    name='LantuMchId'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('LanTu merchant ID')}</FormLabel>
-                        <FormControl>
-                          <Input autoComplete='off' {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='LantuSecretKey'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('LanTu secret key')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            autoComplete='new-password'
-                            placeholder={t('Enter new key to update')}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Leave blank unless rotating the secret')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='LantuMinTopUp'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Minimum top-up (LanTu)')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            min={1}
-                            step={1}
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Smallest amount users can recharge through LanTu'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-              </div>
-            </TabsContent>
-
-            <TabsContent
-              value='nowpayments'
-              className={paymentTabContentClassName}
-            >
-              <div className='space-y-4'>
-                <div>
-                  <h3 className='text-lg font-medium'>
-                    {t('NOWPayments Gateway')}
-                  </h3>
-                  <p className='text-muted-foreground text-sm'>
-                    {t('Configuration for NOWPayments crypto checkout')}
-                  </p>
-                </div>
-
-                <Alert>
-                  <ShieldAlert className='h-4 w-4' />
-                  <AlertTitle>{t('Webhook Configuration:')}</AlertTitle>
-                  <AlertDescription className='space-y-1'>
-                    <code className='bg-muted block rounded px-2 py-1 text-xs'>
-                      {'<ServerAddress>/api/nowpayments/webhook'}
-                    </code>
-                    <p>
-                      {t(
-                        'Configure this IPN callback URL in your NOWPayments dashboard.'
-                      )}
-                    </p>
-                    <a
-                      href='https://documenter.getpostman.com/view/7907941/2s93JusNJt'
-                      target='_blank'
-                      rel='noreferrer'
-                      className='text-primary text-sm underline hover:no-underline'
-                    >
-                      {t('NOWPayments documentation')}
-                    </a>
-                  </AlertDescription>
-                </Alert>
-
-                <FormField
-                  control={form.control}
-                  name='NowPaymentsEnabled'
-                  render={({ field }) => (
-                    <SettingsSwitchItem>
-                      <SettingsSwitchContent>
-                        <FormLabel>
-                          {t('Enable NOWPayments payments')}
-                        </FormLabel>
-                        <FormDescription>
-                          {t('Hosted crypto checkout through NOWPayments')}
-                        </FormDescription>
-                      </SettingsSwitchContent>
-                      <FormControl>
-                        <Switch
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                    </SettingsSwitchItem>
-                  )}
-                />
-
-                <div className='grid gap-6 md:grid-cols-3'>
-                  <FormField
-                    control={form.control}
-                    name='NowPaymentsApiKey'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('NOWPayments API key')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            autoComplete='new-password'
-                            placeholder={t('Enter new key to update')}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'NOWPayments API key (leave blank unless updating)'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='NowPaymentsIPNSecret'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('IPN secret')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='password'
-                            autoComplete='new-password'
-                            placeholder={t('Enter new key to update')}
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'IPN signing secret (leave blank unless updating)'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='NowPaymentsSandbox'
-                    render={({ field }) => (
-                      <SettingsSwitchItem>
-                        <SettingsSwitchContent>
-                          <FormLabel>{t('Sandbox mode')}</FormLabel>
-                          <FormDescription>
-                            {t('Use NOWPayments sandbox API')}
-                          </FormDescription>
-                        </SettingsSwitchContent>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </SettingsSwitchItem>
-                    )}
-                  />
-                </div>
-
-                <div className='grid gap-6 md:grid-cols-3'>
-                  <FormField
-                    control={form.control}
-                    name='NowPaymentsCurrency'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Price currency')}</FormLabel>
-                        <FormControl>
-                          <Input placeholder='USD' {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Invoice fiat currency, usually USD')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='NowPaymentsUnitPrice'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>
-                          {t('Unit price (invoice currency / USD)')}
-                        </FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            step='0.01'
-                            min={0}
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'How much NOWPayments invoice currency to charge for each USD of balance'
-                          )}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name='NowPaymentsMinTopUp'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Minimum top-up (USD)')}</FormLabel>
-                        <FormControl>
-                          <Input
-                            type='number'
-                            min={1}
-                            step={1}
-                            {...safeNumberFieldProps(field)}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t(
-                            'Smallest amount users can recharge through NOWPayments'
-                          )}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -1948,29 +1472,6 @@ export function PaymentSettingsSection({
                 </div>
 
                 <div className='grid gap-6 md:grid-cols-2'>
-                  <FormField
-                    control={form.control}
-                    name='CreemEnabled'
-                    render={({ field }) => (
-                      <SettingsSwitchItem>
-                        <SettingsSwitchContent>
-                          <FormLabel>{t('Enable Creem payments')}</FormLabel>
-                          <FormDescription>
-                            {t(
-                              'Turn off to hide Creem checkout while keeping webhooks available for pending orders.'
-                            )}
-                          </FormDescription>
-                        </SettingsSwitchContent>
-                        <FormControl>
-                          <Switch
-                            checked={field.value}
-                            onCheckedChange={field.onChange}
-                          />
-                        </FormControl>
-                      </SettingsSwitchItem>
-                    )}
-                  />
-
                   <FormField
                     control={form.control}
                     name='CreemApiKey'

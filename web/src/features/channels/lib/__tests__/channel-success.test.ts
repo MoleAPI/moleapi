@@ -1,117 +1,78 @@
-/*
-Copyright (C) 2023-2026 QuantumNous
+import { describe, expect, test } from 'vitest'
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
-import assert from 'node:assert/strict'
-
-import { describe, test } from 'vitest'
-
-import type { Channel } from '../../types'
+import { channelSchema } from '../../types'
 import {
   getChannelProbeStats,
   getChannelSuccessStats,
+  type ChannelProbeMetric,
+  type ChannelSuccessMetric,
 } from '../channel-success'
+import { aggregateChannelsByTag } from '../channel-utils'
 
-describe('channel success stats', () => {
-  test('returns a single channel success rate', () => {
-    const stats = getChannelSuccessStats(
-      { id: 7 } as Channel,
-      new Map([
-        [
-          7,
-          {
-            channel_id: 7,
-            request_count: 20,
-            success_count: 19,
-            success_rate: 95,
-          },
-        ],
-      ])
-    )
+const base = channelSchema.parse({
+  id: 1,
+  key: '',
+  name: 'First',
+  type: 1,
+  status: 1,
+  created_time: 0,
+  test_time: 0,
+  response_time: 0,
+  balance_updated_time: 0,
+  tag: 'shared',
+})
 
-    assert.deepEqual(stats, {
-      request_count: 20,
-      success_count: 19,
-      success_rate: 95,
-    })
-  })
-
-  test('aggregates tag rows by request count', () => {
-    const stats = getChannelSuccessStats(
-      {
-        children: [{ id: 1 }, { id: 2 }, { id: 3 }],
-      } as unknown as Channel,
-      new Map([
-        [
-          1,
-          {
-            channel_id: 1,
-            request_count: 10,
-            success_count: 10,
-            success_rate: 100,
-          },
-        ],
-        [
-          2,
-          {
-            channel_id: 2,
-            request_count: 30,
-            success_count: 15,
-            success_rate: 50,
-          },
-        ],
-      ])
-    )
-
-    assert.deepEqual(stats, {
-      request_count: 40,
-      success_count: 25,
-      success_rate: 62.5,
-    })
+test('aggregates success rate using request counts instead of averaging percentages', () => {
+  const channels = aggregateChannelsByTag([
+    base,
+    { ...base, id: 2, name: 'Second' },
+  ])
+  const metrics = new Map<number, ChannelSuccessMetric>([
+    [
+      1,
+      { channel_id: 1, request_count: 2, success_count: 1, success_rate: 50 },
+    ],
+    [
+      2,
+      { channel_id: 2, request_count: 8, success_count: 8, success_rate: 100 },
+    ],
+  ])
+  expect(getChannelSuccessStats(channels[0], metrics)).toMatchObject({
+    request_count: 10,
+    success_count: 9,
+    success_rate: 90,
   })
 })
 
-describe('channel probe stats', () => {
-  test('degraded model takes precedence in a channel summary', () => {
-    const items = [
-      {
-        channel_id: 7,
-        channel_name: 'primary',
-        model: 'model-a',
-        status: 'healthy' as const,
-        recent_pass: 5,
-        recent_total: 5,
-      },
-      {
-        channel_id: 7,
-        channel_name: 'primary',
-        model: 'model-b',
-        status: 'degraded' as const,
-        recent_pass: 2,
-        recent_total: 5,
-      },
-    ]
+describe('channel probe status', () => {
+  test('reports degraded when any model is degraded', () => {
+    const metrics = new Map<number, ChannelProbeMetric[]>([
+      [
+        base.id,
+        [
+          {
+            channel_id: 1,
+            channel_name: 'First',
+            model: 'a',
+            status: 'healthy',
+            recent_pass: 1,
+            recent_total: 1,
+          },
+          {
+            channel_id: 1,
+            channel_name: 'First',
+            model: 'b',
+            status: 'degraded',
+            recent_pass: 0,
+            recent_total: 1,
+          },
+        ],
+      ],
+    ])
+    expect(getChannelProbeStats(base, metrics)?.status).toBe('degraded')
+  })
 
-    assert.deepEqual(
-      getChannelProbeStats({ id: 7 } as Channel, new Map([[7, items]])),
-      {
-        status: 'degraded',
-        items,
-      }
-    )
+  test('returns no result before a channel has probe data', () => {
+    expect(getChannelProbeStats(base, new Map())).toBeUndefined()
   })
 })

@@ -282,7 +282,6 @@ function PricingFormFixture(props: {
     CreateCacheRatio: '{}',
     CompletionRatio: '{}',
     ImageRatio: '{}',
-    ImageOutputRatio: '{}',
     AudioRatio: '{}',
     AudioCompletionRatio: '{}',
     BillingMode: '{}',

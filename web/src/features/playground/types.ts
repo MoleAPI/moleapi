@@ -58,6 +58,8 @@ export interface PlaygroundConversationSession {
   messages: Message[]
 }
 
+export type PlaygroundConversationScope = 'playground' | 'support'
+
 // API payload types
 export interface ChatCompletionMessage {
   role: MessageRole

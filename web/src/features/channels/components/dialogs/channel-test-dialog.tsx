@@ -60,16 +60,9 @@ import {
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Sheet,
   SheetContent,
@@ -79,7 +72,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet'
 import { Switch } from '@/components/ui/switch'
-import { Textarea } from '@/components/ui/textarea'
 import {
   Tooltip,
   TooltipContent,
@@ -97,7 +89,6 @@ import {
 } from '../../lib'
 import type {
   Channel,
-  ChannelTestProbe,
   GetChannelsResponse,
   SearchChannelsResponse,
 } from '../../types'
@@ -124,7 +115,6 @@ type TestResult = {
   completedAt?: number
   error?: string
   errorCode?: string
-  probe?: ChannelTestProbe
 }
 
 type BatchProgress = {
@@ -202,10 +192,6 @@ const endpointTypeOptions: Array<{ value: string; label: string }> = [
   },
   { value: 'embeddings', label: 'Embeddings (/v1/embeddings)' },
 ]
-
-const endpointSelectContentClass = 'w-[460px] max-w-[calc(100vw-2rem)]'
-const endpointSelectItemClass =
-  'items-start py-2 [&_[data-slot=select-item-text]]:min-w-0 [&_[data-slot=select-item-text]]:shrink [&_[data-slot=select-item-text]]:whitespace-normal'
 
 const STREAM_INCOMPATIBLE_ENDPOINTS = new Set([
   'embeddings',
@@ -337,11 +323,6 @@ function ChannelTestDialogContent({
     typeof toast.loading
   > | null>(null)
   const [endpointType, setEndpointType] = useState('auto')
-  const [testType, setTestType] = useState<'hi' | 'intelligence' | 'custom'>(
-    'hi'
-  )
-  const [customPrompt, setCustomPrompt] = useState('')
-  const [customAnswer, setCustomAnswer] = useState('')
   const [isStreamTest, setIsStreamTest] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({})
@@ -409,9 +390,6 @@ function ChannelTestDialogContent({
   const resetState = useCallback(() => {
     batchStopRequestedRef.current = true
     setEndpointType('auto')
-    setTestType('hi')
-    setCustomPrompt('')
-    setCustomAnswer('')
     setIsStreamTest(false)
     setSearchTerm('')
     setTestResults({})
@@ -428,11 +406,7 @@ function ChannelTestDialogContent({
   }, [])
 
   const streamDisabled = STREAM_INCOMPATIBLE_ENDPOINTS.has(endpointType)
-  const effectiveStreamTest =
-    testType === 'hi' && !streamDisabled && isStreamTest
-  const customProbeReady =
-    testType !== 'custom' ||
-    (customPrompt.trim().length > 0 && customAnswer.trim().length > 0)
+  const effectiveStreamTest = !streamDisabled && isStreamTest
 
   const handleEndpointTypeChange = useCallback((value: string | null) => {
     if (value === null) return
@@ -481,7 +455,7 @@ function ChannelTestDialogContent({
 
   const filteredModels = useMemo(() => {
     if (!searchTerm) return models
-    const keyword = searchTerm.toLowerCase()
+    const keyword = searchTerm.trim().toLowerCase()
     return models.filter((model) => model.toLowerCase().includes(keyword))
   }, [models, searchTerm])
 
@@ -565,12 +539,6 @@ function ChannelTestDialogContent({
       refreshList = true
     ): Promise<TestResult | undefined> => {
       if (!currentRow) return
-      if (!customProbeReady) {
-        if (!silent) {
-          toast.error(t('Custom prompt and expected answer are required'))
-        }
-        return
-      }
 
       markModelTesting(model, true)
       updateTestResult(model, { status: 'testing' })
@@ -584,13 +552,9 @@ function ChannelTestDialogContent({
             testModel: model,
             endpointType: endpointType === 'auto' ? undefined : endpointType,
             stream: effectiveStreamTest || undefined,
-            testType,
-            prompt: testType === 'custom' ? customPrompt.trim() : undefined,
-            expectedAnswer:
-              testType === 'custom' ? customAnswer.trim() : undefined,
             silent,
           },
-          (success, responseTime, error, errorCode, probe) => {
+          (success, responseTime, error, errorCode) => {
             const completedAt = Date.now()
             finalResult = {
               status: success ? 'success' : 'error',
@@ -598,7 +562,6 @@ function ChannelTestDialogContent({
               completedAt,
               error,
               errorCode,
-              probe,
             }
             updateTestResult(model, finalResult)
           }
@@ -627,10 +590,6 @@ function ChannelTestDialogContent({
       currentRow,
       endpointType,
       effectiveStreamTest,
-      testType,
-      customPrompt,
-      customAnswer,
-      customProbeReady,
       markModelTesting,
       refreshChannelLists,
       t,
@@ -957,9 +916,7 @@ function ChannelTestDialogContent({
                     variant='ghost'
                     size='icon-sm'
                     onClick={() => testSingleModel(model)}
-                    disabled={
-                      isTestingModel || isBatchTesting || !customProbeReady
-                    }
+                    disabled={isTestingModel || isBatchTesting}
                     aria-label={t('Test Connection')}
                   />
                 }
@@ -979,7 +936,6 @@ function ChannelTestDialogContent({
     ],
     [
       defaultTestModel,
-      customProbeReady,
       isBatchTesting,
       t,
       testResults,
@@ -1023,68 +979,17 @@ function ChannelTestDialogContent({
         }
       >
         <div className='max-h-[78vh] space-y-4 overflow-y-auto py-4 pr-1'>
-          <div className='grid gap-4 md:grid-cols-3'>
-            <div className='grid gap-2'>
-              <Label htmlFor='test-type'>{t('Probe type')}</Label>
-              <Select
-                value={testType}
-                onValueChange={(value) => {
-                  if (value === null) return
-                  setTestType(value as typeof testType)
-                  if (value !== 'hi') setIsStreamTest(false)
-                }}
-              >
-                <SelectTrigger id='test-type' className='w-full'>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent alignItemWithTrigger={false}>
-                  <SelectGroup>
-                    <SelectItem value='hi'>{t('Hi check')}</SelectItem>
-                    <SelectItem value='intelligence'>
-                      {t('Intelligence check')}
-                    </SelectItem>
-                    <SelectItem value='custom'>
-                      {t('Custom prompt check')}
-                    </SelectItem>
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-              <p className='text-muted-foreground text-xs'>
-                {t('Choose connectivity, intelligence, or a custom check.')}
-              </p>
-            </div>
+          <div className='grid gap-4 md:grid-cols-2'>
             <div className='grid gap-2'>
               <Label htmlFor='endpoint-type'>{t('Endpoint Type')}</Label>
-              <Select
-                items={endpointSelectItems}
+              <Combobox
+                options={endpointSelectItems}
                 value={endpointType}
                 onValueChange={handleEndpointTypeChange}
-              >
-                <SelectTrigger id='endpoint-type' className='w-full min-w-0'>
-                  <SelectValue
-                    className='min-w-0 truncate'
-                    placeholder={t('Auto detect (default)')}
-                  />
-                </SelectTrigger>
-                <SelectContent
-                  alignItemWithTrigger={false}
-                  className={endpointSelectContentClass}
-                >
-                  <SelectGroup>
-                    {endpointSelectItems.map((option) => (
-                      <SelectItem
-                        key={option.value}
-                        value={option.value}
-                        className={endpointSelectItemClass}
-                      >
-                        <span className='min-w-0 leading-snug break-words whitespace-normal'>
-                          {option.label}
-                        </span>
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
+                id='endpoint-type'
+                className='w-full min-w-0'
+                placeholder={t('Auto detect (default)')}
+              />
               <p className='text-muted-foreground text-xs'>
                 {t(
                   'Override the endpoint used for testing. Leave empty to auto detect.'
@@ -1098,7 +1003,7 @@ function ChannelTestDialogContent({
                   id='stream-toggle'
                   checked={effectiveStreamTest}
                   onCheckedChange={setIsStreamTest}
-                  disabled={streamDisabled || testType !== 'hi'}
+                  disabled={streamDisabled}
                 />
                 <span className='text-sm'>
                   {effectiveStreamTest ? t('Enabled') : t('Disabled')}
@@ -1109,37 +1014,6 @@ function ChannelTestDialogContent({
               </p>
             </div>
           </div>
-
-          {testType === 'custom' && (
-            <div className='grid gap-4 md:grid-cols-2'>
-              <div className='grid gap-2'>
-                <Label htmlFor='custom-probe-prompt'>
-                  {t('Custom prompt')}
-                </Label>
-                <Textarea
-                  id='custom-probe-prompt'
-                  rows={3}
-                  maxLength={4000}
-                  value={customPrompt}
-                  onChange={(event) => setCustomPrompt(event.target.value)}
-                />
-              </div>
-              <div className='grid gap-2'>
-                <Label htmlFor='custom-probe-answer'>
-                  {t('Expected answer')}
-                </Label>
-                <Input
-                  id='custom-probe-answer'
-                  maxLength={500}
-                  value={customAnswer}
-                  onChange={(event) => setCustomAnswer(event.target.value)}
-                />
-                <p className='text-muted-foreground text-xs'>
-                  {t('Compared after ignoring spaces and letter case.')}
-                </p>
-              </div>
-            </div>
-          )}
 
           <div className='space-y-3 max-sm:has-[div[role="toolbar"]]:pb-16'>
             <div className='flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'>
@@ -1165,11 +1039,7 @@ function ChannelTestDialogContent({
                       <Button
                         size='sm'
                         onClick={() => handleBatchTest(filteredModels)}
-                        disabled={
-                          isAnyTesting ||
-                          filteredModels.length === 0 ||
-                          !customProbeReady
-                        }
+                        disabled={isAnyTesting || filteredModels.length === 0}
                       >
                         {testAllButtonLabel}
                       </Button>
@@ -1334,22 +1204,12 @@ function TestResultCell({
   }
 
   if (result.status === 'success') {
-    return (
-      <div className='text-muted-foreground flex items-center gap-2 text-sm'>
-        <span>
-          {typeof result.responseTime === 'number'
-            ? formatResponseTime(result.responseTime, t)
-            : '-'}
-        </span>
-        {result.probe?.level && (
-          <StatusBadge
-            label={t(result.probe.level)}
-            variant='info'
-            size='sm'
-            copyable={false}
-          />
-        )}
-      </div>
+    return typeof result.responseTime === 'number' ? (
+      <span className='text-muted-foreground text-sm'>
+        {formatResponseTime(result.responseTime, t)}
+      </span>
+    ) : (
+      <span className='text-muted-foreground text-sm'>-</span>
     )
   }
 
@@ -1386,14 +1246,6 @@ function FailureResultContent({
 
   return (
     <div className='flex min-w-0 items-center gap-2 text-xs whitespace-normal'>
-      {result.probe?.level && (
-        <StatusBadge
-          label={t(result.probe.level)}
-          variant='warning'
-          size='sm'
-          copyable={false}
-        />
-      )}
       <p className='text-muted-foreground line-clamp-2 min-w-0 flex-1 leading-snug wrap-break-word'>
         {summary}
       </p>

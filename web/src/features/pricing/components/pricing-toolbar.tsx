@@ -20,6 +20,7 @@ import { ArrowUpDown, Check, Filter } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { DataTableViewModeToggle } from '@/components/data-table'
 import {
   sideDrawerContentClassName,
   sideDrawerFormClassName,
@@ -30,6 +31,7 @@ import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -40,10 +42,11 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import { cn } from '@/lib/utils'
 
-import { getSortLabels, type SortOption } from '../constants'
-import type { PricingModel, PricingVendor } from '../types'
+import { getSortLabels, type SortOption, type ViewMode } from '../constants'
+import type { PricingModel, PricingVendor, TokenUnit } from '../types'
 import { PricingSidebar } from './pricing-sidebar'
 
 export interface PricingToolbarProps {
@@ -51,6 +54,12 @@ export interface PricingToolbarProps {
   totalCount?: number
   sortBy: string
   onSortChange: (value: string) => void
+  tokenUnit: TokenUnit
+  onTokenUnitChange: (value: TokenUnit) => void
+  showRechargePrice: boolean
+  onRechargePriceChange: (value: boolean) => void
+  viewMode: ViewMode
+  onViewModeChange: (value: ViewMode) => void
   quotaTypeFilter: string
   endpointTypeFilter: string
   vendorFilter: string
@@ -77,8 +86,8 @@ export function PricingToolbar(props: PricingToolbarProps) {
   const sortLabels = getSortLabels(t)
 
   return (
-    <div className='max-w-full min-w-0 rounded-xl border p-3'>
-      <div className='flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between'>
+    <div className='bg-card rounded-xl border p-3'>
+      <div className='flex flex-wrap items-center justify-between gap-3'>
         <div className='flex items-center gap-2'>
           <Button
             type='button'
@@ -101,16 +110,46 @@ export function PricingToolbar(props: PricingToolbarProps) {
               {props.filteredCount.toLocaleString()}
             </span>
             <span>{props.filteredCount === 1 ? t('model') : t('models')}</span>
-            {props.hasActiveFilters && props.totalCount && (
-              <span className='text-muted-foreground/60 text-xs'>
-                / {props.totalCount.toLocaleString()}
-              </span>
-            )}
+            {props.totalCount != null &&
+              props.filteredCount !== props.totalCount && (
+                <span className='text-muted-foreground/60 text-xs'>
+                  / {props.totalCount.toLocaleString()}
+                </span>
+              )}
           </div>
         </div>
 
-        <div className='flex flex-wrap items-center gap-2'>
-          <DropdownMenu>
+        <div className='flex min-w-0 flex-wrap items-center gap-2'>
+          <ToggleGroup
+            value={[props.showRechargePrice ? 'recharge' : 'standard']}
+            onValueChange={(values) => {
+              if (values.length > 0) {
+                props.onRechargePriceChange(values[0] === 'recharge')
+              }
+            }}
+            variant='outline'
+            size='sm'
+            aria-label={t('Price display mode')}
+          >
+            <ToggleGroupItem value='standard'>{t('Standard')}</ToggleGroupItem>
+            <ToggleGroupItem value='recharge'>{t('Recharge')}</ToggleGroupItem>
+          </ToggleGroup>
+          <ToggleGroup
+            value={[props.tokenUnit]}
+            onValueChange={(values) => {
+              if (values[0] === 'M' || values[0] === 'K') {
+                props.onTokenUnitChange(values[0])
+              }
+            }}
+            variant='outline'
+            size='sm'
+            aria-label={t('Token unit')}
+          >
+            <ToggleGroupItem value='M'>/1M</ToggleGroupItem>
+            <ToggleGroupItem value='K'>/1K</ToggleGroupItem>
+          </ToggleGroup>
+
+          <DropdownMenu modal={false}>
             <DropdownMenuTrigger
               render={
                 <Button
@@ -125,29 +164,36 @@ export function PricingToolbar(props: PricingToolbarProps) {
               <span>{sortLabels[props.sortBy as SortOption] || t('Sort')}</span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align='end' className='w-44'>
-              {Object.entries(sortLabels).map(([value, label]) => (
-                <DropdownMenuItem
-                  key={value}
-                  onClick={() => props.onSortChange(value)}
-                  className='gap-2'
-                >
-                  <Check
-                    className={cn(
-                      'size-4 shrink-0',
-                      props.sortBy === value ? 'opacity-100' : 'opacity-0'
-                    )}
-                  />
-                  {label}
-                </DropdownMenuItem>
-              ))}
+              <DropdownMenuGroup>
+                {Object.entries(sortLabels).map(([value, label]) => (
+                  <DropdownMenuItem
+                    key={value}
+                    onClick={() => props.onSortChange(value)}
+                    className='gap-2'
+                  >
+                    <Check
+                      className={cn(
+                        'size-4 shrink-0',
+                        props.sortBy === value ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <DataTableViewModeToggle
+            value={props.viewMode}
+            onChange={props.onViewModeChange}
+          />
         </div>
       </div>
 
       <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
         <SheetContent
-          side='right'
+          side='left'
           className={sideDrawerContentClassName('sm:max-w-md')}
         >
           <SheetHeader className={sideDrawerHeaderClassName()}>

@@ -129,3 +129,18 @@ test('Chinese copy presents one USD minimum and translates ten percent pricing a
     '/pricing?group=temp'
   )
 })
+
+test('homepage omits group calculations while retaining the provider comparison', async () => {
+  await renderOffers()
+  expect(
+    screen.queryByRole('heading', { name: 'See exactly how much you save' })
+  ).not.toBeInTheDocument()
+  expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument()
+  expect(screen.queryByRole('combobox')).not.toBeInTheDocument()
+  expect(
+    screen.getByRole('link', { name: 'Official Anthropic API' })
+  ).toBeVisible()
+  expect(
+    screen.getByRole('link', { name: 'OpenRouter + 5.5% fee' })
+  ).toBeVisible()
+})

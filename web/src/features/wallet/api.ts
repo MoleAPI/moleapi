@@ -246,7 +246,8 @@ export async function getAffiliateHistory(
   page: number,
   pageSize: number,
   startTimestamp?: number,
-  endTimestamp?: number
+  endTimestamp?: number,
+  filters: { allUsers?: boolean; inviterKeyword?: string } = {}
 ): Promise<AffiliateHistoryResponse> {
   const params = new URLSearchParams({
     p: page.toString(),
@@ -258,6 +259,10 @@ export async function getAffiliateHistory(
   if (endTimestamp) {
     params.append('end_timestamp', endTimestamp.toString())
   }
+  if (filters.allUsers) params.append('all_users', '1')
+  if (filters.inviterKeyword) {
+    params.append('inviter_keyword', filters.inviterKeyword)
+  }
   const res = await api.get(`/api/user/aff/history?${params.toString()}`)
   return res.data
 }
@@ -268,7 +273,9 @@ export async function getAffiliateHistory(
 export async function getUserBillingHistory(
   page: number,
   pageSize: number,
-  keyword?: string
+  keyword?: string,
+  startTimestamp?: number,
+  endTimestamp?: number
 ): Promise<ApiResponse<BillingHistoryResponse>> {
   const params = new URLSearchParams({
     p: page.toString(),
@@ -276,6 +283,12 @@ export async function getUserBillingHistory(
   })
   if (keyword) {
     params.append('keyword', keyword)
+  }
+  if (startTimestamp !== undefined) {
+    params.set('start_timestamp', String(startTimestamp))
+  }
+  if (endTimestamp !== undefined) {
+    params.set('end_timestamp', String(endTimestamp))
   }
   const res = await api.get(`/api/user/topup/self?${params.toString()}`)
   return res.data

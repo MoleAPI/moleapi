@@ -42,10 +42,11 @@ export const API_ENDPOINTS = {
 // Default group — uses 'default' as the safe fallback; auto-group is
 // only selected when the backend confirms it is available for the user.
 export const DEFAULT_GROUP = 'default' as const
+export const DEFAULT_MODEL = 'deepseek-flash' as const
 
 // Default configuration
 export const DEFAULT_CONFIG: PlaygroundConfig = {
-  model: 'gpt-4o',
+  model: DEFAULT_MODEL,
   group: DEFAULT_GROUP,
   temperature: 0.7,
   top_p: 1,
@@ -72,6 +73,8 @@ export const STORAGE_KEYS = {
   CONVERSATIONS: 'playground_conversations',
   MESSAGES: 'playground_messages',
   PARAMETER_ENABLED: 'playground_parameter_enabled',
+  SUPPORT_ACTIVE_CONVERSATION_ID: 'support_ai_active_conversation_id',
+  SUPPORT_CONVERSATIONS: 'support_ai_conversations',
 } as const
 
 // Error messages

@@ -1,0 +1,246 @@
+package controller
+
+import (
+	"context"
+	"encoding/csv"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
+	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestLogExportDatabaseMatrix(t *testing.T) {
+	for _, kind := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(kind, func(t *testing.T) {
+			dsn := os.Getenv("TEST_" + strings.ToUpper(kind) + "_DSN")
+			if kind != "sqlite" && dsn == "" {
+				t.Skip("test database DSN is not configured")
+			}
+			db, _ := newAuditTestDatabase(t, kind, dsn)
+			logDB, _ := newAuditTestDatabase(t, kind, dsn)
+			previous, previousLogs := model.DB, model.LOG_DB
+			model.DB, model.LOG_DB = db, logDB
+			t.Cleanup(func() { model.DB, model.LOG_DB = previous, previousLogs })
+			previousLogType := common.LogDatabaseType()
+			common.SetLogDatabaseType(common.DatabaseType(kind))
+			t.Cleanup(func() { common.SetLogDatabaseType(previousLogType) })
+			var version string
+			versionSQL := "SELECT version()"
+			if kind == "sqlite" {
+				versionSQL = "SELECT sqlite_version()"
+			}
+			require.NoError(t, db.Raw(versionSQL).Scan(&version).Error)
+			t.Log("database version:", version)
+			// Representative existing wallet/log data predates the new allowance table.
+			require.NoError(t, db.AutoMigrate(&model.TopUp{}))
+			require.NoError(t, logDB.AutoMigrate(&model.Log{}))
+			require.NoError(t, db.Create(&model.TopUp{UserId: 7, TradeNo: "old-paid-order", CreateTime: 100, Money: 12.34}).Error)
+			for _, row := range []model.Log{
+				{UserId: 7, CreatedAt: 99, Content: "before"},
+				{UserId: 7, CreatedAt: 100, Content: "=SUM(1,2)", ModelName: "  =formula", Other: `{"admin_info":{"secret":"never-export"}}`},
+				{UserId: 7, CreatedAt: 200, Content: "line 1\nline 2"},
+				{UserId: 7, CreatedAt: 201, Content: "after"},
+				{UserId: 8, CreatedAt: 150, Content: "foreign-user"},
+			} {
+				require.NoError(t, logDB.Create(&row).Error)
+			}
+			for i := 0; i < 2; i++ {
+				require.NoError(t, db.AutoMigrate(&model.LogExportAllowance{}))
+			}
+			var order model.TopUp
+			require.NoError(t, db.First(&order).Error)
+			assert.Equal(t, 12.34, order.Money)
+			orders, total, err := model.SearchUserTopUpsWithParams(7, model.TopUpSearchParams{StartTimestamp: 100, EndTimestamp: 100}, &common.PageInfo{Page: 1, PageSize: 10})
+			require.NoError(t, err)
+			assert.EqualValues(t, 1, total)
+			require.Len(t, orders, 1)
+			request := func(user, role int, body string) *httptest.ResponseRecorder {
+				w := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(w)
+				c.Set("id", user)
+				c.Set("role", role)
+				c.Request = httptest.NewRequest("POST", "/api/log/export", strings.NewReader(body))
+				c.Request.Header.Set("Content-Type", "application/json")
+				ExportLogs(c)
+				return w
+			}
+			body := `{"start_timestamp":100,"end_timestamp":200}`
+			response := request(7, common.RoleCommonUser, body)
+			require.Equal(t, 200, response.Code, response.Body.String())
+			var csvText strings.Builder
+			var event struct {
+				CSV          string `json:"csv"`
+				Count, Bytes int
+				Done         bool
+				Error        string
+			}
+			for _, line := range strings.Split(strings.TrimSpace(response.Body.String()), "\n") {
+				require.NoError(t, common.UnmarshalJsonStr(line, &event))
+				csvText.WriteString(event.CSV)
+			}
+			require.True(t, event.Done)
+			assert.Empty(t, event.Error)
+			assert.Equal(t, 2, event.Count)
+			assert.Equal(t, csvText.Len(), event.Bytes)
+			records, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(csvText.String(), "\xef\xbb\xbf"))).ReadAll()
+			require.NoError(t, err)
+			require.Len(t, records, 3)
+			assert.Equal(t, "'=SUM(1,2)", records[1][11])
+			assert.Equal(t, "'  =formula", records[1][2])
+			assert.Equal(t, "line 1\nline 2", records[2][11])
+			for _, excluded := range []string{"before", "after", "foreign-user", "never-export", "channel_id", "user_id"} {
+				assert.NotContains(t, csvText.String(), excluded)
+			}
+			for _, invalid := range []string{`{}`, `{"start_timestamp":200,"end_timestamp":100}`, `{"start_timestamp":-1,"end_timestamp":200}`} {
+				assert.Equal(t, 400, request(7, 1, invalid).Code)
+			}
+			assert.Equal(t, 403, request(7, 1, `{"start_timestamp":100,"end_timestamp":200,"all_users":true}`).Code)
+			assert.Equal(t, 200, request(7, 1, body).Code)
+			// Re-migration/reopening the application does not reset the persisted allowance.
+			require.NoError(t, db.AutoMigrate(&model.LogExportAllowance{}))
+			assert.Equal(t, 200, request(7, 1, body).Code)
+			assert.Equal(t, http.StatusTooManyRequests, request(7, 1, body).Code)
+			admin := request(9, common.RoleAdminUser, `{"start_timestamp":100,"end_timestamp":200,"all_users":true}`)
+			assert.Equal(t, 200, admin.Code)
+			assert.Contains(t, admin.Body.String(), "foreign-user")
+			assert.Contains(t, admin.Body.String(), "channel_id")
+			empty := request(8, 1, `{"start_timestamp":300,"end_timestamp":400}`)
+			assert.Contains(t, empty.Body.String(), `"count":0`)
+			assert.Contains(t, empty.Body.String(), `"done":true`)
+			futureEnd := request(10, 1, fmt.Sprintf(`{"start_timestamp":100,"end_timestamp":%d}`, time.Now().Unix()+3600))
+			assert.Equal(t, http.StatusOK, futureEnd.Code, "the log list defaults to an end time one hour ahead")
+			assert.Contains(t, futureEnd.Body.String(), `"done":true`)
+			require.NoError(t, logDB.Create(&model.Log{UserId: 8, CreatedAt: 300, Type: model.LogTypeSystem, Content: "邀请好友充值返利 1元，订单号 private-order"}).Error)
+			private := request(8, 1, `{"start_timestamp":300,"end_timestamp":400}`)
+			assert.Contains(t, private.Body.String(), "邀请好友充值返利 1元")
+			assert.NotContains(t, private.Body.String(), "private-order")
+			// Every decoy differs by one filter. Export must match list membership,
+			// including wildcard model names, numeric user IDs and upstream request IDs.
+			require.NoError(t, db.Table("channels").AutoMigrate(&struct {
+				Id   int
+				Name string
+			}{}))
+			filterRows := []model.Log{}
+			for _, name := range []string{"match-start", "match-end", "wrong-type", "wrong-model", "wrong-token", "wrong-group", "wrong-channel", "wrong-user", "before-range", "after-range"} {
+				row := model.Log{UserId: 70, Username: "alice", CreatedAt: 500, Type: model.LogTypeConsume, Content: name, ModelName: "deepseek-flash", TokenName: "main token", Group: "vip", ChannelId: 12, RequestId: "local-1", UpstreamRequestId: "upstream-1"}
+				switch name {
+				case "match-end":
+					row.CreatedAt = 600
+					row.RequestId = "local-2"
+					row.UpstreamRequestId = "upstream-2"
+				case "wrong-type":
+					row.Type = model.LogTypeError
+				case "wrong-model":
+					row.ModelName = "deepseek-chat"
+				case "wrong-token":
+					row.TokenName = "other token"
+				case "wrong-group":
+					row.Group = "other group"
+				case "wrong-channel":
+					row.ChannelId = 13
+				case "wrong-user":
+					row.UserId = 71
+					row.Username = "bob"
+				case "before-range":
+					row.CreatedAt = 499
+				case "after-range":
+					row.CreatedAt = 601
+				}
+				filterRows = append(filterRows, row)
+			}
+			require.NoError(t, logDB.Create(&filterRows).Error)
+			baseFilter := model.LogSearchParams{Type: 2, StartTimestamp: 500, EndTimestamp: 600, ModelName: " deepseek-flash ", Username: " 70 ", TokenName: " main token ", Channel: 12, Group: " vip "}
+			for i, variant := range []string{"combined", "wildcard", "upstream-request", "error-type", "empty", "all-types"} {
+				filter := baseFilter
+				expected := []string{"match-start", "match-end"}
+				switch variant {
+				case "wildcard":
+					filter.ModelName = " deepseek-% "
+					expected = append(expected, "wrong-model")
+				case "upstream-request":
+					filter.RequestID = " upstream-1 "
+					expected = []string{"match-start"}
+				case "error-type":
+					filter.Type = model.LogTypeError
+					expected = []string{"wrong-type"}
+				case "empty":
+					filter.TokenName = "missing"
+					expected = nil
+				case "all-types":
+					filter.Type = 0
+					expected = append(expected, "wrong-type")
+				}
+				listed, _, err := model.GetAllLogs(filter.Type, filter.StartTimestamp, filter.EndTimestamp, filter.ModelName, filter.Username, filter.TokenName, 0, 100, filter.Channel, filter.Group, filter.RequestID, "")
+				require.NoError(t, err, variant)
+				listContents := []string{}
+				for _, row := range listed {
+					listContents = append(listContents, row.Content)
+				}
+				assert.ElementsMatch(t, expected, listContents, variant)
+				payload, err := common.Marshal(struct {
+					model.LogSearchParams
+					AllUsers bool `json:"all_users"`
+					PageSize int  `json:"page_size"`
+				}{filter, true, 1})
+				require.NoError(t, err)
+				exported := request(100+i, common.RoleAdminUser, string(payload))
+				require.Equal(t, http.StatusOK, exported.Code, exported.Body.String())
+				require.NoError(t, common.UnmarshalJsonStr(strings.TrimSpace(exported.Body.String()), &event))
+				require.True(t, event.Done)
+				assert.Equal(t, len(expected), event.Count, variant)
+				csvRows, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(event.CSV, "\xef\xbb\xbf"))).ReadAll()
+				require.NoError(t, err)
+				exportContents := []string{}
+				for _, row := range csvRows[1:] {
+					exportContents = append(exportContents, row[11])
+				}
+				assert.ElementsMatch(t, listContents, exportContents, variant)
+			}
+			selfFiltered := request(70, common.RoleCommonUser, `{"start_timestamp":500,"end_timestamp":600,"type":2,"model_name":"deepseek-flash","group":"vip","token_name":"main token","request_id":"upstream-1","username":"bob","channel":99}`)
+			require.Equal(t, http.StatusOK, selfFiltered.Code)
+			require.NoError(t, common.UnmarshalJsonStr(strings.TrimSpace(selfFiltered.Body.String()), &event))
+			assert.Equal(t, 2, event.Count, "self scope ignores admin-only filters just like the list")
+			assert.Contains(t, event.CSV, "match-start")
+			assert.Contains(t, event.CSV, "wrong-channel")
+			assert.NotContains(t, event.CSV, "wrong-user")
+			// A simultaneous fourth request cannot pass, including on SQLite.
+			var wg sync.WaitGroup
+			outcomes := make(chan error, 4)
+			now := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+			for i := 0; i < 4; i++ {
+				wg.Add(1)
+				go func() { defer wg.Done(); outcomes <- model.ReserveLogExport(context.Background(), 77, now) }()
+			}
+			wg.Wait()
+			close(outcomes)
+			successes := 0
+			limited := 0
+			for err := range outcomes {
+				if err == nil {
+					successes++
+				} else if err == model.ErrLogExportLimit {
+					limited++
+				} else {
+					t.Fatal(err)
+				}
+			}
+			assert.Equal(t, 3, successes)
+			assert.Equal(t, 1, limited)
+			require.NoError(t, model.ReserveLogExport(context.Background(), 77, now.Add(24*time.Hour)))
+			var allowance model.LogExportAllowance
+			require.NoError(t, db.First(&allowance, "user_id = ?", 77).Error)
+			assert.Equal(t, 1, allowance.Attempts)
+			t.Log(fmt.Sprintf("range, privacy, CSV, migration, concurrency and UTC reset verified on %s", kind))
+		})
+	}
+}

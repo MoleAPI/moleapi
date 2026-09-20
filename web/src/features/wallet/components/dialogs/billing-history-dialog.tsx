@@ -214,41 +214,37 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
               />
             </div>
             {isAdmin && (
-              <>
-                <Input
-                  aria-label={t('Search by user')}
-                  placeholder={t('User ID, username, email, or display name')}
-                  value={userKeyword}
-                  onChange={(event) => handleUserSearch(event.target.value)}
-                  className='h-9 sm:max-w-56'
-                />
-                <Input
-                  aria-label={t('Start time')}
-                  type='datetime-local'
-                  value={startTime}
-                  onChange={(event) =>
-                    handleStartTimeChange(event.target.value)
-                  }
-                  className='h-9 sm:max-w-48'
-                />
-                <Input
-                  aria-label={t('End time')}
-                  type='datetime-local'
-                  value={endTime}
-                  onChange={(event) => handleEndTimeChange(event.target.value)}
-                  className='h-9 sm:max-w-48'
-                />
-                <Button
-                  type='button'
-                  variant='outline'
-                  size='sm'
-                  className='h-9'
-                  onClick={resetFilters}
-                >
-                  {t('Reset filters')}
-                </Button>
-              </>
+              <Input
+                aria-label={t('Search by user')}
+                placeholder={t('User ID, username, email, or display name')}
+                value={userKeyword}
+                onChange={(event) => handleUserSearch(event.target.value)}
+                className='h-9 sm:max-w-56'
+              />
             )}
+            <Input
+              aria-label={t('Start time')}
+              type='datetime-local'
+              value={startTime}
+              onChange={(event) => handleStartTimeChange(event.target.value)}
+              className='h-9 sm:max-w-48'
+            />
+            <Input
+              aria-label={t('End time')}
+              type='datetime-local'
+              value={endTime}
+              onChange={(event) => handleEndTimeChange(event.target.value)}
+              className='h-9 sm:max-w-48'
+            />
+            <Button
+              type='button'
+              variant='outline'
+              size='sm'
+              className='h-9'
+              onClick={resetFilters}
+            >
+              {t('Reset filters')}
+            </Button>
             <Select
               items={[
                 { value: '10', label: t('10 / page') },
@@ -474,6 +470,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                   variant='outline'
                   size='sm'
                   onClick={() => handlePageChange(page - 1)}
+                  aria-label={t('Previous page')}
                   disabled={page <= 1}
                   className='h-8 w-8 p-0'
                 >
@@ -488,6 +485,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                   variant='outline'
                   size='sm'
                   onClick={() => handlePageChange(page + 1)}
+                  aria-label={t('Next page')}
                   disabled={page >= totalPages}
                   className='h-8 w-8 p-0'
                 >

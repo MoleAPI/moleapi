@@ -17,24 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { ChevronsUpDown, Check, CpuIcon, LayersIcon } from 'lucide-react'
-/*
-Copyright (C) 2023-2026 QuantumNous
-
-This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
-*/
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -54,6 +36,7 @@ import {
   DrawerTitle,
   DrawerTrigger,
 } from '@/components/ui/drawer'
+import { Input } from '@/components/ui/input'
 import {
   Popover,
   PopoverContent,
@@ -591,6 +574,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
   const groupScrollContainerRef = useRef<HTMLDivElement | null>(null)
   const selectedGroupOptionRef = useRef<HTMLButtonElement | null>(null)
   const selectedModelOptionRef = useRef<HTMLDivElement | null>(null)
+  const modelSearchInputRef = useRef<HTMLInputElement | null>(null)
 
   const currentModel = useMemo(
     () => models.find((model) => model.value === selectedModel),
@@ -644,6 +628,7 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
     let secondFrameId = 0
     const firstFrameId = window.requestAnimationFrame(() => {
       secondFrameId = window.requestAnimationFrame(() => {
+        modelSearchInputRef.current?.focus({ preventScroll: true })
         scrollSelectedOptionIntoView(
           selectedGroupOptionRef.current,
           groupScrollContainerRef.current
@@ -749,12 +734,18 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
       filter={() => 1}
       shouldFilter={false}
     >
-      <CommandInput
-        className='h-8 text-[13px]'
-        onValueChange={setSearchQuery}
-        placeholder={t('Search models...')}
-        value={searchQuery}
-      />
+      <div className='p-1'>
+        <Input
+          aria-label={t('Search models...')}
+          className='h-8 text-[13px]'
+          autoFocus
+          onChange={(event) => setSearchQuery(event.target.value)}
+          onKeyDown={(event) => event.stopPropagation()}
+          placeholder={t('Search models...')}
+          ref={modelSearchInputRef}
+          value={searchQuery}
+        />
+      </div>
       <CommandList
         className={
           isMobile ? 'max-h-[45vh]' : modelGroupSelectorLayoutClasses.modelList
@@ -857,3 +848,21 @@ export const ModelGroupSelector: React.FC<ModelGroupSelectorProps> = ({
     </Popover>
   )
 }
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/

@@ -2,19 +2,9 @@
 Copyright (C) 2023-2026 QuantumNous
 
 This program is free software: you can redistribute it and/or modify
-it under the terms of the GNU Affero General Public License as
-published by the Free Software Foundation, either version 3 of the
-License, or (at your option) any later version.
-
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
-GNU Affero General Public License for more details.
-
-You should have received a copy of the GNU Affero General Public License
-along with this program. If not, see <https://www.gnu.org/licenses/>.
-
-For commercial licensing, please contact support@quantumnous.com
+it under the terms of the GNU Affero General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
 */
 import type { Channel } from '../types'
 import { isTagAggregateRow } from './channel-utils'
@@ -26,11 +16,10 @@ export type ChannelSuccessMetric = {
   success_rate: number
 }
 
-export type ChannelSuccessStats = {
-  request_count: number
-  success_count: number
-  success_rate: number
-}
+export type ChannelSuccessStats = Pick<
+  ChannelSuccessMetric,
+  'request_count' | 'success_count' | 'success_rate'
+>
 
 export type ChannelProbeMetric = {
   channel_id: number
@@ -53,7 +42,6 @@ export function getChannelSuccessStats(
   metrics?: ReadonlyMap<number, ChannelSuccessMetric>
 ): ChannelSuccessStats | undefined {
   if (!metrics) return undefined
-
   if (!isTagAggregateRow(channel)) {
     const metric = metrics.get(channel.id)
     if (!metric || metric.request_count <= 0) return undefined
@@ -72,9 +60,7 @@ export function getChannelSuccessStats(
     requestCount += metric.request_count
     successCount += metric.success_count
   }
-
   if (requestCount <= 0) return undefined
-
   return {
     request_count: requestCount,
     success_count: successCount,
@@ -93,10 +79,7 @@ export function getChannelProbeStats(
   if (items.length === 0) return undefined
 
   let status: ChannelProbeStats['status'] = 'pending'
-  if (items.some((item) => item.status === 'degraded')) {
-    status = 'degraded'
-  } else if (items.every((item) => item.status === 'healthy')) {
-    status = 'healthy'
-  }
+  if (items.some((item) => item.status === 'degraded')) status = 'degraded'
+  else if (items.every((item) => item.status === 'healthy')) status = 'healthy'
   return { status, items }
 }

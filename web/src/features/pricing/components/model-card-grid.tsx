@@ -16,12 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
-import type { PerfModelSummary } from '@/features/performance-metrics/types'
+import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { DEFAULT_PRICING_PAGE_SIZE, DEFAULT_TOKEN_UNIT } from '../constants'
 import type { PricingModel, TokenUnit } from '../types'
@@ -36,7 +38,6 @@ export interface ModelCardGridProps {
   tokenUnit?: TokenUnit
   showRechargePrice?: boolean
   selectedGroup?: string
-  perfModels?: PerfModelSummary[]
 }
 
 export function ModelCardGrid(props: ModelCardGridProps) {
@@ -47,6 +48,13 @@ export function ModelCardGrid(props: ModelCardGridProps) {
   const totalPages = Math.max(1, Math.ceil(props.models.length / pageSize))
   const currentPage = Math.min(page, totalPages)
 
+  const perfQuery = useQuery({
+    queryKey: ['perf-metrics-summary', 24],
+    queryFn: async () => requireServerSuccess(await getPerfMetricsSummary(24)),
+    staleTime: 60 * 1000,
+    retry: false,
+  })
+
   const pagedModels = useMemo(() => {
     const start = (currentPage - 1) * pageSize
     return props.models.slice(start, start + pageSize)
@@ -54,19 +62,23 @@ export function ModelCardGrid(props: ModelCardGridProps) {
 
   const perfMap = useMemo(() => {
     const map = new Map<string, ModelPerfBadgeData>()
-    for (const model of props.perfModels ?? []) {
-      map.set(model.model_name, model)
+    for (const model of perfQuery.data?.data?.models ?? []) {
+      map.set(model.model_name, {
+        ...model,
+        window_start: perfQuery.data?.data.window_start,
+        window_end: perfQuery.data?.data.window_end,
+      })
     }
     return map
-  }, [props.perfModels])
+  }, [perfQuery.data])
 
   if (props.models.length === 0) {
     return null
   }
 
   return (
-    <div className='max-w-full min-w-0 space-y-4 sm:space-y-5'>
-      <div className='max-w-full min-w-0 space-y-2'>
+    <div className='flex flex-col gap-4 sm:gap-5'>
+      <div className='grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3'>
         {pagedModels.map((model) => (
           <ModelCard
             key={model.id ?? model.model_name}
@@ -83,7 +95,7 @@ export function ModelCardGrid(props: ModelCardGridProps) {
       </div>
 
       {totalPages > 1 && (
-        <div className='text-muted-foreground bg-background flex flex-col items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm sm:flex-row'>
+        <div className='text-muted-foreground flex flex-col items-center justify-between gap-3 border-t px-4 py-3 text-sm sm:flex-row'>
           <p className='text-muted-foreground'>
             {t('Page {{current}} of {{total}}', {
               current: currentPage,

@@ -20,6 +20,7 @@ import { getGroups as getUserGroups } from '@/features/users/api'
 import { api, type ApiRequestConfig } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
+import type { InferenceStatus } from './lib/inference-status'
 import type {
   AddChannelRequest,
   BatchDeleteParams,
@@ -48,6 +49,18 @@ const channelActionConfig = (
   skipBusinessError: true,
   skipErrorHandler: true,
 })
+
+export async function getInferenceStatus(
+  channelId: number,
+  provider: 'vllm' | 'sglang',
+  signal?: AbortSignal
+): Promise<InferenceStatus> {
+  const response = await api.get<{ success: boolean; data: InferenceStatus }>(
+    `/api/channel/${channelId}/${provider}/status`,
+    { signal, disableDuplicate: true }
+  )
+  return requireServerSuccess(response.data).data
+}
 
 export type TaskPluginOption = {
   sortPriority?: number
@@ -105,7 +118,13 @@ export type CodexCredentialRefreshResponse = {
 export async function getChannels(
   params: GetChannelsParams = {}
 ): Promise<GetChannelsResponse> {
-  const res = await api.get('/api/channel', { params })
+  const res = await api.get('/api/channel', {
+    params: {
+      ...params,
+      group: params.group?.trim() || undefined,
+      status: params.status?.trim() || undefined,
+    },
+  })
   return res.data
 }
 
@@ -115,7 +134,15 @@ export async function getChannels(
 export async function searchChannels(
   params: SearchChannelsParams
 ): Promise<SearchChannelsResponse> {
-  const res = await api.get('/api/channel/search', { params })
+  const res = await api.get('/api/channel/search', {
+    params: {
+      ...params,
+      keyword: params.keyword?.trim() || undefined,
+      model: params.model?.trim() || undefined,
+      group: params.group?.trim() || undefined,
+      status: params.status?.trim() || undefined,
+    },
+  })
   return res.data
 }
 
@@ -130,8 +157,13 @@ export async function getChannel(id: number): Promise<GetChannelResponse> {
 /**
  * Get channel operations summary for administrators
  */
-export async function getChannelOps(): Promise<ChannelOpsResponse> {
-  const res = await api.get('/api/channel/ops', channelActionConfig())
+export async function getChannelOps(
+  autoBan?: boolean
+): Promise<ChannelOpsResponse> {
+  const res = await api.get('/api/channel/ops', {
+    ...channelActionConfig(),
+    params: autoBan === undefined ? undefined : { auto_ban: autoBan },
+  })
   return res.data
 }
 
@@ -249,16 +281,11 @@ export async function testChannel(
     endpoint_type?: string
     stream?: boolean
     scheduled?: boolean
-    test_type?: 'hi' | 'intelligence' | 'custom'
-    prompt?: string
-    expected_answer?: string
-    level?: 'basic' | 'standard' | 'advanced'
   }
 ): Promise<ChannelTestResponse> {
-  const res = await api.post(
+  const res = await api.get(
     `/api/channel/test/${id}`,
-    params ?? {},
-    channelActionConfig()
+    channelActionConfig({ params })
   )
   return res.data
 }

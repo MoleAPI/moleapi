@@ -30,13 +30,18 @@ import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import type { ConversationStorageUsage } from '../../lib'
-import type { PlaygroundConversationSession } from '../../types'
+import type {
+  PlaygroundConversationScope,
+  PlaygroundConversationSession,
+} from '../../types'
 
 type PlaygroundHistorySidebarProps = {
   activeSessionId: string
+  conversationScope?: PlaygroundConversationScope
   disabled?: boolean
   onDeleteConversation: (sessionId: string) => void
   onNewConversation: () => void
+  onConversationScopeChange?: (scope: PlaygroundConversationScope) => void
   onSelectConversation: (sessionId: string) => void
   sessions: PlaygroundConversationSession[]
   storageUsage: ConversationStorageUsage
@@ -84,7 +89,11 @@ export function PlaygroundHistorySidebar(props: PlaygroundHistorySidebarProps) {
         <div className='mb-2 flex items-center justify-between gap-2'>
           <div className='min-w-0'>
             <h2 className='truncate text-sm font-semibold'>
-              {t('Playground history')}
+              {t(
+                props.conversationScope === 'support'
+                  ? 'Support AI history'
+                  : 'Playground history'
+              )}
             </h2>
             <div className='text-muted-foreground space-y-0.5 text-xs'>
               <p className='truncate'>{t('Only available in this browser')}</p>
@@ -100,6 +109,34 @@ export function PlaygroundHistorySidebar(props: PlaygroundHistorySidebarProps) {
             <PlusIcon className='size-4' />
           </Button>
         </div>
+        {props.onConversationScopeChange && (
+          <div className='bg-muted mb-3 grid grid-cols-2 gap-1 rounded-lg p-1'>
+            <Button
+              aria-pressed={props.conversationScope !== 'support'}
+              className='h-7'
+              disabled={props.disabled}
+              onClick={() => props.onConversationScopeChange?.('playground')}
+              size='sm'
+              variant={
+                props.conversationScope === 'support' ? 'ghost' : 'secondary'
+              }
+            >
+              {t('Playground')}
+            </Button>
+            <Button
+              aria-pressed={props.conversationScope === 'support'}
+              className='h-7'
+              disabled={props.disabled}
+              onClick={() => props.onConversationScopeChange?.('support')}
+              size='sm'
+              variant={
+                props.conversationScope === 'support' ? 'secondary' : 'ghost'
+              }
+            >
+              {t('Support AI')}
+            </Button>
+          </div>
+        )}
         <div
           className={cn(
             'space-y-1.5',

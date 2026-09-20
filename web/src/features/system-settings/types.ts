@@ -39,64 +39,6 @@ export type UpdateOptionResponse = {
   message: string
 }
 
-export type ApplyDefaultInviteRebateRatioResponse = {
-  success: boolean
-  message: string
-  data?: {
-    updated: number
-    invite_rebate_ratio: number
-  }
-}
-
-export type InviteRebateBatchUpdateRequest = {
-  current_ratio: number
-  target_ratio: number
-  dry_run?: boolean
-}
-
-export type InviteRebateBatchUpdateResult = {
-  current_ratio: number
-  target_ratio: number
-  default_ratio: number
-  matched: number
-  updated: number
-}
-
-export type InviteRebateBatchUpdateResponse = {
-  success: boolean
-  message: string
-  data?: InviteRebateBatchUpdateResult
-}
-
-export type InviteRebateRatioSummary = {
-  ratio: number
-  count: number
-}
-
-export type InviteRebateRatiosResponse = {
-  success: boolean
-  message: string
-  data?: {
-    default_ratio: number
-    ratios: InviteRebateRatioSummary[]
-  }
-}
-
-export type ModelPricingExport = {
-  version: number
-  exported_at: number
-  pricing: Record<string, Record<string, number | string>>
-}
-
-export type ModelPricingImportResponse = {
-  success: boolean
-  message: string
-  data?: {
-    updated_options: number
-    skipped_options: string[]
-  }
-}
-
 export interface PasskeyDomainChange {
   rp_id: string
   legacy_rp_ids: string
@@ -188,6 +130,14 @@ export type SystemTaskListResponse = {
   success: boolean
   message: string
   data?: SystemTask[]
+  total: number
+}
+
+export type SystemTaskFilters = {
+  type?: string
+  status?: SystemTaskStatus | ''
+  scope?: 'active' | 'history'
+  offset?: number
 }
 
 export type SiteSettings = {
@@ -229,6 +179,8 @@ export type AuthSettings = {
   'oidc.token_endpoint': string
   'oidc.user_info_endpoint': string
   TelegramOAuthEnabled: boolean
+  'telegram.client_id': string
+  'telegram.client_secret': string
   TelegramBotToken: string
   TelegramBotName: string
   LinuxDOOAuthEnabled: boolean
@@ -298,7 +250,6 @@ export type ModelSettings = {
   CreateCacheRatio: string
   CompletionRatio: string
   ImageRatio: string
-  ImageOutputRatio: string
   AudioRatio: string
   AudioCompletionRatio: string
   ExposeRatioEnabled: boolean
@@ -314,30 +265,6 @@ export type ModelSettings = {
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
   'group_ratio_setting.group_special_usable_group': string
-  RetryTimes: number
-  ChannelDisableThreshold: string
-  AutomaticDisableChannelEnabled: boolean
-  AutomaticEnableChannelEnabled: boolean
-  AutomaticDisableKeywords: string
-  AutomaticDisableStatusCodes: string
-  AutomaticRetryStatusCodes: string
-  'monitor_setting.auto_test_channel_enabled': boolean
-  'monitor_setting.auto_test_channel_minutes': number
-  'monitor_setting.channel_test_concurrency': number
-  'monitor_setting.channel_test_type': 'hi' | 'intelligence' | 'custom'
-  'monitor_setting.channel_test_custom_prompt': string
-  'monitor_setting.channel_test_custom_answer': string
-  'monitor_setting.channel_test_mode':
-    | 'scheduled_all'
-    | 'auto_detect'
-    | 'auto_disable'
-    | 'passive_recovery'
-  'channel_affinity_setting.enabled': boolean
-  'channel_affinity_setting.switch_on_success': boolean
-  'channel_affinity_setting.keep_on_channel_disabled': boolean
-  'channel_affinity_setting.max_entries': number
-  'channel_affinity_setting.default_ttl_seconds': number
-  'channel_affinity_setting.rules': string
   'model_deployment.ionet.api_key': string
   'model_deployment.ionet.enabled': boolean
 }
@@ -365,7 +292,6 @@ export type BillingSettings = {
   CreateCacheRatio: string
   CompletionRatio: string
   ImageRatio: string
-  ImageOutputRatio: string
   AudioRatio: string
   AudioCompletionRatio: string
   ExposeRatioEnabled: boolean
@@ -390,7 +316,6 @@ export type BillingSettings = {
   PayMethods: string
   'payment_setting.amount_options': string
   'payment_setting.amount_discount': string
-  'payment_setting.amount_bonus': string
   'payment_setting.compliance_confirmed': boolean
   'payment_setting.compliance_terms_version': string
   'payment_setting.compliance_confirmed_at': number
@@ -402,7 +327,6 @@ export type BillingSettings = {
   StripeUnitPrice: number
   StripeMinTopUp: number
   StripePromotionCodesEnabled: boolean
-  CreemEnabled: boolean
   CreemApiKey: string
   CreemWebhookSecret: string
   CreemTestMode: boolean
@@ -425,22 +349,10 @@ export type BillingSettings = {
   WaffoPancakeMerchantID: string
   WaffoPancakePrivateKey: string
   WaffoPancakeReturnURL: string
-  WaffoPancakeEnvironment: 'test' | 'prod'
   // Bound by the operator through the catalog flow in the admin Pancake
   // section (saved via /api/option/waffo-pancake/save).
   WaffoPancakeStoreID: string
   WaffoPancakeProductID: string
-  LantuEnabled: boolean
-  LantuMchId: string
-  LantuSecretKey: string
-  LantuMinTopUp: number
-  NowPaymentsEnabled: boolean
-  NowPaymentsApiKey: string
-  NowPaymentsIPNSecret: string
-  NowPaymentsSandbox: boolean
-  NowPaymentsCurrency: string
-  NowPaymentsUnitPrice: number
-  NowPaymentsMinTopUp: number
   'checkin_setting.enabled': boolean
   'checkin_setting.min_quota': number
   'checkin_setting.max_quota': number
@@ -460,6 +372,19 @@ export type OperationsSettings = {
   SMTPStartTLSEnabled: boolean
   SMTPInsecureSkipVerify: boolean
   SMTPForceAuthLogin: boolean
+  ZohoDeskEnabled: boolean
+  ZohoDeskClientId: string
+  ZohoDeskClientSecret: string
+  ZohoDeskRefreshToken: string
+  ZohoDeskOrgId: string
+  ZohoDeskDepartmentId: string
+  ZohoDeskApiDomain: string
+  ZohoDeskAccountsDomain: string
+  ZohoDeskFromEmail: string
+  SupportDiscordUrl: string
+  SupportTelegramUrl: string
+  SupportQQUrl: string
+  SupportWeChatUrl: string
   WorkerUrl: string
   WorkerValidKey: string
   WorkerAllowHttpImageRequestEnabled: boolean
@@ -486,8 +411,6 @@ export type SecuritySettings = {
   ModelRequestRateLimitGroup: string
   CheckSensitiveEnabled: boolean
   CheckSensitiveOnPromptEnabled: boolean
-  CheckSensitiveWaffoPancakeEnabled: boolean
-  CheckSensitiveModerationEnabled: boolean
   SensitiveWords: string
   'fetch_setting.enable_ssrf_protection': boolean
   'fetch_setting.allow_private_ip': boolean
@@ -514,7 +437,6 @@ export type RatioType =
   | 'cache_ratio'
   | 'create_cache_ratio'
   | 'image_ratio'
-  | 'image_output_ratio'
   | 'audio_ratio'
   | 'audio_completion_ratio'
   | 'model_price'
@@ -570,4 +492,50 @@ export type UpstreamRatiosResponse = {
     prices: PricingSyncModels
     test_results: TestResult[]
   }
+}
+
+export type ModelPricingExport = {
+  version: number
+  exported_at: number
+  pricing: Record<string, Record<string, number | string>>
+}
+
+export type ModelPricingImportResponse = {
+  success: boolean
+  message: string
+  data?: { updated_options: number; skipped_options: string[] }
+}
+
+export type ApplyDefaultInviteRebateRatioResponse = {
+  success: boolean
+  message: string
+  data?: { updated: number; invite_rebate_ratio: number }
+}
+
+export type InviteRebateBatchUpdateRequest = {
+  current_ratio: number
+  target_ratio: number
+  dry_run?: boolean
+}
+
+export type InviteRebateBatchUpdateResult = {
+  current_ratio: number
+  target_ratio: number
+  default_ratio: number
+  matched: number
+  updated: number
+}
+
+export type InviteRebateBatchUpdateResponse = {
+  success: boolean
+  message: string
+  data?: InviteRebateBatchUpdateResult
+}
+
+export type InviteRebateRatioSummary = { ratio: number; count: number }
+
+export type InviteRebateRatiosResponse = {
+  success: boolean
+  message: string
+  data?: { default_ratio: number; ratios: InviteRebateRatioSummary[] }
 }

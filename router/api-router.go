@@ -58,6 +58,18 @@ func SetApiRouter(router *gin.Engine) {
 		// Standard OAuth providers (GitHub, Discord, OIDC, LinuxDO, Telegram) - unified route
 		apiRouter.GET("/oauth/:provider", middleware.CriticalRateLimit(), middleware.DisableCache(), middleware.TryUserAuth(), controller.HandleOAuth)
 		apiRouter.GET("/ratio_config", middleware.CriticalRateLimit(), controller.GetRatioConfig)
+		supportRoute := apiRouter.Group("/support")
+		supportRoute.Use(middleware.UserAuth())
+		{
+			supportRoute.GET("/config", controller.GetSupportConfig)
+			supportRoute.GET("/tickets", controller.ListSupportTickets)
+			supportRoute.POST("/tickets", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.CreateSupportTicket)
+			supportRoute.GET("/tickets/:id", controller.GetSupportTicket)
+			supportRoute.PATCH("/tickets/:id/status", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.UpdateSupportTicketStatus)
+			supportRoute.POST("/tickets/:id/reply", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.ReplySupportTicket)
+			supportRoute.POST("/tickets/:id/attachments", middleware.CriticalRateLimit(), controller.UploadSupportAttachments)
+			supportRoute.GET("/tickets/:id/attachments/:attachment_id", controller.DownloadSupportAttachment)
+		}
 
 		apiRouter.POST("/stripe/webhook", anonymousRequestBodyLimit, controller.StripeWebhook)
 		apiRouter.POST("/creem/webhook", anonymousRequestBodyLimit, controller.CreemWebhook)
@@ -216,6 +228,8 @@ func SetApiRouter(router *gin.Engine) {
 		optionRoute.Use(middleware.RootAuth())
 		{
 			optionRoute.GET("/", controller.GetOptions)
+			optionRoute.GET("/request_policy", controller.GetRequestPolicy)
+			optionRoute.PATCH("/request_policy", controller.UpdateRequestPolicy)
 			optionRoute.PUT("/", controller.UpdateOption)
 			optionRoute.PUT("/passkey/domains", controller.UpdatePasskeyDomains)
 			optionRoute.GET("/model_pricing", controller.GetModelPricingConfig)
@@ -329,6 +343,7 @@ func SetApiRouter(router *gin.Engine) {
 		logRoute.GET("/channel_affinity_usage_cache", middleware.AdminAuth(), controller.GetChannelAffinityUsageCacheStats)
 		logRoute.GET("/search", middleware.AdminAuth(), controller.SearchAllLogs)
 		logRoute.GET("/self", middleware.UserAuth(), middleware.SearchRateLimit(), controller.GetUserLogs)
+		logRoute.POST("/export", middleware.UserAuth(), controller.ExportLogs)
 		logRoute.GET("/self/search", middleware.UserAuth(), middleware.SearchRateLimit(), controller.SearchUserLogs)
 
 		systemTaskRoute := apiRouter.Group("/system-task")

@@ -677,18 +677,22 @@ func RequestAmount(c *gin.Context) {
 func GetUserTopUps(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
-	keyword := c.Query("keyword")
-
-	var (
-		topups []*model.TopUp
-		total  int64
-		err    error
-	)
-	if keyword != "" {
-		topups, total, err = model.SearchUserTopUps(userId, keyword, pageInfo)
-	} else {
-		topups, total, err = model.GetUserTopUps(userId, pageInfo)
+	params := model.TopUpSearchParams{Keyword: strings.TrimSpace(c.Query("keyword"))}
+	for key, target := range map[string]*int64{"start_timestamp": &params.StartTimestamp, "end_timestamp": &params.EndTimestamp} {
+		if value := c.Query(key); value != "" {
+			parsed, err := strconv.ParseInt(value, 10, 64)
+			if err != nil || parsed < 0 {
+				common.ApiErrorMsg(c, "Invalid date range")
+				return
+			}
+			*target = parsed
+		}
 	}
+	if params.EndTimestamp > 0 && params.StartTimestamp > params.EndTimestamp {
+		common.ApiErrorMsg(c, "Invalid date range")
+		return
+	}
+	topups, total, err := model.SearchUserTopUpsWithParams(userId, params, pageInfo)
 	if err != nil {
 		logger.LogError(c.Request.Context(), fmt.Sprintf("failed to load top-up history user_id=%d error=%q", userId, err.Error()))
 		common.ApiErrorI18n(c, i18n.MsgDatabaseError)
@@ -704,8 +708,13 @@ const inviteRewardHistoryDefaultWindowSeconds int64 = 7 * 24 * 60 * 60
 
 func GetInviteRebateTopUps(c *gin.Context) {
 	userId := c.GetInt("id")
+	allUsers := c.Query("all_users") == "1" || strings.EqualFold(c.Query("all_users"), "true")
+	if allUsers && c.GetInt("role") < common.RoleAdminUser {
+		common.ApiErrorMsg(c, "Admin access required")
+		return
+	}
 	pageInfo := common.GetPageQuery(c)
-	params := model.InviteRewardHistoryParams{}
+	params := model.InviteRewardHistoryParams{AllUsers: allUsers, InviterKeyword: strings.TrimSpace(c.Query("inviter_keyword"))}
 	var err error
 	if value := c.Query("start_timestamp"); value != "" {
 		params.StartTimestamp, err = strconv.ParseInt(value, 10, 64)
@@ -721,7 +730,7 @@ func GetInviteRebateTopUps(c *gin.Context) {
 			return
 		}
 	}
-	if params.StartTimestamp == 0 && params.EndTimestamp == 0 {
+	if !allUsers && params.StartTimestamp == 0 && params.EndTimestamp == 0 {
 		params.EndTimestamp = common.GetTimestamp()
 		params.StartTimestamp = params.EndTimestamp - inviteRewardHistoryDefaultWindowSeconds
 	}

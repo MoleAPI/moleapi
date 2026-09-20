@@ -39,9 +39,7 @@ import {
 } from '../constants'
 import { hasTaskUsageSchema } from '../lib/dynamic-price'
 import { parseTags } from '../lib/filters'
-import { getModelTagLabelKey } from '../lib/model-tags'
 import type { PricingModel, PricingVendor } from '../types'
-import { ModelTagIcon } from './model-tag-chip'
 
 type FilterOption = {
   value: string
@@ -100,15 +98,13 @@ function FilterChip(props: {
   onClick: () => void
 }) {
   return (
-    <button
+    <Button
       type='button'
+      variant={props.active ? 'secondary' : 'outline'}
+      size='sm'
       onClick={props.onClick}
-      className={cn(
-        'group inline-flex max-w-full items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition-all',
-        props.active
-          ? 'border-foreground/30 bg-foreground/5 text-foreground shadow-sm'
-          : 'border-border/70 bg-background text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground'
-      )}
+      aria-pressed={props.active}
+      className='h-auto max-w-full gap-1.5 px-2 py-1 text-xs'
       title={props.option.label}
     >
       {props.option.icon && (
@@ -127,7 +123,7 @@ function FilterChip(props: {
           {props.option.suffix ?? props.option.count}
         </span>
       )}
-    </button>
+    </Button>
   )
 }
 
@@ -232,13 +228,12 @@ export function PricingSidebar(props: PricingSidebarProps) {
     },
     ...props.tags.map((tag) => ({
       value: tag,
-      label: t(getModelTagLabelKey(tag)),
+      label: tag,
       count: countBy(props.models, (model) =>
         parseTags(model.tags)
           .map((item) => item.toLowerCase())
           .includes(tag.toLowerCase())
       ),
-      icon: <ModelTagIcon tag={tag} />,
     })),
   ]
 
@@ -261,7 +256,7 @@ export function PricingSidebar(props: PricingSidebarProps) {
   ]
 
   return (
-    <aside className={cn('rounded-xl border p-3', props.className)}>
+    <aside className={cn('bg-card rounded-xl border p-3', props.className)}>
       <div className='mb-2.5 flex items-center justify-between gap-2'>
         <div>
           <h2 className='text-foreground text-sm font-bold'>{t('Filter')}</h2>

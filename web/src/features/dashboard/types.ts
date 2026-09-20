@@ -65,6 +65,7 @@ export interface ChannelSuccessSummary {
 }
 
 export interface ChannelSuccessData {
+  usage_24h?: Record<number, number> | null
   channels: ChannelSuccessSummary[]
   probe_overview: ChannelProbeOverview
 }

@@ -44,10 +44,11 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
-import { getDefaultTimeRange } from '../lib/utils'
+import { buildApiParams, getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
+import { LogExportDialog } from './dialogs/log-export-dialog'
 import {
   LogsFilterField,
   LogsFilterInput,
@@ -283,7 +284,22 @@ export function CommonLogsFilterBar<TData>(
   const logTypeLabel =
     logTypeItems.find((type) => type.value === logType)?.label ?? t('All Types')
 
-  const statsBar = <CommonLogsStats />
+  const statsBar = (
+    <div className='flex flex-wrap items-center gap-2'>
+      <CommonLogsStats />
+      <LogExportDialog
+        startTime={searchState.filters.startTime}
+        endTime={searchState.filters.endTime}
+        filters={buildApiParams({
+          page: 1,
+          pageSize: 1,
+          searchParams,
+          columnFilters: props.table.getState().columnFilters,
+          isAdmin,
+        })}
+      />
+    </div>
+  )
   const sensitiveToggle = (
     <Tooltip>
       <TooltipTrigger
@@ -430,7 +446,7 @@ export function CommonLogsFilterBar<TData>(
       table={props.table}
       stats={statsBar}
       actionStart={sensitiveToggle}
-      compactDesktop
+      compactDesktop={isAdmin}
       primaryFilters={
         <>
           {typeFilter}

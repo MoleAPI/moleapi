@@ -17,6 +17,15 @@ func TestValidateOptionValueRejectsInvalidMaxTokenAutoGroups(t *testing.T) {
 	require.NoError(t, validateOptionValue("MaxTokenAutoGroups", "999999"))
 }
 
+func TestValidateOptionValueChecksSupportConfiguration(t *testing.T) {
+	require.NoError(t, validateOptionValue("ZohoDeskEnabled", "true"))
+	require.NoError(t, validateOptionValue("ZohoDeskOrgId", "123456"))
+	require.NoError(t, validateOptionValue("SupportDiscordUrl", "https://discord.gg/example"))
+	assert.Error(t, validateOptionValue("ZohoDeskEnabled", "1"))
+	assert.Error(t, validateOptionValue("ZohoDeskDepartmentId", "department"))
+	assert.Error(t, validateOptionValue("SupportTelegramUrl", "javascript:alert(1)"))
+}
+
 func TestUpdateOptionRejectsInvalidAutoGroupsBeforePersisting(t *testing.T) {
 	db := useFrontendOptionMigrationDB(t)
 	original := setting.AutoGroups2JsonString()

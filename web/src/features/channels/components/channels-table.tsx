@@ -45,7 +45,6 @@ import {
 import { getChannelSuccessMetrics } from '@/features/dashboard/api'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
-import { getLobeIcon } from '@/lib/lobe-icon'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { getChannels, searchChannels, getGroups } from '../api'
@@ -59,12 +58,12 @@ import {
   aggregateChannelsByTag,
   getChannelTableRowId,
   isTagAggregateRow,
-  getChannelTypeIcon,
   getChannelTypeLabel,
 } from '../lib'
 import type { ChannelProbeMetric } from '../lib/channel-success'
 import type { Channel, ChannelSortBy } from '../types'
 import { ChannelCard } from './channel-card'
+import { ChannelTypeLogo } from './channel-type-badge'
 import { useChannelsColumns } from './channels-columns'
 import { useChannels } from './channels-provider'
 import { DataTableBulkActions } from './data-table-bulk-actions'
@@ -216,8 +215,8 @@ export function ChannelsTable() {
   })
 
   const { data: channelSuccessData } = useQuery({
-    queryKey: ['channel-success-metrics', 24],
-    queryFn: () => getChannelSuccessMetrics(24),
+    queryKey: ['channel-success-metrics', 24, 'with-usage'],
+    queryFn: () => getChannelSuccessMetrics(24, undefined, true),
     staleTime: 60 * 1000,
     retry: false,
   })
@@ -344,6 +343,7 @@ export function ChannelsTable() {
   const columns = useChannelsColumns({
     enableSelection: batchMode,
     channelSuccessById,
+    usage24h: channelSuccessData?.data.usage_24h,
     channelProbeById,
     probeEnabled: channelSuccessData?.data.probe_overview?.enabled,
   })
@@ -429,12 +429,11 @@ export function ChannelsTable() {
         count: totalTypes,
       },
       ...typeIds.map((item) => {
-        const iconName = getChannelTypeIcon(item.type)
         return {
           label: getChannelTypeLabel(item.type),
           value: String(item.type),
           count: item.count,
-          iconNode: getLobeIcon(`${iconName}.Color`, 16),
+          iconNode: <ChannelTypeLogo type={item.type} size={16} />,
         }
       }),
     ]

@@ -185,6 +185,14 @@ function isModuleEnabled(
   )
   if (!adminAllowed) return false
 
+  // Core console links cannot be hidden by personal preferences, including old saved values.
+  if (
+    section === 'console' &&
+    ['token', 'log', 'midjourney', 'task'].includes(module)
+  ) {
+    return true
+  }
+
   if (!userConfig) return true
 
   const userSection = userConfig[section]

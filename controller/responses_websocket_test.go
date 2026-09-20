@@ -437,6 +437,7 @@ func TestResponsesWebSocketReusesConnectionAndSettlesEachRequest(t *testing.T) {
 		Model              string `json:"model"`
 		PreviousResponseID string `json:"previous_response_id"`
 		ServiceTier        string `json:"service_tier"`
+		StreamID           string `json:"stream_id"`
 	}
 	received := make(chan upstreamRequest, 3)
 	fixture := newResponsesWSBillingTest(t, `param("service_tier") == "priority" ? tier("priority", p * 4) : tier("base", p * 2)`, func(ws *websocket.Conn, r *http.Request) {
@@ -466,8 +467,8 @@ func TestResponsesWebSocketReusesConnectionAndSettlesEachRequest(t *testing.T) {
 	client, user, token := fixture.client, fixture.user, fixture.token
 
 	for index, payload := range []string{
-		`{"type":"response.create","model":"ws-billing","input":"first","service_tier":"default"}`,
-		`{"type":"response.create","model":"ws-billing","input":"second","previous_response_id":"resp_1","service_tier":"priority"}`,
+		`{"type":"response.create","model":"ws-billing","input":"first","service_tier":"default","stream_id":"request_1"}`,
+		`{"type":"response.create","model":"ws-billing","input":"second","previous_response_id":"resp_1","service_tier":"priority","stream_id":"request_2"}`,
 	} {
 		require.NoError(t, client.WriteMessage(websocket.TextMessage, []byte(payload)))
 		require.NoError(t, client.SetReadDeadline(time.Now().Add(3*time.Second)))
@@ -486,6 +487,7 @@ func TestResponsesWebSocketReusesConnectionAndSettlesEachRequest(t *testing.T) {
 		assert.Equal(t, "Bearer upstream-first", observed.Authorization)
 		assert.Equal(t, "gpt-4o", observed.Model)
 		assert.Equal(t, "response.create", observed.Type)
+		assert.Equal(t, fmt.Sprintf("request_%d", index+1), observed.StreamID)
 		if index == 0 {
 			assert.Empty(t, observed.PreviousResponseID)
 			assert.Equal(t, "default", observed.ServiceTier)

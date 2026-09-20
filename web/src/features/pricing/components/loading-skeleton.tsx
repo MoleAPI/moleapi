@@ -16,110 +16,119 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Card, CardContent, CardFooter, CardHeader } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 
-const CARD_SKELETON_IDS = [
-  'one',
-  'two',
-  'three',
-  'four',
-  'five',
-  'six',
-  'seven',
-  'eight',
-]
-const CARD_METRIC_WIDTHS = [
-  { id: 'context', width: 72 },
-  { id: 'max', width: 80 },
-  { id: 'input', width: 70 },
-  { id: 'output', width: 82 },
-  { id: 'cache', width: 78 },
-]
-const CARD_TAG_WIDTHS = [
-  { id: 'endpoint', width: 52 },
-  { id: 'vision', width: 64 },
-  { id: 'tools', width: 58 },
-  { id: 'unit', width: 46 },
-]
-const FILTER_WIDTHS = [
-  { id: 'vendor', width: 80 },
-  { id: 'group', width: 90 },
-  { id: 'tag', width: 75 },
-  { id: 'type', width: 85 },
-  { id: 'endpoint', width: 70 },
-]
-export function LoadingSkeleton() {
-  return (
-    <div className='space-y-5'>
-      <div className='space-y-1.5'>
-        <Skeleton className='h-8 w-40' />
-        <Skeleton className='h-4 w-52' />
-      </div>
-      <Skeleton className='h-10 w-full rounded-lg' />
-      <FilterBarSkeleton />
-      <CardContentSkeleton />
-    </div>
-  )
+import { VIEW_MODES, type ViewMode } from '../constants'
+
+export interface LoadingSkeletonProps {
+  viewMode?: ViewMode
 }
 
-function CardContentSkeleton() {
+export function LoadingSkeleton(props: LoadingSkeletonProps) {
   return (
-    <div className='space-y-2'>
-      {CARD_SKELETON_IDS.map((id) => (
-        <div key={id} className='bg-background rounded-lg border p-4'>
-          <div className='flex items-start gap-3'>
-            <Skeleton className='size-11 shrink-0 rounded-lg' />
-            <div className='min-w-0 flex-1'>
-              <div className='flex items-start justify-between gap-3'>
-                <div className='space-y-2'>
-                  <Skeleton className='h-4 w-56' />
-                  <Skeleton className='h-3 w-44' />
-                </div>
-                <Skeleton className='h-7 w-20 rounded-md' />
-              </div>
-              <Skeleton className='mt-3 h-3 w-4/5' />
-              <div className='mt-3 flex flex-wrap gap-3 border-t pt-3'>
-                {CARD_METRIC_WIDTHS.map((item) => (
-                  <Skeleton
-                    key={item.id}
-                    className='h-9 rounded-md'
-                    style={{ width: item.width }}
-                  />
-                ))}
-              </div>
-              <div className='mt-3 flex gap-1.5 border-t pt-2.5'>
-                {CARD_TAG_WIDTHS.map((item) => (
-                  <Skeleton
-                    key={item.id}
-                    className='h-5 rounded-md'
-                    style={{ width: item.width }}
-                  />
-                ))}
+    <div aria-busy='true'>
+      <div className='mx-auto mb-5 flex max-w-3xl flex-col items-center pt-5 sm:mb-10 sm:pt-10'>
+        <Skeleton className='h-[clamp(2.3rem,6.325vw,4.025rem)] w-48 max-w-full sm:w-64' />
+        <Skeleton className='mt-3 h-5 w-56 max-w-full sm:mt-4 sm:h-6' />
+        <Skeleton className='mt-2 h-5 w-full max-w-xl' />
+        <Skeleton className='mt-4 h-10 w-full max-w-2xl sm:mt-6' />
+      </div>
+      <div className='grid gap-4 xl:grid-cols-[280px_minmax(0,1fr)]'>
+        <div className='hidden self-start rounded-xl border p-3 xl:block'>
+          <Skeleton className='mb-4 h-5 w-24' />
+          {Array.from({ length: 5 }, (_, index) => (
+            <div
+              key={index}
+              className='flex flex-col gap-3 border-b py-4 last:border-0'
+            >
+              <Skeleton className='h-4 w-28' />
+              <div className='flex flex-wrap gap-2'>
+                <Skeleton className='h-7 w-24' />
+                <Skeleton className='h-7 w-20' />
+                <Skeleton className='h-7 w-28' />
               </div>
             </div>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-function FilterBarSkeleton() {
-  return (
-    <div className='space-y-3'>
-      <div className='flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3'>
-        <div className='flex flex-wrap items-center gap-2'>
-          {FILTER_WIDTHS.slice(0, 2).map((item) => (
-            <Skeleton
-              key={item.id}
-              className='h-8 rounded-lg'
-              style={{ width: `${item.width}px` }}
-            />
           ))}
         </div>
-        <Skeleton className='h-8 w-24 rounded-lg' />
+        <div className='flex min-w-0 flex-col gap-4'>
+          <div className='flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3'>
+            <Skeleton className='h-7 w-20' />
+            <div className='flex flex-wrap gap-2'>
+              <Skeleton className='h-7 w-32' />
+              <Skeleton className='h-7 w-20' />
+              <Skeleton className='h-7 w-24' />
+            </div>
+          </div>
+          {props.viewMode === VIEW_MODES.TABLE ? (
+            <div className='overflow-hidden rounded-xl border'>
+              {Array.from({ length: 10 }, (_, index) => (
+                <div
+                  key={index}
+                  className='flex gap-4 border-b p-4 last:border-0'
+                >
+                  <Skeleton className='h-5 w-40 max-w-full' />
+                  <Skeleton className='h-5 flex-1' />
+                  <Skeleton className='h-5 w-20' />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className='grid grid-cols-1 gap-3 sm:gap-4 md:grid-cols-2 xl:grid-cols-3'>
+              {Array.from({ length: 6 }, (_, index) => (
+                <Card key={index} className='gap-3'>
+                  <CardHeader className='flex flex-row gap-3'>
+                    <Skeleton className='size-10 shrink-0' />
+                    <div className='flex min-w-0 flex-1 flex-col gap-2'>
+                      <Skeleton className='h-5 w-40 max-w-full' />
+                      <Skeleton className='h-3 w-20' />
+                    </div>
+                    <Skeleton className='size-7 shrink-0' />
+                  </CardHeader>
+                  <CardContent className='flex flex-1 flex-col gap-3'>
+                    <div className='flex flex-col gap-2'>
+                      <Skeleton className='h-3.5 w-full' />
+                      <Skeleton className='h-3.5 w-4/5' />
+                    </div>
+                    <div className='mt-auto flex flex-col gap-1.5'>
+                      <Skeleton className='h-4 w-16' />
+                      <div className='grid grid-cols-3 gap-3'>
+                        <Skeleton className='h-10' />
+                        <Skeleton className='h-10' />
+                        <Skeleton className='h-10' />
+                      </div>
+                    </div>
+                    <div className='grid grid-cols-2 gap-3'>
+                      <Skeleton className='h-4 w-28 max-w-full' />
+                      <Skeleton className='h-4 w-28 max-w-full' />
+                    </div>
+                  </CardContent>
+                  <CardFooter className='border-0 bg-transparent pt-0'>
+                    <div className='border-border/60 flex w-full items-center justify-between gap-3 border-t pt-2'>
+                      <div className='flex items-start gap-5'>
+                        <div className='flex w-24 shrink-0 flex-col gap-1'>
+                          <Skeleton className='h-4 w-10' />
+                          <div className='flex h-3 items-center justify-between'>
+                            {Array.from({ length: 24 }, (_, bar) => (
+                              <Skeleton
+                                key={bar}
+                                className='h-full w-[3px] rounded-xs'
+                              />
+                            ))}
+                          </div>
+                        </div>
+                        <Skeleton className='h-8 w-6' />
+                        <Skeleton className='h-8 w-8' />
+                      </div>
+                      <Skeleton className='h-7 w-12' />
+                    </div>
+                  </CardFooter>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-      <Skeleton className='h-5 w-24' />
     </div>
   )
 }

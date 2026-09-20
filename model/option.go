@@ -2,6 +2,8 @@ package model
 
 import (
 	"errors"
+	"net/mail"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -76,6 +78,19 @@ func InitOptionMap() {
 	common.OptionMap["SMTPStartTLSEnabled"] = strconv.FormatBool(common.SMTPStartTLSEnabled)
 	common.OptionMap["SMTPInsecureSkipVerify"] = strconv.FormatBool(common.SMTPInsecureSkipVerify)
 	common.OptionMap["SMTPForceAuthLogin"] = strconv.FormatBool(common.SMTPForceAuthLogin)
+	common.OptionMap["ZohoDeskEnabled"] = "false"
+	common.OptionMap["ZohoDeskClientId"] = ""
+	common.OptionMap["ZohoDeskClientSecret"] = ""
+	common.OptionMap["ZohoDeskRefreshToken"] = ""
+	common.OptionMap["ZohoDeskOrgId"] = ""
+	common.OptionMap["ZohoDeskDepartmentId"] = ""
+	common.OptionMap["ZohoDeskApiDomain"] = "https://desk.zoho.com"
+	common.OptionMap["ZohoDeskAccountsDomain"] = "https://accounts.zoho.com"
+	common.OptionMap["ZohoDeskFromEmail"] = "support@moleapi.com"
+	common.OptionMap["SupportDiscordUrl"] = ""
+	common.OptionMap["SupportTelegramUrl"] = ""
+	common.OptionMap["SupportQQUrl"] = ""
+	common.OptionMap["SupportWeChatUrl"] = ""
 	common.OptionMap["Notice"] = ""
 	common.OptionMap["About"] = ""
 	common.OptionMap["HomePageContent"] = ""
@@ -242,6 +257,31 @@ func SyncOptions(frequency int) {
 }
 
 func validateOptionValue(key string, value string) error {
+	if key == "ZohoDeskEnabled" {
+		if value != "true" && value != "false" {
+			return errors.New("Zoho Desk enabled must be true or false")
+		}
+	}
+	if key == "ZohoDeskOrgId" || key == "ZohoDeskDepartmentId" {
+		if strings.TrimSpace(value) != "" {
+			if _, err := strconv.ParseUint(value, 10, 64); err != nil {
+				return errors.New("Zoho Desk IDs must contain digits only")
+			}
+		}
+	}
+	if key == "ZohoDeskFromEmail" && strings.TrimSpace(value) != "" {
+		if _, err := mail.ParseAddress(value); err != nil {
+			return errors.New("invalid Zoho Desk sender email")
+		}
+	}
+	if key == "ZohoDeskApiDomain" || key == "ZohoDeskAccountsDomain" || strings.HasPrefix(key, "Support") && strings.HasSuffix(key, "Url") {
+		if strings.TrimSpace(value) != "" {
+			parsed, err := url.Parse(value)
+			if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+				return errors.New("support URLs must use HTTPS")
+			}
+		}
+	}
 	if key == operation_setting.ToolPriceOptionKey {
 		return operation_setting.ValidateToolPricesJSON(value)
 	}
