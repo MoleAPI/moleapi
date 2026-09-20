@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import React, { useState, useCallback, useRef, useEffect } from 'react'
+import React, { useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import useDialogState from '@/hooks/use-dialog'
@@ -39,8 +39,6 @@ type ApiKeysContextType = {
   resolveRealKeysBatch: (ids: number[]) => Promise<Record<number, string>>
   resolvedKeys: Record<number, string>
   loadingKeys: Record<number, boolean>
-  copiedKeyId: number | null
-  markKeyCopied: (id: number) => void
 }
 
 const ApiKeysContext = React.createContext<ApiKeysContextType | null>(null)
@@ -55,19 +53,6 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
   const [resolvedKeys, setResolvedKeys] = useState<Record<number, string>>({})
   const [loadingKeys, setLoadingKeys] = useState<Record<number, boolean>>({})
   const pendingRequests = useRef<Record<number, Promise<string | null>>>({})
-
-  const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null)
-  const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
-
-  useEffect(() => {
-    return () => clearTimeout(copiedTimerRef.current)
-  }, [])
-
-  const markKeyCopied = useCallback((id: number) => {
-    setCopiedKeyId(id)
-    clearTimeout(copiedTimerRef.current)
-    copiedTimerRef.current = setTimeout(() => setCopiedKeyId(null), 2000)
-  }, [])
 
   const triggerRefresh = useCallback(() => {
     setRefreshTrigger((prev) => prev + 1)
@@ -169,8 +154,6 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
         resolveRealKeysBatch,
         resolvedKeys,
         loadingKeys,
-        copiedKeyId,
-        markKeyCopied,
       }}
     >
       {children}

@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { Checkbox } from '@/components/ui/checkbox'
@@ -30,6 +31,7 @@ interface LegalConsentProps {
   onCheckedChange: (nextValue: boolean) => void
   className?: string
   error?: string
+  attentionKey?: number
 }
 
 export function LegalConsent({
@@ -38,10 +40,16 @@ export function LegalConsent({
   onCheckedChange,
   className,
   error,
+  attentionKey = 0,
 }: LegalConsentProps) {
   const { t } = useTranslation()
+  const checkboxRef = useRef<HTMLButtonElement>(null)
   const hasUserAgreement = Boolean(status?.user_agreement_enabled)
   const hasPrivacyPolicy = Boolean(status?.privacy_policy_enabled)
+
+  useEffect(() => {
+    if (error) checkboxRef.current?.focus()
+  }, [attentionKey, error])
 
   if (!hasUserAgreement && !hasPrivacyPolicy) {
     return null
@@ -54,9 +62,11 @@ export function LegalConsent({
   return (
     <div className={className}>
       <div
+        key={attentionKey}
         className={cn(
           'border-border/60 bg-muted/40 flex items-start gap-3 rounded-md border p-3',
-          error && 'border-destructive/60 bg-destructive/5'
+          error &&
+            'legal-consent-attention border-destructive/60 bg-destructive/5'
         )}
       >
         <Checkbox
@@ -66,6 +76,7 @@ export function LegalConsent({
           className='mt-0.5'
           aria-invalid={Boolean(error)}
           aria-describedby={error ? 'legal-consent-error' : undefined}
+          ref={checkboxRef}
         />
         <Label
           htmlFor='legal-consent'
@@ -99,7 +110,11 @@ export function LegalConsent({
         </Label>
       </div>
       {error && (
-        <p id='legal-consent-error' className='text-destructive mt-1 text-xs'>
+        <p
+          id='legal-consent-error'
+          className='text-destructive mt-1 text-xs'
+          role='alert'
+        >
           {error}
         </p>
       )}

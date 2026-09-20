@@ -7342,6 +7342,17 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "API format": "Định dạng API",
+    "API key and endpoint": "Khóa API và địa chỉ kết nối",
+    "Anyone with this key can use its quota. Store it in an environment variable and never expose it in browser code.": "Bất kỳ ai có khóa này đều có thể sử dụng hạn mức của khóa. Hãy lưu khóa trong biến môi trường và không bao giờ để lộ trong mã trình duyệt.",
+    "Authentication header": "Tiêu đề xác thực",
+    "Connection details and examples for {{name}}": "Thông tin kết nối và ví dụ cho {{name}}",
+    "Copy and use": "Sao chép và sử dụng",
+    "Copy the connection details or start with a working example.": "Sao chép thông tin kết nối hoặc bắt đầu với một ví dụ hoạt động.",
+    "Copy {{label}}": "Sao chép {{label}}",
+    "cURL example": "Ví dụ cURL",
+    "Keep this key secret": "Giữ bí mật khóa này",
+    "SDK Base URL": "URL cơ sở của SDK"
   }
 }
