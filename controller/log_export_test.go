@@ -31,6 +31,9 @@ func TestLogExportDatabaseMatrix(t *testing.T) {
 			previous, previousLogs := model.DB, model.LOG_DB
 			model.DB, model.LOG_DB = db, logDB
 			t.Cleanup(func() { model.DB, model.LOG_DB = previous, previousLogs })
+			previousLogType := common.LogDatabaseType()
+			common.SetLogDatabaseType(common.DatabaseType(kind))
+			t.Cleanup(func() { common.SetLogDatabaseType(previousLogType) })
 			var version string
 			versionSQL := "SELECT version()"
 			if kind == "sqlite" {
@@ -121,6 +124,95 @@ func TestLogExportDatabaseMatrix(t *testing.T) {
 			private := request(8, 1, `{"start_timestamp":300,"end_timestamp":400}`)
 			assert.Contains(t, private.Body.String(), "邀请好友充值返利 1元")
 			assert.NotContains(t, private.Body.String(), "private-order")
+			// Every decoy differs by one filter. Export must match list membership,
+			// including wildcard model names, numeric user IDs and upstream request IDs.
+			require.NoError(t, db.Table("channels").AutoMigrate(&struct {
+				Id   int
+				Name string
+			}{}))
+			filterRows := []model.Log{}
+			for _, name := range []string{"match-start", "match-end", "wrong-type", "wrong-model", "wrong-token", "wrong-group", "wrong-channel", "wrong-user", "before-range", "after-range"} {
+				row := model.Log{UserId: 70, Username: "alice", CreatedAt: 500, Type: model.LogTypeConsume, Content: name, ModelName: "deepseek-flash", TokenName: "main token", Group: "vip", ChannelId: 12, RequestId: "local-1", UpstreamRequestId: "upstream-1"}
+				switch name {
+				case "match-end":
+					row.CreatedAt = 600
+					row.RequestId = "local-2"
+					row.UpstreamRequestId = "upstream-2"
+				case "wrong-type":
+					row.Type = model.LogTypeError
+				case "wrong-model":
+					row.ModelName = "deepseek-chat"
+				case "wrong-token":
+					row.TokenName = "other token"
+				case "wrong-group":
+					row.Group = "other group"
+				case "wrong-channel":
+					row.ChannelId = 13
+				case "wrong-user":
+					row.UserId = 71
+					row.Username = "bob"
+				case "before-range":
+					row.CreatedAt = 499
+				case "after-range":
+					row.CreatedAt = 601
+				}
+				filterRows = append(filterRows, row)
+			}
+			require.NoError(t, logDB.Create(&filterRows).Error)
+			baseFilter := model.LogSearchParams{Type: 2, StartTimestamp: 500, EndTimestamp: 600, ModelName: " deepseek-flash ", Username: " 70 ", TokenName: " main token ", Channel: 12, Group: " vip "}
+			for i, variant := range []string{"combined", "wildcard", "upstream-request", "error-type", "empty", "all-types"} {
+				filter := baseFilter
+				expected := []string{"match-start", "match-end"}
+				switch variant {
+				case "wildcard":
+					filter.ModelName = " deepseek-% "
+					expected = append(expected, "wrong-model")
+				case "upstream-request":
+					filter.RequestID = " upstream-1 "
+					expected = []string{"match-start"}
+				case "error-type":
+					filter.Type = model.LogTypeError
+					expected = []string{"wrong-type"}
+				case "empty":
+					filter.TokenName = "missing"
+					expected = nil
+				case "all-types":
+					filter.Type = 0
+					expected = append(expected, "wrong-type")
+				}
+				listed, _, err := model.GetAllLogs(filter.Type, filter.StartTimestamp, filter.EndTimestamp, filter.ModelName, filter.Username, filter.TokenName, 0, 100, filter.Channel, filter.Group, filter.RequestID, "")
+				require.NoError(t, err, variant)
+				listContents := []string{}
+				for _, row := range listed {
+					listContents = append(listContents, row.Content)
+				}
+				assert.ElementsMatch(t, expected, listContents, variant)
+				payload, err := common.Marshal(struct {
+					model.LogSearchParams
+					AllUsers bool `json:"all_users"`
+					PageSize int  `json:"page_size"`
+				}{filter, true, 1})
+				require.NoError(t, err)
+				exported := request(100+i, common.RoleAdminUser, string(payload))
+				require.Equal(t, http.StatusOK, exported.Code, exported.Body.String())
+				require.NoError(t, common.UnmarshalJsonStr(strings.TrimSpace(exported.Body.String()), &event))
+				require.True(t, event.Done)
+				assert.Equal(t, len(expected), event.Count, variant)
+				csvRows, err := csv.NewReader(strings.NewReader(strings.TrimPrefix(event.CSV, "\xef\xbb\xbf"))).ReadAll()
+				require.NoError(t, err)
+				exportContents := []string{}
+				for _, row := range csvRows[1:] {
+					exportContents = append(exportContents, row[11])
+				}
+				assert.ElementsMatch(t, listContents, exportContents, variant)
+			}
+			selfFiltered := request(70, common.RoleCommonUser, `{"start_timestamp":500,"end_timestamp":600,"type":2,"model_name":"deepseek-flash","group":"vip","token_name":"main token","request_id":"upstream-1","username":"bob","channel":99}`)
+			require.Equal(t, http.StatusOK, selfFiltered.Code)
+			require.NoError(t, common.UnmarshalJsonStr(strings.TrimSpace(selfFiltered.Body.String()), &event))
+			assert.Equal(t, 2, event.Count, "self scope ignores admin-only filters just like the list")
+			assert.Contains(t, event.CSV, "match-start")
+			assert.Contains(t, event.CSV, "wrong-channel")
+			assert.NotContains(t, event.CSV, "wrong-user")
 			// A simultaneous fourth request cannot pass, including on SQLite.
 			var wg sync.WaitGroup
 			outcomes := make(chan error, 4)

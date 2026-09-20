@@ -22,6 +22,8 @@ import { useTranslation } from 'react-i18next'
 
 import { Button } from '@/components/ui/button'
 
+import { SavingsComparison } from './savings-comparison'
+
 // ponytail: editorial examples verified against production on 2026-09-14.
 // Recheck when offers change; the wallet and pricing pages remain authoritative.
 const TOP_UP_EXAMPLES = [
@@ -133,6 +135,8 @@ export function Offers(props: { isAuthenticated: boolean }) {
           </Button>
         </div>
       </div>
+
+      <SavingsComparison examples={TOP_UP_EXAMPLES} />
 
       <div className='mt-14 border-t pt-10'>
         <div className='grid gap-8 md:grid-cols-[1fr_1.2fr] md:gap-12'>

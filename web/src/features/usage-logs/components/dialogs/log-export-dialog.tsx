@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -25,22 +26,36 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Progress } from '@/components/ui/progress'
+import { useDebounce } from '@/hooks/use-debounce'
 import { toIntlLocale } from '@/i18n/languages'
 import dayjs from '@/lib/dayjs'
 import { formatNumber } from '@/lib/format'
+import { requireServerSuccess } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 
-import { exportUsageLogs, type ExportProgress } from '../../lib/export'
+import { getAllLogs, getUserLogs } from '../../api'
+import { LOG_TYPE_FILTERS } from '../../constants'
+import type { UsageLog } from '../../data/schema'
+import {
+  estimateLogExportBytes,
+  exportUsageLogs,
+  type ExportProgress,
+} from '../../lib/export'
+import type { GetLogsParams } from '../../types'
 import { useLogsViewScope } from '../usage-logs-provider'
 
 export function LogExportDialog({
   startTime,
   endTime,
+  filters = {},
 }: {
   startTime?: Date
   endTime?: Date
+  filters?: GetLogsParams
 }) {
   const { t, i18n } = useTranslation()
   const { isAdminView } = useLogsViewScope()
+  const userId = useAuthStore((state) => state.auth.user?.id)
   const [open, setOpen] = useState(false)
   const [start, setStart] = useState('')
   const [end, setEnd] = useState('')
@@ -62,6 +77,45 @@ export function LogExportDialog({
     startTimestamp > 0 &&
     Number.isFinite(endTimestamp) &&
     endTimestamp >= startTimestamp
+  const estimateStart = useDebounce(start)
+  const estimateEnd = useDebounce(end)
+  const estimateParams = {
+    ...filters,
+    username: isAdminView ? filters.username : undefined,
+    channel: isAdminView ? filters.channel : undefined,
+    start_timestamp: Math.floor(new Date(estimateStart).getTime() / 1000),
+    end_timestamp: Math.floor(new Date(estimateEnd).getTime() / 1000),
+    p: 1,
+    page_size: 20,
+  }
+  const estimate = useQuery({
+    queryKey: ['log-export-estimate', userId, isAdminView, estimateParams],
+    enabled:
+      open && valid && start === estimateStart && end === estimateEnd && !busy,
+    staleTime: 30_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    queryFn: async () => {
+      const response = requireServerSuccess(
+        await (isAdminView
+          ? getAllLogs(estimateParams)
+          : getUserLogs(estimateParams))
+      )
+      if (!response.data) throw new Error('Missing log estimate')
+      const bytes = estimateLogExportBytes(
+        response.data.items as UsageLog[],
+        response.data.total,
+        isAdminView
+      )
+      if (bytes === undefined) throw new Error('Missing log sample')
+      return { count: response.data.total, bytes }
+    },
+  })
+  const estimating =
+    estimate.isPending ||
+    estimate.isFetching ||
+    start !== estimateStart ||
+    end !== estimateEnd
 
   async function download() {
     if (!valid || controller.current) return
@@ -77,6 +131,16 @@ export function LogExportDialog({
           start_timestamp: startTimestamp,
           end_timestamp: endTimestamp,
           all_users: isAdminView,
+          type: filters.type,
+          model_name: filters.model_name,
+          group: filters.group,
+          token_name: filters.token_name,
+          request_id: filters.request_id,
+          upstream_request_id: filters.upstream_request_id,
+          ...(isAdminView && {
+            username: filters.username,
+            channel: filters.channel,
+          }),
         },
         abort.signal,
         setProgress
@@ -130,7 +194,7 @@ export function LogExportDialog({
         }}
         title={t('Export logs')}
         description={t(
-          'Export all usage logs in the selected time range. Other table filters do not apply.'
+          'Export usage logs matching the applied filters and time range, across all pages.'
         )}
         footer={
           <Button disabled={!valid || busy} onClick={() => void download()}>
@@ -141,12 +205,40 @@ export function LogExportDialog({
         <FieldGroup>
           <p className='text-muted-foreground text-sm'>
             {t(
-              'The current log list time range is selected by default. To preview another range, set the dates and search the log list, then choose Export logs.'
+              'The current log list filters are applied. To preview a different selection, update the filters and search the list before exporting.'
             )}
           </p>
           <p className='text-muted-foreground text-sm'>
             {isAdminView ? t('All users') : t('Only my logs')}
           </p>
+          <dl className='grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm'>
+            <dt className='text-muted-foreground'>{t('Type')}</dt>
+            <dd>
+              {t(
+                LOG_TYPE_FILTERS.find(
+                  (type) => Number(type.value) === (filters.type ?? 0)
+                )?.label ?? 'All Types'
+              )}
+            </dd>
+            {[
+              [t('Model'), filters.model_name],
+              [t('Group'), filters.group],
+              [t('Token'), filters.token_name],
+              [
+                t('Request ID'),
+                filters.request_id || filters.upstream_request_id,
+              ],
+              [t('User'), isAdminView ? filters.username : undefined],
+              [t('Channel'), isAdminView ? filters.channel : undefined],
+            ]
+              .filter(([, value]) => value)
+              .map(([label, value]) => (
+                <div key={label} className='contents'>
+                  <dt className='text-muted-foreground'>{label}</dt>
+                  <dd className='break-all'>{value}</dd>
+                </div>
+              ))}
+          </dl>
           <Field>
             <FieldLabel htmlFor='log-export-start'>
               {t('Start time')}
@@ -176,6 +268,34 @@ export function LogExportDialog({
               {t('Invalid date range')}
             </p>
           )}
+          {valid && (
+            <div aria-live='polite' className='rounded-lg border p-3 text-sm'>
+              {estimating && <p>{t('Calculating estimate...')}</p>}
+              {!estimating && estimate.data && (
+                <p>
+                  {t(
+                    'Estimated: {{count}} records · about {{size}} MiB ({{bytes}} B)',
+                    {
+                      count: formatNumber(estimate.data.count, locale),
+                      size: formatNumber(
+                        estimate.data.bytes / 1024 / 1024,
+                        locale
+                      ),
+                      bytes: formatNumber(estimate.data.bytes, locale),
+                    }
+                  )}
+                </p>
+              )}
+              {!estimating && !estimate.data && (
+                <p>{t('Estimate unavailable. You can still export.')}</p>
+              )}
+              <p className='text-muted-foreground mt-1'>
+                {t(
+                  'Size is estimated from a sample. Actual download size may vary; estimates do not use your daily export allowance.'
+                )}
+              </p>
+            </div>
+          )}
           <p className='text-muted-foreground text-sm'>
             {t(
               'Up to 3 export attempts per UTC day, including cancelled or failed attempts. Limit: 50 MiB per file.'
@@ -192,7 +312,7 @@ export function LogExportDialog({
             <p>
               {t('Fetched {{count}} records · {{size}} MiB', {
                 count: formatNumber(progress.count, locale),
-                size: (progress.bytes / 1024 / 1024).toFixed(2),
+                size: formatNumber(progress.bytes / 1024 / 1024, locale),
               })}
               {' · '}
               {formatNumber(progress.bytes, locale)} B

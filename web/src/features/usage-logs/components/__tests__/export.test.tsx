@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   cleanup,
   fireEvent,
@@ -30,13 +31,44 @@ import { afterEach, expect, test, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { useAuthStore } from '@/stores/auth-store'
 
-import { exportUsageLogs } from '../../lib/export'
+import { usageLogSchema } from '../../data/schema'
+import { estimateLogExportBytes, exportUsageLogs } from '../../lib/export'
 import { LogExportDialog } from '../dialogs/log-export-dialog'
 import { UsageLogsProvider } from '../usage-logs-provider'
 
 afterEach(() => {
   cleanup()
   useAuthStore.getState().auth.setUser(null)
+})
+
+const sampleLog = usageLogSchema.parse({
+  id: 1,
+  user_id: 7,
+  username: 'localuser',
+  created_at: 1789862400,
+  type: 2,
+  content: 'start-boundary',
+  model_name: 'export-fixture',
+  group: 'default',
+  token_name: 'export-token',
+  quota: 7,
+})
+
+test('size estimates use only exported fields and distinguish empty results from missing samples', () => {
+  expect(estimateLogExportBytes([sampleLog], 1, false)).toBe(211)
+  expect(
+    estimateLogExportBytes(
+      [{ ...sampleLog, other: 'private metadata'.repeat(100) }],
+      1,
+      false
+    )
+  ).toBe(211)
+  expect(estimateLogExportBytes([sampleLog], 1, true)).toBeGreaterThan(211)
+  const headerBytes = estimateLogExportBytes([], 0, false)!
+  expect(estimateLogExportBytes([sampleLog], 10, false)).toBe(
+    headerBytes + (211 - headerBytes) * 10
+  )
+  expect(estimateLogExportBytes([], 1, false)).toBeUndefined()
 })
 
 test('export consumes partial network chunks once and requires a completion marker', async () => {
@@ -91,6 +123,11 @@ test('export dialog validates range, shows progress, prevents duplicate starts a
     .auth.setUser({ id: 7, username: 'export-user', role: 1 })
   const i18n = i18next.createInstance()
   await i18n.use(initReactI18next).init({ lng: 'en', resources: {} })
+  const get = vi
+    .spyOn(api, 'get')
+    .mockResolvedValue({
+      data: { success: true, data: { total: 1, items: [sampleLog] } },
+    })
   let signal: AbortSignal | undefined
   const post = vi
     .spyOn(api, 'post')
@@ -115,14 +152,31 @@ test('export dialog validates range, shows progress, prevents duplicate starts a
       )
     })
   render(
-    <I18nextProvider i18n={i18n}>
-      <UsageLogsProvider>
-        <LogExportDialog
-          startTime={new Date('2026-01-01T08:30:15')}
-          endTime={new Date('2026-01-01T09:30:25')}
-        />
-      </UsageLogsProvider>
-    </I18nextProvider>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <I18nextProvider i18n={i18n}>
+        <UsageLogsProvider>
+          <LogExportDialog
+            startTime={new Date('2026-01-01T08:30:15')}
+            endTime={new Date('2026-01-01T09:30:25')}
+            filters={{
+              type: 2,
+              model_name: 'deepseek-%',
+              group: 'vip',
+              token_name: 'my token',
+              request_id: 'request-1',
+              username: 'foreign-user',
+              channel: 99,
+              p: 8,
+              page_size: 20,
+            }}
+          />
+        </UsageLogsProvider>
+      </I18nextProvider>
+    </QueryClientProvider>
   )
   fireEvent.click(screen.getByRole('button', { name: 'Export logs' }))
   const download = await screen.findByRole('button', { name: 'Download CSV' })
@@ -133,9 +187,29 @@ test('export dialog validates range, shows progress, prevents duplicate starts a
   expect(screen.getByLabelText('End time')).toHaveValue(
     '2026-01-01T09:30:25.000'
   )
-  expect(
-    screen.getByText(/The current log list time range/)
-  ).toBeInTheDocument()
+  expect(screen.getByText(/The current log list filters/)).toBeInTheDocument()
+  for (const value of [
+    'Consume',
+    'deepseek-%',
+    'vip',
+    'my token',
+    'request-1',
+  ]) {
+    expect(screen.getByText(value, { exact: true })).toBeInTheDocument()
+  }
+  expect(screen.queryByText('foreign-user')).toBeNull()
+  expect(await screen.findByText(/Estimated: 1 records/)).toBeInTheDocument()
+  const estimateUrl = new URL(
+    String(get.mock.lastCall?.[0]),
+    'https://test.invalid'
+  )
+  expect(estimateUrl.pathname).toBe('/api/log/self')
+  expect(estimateUrl.searchParams.get('model_name')).toBe('deepseek-%')
+  expect(estimateUrl.searchParams.get('type')).toBe('2')
+  expect(estimateUrl.searchParams.get('group')).toBe('vip')
+  expect(estimateUrl.searchParams.get('token_name')).toBe('my token')
+  expect(estimateUrl.searchParams.has('username')).toBe(false)
+  expect(post).not.toHaveBeenCalled()
   fireEvent.change(screen.getByLabelText('Start time'), {
     target: { value: '2026-01-02T00:00:00' },
   })
@@ -153,9 +227,30 @@ test('export dialog validates range, shows progress, prevents duplicate starts a
   )
   expect(download).toBeDisabled()
   expect(post).toHaveBeenCalledTimes(1)
+  expect(post.mock.lastCall?.[1]).toEqual({
+    start_timestamp: Math.floor(
+      new Date('2026-01-02T00:00:00').getTime() / 1000
+    ),
+    end_timestamp: Math.floor(new Date('2026-01-03T00:00:00').getTime() / 1000),
+    all_users: false,
+    type: 2,
+    model_name: 'deepseek-%',
+    group: 'vip',
+    token_name: 'my token',
+    request_id: 'request-1',
+    upstream_request_id: undefined,
+  })
   expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow')
   fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
   await waitFor(() => expect(download).not.toBeDisabled())
   expect(signal?.aborted).toBe(true)
   expect(screen.queryByText('Export complete')).toBeNull()
+  get.mockRejectedValue(new Error('unavailable'))
+  fireEvent.change(screen.getByLabelText('End time'), {
+    target: { value: '2026-01-04T00:00:00' },
+  })
+  expect(
+    await screen.findByText('Estimate unavailable. You can still export.')
+  ).toBeInTheDocument()
+  expect(download).not.toBeDisabled()
 })

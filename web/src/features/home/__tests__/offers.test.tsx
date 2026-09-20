@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
   createMemoryHistory,
   createRootRoute,
@@ -27,12 +28,31 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import i18next from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
-import { expect, test } from 'vitest'
+import { beforeEach, expect, test, vi } from 'vitest'
 
+import { getPricing } from '@/features/pricing/api'
 import en from '@/i18n/locales/en.json'
 import zh from '@/i18n/locales/zh.json'
 
 import { Offers } from '../components/sections/offers'
+
+vi.mock('@/features/pricing/api', () => ({ getPricing: vi.fn() }))
+beforeEach(() => {
+  vi.mocked(getPricing).mockResolvedValue({
+    success: true,
+    data: [],
+    vendors: [],
+    group_ratio: { default: 2, temp: 0.2, premium: 4, free: 0, invalid: -1 },
+    usable_group: Object.fromEntries(
+      ['default', 'temp', 'premium', 'free', 'invalid'].map((group) => [
+        group,
+        { desc: group, ratio: 1 },
+      ])
+    ),
+    supported_endpoint: {},
+    auto_groups: [],
+  })
+})
 
 async function renderOffers(isAuthenticated = false, language = 'en') {
   const i18n = i18next.createInstance()
@@ -57,10 +77,18 @@ async function renderOffers(isAuthenticated = false, language = 'en') {
   await router.load()
   render(
     <I18nextProvider i18n={i18n}>
-      <RouterProvider router={router} />
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <RouterProvider router={router} />
+      </QueryClientProvider>
     </I18nextProvider>
   )
-  await screen.findByRole('table')
+  await screen.findByRole('link', {
+    name: language === 'zh' ? '查看 1 折模型' : 'Explore temp-group models',
+  })
   return router
 }
 
@@ -128,4 +156,54 @@ test('Chinese copy presents one USD minimum and translates ten percent pricing a
     'href',
     '/pricing?group=temp'
   )
+})
+
+test('group comparison applies relative rates and the selected bonus once, including zero and higher-cost groups', async () => {
+  await renderOffers()
+  const table = await screen.findByRole('table', {
+    name: 'Group cost comparison (USD)',
+  })
+  expect(
+    within(table).getByRole('row', { name: 'default $100.00 $71.43 $28.57' })
+  ).toBeVisible()
+  expect(
+    within(table).getByRole('row', { name: 'temp $10.00 $7.14 $92.86' })
+  ).toBeVisible()
+  expect(
+    within(table).getByRole('row', { name: 'premium $200.00 $142.86 -$42.86' })
+  ).toBeVisible()
+  expect(
+    within(table).getByRole('row', { name: 'free $0.00 $0.00 $100.00' })
+  ).toBeVisible()
+  expect(
+    within(table).queryByRole('link', { name: 'invalid' })
+  ).not.toBeInTheDocument()
+  const user = userEvent.setup()
+  await user.selectOptions(screen.getByLabelText('Top-up example'), '1')
+  expect(
+    within(table).getByRole('row', { name: 'default $100.00 $95.24 $4.76' })
+  ).toBeVisible()
+  const input = screen.getByLabelText('Usage at standard-group prices (USD)')
+  await user.clear(input)
+  expect(input).toHaveAttribute('aria-invalid', 'true')
+  expect(
+    screen.queryByRole('table', { name: 'Group cost comparison (USD)' })
+  ).not.toBeInTheDocument()
+  await user.type(input, '0')
+  expect(
+    screen.getByRole('row', { name: 'default $0.00 $0.00 $0.00' })
+  ).toBeVisible()
+})
+
+test('unavailable group rates show a fallback instead of invented savings', async () => {
+  vi.mocked(getPricing).mockRejectedValue(new Error('offline'))
+  await renderOffers()
+  expect(
+    await screen.findByText(
+      'Group comparison is unavailable. Check current model pricing below.'
+    )
+  ).toBeVisible()
+  expect(
+    screen.queryByRole('table', { name: 'Group cost comparison (USD)' })
+  ).not.toBeInTheDocument()
 })

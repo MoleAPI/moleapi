@@ -44,7 +44,7 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
 import { buildSearchParams } from '../lib/filter'
-import { getDefaultTimeRange } from '../lib/utils'
+import { buildApiParams, getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
 import { CompactDateTimeRangePicker } from './compact-date-time-range-picker'
@@ -290,6 +290,13 @@ export function CommonLogsFilterBar<TData>(
       <LogExportDialog
         startTime={searchState.filters.startTime}
         endTime={searchState.filters.endTime}
+        filters={buildApiParams({
+          page: 1,
+          pageSize: 1,
+          searchParams,
+          columnFilters: props.table.getState().columnFilters,
+          isAdmin,
+        })}
       />
     </div>
   )
