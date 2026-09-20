@@ -70,7 +70,8 @@ const numericString = z.string().refine((value) => {
 
 const channelTestModes = [
   'scheduled_all',
-  'auto_ban_only',
+  'auto_detect',
+  'auto_disable',
   'passive_recovery',
 ] as const
 type ChannelTestMode = (typeof channelTestModes)[number]
@@ -101,9 +102,26 @@ const createChannelHealthSchema = (
             t('Channel test concurrency must be between 1 and 32')
           ),
         channel_test_mode: z.enum(channelTestModes),
+        channel_test_type: z.enum(['hi', 'intelligence', 'custom']),
+        channel_test_custom_prompt: z.string().max(4000),
+        channel_test_custom_answer: z.string().max(500),
       }),
     })
     .superRefine((values, ctx) => {
+      if (values.monitor_setting.channel_test_type === 'custom') {
+        for (const key of [
+          'channel_test_custom_prompt',
+          'channel_test_custom_answer',
+        ] as const) {
+          if (!values.monitor_setting[key].trim()) {
+            ctx.addIssue({
+              code: 'custom',
+              path: ['monitor_setting', key],
+              message: t('Required'),
+            })
+          }
+        }
+      }
       const disableParsed = parseHttpStatusCodeRules(
         values.AutomaticDisableStatusCodes
       )
@@ -139,11 +157,20 @@ type NormalizedChannelHealthValues = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
+  'monitor_setting.channel_test_type': 'hi' | 'intelligence' | 'custom'
+  'monitor_setting.channel_test_custom_prompt': string
+  'monitor_setting.channel_test_custom_answer': string
   'monitor_setting.channel_test_mode': ChannelTestMode
 }
 
 function normalizeChannelTestMode(value?: string): ChannelTestMode {
-  if (value === 'auto_ban_only' || value === 'passive_recovery') {
+  if (value === 'scheduled_probes') return 'auto_detect'
+  if (value === 'auto_ban_only') return 'auto_disable'
+  if (
+    value === 'auto_detect' ||
+    value === 'auto_disable' ||
+    value === 'passive_recovery'
+  ) {
     return value
   }
   return 'scheduled_all'
@@ -160,6 +187,11 @@ const buildFormDefaults = (
   ),
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
   monitor_setting: {
+    channel_test_type: defaults['monitor_setting.channel_test_type'] ?? 'hi',
+    channel_test_custom_prompt:
+      defaults['monitor_setting.channel_test_custom_prompt'] ?? '',
+    channel_test_custom_answer:
+      defaults['monitor_setting.channel_test_custom_answer'] ?? '',
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
     auto_test_channel_minutes:
@@ -190,6 +222,12 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_minutes'],
   'monitor_setting.channel_test_concurrency':
     defaults['monitor_setting.channel_test_concurrency'],
+  'monitor_setting.channel_test_type':
+    defaults['monitor_setting.channel_test_type'] ?? 'hi',
+  'monitor_setting.channel_test_custom_prompt':
+    defaults['monitor_setting.channel_test_custom_prompt'] ?? '',
+  'monitor_setting.channel_test_custom_answer':
+    defaults['monitor_setting.channel_test_custom_answer'] ?? '',
   'monitor_setting.channel_test_mode': normalizeChannelTestMode(
     defaults['monitor_setting.channel_test_mode']
   ),
@@ -213,6 +251,11 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_minutes,
   'monitor_setting.channel_test_concurrency':
     values.monitor_setting.channel_test_concurrency,
+  'monitor_setting.channel_test_type': values.monitor_setting.channel_test_type,
+  'monitor_setting.channel_test_custom_prompt':
+    values.monitor_setting.channel_test_custom_prompt,
+  'monitor_setting.channel_test_custom_answer':
+    values.monitor_setting.channel_test_custom_answer,
   'monitor_setting.channel_test_mode': values.monitor_setting.channel_test_mode,
 })
 
@@ -249,7 +292,12 @@ export function ChannelHealthSection({
   const channelTestMode = form.watch('monitor_setting.channel_test_mode')
   let channelTestModeDescription: string
   switch (channelTestMode) {
-    case 'auto_ban_only':
+    case 'auto_detect':
+      channelTestModeDescription = t(
+        'Only channels with Scheduled probes enabled are tested, using their selected models.'
+      )
+      break
+    case 'auto_disable':
       channelTestModeDescription = t(
         'Periodically checks only channels with auto-disable enabled, excluding manually disabled channels.'
       )
@@ -366,7 +414,11 @@ export function ChannelHealthSection({
                               label: t('Actively check all channels'),
                             },
                             {
-                              value: 'auto_ban_only',
+                              value: 'auto_detect',
+                              label: t('Auto-detect channels'),
+                            },
+                            {
+                              value: 'auto_disable',
                               label: t(
                                 'Actively check auto-disable-enabled channels'
                               ),
@@ -389,7 +441,10 @@ export function ChannelHealthSection({
                               <SelectItem value='scheduled_all'>
                                 {t('Actively check all channels')}
                               </SelectItem>
-                              <SelectItem value='auto_ban_only'>
+                              <SelectItem value='auto_detect'>
+                                {t('Auto-detect channels')}
+                              </SelectItem>
+                              <SelectItem value='auto_disable'>
                                 {t(
                                   'Actively check auto-disable-enabled channels'
                                 )}
@@ -435,6 +490,88 @@ export function ChannelHealthSection({
                   />
                 </SettingsControlChildren>
               </SettingsControlGroup>
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.channel_test_type'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Probe type')}</FormLabel>
+                    <Select
+                      items={[
+                        { value: 'hi', label: t('Hi check') },
+                        {
+                          value: 'intelligence',
+                          label: t('Intelligence check'),
+                        },
+                        { value: 'custom', label: t('Custom prompt check') },
+                      ]}
+                      value={field.value}
+                      onValueChange={field.onChange}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='hi'>{t('Hi check')}</SelectItem>
+                          <SelectItem value='intelligence'>
+                            {t('Intelligence check')}
+                          </SelectItem>
+                          <SelectItem value='custom'>
+                            {t('Custom prompt check')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t(
+                        'Intelligence and custom checks require three consecutive misses before disabling a calibrated channel.'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {form.watch('monitor_setting.channel_test_type') === 'custom' && (
+                <>
+                  <FormField
+                    control={form.control}
+                    name='monitor_setting.channel_test_custom_prompt'
+                    render={({ field }) => (
+                      <FormItem className='lg:col-span-2'>
+                        <FormLabel>{t('Custom prompt')}</FormLabel>
+                        <FormControl>
+                          <Textarea rows={4} maxLength={4000} {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Sent once for each scheduled model probe.')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name='monitor_setting.channel_test_custom_answer'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Expected answer')}</FormLabel>
+                        <FormControl>
+                          <Input maxLength={500} {...field} />
+                        </FormControl>
+                        <FormDescription>
+                          {t('Compared after ignoring spaces and letter case.')}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </>
+              )}
 
               <FormField
                 control={form.control}

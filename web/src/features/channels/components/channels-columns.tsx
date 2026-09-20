@@ -70,7 +70,6 @@ import {
   MODEL_FETCHABLE_TYPES,
 } from '../constants'
 import {
-  formatRelativeTime,
   formatResponseTime,
   getBalanceVariant,
   getChannelTypeIcon,
@@ -624,11 +623,19 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   )
 }
 
-function UsedQuotaCell({ channel }: { channel: Channel }) {
+function UsedQuotaCell({
+  channel,
+  quota,
+  label = 'Used:',
+}: {
+  channel: Channel
+  quota?: number
+  label?: string
+}) {
   const { t, i18n } = useTranslation()
   const layout = useContext(ChannelRowActionsLayoutContext)
   const { sensitiveVisible } = useChannels()
-  const usedQuota = channel.used_quota || 0
+  const usedQuota = quota ?? (channel.used_quota || 0)
   const tokenSuffix = getCurrencyLabel() === 'Tokens' ? ' Tokens' : ''
   const withSuffix = (value: string) =>
     tokenSuffix && value !== '-' ? `${value}${tokenSuffix}` : value
@@ -668,7 +675,7 @@ function UsedQuotaCell({ channel }: { channel: Channel }) {
         />
         <TooltipContent>
           <p>
-            {t('Used:')} {sensitiveVisible ? usedFull : SENSITIVE_MASK}
+            {t(label)} {sensitiveVisible ? usedFull : SENSITIVE_MASK}
           </p>
         </TooltipContent>
       </Tooltip>
@@ -816,15 +823,15 @@ function ChannelReliabilityCell({
 export function useChannelsColumns(
   options: {
     enableSelection?: boolean
+    usage24h?: Record<number, number> | null
     channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
     channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
     probeEnabled?: boolean
   } = {}
 ): ColumnDef<Channel>[] {
-  const { t, i18n } = useTranslation()
+  const { t } = useTranslation()
   const { sensitiveVisible } = useChannels()
   const enableSelection = options.enableSelection ?? true
-  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   // The column definitions only depend on the translation function, the active
   // locale, and sensitive-data visibility. Memoizing keeps the array (and every
   // cell renderer reference) stable across unrelated re-renders, so react-table
@@ -1431,42 +1438,26 @@ export function useChannelsColumns(
         size: 110,
       },
 
-      // Test Time column
       {
-        accessorKey: 'test_time',
-        header: t('Last Tested'),
-        meta: { mobileHidden: true },
+        id: 'usage_24h',
+        header: t('Last 24h usage'),
         cell: ({ row }) => {
-          const testTime = row.getValue('test_time') as number
-
-          // For invalid timestamps, show "Never" badge
-          if (!testTime || testTime === 0) {
-            return <span className='text-muted-foreground text-xs'>-</span>
+          if (!options.usage24h) {
+            return <span className='text-muted-foreground'>-</span>
           }
-
-          const timeText = formatRelativeTime(testTime, locale)
-          const fullDate = formatTimestampToDate(testTime)
-
-          // For valid timestamps, show tooltip with full date
+          const channel = row.original
+          const quota = isTagAggregateRow(channel)
+            ? channel.children.reduce(
+                (sum, child) => sum + (options.usage24h?.[child.id] ?? 0),
+                0
+              )
+            : (options.usage24h[channel.id] ?? 0)
           return (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <StatusBadge
-                      label={timeText}
-                      variant='neutral'
-                      size='sm'
-                      copyable={false}
-                      className='-ml-1.5 cursor-pointer'
-                    />
-                  }
-                />
-                <TooltipContent side='top'>
-                  <p className='font-mono text-sm'>{fullDate}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            <UsedQuotaCell
+              channel={channel}
+              quota={quota}
+              label='Last 24h usage'
+            />
           )
         },
         size: 120,
@@ -1500,9 +1491,9 @@ export function useChannelsColumns(
     [
       enableSelection,
       t,
-      locale,
       sensitiveVisible,
       options.channelSuccessById,
+      options.usage24h,
       options.channelProbeById,
       options.probeEnabled,
     ]

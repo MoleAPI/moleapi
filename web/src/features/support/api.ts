@@ -117,6 +117,7 @@ export async function createSupportTicket(input: {
   subject: string
   content: string
   type: string
+  billing_record_ids?: number[]
 }) {
   const response = await api.post<ApiResponse<SupportTicket>>(
     '/api/support/tickets',

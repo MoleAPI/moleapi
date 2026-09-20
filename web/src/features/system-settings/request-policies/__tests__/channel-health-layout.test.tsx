@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { cleanup, render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { ChannelHealthSection } from '../channel-health-section'
@@ -49,6 +50,32 @@ function formItemOf(control: HTMLElement) {
 }
 
 describe('channel health layout', () => {
+  it('preserves local smart checks and exposes custom prompt inputs', async () => {
+    render(
+      <QueryClientProvider client={client}>
+        <ChannelHealthSection
+          defaultValues={{
+            ...defaultRequestPolicySettings,
+            'monitor_setting.channel_test_mode': 'auto_detect',
+            'monitor_setting.channel_test_type': 'intelligence',
+          }}
+        />
+      </QueryClientProvider>
+    )
+    expect(
+      screen.getByRole('combobox', { name: 'Channel test mode' })
+    ).toHaveTextContent('Auto-detect channels')
+    const probeType = screen.getByRole('combobox', { name: 'Probe type' })
+    expect(probeType).toHaveTextContent('Intelligence check')
+    await userEvent.click(probeType)
+    await userEvent.click(
+      screen.getByRole('option', { name: 'Custom prompt check' })
+    )
+    expect(screen.getByRole('textbox', { name: 'Custom prompt' })).toBeVisible()
+    expect(
+      screen.getByRole('textbox', { name: 'Expected answer' })
+    ).toBeVisible()
+  })
   it('nests only the test mode and interval under the scheduled channel tests switch', () => {
     show()
     const options = screen.getByRole('group', {

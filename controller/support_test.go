@@ -164,6 +164,7 @@ func TestSupportConversationMatchesTicketDescription(t *testing.T) {
 		CreatedTime: "2026-09-18T10:00:01Z",
 	}
 	assert.True(t, supportConversationMatchesTicketDescription(message, ticket))
+	assert.False(t, supportConversationMatchesTicketDescription(zohoDeskConversation{Type: "thread", Visibility: "public", Summary: "Email summary"}, zohoDeskTicket{}), "missing content must not be removed as a duplicate")
 }
 
 func TestSupportEmailConfigPreservesConfiguredAddress(t *testing.T) {
@@ -184,19 +185,31 @@ func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
 	resetZohoDeskTokenCache()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Has("include") {
+			w.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = w.Write([]byte(`{"message":"include=plainText is not supported"}`))
+			return
+		}
 		switch r.URL.Path {
 		case "/oauth/v2/token":
 			_, _ = w.Write([]byte(`{"access_token":"access","expires_in":3600}`))
 		case "/api/v1/tickets/42/threads":
 			_, _ = w.Write([]byte(`{"data":[{"id":"thread-1","direction":"in","channel":"EMAIL","createdTime":"2026-09-19T06:26:31Z","content":"","summary":"Inbound email body","contentType":"text/html","isDescriptionThread":true}]}`))
-		case "/api/v1/tickets/42/threads/thread-1/fullContent":
-			_, _ = w.Write([]byte(`{"id":"thread-1","content":"Full inbound email body","contentType":"text/html"}`))
+		case "/api/v1/tickets/42/threads/thread-1":
+			_, _ = w.Write([]byte(`{"id":"thread-1","content":"Full inbound email body","contentType":"text/html","attachments":[{"id":"image-1","isPublic":true}]}`))
 		case "/api/v1/tickets/43/threads":
 			_, _ = w.Write([]byte(`{"data":[]}`))
 		case "/api/v1/tickets/43/latestThread":
 			_, _ = w.Write([]byte(`{"id":"thread-2","direction":"in","channel":"EMAIL","createdTime":"2026-09-19T06:26:31Z","content":"Latest inbound email body","contentType":"text/plain"}`))
 		case "/api/v1/tickets/45/threads":
 			_, _ = w.Write([]byte(`{"data":[{"id":"thread-3","direction":"in","channel":"EMAIL","createdTime":"2026-09-19T06:26:31Z","plainText":"Plain-text inbound email body","contentType":"text/plain"}]}`))
+		case "/api/v1/tickets/46/threads":
+			_, _ = w.Write([]byte(`{"data":[{"id":"long","direction":"in","channel":"EMAIL"}]}`))
+		case "/api/v1/tickets/46/threads/long":
+			_, _ = w.Write([]byte(`{"content":"preview","isContentTruncated":true,"contentType":"text/html"}`))
+		case "/api/v1/tickets/46/threads/long/fullContent":
+			w.Header().Del("Content-Type")
+			_, _ = w.Write([]byte(`<div>Complete long email body</div>`))
 		case "/api/v1/tickets/44/comments":
 			_, _ = w.Write([]byte(`{"data":[{"id":"comment-1","plainText":"Comment inbound email body","isPublic":true}]}`))
 		default:
@@ -213,6 +226,7 @@ func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
 	assert.Equal(t, "Full inbound email body", threads[0].Content)
 	assert.Equal(t, "public", threads[0].Visibility)
 	assert.True(t, threads[0].IsPublic)
+	require.Len(t, threads[0].Attachments, 1)
 	threads, err = loadSupportEmailThreads(zohoDeskConfig{
 		ClientID: "client", ClientSecret: "secret", RefreshToken: "refresh",
 		OrgID: "org", APIDomain: server.URL, AccountsDomain: server.URL,
@@ -227,6 +241,13 @@ func TestSupportEmailThreadsRestoreInboundBody(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, threads, 1)
 	assert.Equal(t, "Plain-text inbound email body", threads[0].Content)
+	threads, err = loadSupportEmailThreads(zohoDeskConfig{
+		ClientID: "client", ClientSecret: "secret", RefreshToken: "refresh",
+		OrgID: "org", APIDomain: server.URL, AccountsDomain: server.URL,
+	}, "46")
+	require.NoError(t, err)
+	require.Len(t, threads, 1)
+	assert.Equal(t, "<div>Complete long email body</div>", threads[0].Content)
 	comments, err := loadSupportEmailComments(zohoDeskConfig{
 		ClientID: "client", ClientSecret: "secret", RefreshToken: "refresh",
 		OrgID: "org", APIDomain: server.URL, AccountsDomain: server.URL,
@@ -249,7 +270,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			model.DB = db
 			common.SetMainDatabaseType(common.DatabaseType(kind))
 			t.Cleanup(func() { model.DB = previousDB; common.SetMainDatabaseType(previousType) })
-			require.NoError(t, db.AutoMigrate(&model.User{}))
+			require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
 			require.NoError(t, db.Create(&model.User{Id: 11, Username: "alice", Email: "Alice@example.com", AffCode: "alice"}).Error)
 			require.NoError(t, db.Create(&model.User{Id: 12, Username: "bob", Email: "bob@example.com", AffCode: "bob"}).Error)
 			var version string
@@ -259,6 +280,25 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			}
 			require.NoError(t, db.Raw(query).Scan(&version).Error)
 			t.Logf("database version: %s", version)
+			orders := []model.TopUp{
+				{Id: 1, UserId: 11, TradeNo: "paid-1", Amount: 500, Money: 12.34, PaymentMethod: "alipay", PaymentCurrency: "CNY", Status: "success"},
+				{Id: 2, UserId: 11, TradeNo: "paid-2", Amount: 500, Money: 0.66, PaymentMethod: "wxpay", Status: "success"},
+				{Id: 3, UserId: 12, TradeNo: "foreign", Money: 99, PaymentMethod: "alipay", Status: "success"},
+				{Id: 4, UserId: 11, TradeNo: "pending", Money: 99, PaymentMethod: "alipay", Status: "pending"},
+				{Id: 5, UserId: 11, TradeNo: "stripe", Money: 99, PaymentMethod: "stripe", Status: "success"},
+				{Id: 6, UserId: 11, TradeNo: "usd", Money: 2.50, PaymentMethod: "alipay", PaymentCurrency: "USD", Status: "success"},
+			}
+			require.NoError(t, db.Create(&orders).Error)
+			summary, err := supportInvoiceSummary(11, []int{1, 2, 6})
+			require.NoError(t, err)
+			assert.Contains(t, summary, "Invoice total: CNY 13.00")
+			assert.Contains(t, summary, "Invoice total: USD 2.50")
+			assert.Contains(t, summary, "paid-1 | CNY 12.34")
+			assert.NotContains(t, summary, "500")
+			for _, ids := range [][]int{nil, {1, 1}, {3}, {4}, {5}, {999}, make([]int, 51)} {
+				_, err := supportInvoiceSummary(11, ids)
+				require.Error(t, err, "invalid selection: %v", ids)
+			}
 
 			resetZohoDeskTokenCache()
 			status, department := "Open", "7"
@@ -281,13 +321,28 @@ func TestSupportTicketWorkflow(t *testing.T) {
 					require.NoError(t, err)
 					_, _ = w.Write(data)
 				case "/api/v1/tickets", "/api/v1/tickets/search":
+					if r.Method == http.MethodPost {
+						var input struct{ Description string }
+						require.NoError(t, common.DecodeJson(r.Body, &input))
+						assert.Contains(t, input.Description, "Verified billing records (actual paid amounts)")
+						assert.Contains(t, input.Description, "Invoice total: CNY 13.00")
+						_, _ = w.Write([]byte(`{"id":"new-invoice"}`))
+						return
+					}
 					assert.Equal(t, "20", r.URL.Query().Get("limit"))
 					assert.Equal(t, "7", r.URL.Query().Get("departmentId"))
 					_, _ = w.Write([]byte(`{"data":[{"id":"42","departmentId":"7","email":"alice@example.com","commentCount":"1"},{"id":"43","departmentId":"7","email":"bob@example.com"},{"id":"44","departmentId":"8","email":"alice@example.com"}]}`))
 				case "/api/v1/tickets/archivedTickets":
 					_, _ = w.Write([]byte(`{"data":[]}`))
+				case "/api/v1/contacts/search":
+					_, _ = w.Write([]byte(`{"data":[{"id":"contact-1","email":"alice@example.com"}]}`))
 				case "/api/v1/tickets/42/conversations":
-					_, _ = w.Write([]byte(`{"data":[{"id":"1","type":"comment","isPublic":true,"content":"alice (UID 11): hello","commentedTime":"2026-09-18T10:00:00Z"},{"id":"2","type":"comment","isPublic":false,"content":"private note"},{"id":"3","type":"thread","visibility":"public","isDraft":true,"content":"draft"}]}`))
+					_, _ = w.Write([]byte(`{"data":[{"id":"1","type":"comment","isPublic":true,"content":"alice (UID 11): hello","commentedTime":"2026-09-18T10:00:00Z"},{"id":"2","type":"comment","isPublic":false,"content":"private note"},{"id":"3","type":"thread","visibility":"public","isDraft":true,"content":"draft"},{"id":"email","type":"thread","direction":"in","summary":"email preview"}]}`))
+				case "/api/v1/tickets/42/threads":
+					assert.Empty(t, r.URL.Query().Get("include"))
+					_, _ = w.Write([]byte(`{"data":[{"id":"email","direction":"in","channel":"EMAIL","summary":"email preview"}]}`))
+				case "/api/v1/tickets/42/threads/email":
+					_, _ = w.Write([]byte(`{"content":"Actual complete email","contentType":"text/plain","attachments":[{"id":"1","isPublic":true}]}`))
 				case "/api/v1/tickets/42/attachments":
 					_, _ = w.Write([]byte(`{"data":[{"id":"1","isPublic":true},{"id":"2","isPublic":false},{"id":"3"}]}`))
 				default:
@@ -335,6 +390,10 @@ func TestSupportTicketWorkflow(t *testing.T) {
 				assert.Equal(t, tc.allowed, result.Success, response.Body.String())
 				assert.Equal(t, tc.allowed, patches == before+1)
 			}
+			invoice := request(CreateSupportTicket, common.RoleCommonUser, 11, `{"subject":"Combined invoice","content":"Please invoice these orders.","type":"Invoice Request","billing_record_ids":[1,2]}`)
+			assert.Contains(t, invoice.Body.String(), `"success":true`)
+			assert.Contains(t, invoice.Body.String(), `new-invoice`)
+			assert.Contains(t, request(CreateSupportTicket, common.RoleCommonUser, 11, `{"subject":"Combined invoice","content":"Please invoice these orders.","type":"Invoice Request"}`).Body.String(), `"success":false`)
 			status = "Closed"
 			assert.Contains(t, request(ReplySupportTicket, common.RoleCommonUser, 11, `{"content":"hello"}`).Body.String(), "Reopen the ticket")
 			department = "8"
@@ -350,8 +409,10 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			}
 			require.NoError(t, common.Unmarshal(request(GetSupportTicket, common.RoleCommonUser, 11, "").Body.Bytes(), &detail))
 			require.True(t, detail.Success)
-			require.Len(t, detail.Data.Conversations, 1)
+			require.Len(t, detail.Data.Conversations, 2)
 			assert.Equal(t, "1", detail.Data.Conversations[0].ID)
+			assert.Equal(t, "Actual complete email", detail.Data.Conversations[1].Content)
+			assert.Len(t, detail.Data.Conversations[1].Attachments, 1)
 			require.Len(t, detail.Data.Attachments, 1)
 			assert.Equal(t, "1", detail.Data.Attachments[0].ID)
 			assert.Contains(t, request(DownloadSupportAttachment, common.RoleCommonUser, 11, "").Body.String(), "Attachment not found")
@@ -359,7 +420,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			require.True(t, detail.Success)
 			require.NotNil(t, detail.Data.Ticket.User)
 			assert.Equal(t, "alice", detail.Data.Ticket.User.Username)
-			assert.Len(t, detail.Data.Conversations, 3)
+			assert.Len(t, detail.Data.Conversations, 4)
 			for _, role := range []int{common.RoleCommonUser, common.RoleAdminUser} {
 				var list struct {
 					Success bool

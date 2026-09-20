@@ -48,7 +48,14 @@ const CONFIGURATION_BLOCKS = {
   modelMapping: { section: 'routing', fields: ['model_mapping'] },
   routingStrategy: {
     section: 'routing',
-    fields: ['priority', 'weight', 'test_model', 'auto_ban'],
+    fields: [
+      'priority',
+      'weight',
+      'test_model',
+      'auto_ban',
+      'channel_probe_enabled',
+      'channel_probe_models',
+    ],
   },
   overrideRules: {
     section: 'request',
@@ -143,6 +150,8 @@ export function getChannelConfigurationState(
       values.priority ||
       values.weight ||
       values.test_model?.trim() ||
+      values.channel_probe_enabled === false ||
+      values.channel_probe_models?.length ||
       (values.auto_ban ?? 1) !== 1
     ),
     overrideRules:

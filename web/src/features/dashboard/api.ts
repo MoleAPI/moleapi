@@ -88,13 +88,15 @@ export async function getFlowQuotaDates(
 
 export async function getChannelSuccessMetrics(
   hours: number,
-  channelTestMode?: string
+  channelTestMode?: string,
+  includeUsage = false
 ) {
   const res = await api.get<{ success: boolean; data: ChannelSuccessData }>(
     '/api/data/channel-success',
     {
       params: {
         hours,
+        ...(includeUsage ? { include_usage: true } : {}),
         ...(channelTestMode ? { channel_test_mode: channelTestMode } : {}),
       },
     }

@@ -236,6 +236,7 @@ export const CHANNEL_STATUS_LABELS = {
 
 export const CHANNEL_STATUS_OPTIONS = [
   { value: 'all', label: 'All Status' },
+  { value: 'auto', label: 'Auto' },
   { value: 'enabled', label: 'Enabled' },
   { value: 'disabled', label: 'Disabled' },
 ] as const

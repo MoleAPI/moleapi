@@ -601,6 +601,13 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 		}
 
 		ttlSeconds := rule.TTLSeconds
+		mode := rule.SessionMode
+		if mode == "inherit" {
+			mode = setting.SessionMode
+			if mode == "" {
+				mode = "prefer"
+			}
+		}
 		if ttlSeconds <= 0 {
 			ttlSeconds = setting.DefaultTTLSeconds
 		}
@@ -610,7 +617,7 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			CacheKey:       cacheKeyFull,
 			TTLSeconds:     ttlSeconds,
 			RuleName:       rule.Name,
-			SkipRetry:      rule.SkipRetryOnFailure,
+			SkipRetry:      mode == "strict" || mode == "" && rule.SkipRetryOnFailure,
 			ParamTemplate:  cloneStringAnyMap(rule.ParamOverrideTemplate),
 			KeySourceType:  strings.TrimSpace(usedSource.Type),
 			KeySourceKey:   strings.TrimSpace(usedSource.Key),
@@ -622,6 +629,10 @@ func GetPreferredChannelByAffinity(c *gin.Context, modelName string, usingGroup 
 			RequestPath:    path,
 		})
 
+		if mode == "off" {
+			c.Set("channel_affinity_off", true)
+			return 0, false
+		}
 		cache := getChannelAffinityCache()
 		channelID, found, err := cache.Get(cacheKeySuffix)
 		if err != nil {
@@ -724,6 +735,9 @@ func AppendChannelAffinityAdminInfo(c *gin.Context, other *model.LogOther) {
 }
 
 func RecordChannelAffinity(c *gin.Context, channelID int) {
+	if c != nil && c.GetBool("channel_affinity_off") {
+		return
+	}
 	if channelID <= 0 {
 		return
 	}

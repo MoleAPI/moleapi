@@ -17,6 +17,26 @@ import (
 	"gorm.io/gorm"
 )
 
+// ChannelQuotaUsage reads existing consumption logs; it does not need a new metric table.
+func ChannelQuotaUsage(ctx context.Context, start, end int64) (map[int]int64, error) {
+	var rows []struct {
+		ChannelID int
+		Quota     int64
+	}
+	err := LOG_DB.WithContext(ctx).Model(&Log{}).
+		Select("channel_id, SUM(quota) AS quota").
+		Where("type = ? AND created_at >= ? AND created_at < ?", LogTypeConsume, start, end).
+		Group("channel_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	usage := make(map[int]int64, len(rows))
+	for _, row := range rows {
+		usage[row.ChannelID] = row.Quota
+	}
+	return usage, nil
+}
+
 func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) (*gorm.DB, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {

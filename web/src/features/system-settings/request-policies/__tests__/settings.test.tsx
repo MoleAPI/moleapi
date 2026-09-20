@@ -187,6 +187,23 @@ afterEach(() => {
 })
 
 describe('request policy settings', () => {
+  it('saves restored intelligent probes without changing the auto-detection scope', async () => {
+    settings['monitor_setting.channel_test_mode'] = 'auto_detect'
+    await renderPolicies('/system-settings/request-policies/health')
+    expect(
+      await screen.findByRole('combobox', { name: 'Channel test mode' })
+    ).toHaveTextContent('Auto-detect channels')
+    await userEvent.click(screen.getByRole('combobox', { name: 'Probe type' }))
+    await userEvent.click(
+      screen.getByRole('option', { name: 'Intelligence check' })
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Save Changes' }))
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith('/api/option/request_policy', {
+        options: { 'monitor_setting.channel_test_type': 'intelligence' },
+      })
+    )
+  })
   it.each([
     ['retry', 'Save Changes'],
     ['health', 'Save Changes'],
