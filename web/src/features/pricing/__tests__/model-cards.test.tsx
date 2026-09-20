@@ -115,7 +115,7 @@ describe('model cards', () => {
       <ModelCard model={model} onClick={vi.fn()} tokenUnit='K' />
     )
     expect(screen.getByText('$0.01')).toBeVisible()
-    expect(screen.getByText('/ request')).toBeVisible()
+    expect(screen.getAllByText('/ request')).toHaveLength(2)
     rerender(<ModelCard model={model} onClick={vi.fn()} tokenUnit='M' />)
     expect(screen.getByText('$0.01')).toBeVisible()
     expect(screen.queryByText('/ 1M')).not.toBeInTheDocument()
@@ -204,30 +204,18 @@ describe('model cards', () => {
       />
     )
 
-    const groupField = screen.getByText('Groups').parentElement
-    const endpointField = screen.getByText('Endpoints').parentElement
-    if (!groupField || !endpointField) {
-      throw new Error('Expected labeled group and endpoint fields')
+    for (const group of groups.slice(0, 2)) {
+      expect(screen.getByText(group)).toBeVisible()
     }
-    const tagField = screen.getByRole('group', { name: 'Tags' })
-    expect(within(groupField).getByText(groups[0])).toBeVisible()
-    expect(within(groupField).getByText('+2')).toHaveAttribute(
-      'title',
-      groups.slice(1).join(', ')
-    )
-    expect(
-      within(endpointField).getByText('openai-response, openai')
-    ).toHaveAttribute('title', endpoints.join(', '))
-    expect(within(endpointField).getByText('+3')).toBeVisible()
-    expect(
-      within(tagField).getByText('video-generation, high-resolution')
-    ).toHaveAttribute('title', tags.join(', '))
-    expect(within(tagField).getByText('+4')).toBeVisible()
-    expect(
-      within(screen.getByRole('group', { name: 'Pricing' })).getByText(
-        'Token-based'
-      )
-    ).toBeVisible()
+    expect(screen.queryByText('Endpoints:')).not.toBeInTheDocument()
+    for (const endpoint of endpoints) {
+      expect(screen.getByText(endpoint)).toHaveAttribute('data-slot', 'badge')
+    }
+    for (const tag of tags.slice(0, 5)) {
+      expect(screen.getByText(tag)).toBeVisible()
+    }
+    expect(screen.getByText('+1')).toHaveAttribute('title', 'pro')
+    expect(screen.getByText('Token-based')).toBeVisible()
   })
 
   it('omits metadata fields when the model has no groups, endpoints or tags', () => {
@@ -311,9 +299,11 @@ describe('model cards', () => {
         tokenUnit='K'
       />
     )
-    expect(screen.getByText(/\$0.6/)).toHaveTextContent(/\$0.6\s*\/\s*request/)
+    expect(screen.getByText(/\$0.6/).parentElement).toHaveTextContent(
+      /\$0.6\s*\/\s*request/
+    )
     expect(screen.queryByText(/1K|1M/)).not.toBeInTheDocument()
-    expect(screen.getAllByText('Per Request')).toHaveLength(1)
+    expect(screen.getAllByText('Per Request')).toHaveLength(2)
     expect(screen.queryByText('Per-request')).not.toBeInTheDocument()
   })
 
@@ -357,7 +347,7 @@ describe('model cards', () => {
       />
     )
     expect(screen.getByText(/0.4.*0.8/)).toHaveTextContent(/0.4 – \$0.8/)
-    expect(screen.getByText(/^\/\s*s$/)).toBeVisible()
+    expect(screen.getAllByText(/^\/\s*s$/)).toHaveLength(2)
     expect(screen.queryByText(/1K|1M/)).not.toBeInTheDocument()
   })
 
@@ -371,8 +361,8 @@ describe('model cards', () => {
       />
     )
     expect(
-      screen.getByText('Usage-based billing · price not configured')
-    ).toBeVisible()
+      screen.getAllByText('Usage-based billing · price not configured')
+    ).toHaveLength(2)
     expect(screen.queryByText('Input')).not.toBeInTheDocument()
   })
 
@@ -398,7 +388,7 @@ describe('model cards', () => {
     expect(screen.getByText('$42 – $70').parentElement).toHaveTextContent(
       '$42 – $70 / 1M token'
     )
-    expect(screen.getByText(/480p · 5s ≈/)).toBeVisible()
+    expect(screen.getAllByText(/480p · 5s ≈/)).toHaveLength(2)
   })
 
   it('keeps an unrecognized expression visible with the special billing message', () => {
@@ -470,7 +460,7 @@ describe('model cards', () => {
     expect(screen.getByRole('heading', { name: 'model-1' })).toBeVisible()
   })
 
-  it('switches the card grid to three columns at the xl breakpoint instead of 2xl', () => {
+  it('keeps model cards in the optimized full-width list layout', () => {
     queryClient.setQueryData(['perf-metrics-summary', 24], {
       success: true,
       data: { models: [] },
@@ -480,12 +470,9 @@ describe('model cards', () => {
         <ModelCardGrid models={[pricingModel()]} onModelClick={vi.fn()} />
       </QueryClientProvider>
     )
-    const grid = screen
-      .getByRole('heading', { name: 'example-model' })
-      .closest('.grid')
-    expect(grid).toHaveClass('xl:grid-cols-3')
-    expect(grid).not.toHaveClass('2xl:grid-cols-3')
-    expect(grid).not.toHaveClass('min-[1440px]:grid-cols-3')
+    const list = screen.getByRole('list', { name: 'Models' })
+    expect(list).toHaveClass('flex', 'flex-col')
+    expect(list).not.toHaveClass('grid-cols-1')
   })
 
   it('lights slots 23 and 18 when series has the current hour and five hours earlier', () => {
