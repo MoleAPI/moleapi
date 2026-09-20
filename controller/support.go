@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -320,9 +321,61 @@ var supportTicketTypes = map[string]struct{}{
 	"Other":                {},
 }
 
-var supportAttachmentExtensions = map[string]struct{}{
-	".gif": {}, ".jpeg": {}, ".jpg": {}, ".log": {}, ".pdf": {},
-	".png": {}, ".txt": {}, ".webp": {},
+var supportAttachmentContentTypes = map[string]string{
+	".gif": "image/gif", ".jpeg": "image/jpeg", ".jpg": "image/jpeg",
+	".log": "text/plain", ".pdf": "application/pdf", ".png": "image/png",
+	".txt": "text/plain", ".webp": "image/webp",
+}
+
+func validSupportAttachment(header *multipart.FileHeader) bool {
+	expectedType, allowed := supportAttachmentContentTypes[strings.ToLower(filepath.Ext(header.Filename))]
+	if header.Size <= 0 || header.Size > supportAttachmentMaxFileSize || !allowed {
+		return false
+	}
+	file, err := header.Open()
+	if err != nil {
+		return false
+	}
+	defer file.Close()
+	prefix := make([]byte, 512)
+	n, err := io.ReadFull(file, prefix)
+	if err != nil && !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+		return false
+	}
+	detectedType := http.DetectContentType(prefix[:n])
+	if expectedType == "text/plain" {
+		return strings.HasPrefix(detectedType, expectedType)
+	}
+	return detectedType == expectedType
+}
+
+func safeSupportDownloadContentType(prefix []byte) string {
+	detectedType := http.DetectContentType(prefix)
+	switch detectedType {
+	case "image/gif", "image/jpeg", "image/png", "image/webp":
+		return detectedType
+	default:
+		return "application/octet-stream"
+	}
+}
+
+func safeSupportContentDisposition(value string) string {
+	_, params, err := mime.ParseMediaType(value)
+	if err != nil {
+		return "attachment"
+	}
+	filename := strings.TrimSpace(params["filename"])
+	if separator := strings.LastIndexAny(filename, `/\`); separator >= 0 {
+		filename = filename[separator+1:]
+	}
+	if filename == "" {
+		return "attachment"
+	}
+	disposition := mime.FormatMediaType("attachment", map[string]string{"filename": filename})
+	if disposition == "" {
+		return "attachment"
+	}
+	return disposition
 }
 
 var zohoDeskTokenCache struct {
@@ -783,9 +836,7 @@ func UploadSupportAttachments(c *gin.Context) {
 		return
 	}
 	for _, header := range files {
-		extension := strings.ToLower(filepath.Ext(header.Filename))
-		_, allowed := supportAttachmentExtensions[extension]
-		if header.Size <= 0 || header.Size > supportAttachmentMaxFileSize || !allowed {
+		if !validSupportAttachment(header) {
 			common.ApiErrorMsg(c, "Only images, PDF, text, and log files up to 5 MB are supported.")
 			return
 		}
@@ -844,12 +895,25 @@ func DownloadSupportAttachment(c *gin.Context) {
 		return
 	}
 	defer res.Body.Close()
-	for _, header := range []string{"Content-Type", "Content-Length", "Content-Disposition"} {
-		if value := res.Header.Get(header); value != "" {
-			c.Header(header, value)
-		}
+	prefix := make([]byte, 512)
+	n, readErr := io.ReadFull(res.Body, prefix)
+	if readErr != nil && !errors.Is(readErr, io.EOF) && !errors.Is(readErr, io.ErrUnexpectedEOF) {
+		common.ApiError(c, readErr)
+		return
+	}
+	c.Header("Content-Type", safeSupportDownloadContentType(prefix[:n]))
+	c.Header("Content-Disposition", safeSupportContentDisposition(res.Header.Get("Content-Disposition")))
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Security-Policy", "sandbox")
+	c.Header("Cache-Control", "private, no-store")
+	if value := res.Header.Get("Content-Length"); value != "" {
+		c.Header("Content-Length", value)
 	}
 	c.Status(res.StatusCode)
+	if _, err = c.Writer.Write(prefix[:n]); err != nil {
+		common.SysError("failed to proxy support attachment: " + err.Error())
+		return
+	}
 	if _, err = io.Copy(c.Writer, res.Body); err != nil {
 		common.SysError("failed to proxy support attachment: " + err.Error())
 	}

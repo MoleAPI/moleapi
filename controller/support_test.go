@@ -24,6 +24,21 @@ func resetZohoDeskTokenCache() {
 	zohoDeskTokenCache.key = ""
 }
 
+func supportAttachmentHeader(t *testing.T, filename string, content []byte) *multipart.FileHeader {
+	t.Helper()
+	var source bytes.Buffer
+	writer := multipart.NewWriter(&source)
+	part, err := writer.CreateFormFile("files", filename)
+	require.NoError(t, err)
+	_, err = part.Write(content)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+	request := httptest.NewRequest(http.MethodPost, "/", &source)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	require.NoError(t, request.ParseMultipartForm(1<<20))
+	return request.MultipartForm.File["files"][0]
+}
+
 func TestZohoDeskRequestRefreshesTokenAndAuthenticatesAPIRequest(t *testing.T) {
 	resetZohoDeskTokenCache()
 
@@ -119,6 +134,73 @@ func TestZohoDeskUploadAttachment(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "image/png", response.Header.Get("Content-Type"))
 	assert.Equal(t, []byte("png"), data)
+}
+
+func TestSupportAttachmentContentValidation(t *testing.T) {
+	for _, testCase := range []struct {
+		name, filename string
+		content        []byte
+		valid          bool
+	}{
+		{name: "png", filename: "screen.png", content: []byte("\x89PNG\r\n\x1a\n"), valid: true},
+		{name: "log", filename: "request.log", content: []byte("request failed\n"), valid: true},
+		{name: "html disguised as image", filename: "screen.png", content: []byte("<script>alert(1)</script>"), valid: false},
+		{name: "html disguised as text", filename: "request.txt", content: []byte("<html><script>alert(1)</script></html>"), valid: false},
+		{name: "unsupported executable", filename: "report.exe", content: []byte("MZ"), valid: false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			assert.Equal(t, testCase.valid, validSupportAttachment(supportAttachmentHeader(t, testCase.filename, testCase.content)))
+		})
+	}
+}
+
+func TestDownloadSupportAttachmentForcesSafeResponse(t *testing.T) {
+	resetZohoDeskTokenCache()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/oauth/v2/token":
+			_, _ = w.Write([]byte(`{"access_token":"access","expires_in":3600}`))
+		case "/api/v1/tickets/42":
+			_, _ = w.Write([]byte(`{"id":"42","departmentId":"7"}`))
+		case "/api/v1/tickets/42/attachments/1/content":
+			w.Header().Set("Content-Type", "text/html")
+			w.Header().Set("Content-Disposition", `inline; filename="../../payload.html"`)
+			_, _ = w.Write([]byte(`<script>window.parent.pwned=true</script>`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	common.OptionMapRWMutex.Lock()
+	previousOptions := common.OptionMap
+	common.OptionMap = map[string]string{
+		"ZohoDeskEnabled": "true", "ZohoDeskClientId": "client", "ZohoDeskClientSecret": "secret",
+		"ZohoDeskRefreshToken": "refresh", "ZohoDeskOrgId": "123", "ZohoDeskDepartmentId": "7",
+		"ZohoDeskApiDomain": server.URL, "ZohoDeskAccountsDomain": server.URL,
+	}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousOptions
+		common.OptionMapRWMutex.Unlock()
+		resetZohoDeskTokenCache()
+	})
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = httptest.NewRequest(http.MethodGet, "/", nil)
+	context.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "attachment_id", Value: "1"}}
+	context.Set("role", common.RoleAdminUser)
+	DownloadSupportAttachment(context)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Equal(t, "application/octet-stream", recorder.Header().Get("Content-Type"))
+	assert.Equal(t, "attachment; filename=payload.html", recorder.Header().Get("Content-Disposition"))
+	assert.Equal(t, "nosniff", recorder.Header().Get("X-Content-Type-Options"))
+	assert.Equal(t, "sandbox", recorder.Header().Get("Content-Security-Policy"))
+	assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
+	assert.Equal(t, `<script>window.parent.pwned=true</script>`, recorder.Body.String())
 }
 
 func TestSupportConversationActivity(t *testing.T) {

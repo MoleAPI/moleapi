@@ -169,7 +169,7 @@ describe('support page layout', () => {
     ticketNumber: '1042',
     subject: 'API request failed',
     description:
-      '<p>Please investigate</p><img src="https://tracker.example/pixel"><div style="background:url(https://tracker.example/bg)">Request details</div>',
+      '<p>Please investigate</p><img src="https://tracker.example/pixel" onerror="alert(1)"><script>alert(1)</script><a href="javascript:alert(1)">Unsafe link</a><div style="background:url(https://tracker.example/bg)">Request details</div>',
     status: 'Open',
     category: 'API Integration',
     priority: 'Medium',
@@ -279,6 +279,8 @@ describe('support page layout', () => {
     expect(
       view.container.querySelector('[style*="tracker.example"]')
     ).toBeNull()
+    expect(view.container.querySelector('script')).toBeNull()
+    expect(screen.getByText('Unsafe link')).not.toHaveAttribute('href')
     expect(screen.getByText('Please investigate')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Close ticket' }))
     expect(updateSupportTicketStatus).not.toHaveBeenCalled()

@@ -113,6 +113,8 @@
   "overrides": {
     "@hono/node-server": "2.0.10",
     "brace-expansion": "2.1.4",
+    "colord": "2.9.4",
+    "decode-uri-component": "0.5.0",
     "dompurify": "3.4.13",
     "fast-uri": "3.1.5",
     "hono": "4.12.34",
@@ -123,6 +125,7 @@
     "minimist": "1.2.8",
     "postcss": "8.5.26",
     "qs": "6.15.2",
+    "query-string": "9.5.1",
     "undici": "7.29.0",
     "uuid": "14.0.0"
   }
