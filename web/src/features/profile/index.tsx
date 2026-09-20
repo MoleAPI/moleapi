@@ -13,6 +13,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from '@/components/ui/empty'
+import { AccessTokenCard } from '@/features/security/components/access-token-card'
 import { LoginSessionsCard } from '@/features/security/components/login-sessions-card'
 import { PasskeyCard } from '@/features/security/components/passkey-card'
 import { TwoFACard } from '@/features/security/components/two-fa-card'
@@ -90,11 +91,7 @@ export function Profile() {
                   loading={loading}
                   onProfileUpdate={refreshProfile}
                 />
-                <ProfileSecurityCard
-                  profile={profile}
-                  loading={loading}
-                  onProfileUpdate={refreshProfile}
-                />
+                <AccessTokenCard />
                 <LoginSessionsCard />
               </div>
 
@@ -126,6 +123,13 @@ export function Profile() {
                 ))}
               </div>
             </div>
+          </CardStaggerItem>
+          <CardStaggerItem>
+            <ProfileSecurityCard
+              profile={profile}
+              loading={loading}
+              onProfileUpdate={refreshProfile}
+            />
           </CardStaggerItem>
         </CardStaggerContainer>
       </div>

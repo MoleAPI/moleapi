@@ -84,26 +84,6 @@ export function SidebarModulesCard() {
           title: t('Dashboard'),
           description: t('System data statistics'),
         },
-        {
-          key: 'token',
-          title: t('Token Management'),
-          description: t('API token management'),
-        },
-        {
-          key: 'log',
-          title: t('Usage Logs'),
-          description: t('API usage records'),
-        },
-        {
-          key: 'midjourney',
-          title: t('Drawing Logs'),
-          description: t('Drawing task records'),
-        },
-        {
-          key: 'task',
-          title: t('Task Logs'),
-          description: t('System task records'),
-        },
       ],
     },
     {
@@ -171,7 +151,17 @@ export function SidebarModulesCard() {
   const handleSave = async () => {
     setLoading(true)
     try {
-      const serialized = JSON.stringify(config)
+      const serialized = JSON.stringify({
+        ...config,
+        console: {
+          ...config.console,
+          enabled: true,
+          token: true,
+          log: true,
+          midjourney: true,
+          task: true,
+        },
+      })
       const res = await api.put('/api/user/self', {
         sidebar_modules: serialized,
       })
@@ -221,7 +211,8 @@ export function SidebarModulesCard() {
       </CardHeader>
       <CardContent className='space-y-4 p-3 sm:space-y-5 sm:p-5'>
         {sectionDefs.map((section) => {
-          const sectionEnabled = config[section.key]?.enabled !== false
+          const sectionEnabled =
+            section.key === 'console' || config[section.key]?.enabled !== false
           return (
             <div
               key={section.key}
@@ -234,10 +225,13 @@ export function SidebarModulesCard() {
                     {section.description}
                   </p>
                 </div>
-                <Switch
-                  checked={sectionEnabled}
-                  onCheckedChange={(v) => toggleSection(section.key, v)}
-                />
+                {section.key !== 'console' && (
+                  <Switch
+                    aria-label={section.title}
+                    checked={sectionEnabled}
+                    onCheckedChange={(v) => toggleSection(section.key, v)}
+                  />
+                )}
               </div>
               <div className='mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-1'>
                 {section.modules.map((mod) => (
@@ -256,6 +250,7 @@ export function SidebarModulesCard() {
                       </p>
                     </div>
                     <Switch
+                      aria-label={mod.title}
                       checked={config[section.key]?.[mod.key] !== false}
                       onCheckedChange={(v) =>
                         toggleModule(section.key, mod.key, v)

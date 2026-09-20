@@ -313,10 +313,7 @@ export function AccountBindings({ profile, onUpdate }: AccountBindingsProps) {
 
   return (
     <>
-      <ul
-        aria-label={t('Account Bindings')}
-        className='grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3'
-      >
+      <ul aria-label={t('Account Bindings')} className='grid grid-cols-1 gap-2'>
         {bindings.map((binding) => {
           let actionLabel = t('Bind')
           if (binding.isBound && binding.id === 'email') {
@@ -350,7 +347,7 @@ export function AccountBindings({ profile, onUpdate }: AccountBindingsProps) {
                       />
                     )}
                   </div>
-                  <p className='text-muted-foreground truncate text-xs'>
+                  <p className='text-muted-foreground text-xs [overflow-wrap:anywhere]'>
                     {binding.value || t('Not bound')}
                   </p>
                 </div>
@@ -397,7 +394,7 @@ export function AccountBindings({ profile, onUpdate }: AccountBindingsProps) {
                       />
                     )}
                   </div>
-                  <p className='text-muted-foreground truncate text-xs'>
+                  <p className='text-muted-foreground text-xs [overflow-wrap:anywhere]'>
                     {isBound
                       ? binding?.provider_user_id || t('Bound')
                       : t('Not bound')}

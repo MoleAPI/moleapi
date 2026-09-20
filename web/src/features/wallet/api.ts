@@ -273,7 +273,9 @@ export async function getAffiliateHistory(
 export async function getUserBillingHistory(
   page: number,
   pageSize: number,
-  keyword?: string
+  keyword?: string,
+  startTimestamp?: number,
+  endTimestamp?: number
 ): Promise<ApiResponse<BillingHistoryResponse>> {
   const params = new URLSearchParams({
     p: page.toString(),
@@ -281,6 +283,12 @@ export async function getUserBillingHistory(
   })
   if (keyword) {
     params.append('keyword', keyword)
+  }
+  if (startTimestamp !== undefined) {
+    params.set('start_timestamp', String(startTimestamp))
+  }
+  if (endTimestamp !== undefined) {
+    params.set('end_timestamp', String(endTimestamp))
   }
   const res = await api.get(`/api/user/topup/self?${params.toString()}`)
   return res.data

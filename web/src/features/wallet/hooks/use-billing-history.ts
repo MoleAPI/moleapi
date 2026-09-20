@@ -85,7 +85,15 @@ export function useBillingHistory(options: UseBillingHistoryOptions = {}) {
               ? Math.floor(new Date(endTime).getTime() / 1000)
               : undefined,
           })
-        : await getUserBillingHistory(page, pageSize, debouncedKeyword)
+        : await getUserBillingHistory(
+            page,
+            pageSize,
+            debouncedKeyword,
+            startTime
+              ? Math.floor(new Date(startTime).getTime() / 1000)
+              : undefined,
+            endTime ? Math.floor(new Date(endTime).getTime() / 1000) : undefined
+          )
 
       if (requestId !== requestIdRef.current) return
 

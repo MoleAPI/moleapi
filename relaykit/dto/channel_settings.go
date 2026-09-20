@@ -161,6 +161,12 @@ type AdvancedCustomRoute struct {
 	Auth         *AdvancedCustomRouteAuth `json:"auth,omitempty"`
 }
 
+// IsNative excludes protocol conversion from persistent Responses connections.
+func (r AdvancedCustomRoute) IsNative() bool {
+	converter := strings.TrimSpace(r.Converter)
+	return converter == "" || converter == advancedCustomConverterNone
+}
+
 type AdvancedCustomRouteAuth struct {
 	Type  string `json:"type,omitempty"`
 	Name  string `json:"name,omitempty"`
