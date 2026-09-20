@@ -281,11 +281,16 @@ export async function testChannel(
     endpoint_type?: string
     stream?: boolean
     scheduled?: boolean
+    test_type?: 'hi' | 'intelligence' | 'custom'
+    prompt?: string
+    expected_answer?: string
+    level?: 'basic' | 'standard' | 'advanced'
   }
 ): Promise<ChannelTestResponse> {
-  const res = await api.get(
+  const res = await api.post(
     `/api/channel/test/${id}`,
-    channelActionConfig({ params })
+    params ?? {},
+    channelActionConfig()
   )
   return res.data
 }
