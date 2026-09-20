@@ -221,6 +221,8 @@ export const channelFormSchema = z
     weight: z.number().optional(),
     test_model: z.string().optional(),
     auto_ban: z.number().optional(),
+    channel_probe_enabled: z.boolean().optional(),
+    channel_probe_models: z.array(z.string()).optional(),
     status: z.number(),
     status_code_mapping: z
       .string()
@@ -437,6 +439,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   weight: 0,
   test_model: '',
   auto_ban: 1,
+  channel_probe_enabled: true,
+  channel_probe_models: [],
   status: CHANNEL_STATUS.ENABLED,
   status_code_mapping: '',
   tag: '',
@@ -549,10 +553,18 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let channelProbeEnabled = true
+  let channelProbeModels: string[] = []
 
   if (channel.settings) {
     try {
       const parsed = JSON.parse(channel.settings)
+      channelProbeEnabled = parsed.channel_probe_enabled !== false
+      channelProbeModels = Array.isArray(parsed.channel_probe_models)
+        ? parsed.channel_probe_models.filter(
+            (model: unknown): model is string => typeof model === 'string'
+          )
+        : []
       vertexKeyType = parsed.vertex_key_type || 'json'
       azureResponsesVersion = parsed.azure_responses_version || ''
       isEnterpriseAccount = parsed.openrouter_enterprise === true
@@ -597,6 +609,8 @@ export function transformChannelToFormDefaults(
     weight: channel.weight || 0,
     test_model: channel.test_model || '',
     auto_ban: channel.auto_ban ?? 1,
+    channel_probe_enabled: channelProbeEnabled,
+    channel_probe_models: channelProbeModels,
     status: channel.status,
     status_code_mapping: channel.status_code_mapping || '',
     tag: channel.tag || '',
@@ -688,6 +702,8 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
   }
 
   // Add vertex_key_type for Vertex AI channels (type 41)
+  settingsObj.channel_probe_enabled = formData.channel_probe_enabled !== false
+  settingsObj.channel_probe_models = formData.channel_probe_models ?? []
   if (formData.type === 41) {
     settingsObj.vertex_key_type = formData.vertex_key_type || 'json'
   } else if ('vertex_key_type' in settingsObj) {

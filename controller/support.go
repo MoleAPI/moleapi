@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,6 +21,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
+	"github.com/shopspring/decimal"
 	"golang.org/x/net/html"
 )
 
@@ -93,6 +96,9 @@ type zohoDeskThread struct {
 	Visibility          string `json:"visibility"`
 	ContentType         string `json:"contentType"`
 	Channel             string `json:"channel"`
+	FromEmail           string `json:"fromEmailAddress"`
+	IsDraft             bool   `json:"isDraft"`
+	IsContentTruncated  bool   `json:"isContentTruncated"`
 	IsForward           bool   `json:"isForward"`
 	IsDescriptionThread bool   `json:"isDescriptionThread"`
 	FullContentURL      string `json:"fullContentURL"`
@@ -144,7 +150,7 @@ func normalizeSupportPortalComment(message *zohoDeskConversation) {
 }
 
 func supportConversationMatchesTicketDescription(message zohoDeskConversation, ticket zohoDeskTicket) bool {
-	if !message.public() || supportConversationText(message.Content) != supportConversationText(ticket.Description) {
+	if !message.public() || strings.TrimSpace(message.Content) == "" || strings.TrimSpace(ticket.Description) == "" || len(message.Attachments) > 0 || supportConversationText(message.Content) != supportConversationText(ticket.Description) {
 		return false
 	}
 	messageTime := message.CreatedTime
@@ -218,49 +224,32 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 	var result struct {
 		Data []zohoDeskThread `json:"data"`
 	}
-	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads?limit=100&from=0&sortBy=sendDateTime&include=plainText", nil, &result); err != nil {
+	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads?limit=100&from=0", nil, &result); err != nil {
 		return nil, err
 	}
 	if len(result.Data) == 0 {
 		var latest zohoDeskThread
-		if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/latestThread?needIncomingThread=true&include=plainText", nil, &latest); err == nil && latest.ID != "" {
+		if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/latestThread?needIncomingThread=true", nil, &latest); err == nil && latest.ID != "" {
 			result.Data = []zohoDeskThread{latest}
 		}
 	}
 	conversations := make([]zohoDeskConversation, 0, len(result.Data))
 	for _, thread := range result.Data {
+		if thread.Content == "" && thread.PlainText == "" && thread.ID != "" {
+			// Listing endpoints contain summaries, not message bodies. Decode into
+			// the existing thread so optional metadata from the list is retained.
+			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID, nil, &thread); err != nil {
+				return nil, err
+			}
+		}
 		content := thread.Content
 		if content == "" {
 			content = thread.PlainText
 		}
-		if content == "" && thread.ID != "" {
-			var full zohoDeskThread
-			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/fullContent?include=plainText", nil, &full); err == nil {
-				content = full.Content
-				if content == "" {
-					content = full.PlainText
-				}
-				if thread.ContentType == "" {
-					thread.ContentType = full.ContentType
-				}
-			}
-			if content == "" {
-				var original zohoDeskThread
-				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/originalContent?include=plainText", nil, &original); err == nil {
-					content = original.Content
-					if content == "" {
-						content = original.PlainText
-					}
-				}
-			}
-			if content == "" {
-				var detail zohoDeskThread
-				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"?include=plainText", nil, &detail); err == nil {
-					content = detail.Content
-					if content == "" {
-						content = detail.PlainText
-					}
-				}
+		if thread.IsContentTruncated {
+			// fullContent returns raw HTML, not a JSON object.
+			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/threads/"+thread.ID+"/fullContent", nil, &content); err != nil {
+				return nil, err
 			}
 		}
 		if content == "" {
@@ -274,6 +263,7 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 			ID: thread.ID, Type: "thread", Direction: thread.Direction,
 			Summary: thread.Summary, Content: content, PlainText: thread.PlainText, CreatedTime: thread.CreatedTime,
 			Visibility: visibility, IsPublic: visibility == "public", IsForward: thread.IsForward,
+			FromEmail: thread.FromEmail, IsDraft: thread.IsDraft,
 			ContentType: thread.ContentType, Author: thread.Author, Attachments: thread.Attachments,
 			IsDescriptionThread: thread.IsDescriptionThread,
 		})
@@ -285,7 +275,7 @@ func loadSupportEmailComments(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCo
 	var result struct {
 		Data []zohoDeskConversation `json:"data"`
 	}
-	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/comments?limit=100&from=0&include=plainText", nil, &result); err != nil {
+	if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticketID+"/comments?limit=100&from=0", nil, &result); err != nil {
 		return nil, err
 	}
 	for i := range result.Data {
@@ -425,6 +415,17 @@ func zohoDeskRequest(cfg zohoDeskConfig, method, path string, body any, result a
 		return fmt.Errorf("Zoho Desk returned %d: %s", res.StatusCode, strings.TrimSpace(string(message)))
 	}
 	if result == nil || res.StatusCode == http.StatusNoContent {
+		return nil
+	}
+	if content, ok := result.(*string); ok {
+		data, readErr := io.ReadAll(io.LimitReader(res.Body, 10<<20+1))
+		if readErr != nil {
+			return readErr
+		}
+		if len(data) > 10<<20 {
+			return errors.New("Support message exceeds the 10 MB limit.")
+		}
+		*content = string(data)
 		return nil
 	}
 	return common.DecodeJson(res.Body, result)
@@ -646,6 +647,50 @@ func ListSupportTickets(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"tickets": tickets, "next_from": from + len(result.Data), "has_more": len(result.Data) == 20 && !archivedView})
 }
 
+func supportInvoiceSummary(userID int, ids []int) (string, error) {
+	if len(ids) == 0 || len(ids) > 50 {
+		return "", errors.New("Select between 1 and 50 paid orders for invoicing.")
+	}
+	seen := make(map[int]bool, len(ids))
+	for _, id := range ids {
+		if id <= 0 || seen[id] {
+			return "", errors.New("Invalid or duplicate billing record.")
+		}
+		seen[id] = true
+	}
+	orders, err := model.GetUserTopUpsByIDs(userID, ids)
+	if err != nil {
+		return "", err
+	}
+	if len(orders) != len(ids) {
+		return "", errors.New("One or more billing records are unavailable.")
+	}
+	lines := []string{"Verified billing records (actual paid amounts)"}
+	totals := make(map[string]decimal.Decimal)
+	for _, order := range orders {
+		if order.Status != "success" || (order.PaymentMethod != "alipay" && order.PaymentMethod != "wxpay" && order.PaymentMethod != model.PaymentMethodLanTu) || order.Money <= 0 || math.IsNaN(order.Money) || math.IsInf(order.Money, 0) {
+			return "", errors.New("Only completed WeChat Pay or Alipay orders can be invoiced.")
+		}
+		currency := strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
+		if currency == "" {
+			// These legacy payment methods settled in CNY before currency snapshots existed.
+			currency = "CNY"
+		}
+		paid := decimal.NewFromFloat(order.Money).Round(2)
+		lines = append(lines, fmt.Sprintf("#%d | %s | %s %s | %s", order.Id, order.TradeNo, currency, paid.StringFixed(2), order.PaymentMethod))
+		totals[currency] = totals[currency].Add(paid)
+	}
+	currencies := make([]string, 0, len(totals))
+	for currency := range totals {
+		currencies = append(currencies, currency)
+	}
+	sort.Strings(currencies)
+	for _, currency := range currencies {
+		lines = append(lines, "Invoice total: "+currency+" "+totals[currency].StringFixed(2))
+	}
+	return strings.Join(lines, "\n"), nil
+}
+
 func CreateSupportTicket(c *gin.Context) {
 	cfg := getZohoDeskConfig()
 	if !cfg.ready() {
@@ -657,9 +702,10 @@ func CreateSupportTicket(c *gin.Context) {
 		return
 	}
 	var input struct {
-		Subject string `json:"subject"`
-		Content string `json:"content"`
-		Type    string `json:"type"`
+		Subject          string `json:"subject"`
+		Content          string `json:"content"`
+		Type             string `json:"type"`
+		BillingRecordIDs []int  `json:"billing_record_ids"`
 	}
 	if err := common.DecodeJson(c.Request.Body, &input); err != nil {
 		common.ApiErrorMsg(c, "Invalid request.")
@@ -673,6 +719,14 @@ func CreateSupportTicket(c *gin.Context) {
 	if _, ok := supportTicketTypes[input.Type]; !ok {
 		common.ApiErrorMsg(c, "Invalid ticket type.")
 		return
+	}
+	if input.Type == "Invoice Request" {
+		summary, err := supportInvoiceSummary(user.Id, input.BillingRecordIDs)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		input.Content += "\n\n" + summary
 	}
 	var contacts struct {
 		Data []struct{ ID, Email string } `json:"data"`
@@ -868,37 +922,40 @@ func GetSupportTicket(c *gin.Context) {
 			conversations.Data[i].IsPublic = true
 		}
 	}
-	// Zoho stores inbound email bodies as threads. The conversations endpoint
-	// can be empty for email-created tickets even though the ticket has content.
-	usedEmailFallback := len(conversations.Data) == 0
-	if usedEmailFallback {
-		if threads, err := loadSupportEmailThreads(cfg, ticket.ID); err == nil {
-			conversations.Data = threads
-		}
-	}
-	contentAvailable := false
+	// A non-empty conversations list still contains only email summaries.
+	needsThreads := len(conversations.Data) == 0
 	for _, message := range conversations.Data {
-		if strings.TrimSpace(message.Content) != "" || strings.TrimSpace(message.Summary) != "" {
-			contentAvailable = true
-			break
+		if message.Type == "thread" && strings.TrimSpace(message.Content) == "" {
+			needsThreads = true
 		}
 	}
-	if usedEmailFallback && !contentAvailable {
-		if comments, err := loadSupportEmailComments(cfg, ticket.ID); err == nil && len(comments) > 0 {
-			conversations.Data = append(conversations.Data, comments...)
+	if needsThreads {
+		threads, err := loadSupportEmailThreads(cfg, ticket.ID)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		for _, thread := range threads {
+			replaced := false
+			for i := range conversations.Data {
+				if conversations.Data[i].Type == "thread" && conversations.Data[i].ID == thread.ID {
+					conversations.Data[i] = thread
+					replaced = true
+					break
+				}
+			}
+			if !replaced {
+				conversations.Data = append(conversations.Data, thread)
+			}
 		}
 	}
-	if usedEmailFallback && ticket.Description == "" {
-		for _, message := range conversations.Data {
-			content := message.Content
-			if content == "" {
-				content = message.Summary
-			}
-			if strings.TrimSpace(content) != "" {
-				ticket.Description = content
-				break
-			}
+	if len(conversations.Data) == 0 {
+		comments, err := loadSupportEmailComments(cfg, ticket.ID)
+		if err != nil {
+			common.ApiError(c, err)
+			return
 		}
+		conversations.Data = comments
 	}
 	ticket.Activity = supportConversationActivity(conversations.Data)
 	visible := make([]zohoDeskConversation, 0, len(conversations.Data))

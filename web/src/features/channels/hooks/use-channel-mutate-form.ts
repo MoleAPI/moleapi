@@ -77,9 +77,16 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
           delete payload.key
         }
         if (!canEditSensitive) {
+          const probeSettings: Record<string, unknown> = JSON.parse(
+            props.currentRow.settings || '{}'
+          )
+          probeSettings.channel_probe_enabled =
+            data.channel_probe_enabled !== false
+          probeSettings.channel_probe_models = data.channel_probe_models ?? []
           for (const field of SENSITIVE_UPDATE_FIELDS) {
             delete payload[field]
           }
+          payload.settings = JSON.stringify(probeSettings)
         }
         const payloadWithKeyMode =
           canEditSensitive &&

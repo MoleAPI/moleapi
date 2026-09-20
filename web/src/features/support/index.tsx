@@ -49,6 +49,12 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -61,12 +67,6 @@ import {
   InputGroupAddon,
   InputGroupTextarea,
 } from '@/components/ui/input-group'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import {
   Select,
@@ -763,9 +763,19 @@ function TicketList(props: {
     (ticket.activity === 'customer' || ticket.activity === 'new')
   const visible = props.tickets
     .filter((ticket) => {
-      if (filter === 'active' && (isTicketClosed(ticket) || ticket.isArchived)) return false
+      if (
+        filter === 'active' &&
+        (isTicketClosed(ticket) || ticket.isArchived)
+      ) {
+        return false
+      }
       if (filter === 'archived' && !ticket.isArchived) return false
-      if (filter === 'closed' && (!isTicketClosed(ticket) || ticket.isArchived)) return false
+      if (
+        filter === 'closed' &&
+        (!isTicketClosed(ticket) || ticket.isArchived)
+      ) {
+        return false
+      }
       return [
         ticket.subject,
         ticket.ticketNumber,
@@ -929,7 +939,12 @@ export function TicketDetail(props: {
     onError: handleServerError,
   })
   const statusOptions = [
-    { value: 'Open', label: ticket.isArchived ? t('Restore ticket') : ticketStatusLabel(ticket, t) },
+    {
+      value: 'Open',
+      label: ticket.isArchived
+        ? t('Restore ticket')
+        : ticketStatusLabel(ticket, t),
+    },
     { value: 'On Hold', label: t('Waiting') },
     { value: 'Closed', label: t('Closed') },
     { value: 'Archived', label: t('Archived') },
@@ -1073,49 +1088,52 @@ export function TicketDetail(props: {
 
       <ScrollArea className='min-h-0 flex-1'>
         <div className='w-full px-4 sm:px-6 lg:px-8'>
-          {!hasInitialConversation && (
-            <Message
-              sender={props.data.ticket.email}
-              content={props.data.ticket.description}
-              html
-              time={ticket.createdTime}
-              customer
-              attachments={[]}
-              onAttachmentClick={downloadAttachment}
-            />
-          )}
-          {conversations.map((message) => (
+          {!hasInitialConversation &&
+            normalizeSupportContent(ticket.description) && (
               <Message
-                key={message.id}
-                sender={
-                  message.fromEmailAddress ||
-                  message.author?.name ||
-                  message.commenter?.name ||
-                  t('Support')
-                }
-                content={message.content || message.summary}
-                html={
-                  message.contentType === 'text/html' ||
-                  message.type === 'comment'
-                }
-                time={message.createdTime || message.commentedTime}
-                internal={
-                  message.type === 'comment'
-                    ? !message.isPublic
-                    : message.visibility !== 'public'
-                }
-                customer={
-                  message.direction === 'in' ||
-                  message.author?.type === 'END_USER' ||
-                  message.commenter?.type === 'END_USER'
-                }
-                attachments={message.attachments}
+                sender={props.data.ticket.email}
+                content={props.data.ticket.description}
+                html
+                time={ticket.createdTime}
+                customer
+                attachments={[]}
                 onAttachmentClick={downloadAttachment}
               />
-            ))}
+            )}
+          {conversations.map((message) => (
+            <Message
+              key={message.id}
+              sender={
+                message.fromEmailAddress ||
+                message.author?.name ||
+                message.commenter?.name ||
+                (message.direction === 'in' ? ticket.email : t('Support'))
+              }
+              content={message.content || message.summary}
+              html={
+                message.contentType === 'text/html' ||
+                message.type === 'comment'
+              }
+              time={message.createdTime || message.commentedTime}
+              internal={
+                message.type === 'comment'
+                  ? !message.isPublic
+                  : message.visibility !== 'public'
+              }
+              customer={
+                message.direction === 'in' ||
+                message.author?.type === 'END_USER' ||
+                message.commenter?.type === 'END_USER'
+              }
+              attachments={message.attachments}
+              onAttachmentClick={downloadAttachment}
+            />
+          ))}
           {unassignedAttachments.length > 0 && (
             <div className='flex flex-wrap gap-2 border-b py-5'>
-              <p className='w-full text-sm font-medium'>{t('Other attachments')}</p>
+              <p className='w-full text-sm font-medium'>
+                {t('Other attachments')}
+              </p>
               {unassignedAttachments.map((attachment) => (
                 <Button
                   key={attachment.id}
@@ -1135,7 +1153,9 @@ export function TicketDetail(props: {
       {closed ? (
         <div className='flex shrink-0 flex-wrap items-center justify-between gap-2 border-t p-4 text-sm'>
           <p className='text-muted-foreground'>
-            {ticket.isArchived ? t('This ticket is archived.') : t('This ticket is closed.')}
+            {ticket.isArchived
+              ? t('This ticket is archived.')
+              : t('This ticket is closed.')}
           </p>
           <Button
             variant='outline'
@@ -1228,8 +1248,8 @@ export function TicketDetail(props: {
 
 function normalizeSupportContent(value: string) {
   return value
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
+    .replaceAll(/<[^>]+>/g, ' ')
+    .replaceAll(/\s+/g, ' ')
     .trim()
 }
 
@@ -1327,7 +1347,9 @@ function Message(props: {
                 key={attachment.id}
                 variant='outline'
                 size='sm'
-                className={props.customer ? 'border-primary-foreground/30' : undefined}
+                className={
+                  props.customer ? 'border-primary-foreground/30' : undefined
+                }
                 onClick={() => props.onAttachmentClick?.(attachment)}
               >
                 <HugeiconsIcon icon={File01Icon} data-icon='inline-start' />

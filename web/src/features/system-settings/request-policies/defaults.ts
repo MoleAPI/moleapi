@@ -35,7 +35,13 @@ export type HealthSettings = {
   'monitor_setting.channel_test_mode':
     | 'scheduled_all'
     | 'auto_ban_only'
+    | 'auto_detect'
+    | 'auto_disable'
+    | 'scheduled_probes'
     | 'passive_recovery'
+  'monitor_setting.channel_test_type': 'hi' | 'intelligence' | 'custom'
+  'monitor_setting.channel_test_custom_prompt': string
+  'monitor_setting.channel_test_custom_answer': string
 }
 export type FilteringSettings = Pick<
   SecuritySettings,
@@ -59,6 +65,9 @@ export const defaultRequestPolicySettings: RequestPolicySettings = {
   'monitor_setting.auto_test_channel_minutes': 10,
   'monitor_setting.channel_test_concurrency': 1,
   'monitor_setting.channel_test_mode': 'scheduled_all',
+  'monitor_setting.channel_test_type': 'hi',
+  'monitor_setting.channel_test_custom_prompt': '',
+  'monitor_setting.channel_test_custom_answer': '',
   'channel_affinity_setting.enabled': false,
   'channel_affinity_setting.session_mode': '',
   'channel_affinity_setting.switch_on_success': true,

@@ -201,6 +201,33 @@ afterEach(() => {
   })
 })
 
+test('restores scheduled probe controls and preserves removed model selections', async () => {
+  editingChannel.settings = JSON.stringify({
+    channel_probe_enabled: false,
+    channel_probe_models: ['removed-model'],
+    allow_service_tier: true,
+  })
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  await user.click(screen.getByRole('tab', { name: /Routing & Mapping/ }))
+  expect(
+    screen.getByRole('switch', { name: 'Scheduled probe' })
+  ).not.toBeChecked()
+  expect(screen.getByText('Scheduled probe models')).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  await waitFor(() => expect(put).toHaveBeenCalled())
+  const payload = put.mock.calls[0][1] as { settings: string }
+  expect(JSON.parse(payload.settings)).toMatchObject({
+    channel_probe_enabled: false,
+    channel_probe_models: ['removed-model'],
+    allow_service_tier: true,
+  })
+})
+
 // Editing opens the sheet on the left, so the sheet spans x = 0..900 and the
 // free space for the floating panel is on its right.
 function useWideScreen() {

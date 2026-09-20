@@ -11,6 +11,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -243,6 +244,50 @@ func TestGetPreferredChannelByAffinity_RequestHeaderKeySource(t *testing.T) {
 	require.Equal(t, "request_header", meta.KeySourceType)
 	require.Equal(t, "X-Affinity-Key", meta.KeySourceKey)
 	require.Equal(t, buildChannelAffinityKeyHint(affinityValue), meta.KeyHint)
+}
+
+func TestChannelAffinitySessionModes(t *testing.T) {
+	setting := operation_setting.GetChannelAffinitySetting()
+	previous := *setting
+	t.Cleanup(func() { *setting = previous })
+	for _, tc := range []struct {
+		name, mode, global string
+		legacy, skip, off  bool
+	}{
+		{"legacy strict", "", "prefer", true, true, false},
+		{"legacy prefer", "", "strict", false, false, false},
+		{"explicit prefer", "prefer", "strict", true, false, false},
+		{"explicit strict", "strict", "prefer", false, true, false},
+		{"inherit", "inherit", "strict", false, true, false},
+		{"off", "off", "strict", true, false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rule := operation_setting.ChannelAffinityRule{Name: "mode-test", ModelRegex: []string{".*"}, KeySources: []operation_setting.ChannelAffinityKeySource{{Type: "request_header", Key: "X-Test-Session"}}, SessionMode: tc.mode, SkipRetryOnFailure: tc.legacy, ParamOverrideTemplate: map[string]any{"test": true}}
+			setting.Enabled, setting.SessionMode, setting.Rules = true, tc.global, []operation_setting.ChannelAffinityRule{rule}
+			key := buildChannelAffinityCacheKeySuffix(rule, "model", "default", tc.name)
+			cache := getChannelAffinityCache()
+			require.NoError(t, cache.SetWithTTL(key, 12, time.Minute))
+			t.Cleanup(func() { _, _ = cache.DeleteMany([]string{key}) })
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+			ctx.Request.Header.Set("X-Test-Session", tc.name)
+			id, found := GetPreferredChannelByAffinity(ctx, "model", "default")
+			assert.Equal(t, !tc.off, found)
+			if !tc.off {
+				assert.Equal(t, 12, id)
+			}
+			meta, ok := getChannelAffinityMeta(ctx)
+			require.True(t, ok)
+			assert.Equal(t, tc.skip, meta.SkipRetry)
+			assert.Equal(t, true, meta.ParamTemplate["test"])
+			if tc.off {
+				RecordChannelAffinity(ctx, 99)
+				cached, _, err := cache.Get(key)
+				require.NoError(t, err)
+				assert.Equal(t, 12, cached, "off must not overwrite existing session mappings")
+			}
+		})
+	}
 }
 
 func TestClearCurrentChannelAffinityCache(t *testing.T) {

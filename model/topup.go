@@ -241,6 +241,12 @@ func GetTopUpById(id int) *TopUp {
 	return topUp
 }
 
+func GetUserTopUpsByIDs(userID int, ids []int) ([]TopUp, error) {
+	var orders []TopUp
+	err := DB.Where("user_id = ? AND id IN ?", userID, ids).Order("id ASC").Find(&orders).Error
+	return orders, err
+}
+
 func GetTopUpByTradeNo(tradeNo string) *TopUp {
 	topUp, _ := FindTopUpByTradeNo(tradeNo)
 	return topUp

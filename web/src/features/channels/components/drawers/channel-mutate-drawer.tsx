@@ -134,6 +134,7 @@ import {
   getPrefillGroups,
   getTaskPluginOptions,
   refreshCodexCredential,
+  testChannel,
 } from '../../api'
 import {
   ADD_MODE_OPTIONS,
@@ -173,6 +174,7 @@ import {
   deduplicateKeys,
   getKeyPromptForType,
   parseModelsString,
+  parseChannelOtherSettings,
   formatModelsArray,
   mergeModelMappingPairs,
   deriveModelMappingPairs,
@@ -1707,6 +1709,25 @@ export function ChannelMutateDrawer({
 
       try {
         await channelMutation.mutateAsync(data)
+        if (
+          isEditing &&
+          channelId != null &&
+          data.channel_probe_enabled !== false &&
+          parseChannelOtherSettings(
+            channelData?.data?.settings ?? currentRow?.settings
+          ).channel_probe_enabled === false
+        ) {
+          try {
+            requireServerSuccess(
+              await testChannel(channelId, { scheduled: true })
+            )
+            await queryClient.invalidateQueries({
+              queryKey: ['channel-success-metrics'],
+            })
+          } catch (error) {
+            handleServerError(error, t('Failed to test channel'))
+          }
+        }
       } catch {
         // The mutation reports the server error; keep the draft open for correction.
       }
@@ -1721,6 +1742,9 @@ export function ChannelMutateDrawer({
       confirmMissingModelMappings,
       confirmStatusCodeRisk,
       channelMutation,
+      channelId,
+      currentRow,
+      queryClient,
       t,
     ]
   )
@@ -2220,6 +2244,54 @@ export function ChannelMutateDrawer({
             </FormControl>
             <FormDescription>
               {t(FIELD_DESCRIPTIONS.TEST_MODEL)}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+
+      <FormField
+        control={form.control}
+        name='channel_probe_enabled'
+        render={({ field }) => (
+          <FormItem className='flex items-center justify-between'>
+            <div>
+              <FormLabel>{t('Scheduled probe')}</FormLabel>
+              <FormDescription>
+                {t('Include this channel in scheduled reliability tests.')}
+              </FormDescription>
+            </div>
+            <FormControl>
+              <Switch
+                checked={field.value !== false}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='channel_probe_models'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Scheduled probe models')}</FormLabel>
+            <FormControl>
+              <MultiSelect
+                options={currentModelsArray.map((model) => ({
+                  value: model,
+                  label: model,
+                }))}
+                selected={field.value ?? []}
+                onChange={field.onChange}
+                placeholder={t('Select models from this channel')}
+                maxVisibleChips={6}
+              />
+            </FormControl>
+            <FormDescription>
+              {t(
+                'Defaults to the first channel model; choose more models from this channel when needed.'
+              )}
             </FormDescription>
             <FormMessage />
           </FormItem>

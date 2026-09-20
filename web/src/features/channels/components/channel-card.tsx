@@ -64,7 +64,7 @@ function ChannelCardComponent({
     success_rate: t('Success rate'),
     reliability: t('Reliability'),
     response_time: t('Response'),
-    test_time: t('Last Tested'),
+    usage_24h: t('Last 24h usage'),
   }
 
   const groups = parseGroupsList(row.original.group ?? '')
@@ -85,7 +85,7 @@ function ChannelCardComponent({
     ['reliability', reliabilityCell],
   ]
   const responseCell = renderCell('response_time')
-  const testCell = renderCell('test_time')
+  const usageCell = renderCell('usage_24h')
 
   const labelClass = 'text-muted-foreground text-[11px] font-medium select-none'
 
@@ -146,7 +146,7 @@ function ChannelCardComponent({
 
           {/* Right column (sits on the right, content left-aligned). A single
             grid with content-sized columns keeps Priority/Weight and
-            Response/Last Tested aligned without wasting horizontal space. */}
+            Response/24h usage aligned without wasting horizontal space. */}
           <div className='grid shrink-0 grid-cols-[auto_auto] items-center gap-x-3 gap-y-1'>
             <span className={labelClass}>{t('Priority')}</span>
             <span className={labelClass}>{t('Weight')}</span>
@@ -156,13 +156,13 @@ function ChannelCardComponent({
               {fieldLabels.response_time}
             </span>
             <span className={cn('mt-2', labelClass)}>
-              {fieldLabels.test_time}
+              {fieldLabels.usage_24h}
             </span>
             <div className='overflow-hidden text-sm'>
               {responseCell ?? <span className='text-muted-foreground'>-</span>}
             </div>
             <div className='overflow-hidden text-sm'>
-              {testCell ?? <span className='text-muted-foreground'>-</span>}
+              {usageCell ?? <span className='text-muted-foreground'>-</span>}
             </div>
           </div>
         </div>

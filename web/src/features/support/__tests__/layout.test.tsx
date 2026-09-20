@@ -30,11 +30,16 @@ import {
   DEFAULT_PARAMETER_ENABLED,
 } from '@/features/playground/constants'
 import type { usePlaygroundState } from '@/features/playground/hooks'
+import { getUserBillingHistory } from '@/features/wallet/api'
 import { useIsAdmin } from '@/hooks/use-admin'
 import zh from '@/i18n/locales/zh.json'
 
 import { TicketBrowser, TicketDetail } from '..'
-import { updateSupportTicketStatus, type SupportTicket } from '../api'
+import {
+  createSupportTicket,
+  updateSupportTicketStatus,
+  type SupportTicket,
+} from '../api'
 import { CommunityChannels } from '../components/community-channels'
 import { SupportAssistant } from '../components/support-assistant'
 import { TicketCreateForm } from '../components/ticket-create-form'
@@ -47,6 +52,12 @@ vi.mock('@/hooks/use-admin', () => ({ useIsAdmin: vi.fn(() => false) }))
 vi.mock('../api', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api')>()),
   updateSupportTicketStatus: vi.fn().mockResolvedValue(null),
+  createSupportTicket: vi.fn().mockResolvedValue({ id: 'new-invoice' }),
+}))
+vi.mock('@/features/wallet/api', () => ({
+  getUserBillingHistory: vi
+    .fn()
+    .mockResolvedValue({ success: true, data: { items: [], total: 0 } }),
 }))
 vi.mock('@/features/playground/api', () => ({
   sendChatCompletion: vi.fn().mockResolvedValue({
@@ -63,6 +74,93 @@ vi.mock('@/features/playground/api', () => ({
 }))
 
 describe('support page layout', () => {
+  test('selects multiple invoice orders and totals actual payments, not credited amounts', async () => {
+    const user = userEvent.setup()
+    const i18n = createInstance()
+    await i18n.init({ lng: 'en', resources: { en: { translation: {} } } })
+    vi.mocked(getUserBillingHistory).mockResolvedValueOnce({
+      success: true,
+      data: {
+        total: 3,
+        items: [
+          {
+            id: 1,
+            user_id: 4,
+            amount: 500,
+            money: 12.34,
+            trade_no: 'paid-order-1',
+            payment_currency: 'CNY',
+            payment_method: 'alipay',
+            status: 'success',
+            create_time: 1,
+          },
+          {
+            id: 2,
+            user_id: 4,
+            amount: 500,
+            money: 0.66,
+            trade_no: 'paid-order-2',
+            payment_currency: 'CNY',
+            payment_method: 'wxpay',
+            status: 'success',
+            create_time: 2,
+          },
+          {
+            id: 3,
+            user_id: 4,
+            amount: 500,
+            money: 100,
+            trade_no: 'stripe-order',
+            payment_currency: 'USD',
+            payment_method: 'stripe',
+            status: 'success',
+            create_time: 3,
+          },
+        ],
+      },
+    })
+    const onCreated = vi.fn()
+    render(
+      <I18nextProvider i18n={i18n}>
+        <QueryClientProvider
+          client={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        >
+          <TicketCreateForm
+            accountEmail='user@example.com'
+            onCreated={onCreated}
+            initialValues={{
+              type: 'Invoice Request',
+              subject: 'Combined invoice',
+              content: 'Please invoice these completed orders.',
+            }}
+          />
+        </QueryClientProvider>
+      </I18nextProvider>
+    )
+    expect(screen.getByRole('button', { name: 'Submit ticket' })).toBeDisabled()
+    await user.click(
+      await screen.findByRole('checkbox', { name: /paid-order-1/ })
+    )
+    await user.click(screen.getByRole('checkbox', { name: /paid-order-2/ }))
+    expect(screen.queryByText(/stripe-order/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Invoice total \(actual paid\)/)).toHaveTextContent(
+      'CNY 13'
+    )
+    await user.type(screen.getByLabelText('Invoice title'), 'Example Company')
+    await user.click(screen.getByRole('button', { name: 'Submit ticket' }))
+    await waitFor(() =>
+      expect(createSupportTicket).toHaveBeenCalledWith(
+        expect.objectContaining({
+          billing_record_ids: [1, 2],
+          type: 'Invoice Request',
+        })
+      )
+    )
+    expect(onCreated).toHaveBeenCalledWith('new-invoice')
+    expect(getUserBillingHistory).toHaveBeenCalledWith(1, 100)
+  })
   beforeAll(() => {
     Element.prototype.getAnimations ??= () => []
   })
@@ -81,6 +179,41 @@ describe('support page layout', () => {
     activity: 'customer',
     user: { id: 11, username: 'alice & co' },
   }
+
+  test('shows inbound email without an empty initial bubble or a support sender', () => {
+    vi.mocked(useIsAdmin).mockReturnValue(true)
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TicketDetail
+          data={{
+            ticket: { ...ticket, description: '' },
+            conversations: [
+              {
+                id: 'email',
+                fromEmailAddress: '',
+                type: 'thread',
+                direction: 'in',
+                visibility: 'public',
+                content: '<p>Original email body</p>',
+                contentType: 'text/html',
+                summary: '',
+                createdTime: ticket.createdTime,
+              },
+            ],
+            attachments: [],
+          }}
+          reply=''
+          onReplyChange={vi.fn()}
+          onBack={vi.fn()}
+          onSend={vi.fn()}
+          sending={false}
+        />
+      </QueryClientProvider>
+    )
+    expect(screen.getByText('Original email body')).toBeVisible()
+    expect(screen.getAllByText(ticket.email)).toHaveLength(2)
+    expect(screen.queryByText('Support')).not.toBeInTheDocument()
+  })
 
   test('renders ticket and message dates with the Chinese interface locale', async () => {
     vi.mocked(useIsAdmin).mockReturnValue(false)

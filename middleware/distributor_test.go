@@ -170,7 +170,7 @@ func TestTokenModelLimitAllowsExemptAtNameByFullName(t *testing.T) {
 	assert.False(t, tokenModelLimitAllows(baseOnly, "opaque@sha256:deadbeef"))
 }
 
-func TestNoAvailableChannelMessageNamesClaimingTaskPlugin(t *testing.T) {
+func TestNoAvailableChannelMessageProtectsTaskPluginIdentity(t *testing.T) {
 	require.NoError(t, i18n.Init())
 	registry := jsplugin.NewRegistry()
 	plugin, err := registry.Register(distributorTaskPluginSource("claimer", constant.ChannelTypeKling), jsplugin.Options{})
@@ -181,8 +181,9 @@ func TestNoAvailableChannelMessageNamesClaimingTaskPlugin(t *testing.T) {
 	pinned.Request.Header.Set("Accept-Language", "en")
 	pinned.Set(jsplugin.ContextKeyPinnedPlugin, jsplugin.PinnedPlugin{Generation: registry.Generation(), Plugin: plugin})
 	message := noAvailableChannelMessage(pinned, "default", "kling-v1")
-	assert.Contains(t, message, `"claimer"`)
-	assert.Contains(t, message, "disable or override")
+	assert.NotContains(t, message, "claimer")
+	assert.Contains(t, message, "claimed by a task plugin")
+	assert.Contains(t, message, "no enabled channel")
 	assert.Contains(t, message, "kling-v1")
 
 	plain, _ := gin.CreateTestContext(nil)
@@ -217,7 +218,10 @@ func TestSharedEndpointRebindsToSelectedTaskPlugin(t *testing.T) {
 	assert.Equal(t, "beta", c.MustGet(jsplugin.ContextKeyPinnedEndpoint).(jsplugin.PinnedEndpoint).Plugin.Meta.Key)
 	require.NoError(t, i18n.Init())
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
-	assert.Contains(t, noAvailableChannelMessage(c, "default", "task-model"), "alpha, beta")
+	message := noAvailableChannelMessage(c, "default", "task-model")
+	assert.Contains(t, message, "task plugin")
+	assert.NotContains(t, message, "alpha")
+	assert.NotContains(t, message, "beta")
 }
 
 func distributorEndpointPluginSource(key string, channelType int) string {

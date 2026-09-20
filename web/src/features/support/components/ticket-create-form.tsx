@@ -25,6 +25,7 @@ import { Controller, useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { ModelGroupSelector } from '@/components/model-group-selector'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -38,7 +39,6 @@ import {
   FieldSet,
 } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { ModelGroupSelector } from '@/components/model-group-selector'
 import {
   Select,
   SelectContent,
@@ -50,12 +50,12 @@ import {
 import { Spinner } from '@/components/ui/spinner'
 import { Textarea } from '@/components/ui/textarea'
 import { sendChatCompletion } from '@/features/playground/api'
+import { usePlaygroundOptions } from '@/features/playground/hooks'
 import {
   buildChatCompletionPayload,
   getInitialParameterEnabled,
   getInitialPlaygroundConfig,
 } from '@/features/playground/lib'
-import { usePlaygroundOptions } from '@/features/playground/hooks'
 import type {
   GroupOption,
   ModelOption,
@@ -63,6 +63,7 @@ import type {
 } from '@/features/playground/types'
 import { getUserBillingHistory } from '@/features/wallet/api'
 import { toIntlLocale } from '@/i18n/languages'
+import { formatNumber } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 
 import {
@@ -135,7 +136,7 @@ export function TicketCreateForm(props: {
   const billing = useQuery({
     queryKey: ['support', 'billing-records'],
     queryFn: async () => {
-      const response = await getUserBillingHistory(1, 10)
+      const response = await getUserBillingHistory(1, 100)
       if (!response.success) {
         throw new Error(response.message || 'Failed to load billing records')
       }
@@ -146,15 +147,44 @@ export function TicketCreateForm(props: {
     enabled: billingType && Boolean(props.accountEmail),
   })
 
+  const billingRecords = (billing.data ?? []).filter(
+    (record) =>
+      type !== INVOICE_TYPE ||
+      (['alipay', 'wxpay', 'lantu'].includes(record.payment_method) &&
+        record.money > 0 &&
+        Number.isFinite(record.money))
+  )
+  const selectedRecords = billingRecords.filter((record) =>
+    selectedBillingIds.includes(record.id)
+  )
+  const invoiceTotals: Record<string, number> = {}
+  for (const record of selectedRecords) {
+    const currency = record.payment_currency?.trim().toUpperCase() || 'CNY'
+    invoiceTotals[currency] =
+      (invoiceTotals[currency] ?? 0) +
+      Math.round((record.money + Number.EPSILON) * 100)
+  }
+
   const createTicket = useMutation({
     mutationFn: async (values: TicketForm) => {
-      const relatedRecords = (billing.data ?? []).filter((record) =>
-        selectedBillingIds.includes(record.id)
-      )
+      if (
+        values.type === INVOICE_TYPE &&
+        (selectedRecords.length === 0 || selectedRecords.length > 50)
+      ) {
+        throw new Error(t('Select between 1 and 50 paid orders for invoicing.'))
+      }
+      const relatedRecords = selectedRecords
       const ticket = await createSupportTicket({
         type: values.type,
         subject: values.subject,
-        content: buildTicketDescription(values, relatedRecords),
+        content: buildTicketDescription(
+          values,
+          values.type === INVOICE_TYPE ? [] : relatedRecords
+        ),
+        billing_record_ids:
+          values.type === INVOICE_TYPE
+            ? selectedRecords.map((record) => record.id)
+            : undefined,
       })
       let attachmentsFailed = false
       if (files.length > 0) {
@@ -501,13 +531,40 @@ export function TicketCreateForm(props: {
           <FieldSet>
             <FieldLegend>{t('Related billing records')}</FieldLegend>
             <FieldDescription>
-              {t('Select completed orders to include them automatically.')}
+              {t('Select completed orders to include them automatically.')}{' '}
+              {t('Showing the most recent 100 orders.')}
             </FieldDescription>
+            {type === INVOICE_TYPE && selectedRecords.length > 0 && (
+              <div
+                className='rounded-md border p-3 font-medium'
+                aria-live='polite'
+              >
+                {t('Invoice total (actual paid)')}:{' '}
+                {Object.entries(invoiceTotals)
+                  .map(
+                    ([currency, cents]) =>
+                      `${currency} ${formatNumber(cents / 100, toIntlLocale(i18n.language))}`
+                  )
+                  .join(' · ')}
+              </div>
+            )}
+            {billing.isError && (
+              <FieldError>
+                {t('Failed to load billing records')}{' '}
+                <Button
+                  type='button'
+                  variant='link'
+                  onClick={() => billing.refetch()}
+                >
+                  {t('Retry')}
+                </Button>
+              </FieldError>
+            )}
             {billing.isLoading ? (
               <Spinner />
             ) : (
               <FieldGroup className='gap-3'>
-                {(billing.data ?? []).map((record) => {
+                {billingRecords.map((record) => {
                   const checked = selectedBillingIds.includes(record.id)
                   return (
                     <Field key={record.id} orientation='horizontal'>
@@ -527,15 +584,21 @@ export function TicketCreateForm(props: {
                         className='font-normal'
                       >
                         {record.trade_no} ·{' '}
-                        {new Intl.NumberFormat(toIntlLocale(i18n.language), {
-                          style: 'currency',
-                          currency: record.payment_currency || 'USD',
-                        }).format(record.money)}
+                        {record.payment_currency ||
+                          (['alipay', 'wxpay', 'lantu'].includes(
+                            record.payment_method
+                          )
+                            ? 'CNY'
+                            : t('Unknown'))}{' '}
+                        {formatNumber(
+                          record.money,
+                          toIntlLocale(i18n.language)
+                        )}
                       </FieldLabel>
                     </Field>
                   )
                 })}
-                {!billing.isLoading && !billing.data?.length && (
+                {!billing.isLoading && !billingRecords.length && (
                   <FieldDescription>
                     {t('No completed billing records found.')}
                   </FieldDescription>
@@ -566,7 +629,14 @@ export function TicketCreateForm(props: {
         </Field>
 
         <div className='flex justify-end'>
-          <Button type='submit' disabled={createTicket.isPending}>
+          <Button
+            type='submit'
+            disabled={
+              createTicket.isPending ||
+              (type === INVOICE_TYPE &&
+                (selectedRecords.length === 0 || selectedRecords.length > 50))
+            }
+          >
             {createTicket.isPending && <Spinner data-icon='inline-start' />}
             {createTicket.isPending ? t('Submitting...') : t('Submit ticket')}
           </Button>

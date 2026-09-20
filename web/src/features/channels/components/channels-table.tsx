@@ -80,7 +80,6 @@ const CHANNEL_SORTABLE_COLUMNS = new Set<ChannelSortBy>([
   'priority',
   'balance',
   'response_time',
-  'test_time',
 ])
 
 function isDisabledChannelRow(channel: Channel) {
@@ -130,7 +129,11 @@ export function ChannelsTable() {
           const stored = localStorage.getItem(
             CHANNELS_STATUS_FILTER_STORAGE_KEY
           )
-          return stored === 'enabled' || stored === 'disabled' ? [stored] : []
+          return stored === 'enabled' ||
+            stored === 'disabled' ||
+            stored === 'auto'
+            ? [stored]
+            : []
         },
       },
       { columnId: 'type', searchKey: 'type', type: 'array' },
@@ -212,8 +215,8 @@ export function ChannelsTable() {
   })
 
   const { data: channelSuccessData } = useQuery({
-    queryKey: ['channel-success-metrics', 24],
-    queryFn: () => getChannelSuccessMetrics(24),
+    queryKey: ['channel-success-metrics', 24, 'with-usage'],
+    queryFn: () => getChannelSuccessMetrics(24, undefined, true),
     staleTime: 60 * 1000,
     retry: false,
   })
@@ -340,6 +343,7 @@ export function ChannelsTable() {
   const columns = useChannelsColumns({
     enableSelection: batchMode,
     channelSuccessById,
+    usage24h: channelSuccessData?.data.usage_24h,
     channelProbeById,
     probeEnabled: channelSuccessData?.data.probe_overview?.enabled,
   })
