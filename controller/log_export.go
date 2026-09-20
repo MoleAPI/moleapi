@@ -16,14 +16,13 @@ import (
 )
 
 // ExportLogs streams a single database query, avoiding offset pagination drift.
-// Only the explicit date range and self/all scope apply; table filters do not.
+// It shares filter matching with the log list, without pagination.
 func ExportLogs(c *gin.Context) {
 	var request struct {
-		Start    int64 `json:"start_timestamp"`
-		End      int64 `json:"end_timestamp"`
-		AllUsers bool  `json:"all_users"`
+		model.LogSearchParams
+		AllUsers bool `json:"all_users"`
 	}
-	if err := c.ShouldBindJSON(&request); err != nil || request.Start <= 0 || request.End < request.Start {
+	if err := c.ShouldBindJSON(&request); err != nil || request.StartTimestamp <= 0 || request.EndTimestamp < request.StartTimestamp {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid date range"})
 		return
 	}
@@ -33,6 +32,16 @@ func ExportLogs(c *gin.Context) {
 	}
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Minute)
 	defer cancel()
+	if !request.AllUsers {
+		// Match self-list behavior; supplied admin filters cannot broaden ownership.
+		request.Username = ""
+		request.Channel = 0
+	}
+	query, err := model.ApplyLogSearchFilters(model.LOG_DB.WithContext(ctx).Model(&model.Log{}), request.LogSearchParams)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"success": false, "message": "Invalid log filters"})
+		return
+	}
 	if err := model.ReserveLogExport(ctx, c.GetInt("id"), time.Now()); err != nil {
 		if errors.Is(err, model.ErrLogExportLimit) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"success": false, "message": err.Error()})
@@ -42,9 +51,8 @@ func ExportLogs(c *gin.Context) {
 		return
 	}
 	// No Other metadata, prompts, credentials, or internal diagnostics are exported.
-	query := model.LOG_DB.WithContext(ctx).Model(&model.Log{}).
+	query = query.
 		Select([]string{"user_id", "username", "created_at", "type", "content", "token_name", "model_name", "quota", "prompt_tokens", "completion_tokens", "use_time", "is_stream", "channel_id", "group", "request_id"}).
-		Where("created_at >= ? AND created_at <= ?", request.Start, request.End).
 		Order("created_at ASC, id ASC")
 	if !request.AllUsers {
 		query = query.Where("user_id = ?", c.GetInt("id"))
