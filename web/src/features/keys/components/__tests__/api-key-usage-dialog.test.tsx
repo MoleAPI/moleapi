@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 /*
 Copyright (C) 2023-2026 QuantumNous
 
@@ -17,8 +16,10 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Row } from '@tanstack/react-table'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
 import type { ApiKey } from '../../types'
@@ -28,7 +29,22 @@ import { DataTableRowActions } from '../data-table-row-actions'
 
 vi.mock('@/hooks/use-status', () => ({
   useStatus: () => ({
-    status: { server_address: 'https://api.moleapi.com' },
+    status: {
+      server_address: 'https://api.moleapi.com',
+      api_info_enabled: true,
+      api_info: [
+        {
+          url: 'https://api.moleapi.com',
+          route: 'Primary',
+          description: 'Default route',
+        },
+        {
+          url: 'https://hk.moleapi.com',
+          route: 'Hong Kong',
+          description: 'Backup route',
+        },
+      ],
+    },
   }),
 }))
 
@@ -65,6 +81,7 @@ const apiKey: ApiKey = {
 }
 
 test('opens a usage guide from the labeled API key action', async () => {
+  const user = userEvent.setup()
   const row = { original: apiKey } as Row<ApiKey>
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -90,10 +107,35 @@ test('opens a usage guide from the labeled API key action', async () => {
   })
   expect(screen.getByRole('tab', { name: 'Responses' })).toBeVisible()
   expect(screen.getByRole('tab', { name: 'Chat' })).toBeVisible()
+  expect(screen.getByRole('tab', { name: 'Messages' })).toBeVisible()
+  expect(screen.getByRole('tab', { name: 'Gemini' })).toBeVisible()
+  expect(screen.getByRole('tab', { name: 'Images' })).toBeVisible()
   expect(screen.getByText('sk-test-secret')).toBeVisible()
   expect(screen.getByText('https://api.moleapi.com/v1')).toBeVisible()
   expect(
     screen.getAllByText(/Authorization: Bearer sk-test-secret/).length
   ).toBeGreaterThan(0)
-  expect(screen.getByRole('textbox', { name: 'cURL example' })).toBeVisible()
+  const curlExample = screen.getByRole('textbox', { name: 'cURL example' })
+  expect(curlExample).toHaveTextContent('/v1/responses')
+
+  await user.click(screen.getByRole('tab', { name: 'Messages' }))
+  expect(curlExample).toHaveTextContent('/v1/messages')
+  expect(curlExample).toHaveTextContent('x-api-key: sk-test-secret')
+  expect(curlExample).toHaveTextContent('anthropic-version: 2023-06-01')
+
+  await user.click(screen.getByRole('tab', { name: 'Gemini' }))
+  expect(curlExample).toHaveTextContent(
+    '/v1beta/models/gemini-2.5-flash:generateContent'
+  )
+  expect(curlExample).toHaveTextContent('x-goog-api-key: sk-test-secret')
+
+  await user.click(screen.getByRole('tab', { name: 'Images' }))
+  expect(curlExample).toHaveTextContent('/v1/images/generations')
+
+  await user.click(screen.getByRole('combobox', { name: 'Route' }))
+  await user.click(screen.getByRole('option', { name: /Hong Kong/ }))
+  expect(screen.getByText('https://hk.moleapi.com/v1')).toBeVisible()
+  expect(curlExample).toHaveTextContent(
+    'https://hk.moleapi.com/v1/images/generations'
+  )
 })
