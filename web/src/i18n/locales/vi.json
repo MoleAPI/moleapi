@@ -6254,6 +6254,7 @@
     "The change succeeded, but the notification email could not be sent.": "Thay đổi đã hoàn tất nhưng không thể gửi email thông báo.",
     "The changelog could not be fetched or parsed. Please try again.": "Không thể tải hoặc phân tích nhật ký thay đổi. Vui lòng thử lại.",
     "The converted price must be a finite, non-negative number.": "Giá sau quy đổi phải là số hữu hạn không âm.",
+    "The current log list time range is selected by default. To preview another range, set the dates and search the log list, then choose Export logs.": "Mặc định chọn khoảng thời gian của danh sách nhật ký hiện tại. Để xem trước khoảng khác, hãy đặt ngày và tìm kiếm trong danh sách, rồi chọn Xuất nhật ký.",
     "The current setting could not be loaded. You can still enter the website domain yourself.": "Không tải được cài đặt hiện tại. Bạn vẫn có thể tự nhập tên miền trang.",
     "The deployment node that handled the requests": "Nút triển khai đã xử lý các yêu cầu",
     "The downloaded source does not match the sha256 declared in the index. Do not install it.": "Mã nguồn đã tải không khớp với sha256 khai báo trong chỉ mục. Đừng cài đặt nó.",

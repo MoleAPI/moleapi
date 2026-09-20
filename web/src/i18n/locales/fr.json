@@ -6254,6 +6254,7 @@
     "The change succeeded, but the notification email could not be sent.": "La modification a réussi, mais l’e-mail de notification n’a pas pu être envoyé.",
     "The changelog could not be fetched or parsed. Please try again.": "Impossible de récupérer ou d’analyser le journal des modifications. Veuillez réessayer.",
     "The converted price must be a finite, non-negative number.": "Le prix converti doit être un nombre fini et positif ou nul.",
+    "The current log list time range is selected by default. To preview another range, set the dates and search the log list, then choose Export logs.": "La période de la liste actuelle est présélectionnée. Pour prévisualiser une autre période, choisissez les dates et lancez la recherche dans la liste, puis cliquez sur Exporter les journaux.",
     "The current setting could not be loaded. You can still enter the website domain yourself.": "Le réglage actuel n’a pas pu être chargé. Vous pouvez saisir le domaine du site manuellement.",
     "The deployment node that handled the requests": "Le nœud de déploiement ayant traité les requêtes",
     "The downloaded source does not match the sha256 declared in the index. Do not install it.": "Le code téléchargé ne correspond pas au sha256 déclaré dans l’index. Ne l’installez pas.",

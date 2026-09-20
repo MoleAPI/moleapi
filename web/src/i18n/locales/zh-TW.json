@@ -6254,6 +6254,7 @@
     "The change succeeded, but the notification email could not be sent.": "變更已完成，但通知郵件傳送失敗。",
     "The changelog could not be fetched or parsed. Please try again.": "無法取得或解析更新日誌，請重試。",
     "The converted price must be a finite, non-negative number.": "換算後的價格必須是有限的非負數。",
+    "The current log list time range is selected by default. To preview another range, set the dates and search the log list, then choose Export logs.": "預設使用目前日誌清單的時間範圍。如需先預覽其他範圍，請先在清單中設定時間並搜尋，再點選「匯出日誌」。",
     "The current setting could not be loaded. You can still enter the website domain yourself.": "暫時無法讀取目前設定，你仍可以手動填寫網站網域。",
     "The deployment node that handled the requests": "處理請求的部署節點",
     "The downloaded source does not match the sha256 declared in the index. Do not install it.": "下載到的原始碼與索引宣告的 sha256 不一致，請勿安裝。",

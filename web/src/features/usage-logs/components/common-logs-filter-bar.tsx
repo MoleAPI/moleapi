@@ -287,7 +287,10 @@ export function CommonLogsFilterBar<TData>(
   const statsBar = (
     <div className='flex flex-wrap items-center gap-2'>
       <CommonLogsStats />
-      <LogExportDialog />
+      <LogExportDialog
+        startTime={searchState.filters.startTime}
+        endTime={searchState.filters.endTime}
+      />
     </div>
   )
   const sensitiveToggle = (
@@ -436,7 +439,7 @@ export function CommonLogsFilterBar<TData>(
       table={props.table}
       stats={statsBar}
       actionStart={sensitiveToggle}
-      compactDesktop
+      compactDesktop={isAdmin}
       primaryFilters={
         <>
           {typeFilter}

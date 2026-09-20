@@ -455,7 +455,7 @@ function ChannelTestDialogContent({
 
   const filteredModels = useMemo(() => {
     if (!searchTerm) return models
-    const keyword = searchTerm.toLowerCase()
+    const keyword = searchTerm.trim().toLowerCase()
     return models.filter((model) => model.toLowerCase().includes(keyword))
   }, [models, searchTerm])
 

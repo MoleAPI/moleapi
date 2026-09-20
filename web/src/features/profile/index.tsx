@@ -93,6 +93,11 @@ export function Profile() {
                 />
                 <AccessTokenCard />
                 <LoginSessionsCard />
+                <ProfileSecurityCard
+                  profile={profile}
+                  loading={loading}
+                  onProfileUpdate={refreshProfile}
+                />
               </div>
 
               <div
@@ -123,13 +128,6 @@ export function Profile() {
                 ))}
               </div>
             </div>
-          </CardStaggerItem>
-          <CardStaggerItem>
-            <ProfileSecurityCard
-              profile={profile}
-              loading={loading}
-              onProfileUpdate={refreshProfile}
-            />
           </CardStaggerItem>
         </CardStaggerContainer>
       </div>
