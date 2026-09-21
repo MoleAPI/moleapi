@@ -64,6 +64,8 @@ export function SignUpForm({
   const [isLoading, setIsLoading] = useState(false)
   const [verificationCode, setVerificationCode] = useState('')
   const [agreedToLegal, setAgreedToLegal] = useState(false)
+  const [showLegalConsentError, setShowLegalConsentError] = useState(false)
+  const [legalConsentAttentionKey, setLegalConsentAttentionKey] = useState(0)
   const [wechatCode, setWeChatCode] = useState('')
   const [isWeChatDialogOpen, setIsWeChatDialogOpen] = useState(false)
   const [isWeChatSubmitting, setIsWeChatSubmitting] = useState(false)
@@ -131,7 +133,20 @@ export function SignUpForm({
     } else {
       setAgreedToLegal(true)
     }
+    setShowLegalConsentError(false)
   }, [requiresLegalConsent])
+
+  const ensureLegalConsent = () => {
+    if (!requiresLegalConsent || agreedToLegal) return true
+    setShowLegalConsentError(true)
+    setLegalConsentAttentionKey((current) => current + 1)
+    return false
+  }
+
+  const handleLegalConsentChange = (checked: boolean) => {
+    setAgreedToLegal(checked)
+    if (checked) setShowLegalConsentError(false)
+  }
 
   useEffect(() => {
     const aff = new URLSearchParams(window.location.search).get('aff')?.trim()
@@ -141,10 +156,7 @@ export function SignUpForm({
   }, [])
 
   async function onSubmit(data: z.infer<typeof registerFormSchema>) {
-    if (requiresLegalConsent && !agreedToLegal) {
-      toast.error(legalConsentErrorMessage)
-      return
-    }
+    if (!ensureLegalConsent()) return
 
     // Validate email verification if required
     if (emailVerificationRequired) {
@@ -194,10 +206,7 @@ export function SignUpForm({
   }
 
   const handleOpenWeChatDialog = () => {
-    if (requiresLegalConsent && !agreedToLegal) {
-      toast.error(legalConsentErrorMessage)
-      return
-    }
+    if (!ensureLegalConsent()) return
 
     setIsWeChatDialogOpen(true)
   }
@@ -366,19 +375,17 @@ export function SignUpForm({
         <LegalConsent
           status={status}
           checked={agreedToLegal}
-          onCheckedChange={setAgreedToLegal}
+          onCheckedChange={handleLegalConsentChange}
           className='mt-1'
+          error={showLegalConsentError ? legalConsentErrorMessage : undefined}
+          attentionKey={legalConsentAttentionKey}
         />
 
         {/* Submit Button */}
         <Button
           type='submit'
           className='mt-2 w-full justify-center gap-2'
-          disabled={
-            isLoading ||
-            (requiresLegalConsent && !agreedToLegal) ||
-            !turnstileReady
-          }
+          disabled={isLoading || !turnstileReady}
         >
           {isLoading ? <Loader2 className='h-4 w-4 animate-spin' /> : null}
           {t('Create account')}
@@ -387,7 +394,8 @@ export function SignUpForm({
         {oauthRegisterEnabled && (
           <OAuthProviders
             status={status}
-            disabled={isLoading || (requiresLegalConsent && !agreedToLegal)}
+            disabled={isLoading}
+            onBeforeLogin={ensureLegalConsent}
             onWeChatLogin={hasWeChatLogin ? handleOpenWeChatDialog : undefined}
             isWeChatLoading={isWeChatSubmitting}
             className='pt-2'

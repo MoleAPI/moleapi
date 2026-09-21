@@ -7342,6 +7342,17 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "API format": "API 形式",
+    "API key and endpoint": "API キーと接続先",
+    "Anyone with this key can use its quota. Store it in an environment variable and never expose it in browser code.": "このキーを持つ人は誰でも割り当てを使用できます。環境変数に保存し、ブラウザーのコードには公開しないでください。",
+    "Authentication header": "認証ヘッダー",
+    "Connection details and examples for {{name}}": "{{name}} の接続情報と使用例",
+    "Copy and use": "コピーして使用",
+    "Copy the connection details or start with a working example.": "接続情報をコピーするか、動作する例から始められます。",
+    "Copy {{label}}": "{{label}} をコピー",
+    "cURL example": "cURL の例",
+    "Keep this key secret": "このキーは秘密にしてください",
+    "SDK Base URL": "SDK ベース URL"
   }
 }

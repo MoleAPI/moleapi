@@ -16,11 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { PublicLayout } from '@/components/layout'
 import { PageTransition } from '@/components/page-transition'
+import { getPerfMetricsSummary } from '@/features/performance-metrics/api'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import {
   LoadingSkeleton,
@@ -54,6 +57,13 @@ export function Pricing() {
     usdExchangeRate,
   } = usePricingData()
 
+  const perfQuery = useQuery({
+    queryKey: ['perf-metrics-summary', 24],
+    queryFn: async () => requireServerSuccess(await getPerfMetricsSummary(24)),
+    staleTime: 60 * 1000,
+    retry: false,
+  })
+
   const {
     searchInput,
     sortBy,
@@ -81,7 +91,7 @@ export function Pricing() {
     availableTags,
     clearFilters,
     clearSearch,
-  } = useFilters(models || [])
+  } = useFilters(models || [], perfQuery.data?.data?.models)
 
   const handleModelClick = useCallback((modelName: string) => {
     setSelectedModelName(modelName)

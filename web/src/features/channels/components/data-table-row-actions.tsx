@@ -23,7 +23,6 @@ import {
   Boxes,
   Pencil,
   PlugZap,
-  Gauge,
   DollarSign,
   Download,
   Copy,
@@ -61,9 +60,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { MODEL_FETCHABLE_TYPES } from '../constants'
 import {
-  channelsQueryKeys,
   handleDeleteChannel,
-  handleTestChannel,
   handleToggleChannelStatus,
   isChannelEnabled,
   isMultiKeyChannel,
@@ -85,7 +82,6 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const queryClient = useQueryClient()
   const currentUser = useAuthStore((s) => s.auth.user)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
-  const [isTesting, setIsTesting] = useState(false)
   const [isTogglingStatus, setIsTogglingStatus] = useState(false)
 
   const isEnabled = isChannelEnabled(channel)
@@ -101,21 +97,10 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     setOpen('update-channel')
   }
 
-  const handleTest = () => {
+  const handleTest = (e?: React.MouseEvent) => {
+    e?.stopPropagation()
     setCurrentRow(channel)
     setOpen('test-channel')
-  }
-
-  const handleDirectTest = async (e: React.MouseEvent<HTMLButtonElement>) => {
-    e.stopPropagation()
-    setIsTesting(true)
-    try {
-      await handleTestChannel(channel.id, { channelName: channel.name }, () => {
-        queryClient.invalidateQueries({ queryKey: channelsQueryKeys.lists() })
-      })
-    } finally {
-      setIsTesting(false)
-    }
   }
 
   const handleQueryBalance = () => {
@@ -163,7 +148,7 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   }
 
   return (
-    <div className='-ml-1.5 flex items-center gap-1'>
+    <div className='flex items-center justify-end gap-1'>
       {layout !== 'card' && (
         <Tooltip>
           <TooltipTrigger
@@ -191,41 +176,15 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             <Button
               variant='ghost'
               size='icon-sm'
-              onClick={handleDirectTest}
-              disabled={isTesting}
+              onClick={handleTest}
               aria-label={t('Test Connection')}
             />
           }
         >
-          {isTesting ? (
-            <Loader2 className='size-4 animate-spin' />
-          ) : (
-            <Gauge className='size-4' />
-          )}
+          <PlugZap className='size-4' />
         </TooltipTrigger>
         <TooltipContent>{t('Test Connection')}</TooltipContent>
       </Tooltip>
-
-      {layout === 'card' && (
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <Button
-                variant='ghost'
-                size='icon-sm'
-                onClick={(e) => {
-                  e.stopPropagation()
-                  handleTest()
-                }}
-                aria-label={t('Test Channel Connection')}
-              />
-            }
-          >
-            <PlugZap className='size-4' />
-          </TooltipTrigger>
-          <TooltipContent>{t('Test Channel Connection')}</TooltipContent>
-        </Tooltip>
-      )}
 
       <Tooltip>
         <TooltipTrigger
