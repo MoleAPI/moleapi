@@ -68,6 +68,7 @@ var auditContentTemplates = map[string]string{
 	"channel.upstream_apply_all":       "Applied upstream model changes to ${count} channels",
 	"channel.upstream_detect":          "Detected upstream model changes for channel ${name} (ID: ${id})",
 	"channel.upstream_detect_all":      "Started upstream model update detection task ${task_id}",
+	"access_token.update":              "Changed access token permissions",
 	"option.passkey_domains":           "Updated Passkey domains: removed ${domains}; affected ${known}; unknown ${unknown}",
 	"option.passkey_domains_confirmed": "Confirmed removal of Passkey domains: ${domains}; affected ${known}; unknown ${unknown}",
 	"option.passkey_domains_blocked":   "Passkey domain change blocked: ${domains}; affected ${known}; unknown ${unknown}",
