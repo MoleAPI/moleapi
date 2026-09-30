@@ -235,7 +235,12 @@ func QuerySummaryAll(hours int, groups []string) (SummaryAllResult, error) {
 		return models[i].RequestCount > models[j].RequestCount
 	})
 
-	return SummaryAllResult{Models: models}, nil
+	// The hourly display includes the current partial hour as its last slot.
+	return SummaryAllResult{
+		WindowStart: endTs - endTs%3600 - int64(hours-1)*3600,
+		WindowEnd:   endTs,
+		Models:      models,
+	}, nil
 }
 
 func recentSuccessRates(buckets map[int64]counters, limit int) []float64 {
