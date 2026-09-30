@@ -551,6 +551,7 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'token.status_update': 'API token status update',
   'token.update': 'API token configuration update',
   'token.create': 'API token creation',
+  'access_token.update': 'Changed access token permissions',
   login: 'Logged in successfully via {{method}}',
   // User management
   'user.create': 'Created user {{username}} (role {{role}})',

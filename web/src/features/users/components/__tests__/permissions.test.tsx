@@ -187,19 +187,12 @@ it.each([undefined, true])(
     renderPermissions(100, allowed)
 
     await screen.findByDisplayValue('Managed admin')
-
-    const checkbox = await screen.findByRole('checkbox', {
-      name: new RegExp(label),
-    })
-
+    const toggle = await screen.findByRole('button', { name: label })
     await waitFor(() =>
-      expect(checkbox).toHaveAttribute('aria-checked', String(!!allowed))
+      expect(toggle).toHaveAttribute('aria-pressed', String(!!allowed))
     )
-
-    expect(screen.getByText(description)).toBeVisible()
-
-    await userEvent.click(checkbox)
-
+    expect(toggle).toHaveAccessibleDescription(description)
+    await userEvent.click(toggle)
     await userEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
     // The permission matrix changed, so the save waits for verification.
@@ -265,8 +258,5 @@ it('admin cannot edit the audit permission even when the catalog is available', 
   renderPermissions(10)
 
   await screen.findByDisplayValue('Managed admin')
-
-  expect(
-    screen.queryByRole('checkbox', { name: new RegExp(label) })
-  ).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument()
 })
