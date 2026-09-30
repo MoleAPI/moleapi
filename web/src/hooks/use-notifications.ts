@@ -16,13 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useQuery } from '@tanstack/react-query'
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
 import { useState, useMemo } from 'react'
 
+import { getSupportConfig, getSupportTickets } from '@/features/support/api'
+import { useIsAdmin } from '@/hooks/use-admin'
 import { useStatus } from '@/hooks/use-status'
 import { getNotice } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
+import { useAuthStore } from '@/stores/auth-store'
 import { useNotificationStore } from '@/stores/notification-store'
+
+export type NotificationTab = 'notice' | 'announcements' | 'tickets'
 
 function hashString(input: string): string {
   let hash = 0
@@ -60,14 +65,34 @@ function getAnnouncementKey(item: Record<string, unknown>): string {
 }
 
 /**
- * Hook to manage notifications (Notice + Announcements)
+ * Hook to manage notices, announcements, and ticket updates
  * Provides unread counts and read status management
  */
 export function useNotifications() {
   const [popoverOpen, setPopoverOpen] = useState(false)
-  const [activeTab, setActiveTab] = useState<'notice' | 'announcements'>(
-    'notice'
+  const [activeTab, setActiveTab] = useState<NotificationTab>('notice')
+  const user = useAuthStore((state) => state.auth.user)
+  const isAdmin = useIsAdmin()
+  const supportConfig = useQuery({
+    queryKey: ['support', 'config'],
+    queryFn: getSupportConfig,
+    enabled: Boolean(user),
+    staleTime: 60_000,
+    meta: { errorToast: false },
+  })
+  const supportEnabled = Boolean(
+    user && supportConfig.data?.enabled && (isAdmin || user.email)
   )
+  const support = useInfiniteQuery({
+    queryKey: ['support', 'tickets', user?.id, user?.role, user?.email],
+    queryFn: ({ pageParam }) => getSupportTickets(pageParam),
+    initialPageParam: 0,
+    getNextPageParam: (page) => (page.has_more ? page.next_from : undefined),
+    enabled: supportEnabled,
+    staleTime: 60_000,
+    refetchInterval: 60_000,
+    meta: { errorToast: false },
+  })
 
   // Fetch Notice from API
   const {
@@ -97,7 +122,30 @@ export function useNotifications() {
     markNoticeRead,
     markAnnouncementsRead,
     isAnnouncementRead,
+    readSupportTickets,
   } = useNotificationStore()
+
+  // ponytail: reuse the recent-ticket list and its permissions. A server feed
+  // is the upgrade path if notifications must cover more than the latest page.
+  const ticketNotifications = supportEnabled
+    ? (support.data?.pages[0]?.tickets ?? [])
+        .filter(
+          (ticket) =>
+            !ticket.isArchived &&
+            (isAdmin
+              ? ticket.activity === 'new' || ticket.activity === 'customer'
+              : ticket.activity === 'agent')
+        )
+        .map((ticket) => ({
+          ...ticket,
+          unread:
+            readSupportTickets[`${user?.id}:${ticket.id}`] !==
+            (ticket.modifiedTime || ticket.createdTime),
+        }))
+    : []
+  const unreadTicketCount = ticketNotifications.filter(
+    (ticket) => ticket.unread
+  ).length
 
   // Extract notice content
   const noticeContent = noticeResponse?.success
@@ -133,11 +181,11 @@ export function useNotifications() {
   }
 
   // Handle popover open
-  const handleOpenPopover = (tab?: 'notice' | 'announcements') => {
-    const nextTab = tab || activeTab
+  const handleOpenPopover = (tab?: NotificationTab) => {
+    const nextTab = tab || (unreadTicketCount > 0 ? 'tickets' : activeTab)
 
     // Mark currently visible content as read when opening the notification center
-    if (noticeContent) {
+    if (nextTab === 'notice' && noticeContent) {
       markNoticeRead(noticeContent)
     }
     if (nextTab === 'announcements') {
@@ -150,7 +198,7 @@ export function useNotifications() {
 
   const handlePopoverOpenChange = (open: boolean) => {
     if (open) {
-      handleOpenPopover(activeTab)
+      handleOpenPopover()
       return
     }
 
@@ -158,9 +206,12 @@ export function useNotifications() {
   }
 
   // Handle tab change - mark announcements as read when switching to that tab
-  const handleTabChange = (tab: 'notice' | 'announcements') => {
+  const handleTabChange = (tab: NotificationTab) => {
     setActiveTab(tab)
 
+    if (tab === 'notice' && noticeContent) {
+      markNoticeRead(noticeContent)
+    }
     if (tab === 'announcements') {
       markAnnouncementsAsRead()
     }
@@ -173,7 +224,17 @@ export function useNotifications() {
     loading: noticeLoading || statusLoading,
 
     // Unread counts
-    unreadCount: unreadCounts.total,
+    unreadCount: unreadCounts.total + unreadTicketCount,
+    support: {
+      enabled: supportEnabled,
+      tickets: ticketNotifications,
+      loading: support.isLoading,
+      error: support.isError,
+      retry: () => {
+        void support.refetch()
+      },
+      unreadCount: unreadTicketCount,
+    },
     unreadNoticeCount: unreadCounts.notice,
     unreadAnnouncementsCount: unreadCounts.announcements,
 

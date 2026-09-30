@@ -17,9 +17,17 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { createFileRoute } from '@tanstack/react-router'
+import { z } from 'zod'
 
 import { Support } from '@/features/support'
 
 export const Route = createFileRoute('/_authenticated/support/')({
+  validateSearch: z.object({
+    ticket: z
+      .string()
+      .regex(/^\d{1,64}$/)
+      .optional()
+      .catch(undefined),
+  }),
   component: Support,
 })

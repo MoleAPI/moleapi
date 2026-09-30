@@ -122,7 +122,9 @@ export function LogCostDisplay(props: LogCostDisplayProps) {
     <TooltipProvider>
       <div className='inline-flex items-center gap-1'>
         {isSubscription ? (
-          <SubscriptionBadge quota={props.quota} />
+          <SubscriptionBadge
+            quota={props.other?.subscription_consumed ?? props.quota}
+          />
         ) : (
           <QuotaBadge quota={props.quota} />
         )}

@@ -29,8 +29,8 @@ var auditContentTemplates = map[string]string{
 	"user.2fa_disable_self":            "Disabled two-factor authentication",
 	"user.2fa_enable":                  "Enabled two-factor authentication",
 	"user.2fa_setup":                   "Started two-factor authentication setup",
-	"access_token.revoke":              "Revoked the system access token",
-	"access_token.generate":            "Generated a system access token",
+	"access_token.revoke":              "Revoked an access token",
+	"access_token.generate":            "Generated an access token",
 	"user.account_delete":              "Account deletion",
 	"user.create":                      "Created user ${username} (role ${role})",
 	"user.update":                      "Updated user ${username} (ID: ${id})",
@@ -48,6 +48,7 @@ var auditContentTemplates = map[string]string{
 	"user.invite_rebate_batch_update":  "Batch updated invite rebate ratio to ${target_ratio} for ${updated} users",
 	"option.model_pricing.import":      "Imported ${updated_options} model pricing settings",
 	"option.update":                    "Updated system setting ${key}",
+	"access_token.rename":              "Renamed an access token",
 
 	"channel.create":                   "Created channel ${name} (type ${type}, count ${count})",
 	"channel.update":                   "Updated channel ${name} (ID: ${id})",
@@ -179,6 +180,12 @@ func recordUserSecurityAudit(c *gin.Context, userId int, action string, params m
 			params = map[string]interface{}{}
 		}
 		params["code"] = code
+	}
+	if c.GetBool("use_access_token") {
+		if params == nil {
+			params = map[string]any{}
+		}
+		params["token_ref"] = c.GetString("access_token_ref")
 	}
 	var auditInfo *model.AuditRequestInfo
 	if success, ok := params["success"].(bool); ok {

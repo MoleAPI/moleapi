@@ -140,6 +140,7 @@ export function AppHeader({
               notice={notifications.notice}
               announcements={notifications.announcements}
               loading={notifications.loading}
+              support={notifications.support}
             />
           )}
           <LanguageSwitcher />

@@ -153,6 +153,7 @@ describe('model cards', () => {
     expect(onClick).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Details' }))
     expect(onClick).toHaveBeenCalledOnce()
+    expect(onClick).toHaveBeenCalledWith(name)
   })
 
   it('retains a neutral health strip and missing values when metrics are unavailable', () => {
@@ -233,12 +234,16 @@ describe('model cards', () => {
   })
 
   it.each([
-    { success_rate: 0, expected: '0.00%' },
-    { success_rate: 99.8, expected: '99.80%' },
-    { success_rate: Number.NaN, expected: '—' },
+    { success_rate: 0, expected: '0.00%', color: 'text-red-600' },
+    { success_rate: 75, expected: '75.00%', color: 'text-amber-600' },
+    { success_rate: 99.8, expected: '99.80%', color: 'text-emerald-500' },
+    { success_rate: 100, expected: '100.00%', color: 'text-emerald-600' },
+    { success_rate: Number.NaN, expected: '—', color: 'text-muted-foreground' },
+    { success_rate: -1, expected: '—', color: 'text-muted-foreground' },
+    { success_rate: 101, expected: '—', color: 'text-muted-foreground' },
   ])(
     'shows $expected for the reported request success rate $success_rate',
-    ({ success_rate, expected }) => {
+    ({ success_rate, expected, color }) => {
       render(
         <ModelCard
           model={pricingModel()}
@@ -250,6 +255,7 @@ describe('model cards', () => {
         'Performance metrics for the last 24 hours'
       )
       expect(within(metrics).getByText(expected)).toBeVisible()
+      expect(within(metrics).getByText(expected)).toHaveClass(color)
       expect(within(metrics).getByText('Status')).toBeVisible()
       expect(within(metrics).getByText('1.20s')).toBeVisible()
       expect(within(metrics).getByText('42.0t/s')).toBeVisible()
