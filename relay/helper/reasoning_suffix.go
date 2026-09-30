@@ -2,8 +2,11 @@ package helper
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
+	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
@@ -29,6 +32,14 @@ func ApplyReasoningModelSuffix(c *gin.Context, info *relaycommon.RelayInfo, outb
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled ||
 		info.ChannelMeta != nil && info.ChannelSetting.PassThroughBodyEnabled {
 		return nil
+	}
+
+	for _, request := range append([]dto.Request{info.Request}, outbound...) {
+		if chat, ok := request.(*dto.GeneralOpenAIRequest); ok {
+			if err := normalizeChatReasoningConflict(chat); err != nil {
+				return reasoning.AsClientError(err)
+			}
+		}
 	}
 
 	opts := info.ConvOptions()
@@ -118,6 +129,37 @@ func ApplyReasoningModelSuffix(c *gin.Context, info *relaycommon.RelayInfo, outb
 	}
 	info.RecordConversionDiagnostics(diagnosticContext, diagnostics)
 	return nil
+}
+
+// normalizeChatReasoningConflict gives an explicit OpenAI effort precedence
+// over a contradictory OpenRouter on/off control, before copying or converting
+// either representation further. Consistent settings remain byte-identical.
+func normalizeChatReasoningConflict(request *dto.GeneralOpenAIRequest) error {
+	if request == nil || strings.TrimSpace(request.ReasoningEffort) == "" || len(request.Reasoning) == 0 {
+		return nil
+	}
+	effort, err := reasoning.ParseEffort(request.ReasoningEffort)
+	if err != nil {
+		return err
+	}
+	nested, err := reasoning.FromOpenAIChat(&dto.GeneralOpenAIRequest{Reasoning: request.Reasoning})
+	if err != nil {
+		return err
+	}
+	if !nested.HasStrength() || (effort == reasoning.EffortNone) == (nested.Mode == reasoning.ModeDisabled) {
+		return nil
+	}
+	var config map[string]json.RawMessage
+	if err := common.Unmarshal(request.Reasoning, &config); err != nil {
+		return err
+	}
+	// ponytail: resolve only duplicate on/off conflicts; retain visibility and
+	// provider extensions, and leave effort-level and model-alias checks intact.
+	delete(config, "enabled")
+	delete(config, "effort")
+	delete(config, "max_tokens")
+	request.Reasoning, err = common.Marshal(config)
+	return err
 }
 
 func parseRequestModelName(name string, opts *convmeta.Options) (parsedModelModifiers, error) {
