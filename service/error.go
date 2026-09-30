@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -151,7 +152,50 @@ func SetPublicUpstreamError(ctx context.Context, err *types.NewAPIError) {
 		rawError += " " + relayError.Type
 	}
 	statusCode, publicError := publicUpstreamError(err.StatusCode, rawError, string(err.GetErrorCode()))
+	if err.StatusCode == http.StatusBadRequest && statusCode == http.StatusBadRequest {
+		// Only the parsed message is eligible: Err can also contain the raw body
+		// and private metadata. Keep the existing public error classification.
+		var detail, param string
+		switch relayError := err.RelayError.(type) {
+		case types.OpenAIError:
+			detail, param = relayError.Message, relayError.Param
+			if len(relayError.Metadata) > 0 {
+				detail = strings.TrimSuffix(detail, " ("+string(relayError.Metadata)+")")
+			}
+		case types.ClaudeError:
+			detail = relayError.Message
+		}
+		if detail = publicValidationDetail(detail); detail != "" {
+			publicError.Message = detail
+			if len(param) <= 128 && upstreamErrorParam.MatchString(param) {
+				publicError.Param = param
+			}
+		}
+	}
 	err.SetPublicError(statusCode, publicError)
+}
+
+var (
+	upstreamErrorParam    = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_.\[\]-]*$`)
+	upstreamRequestID     = regexp.MustCompile(`(?is)\s*\(?request[ _-]?id\s*[:=].*$`)
+	upstreamPrivateDetail = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://|<[/!a-z]|\S+@\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b|(?:[a-f0-9]{0,4}:){2,}|\b\d{1,3}(?:\.\d{1,3}){3}\b|\b(?:sk-|org-|proj-|AIza|AKIA|eyJ)[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]{40,}|\b(?:api[ _-]?key|authorization|bearer|password|secret|credential|cookie|session|account|tenant|organization|channel|group|internal|backend|billing|balance|quota)\b|渠道|分组|密钥|余额|配额|账户|账号|欠费`)
+)
+
+// publicValidationDetail exposes actionable provider validation sentences only.
+// Unknown/internal errors keep their existing public fallback; never forward a body.
+func publicValidationDetail(message string) string {
+	message = strings.TrimSpace(upstreamRequestID.ReplaceAllString(message, ""))
+	if message == "" || len(message) > 2048 || strings.ContainsAny(message, "{}\x00\r\n") || upstreamPrivateDetail.MatchString(message) {
+		return ""
+	}
+	// Comparison operators are ordinary validation details (for example >= 16).
+	lower := strings.ToLower(message)
+	for _, hint := range []string{"invalid", "unsupported", "not support", "unrecognized", "required", "must ", "exceed", "conflict", "参数", "不支持", "格式", "必须"} {
+		if strings.Contains(lower, hint) {
+			return message
+		}
+	}
+	return ""
 }
 
 func PublicUpstreamError(statusCode int, rawError string) (int, types.OpenAIError) {

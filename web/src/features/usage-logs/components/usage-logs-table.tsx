@@ -84,6 +84,10 @@ interface UsageLogsTableProps {
 
 export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
   const { t } = useTranslation()
+  const getColumnClassName = useCallback(
+    () => (logCategory === 'common' ? 'py-1.5' : 'py-3.5'),
+    [logCategory]
+  )
   const {
     isAdminView: isAdmin,
     isRootView: isRoot,
@@ -276,7 +280,8 @@ export function UsageLogsTable({ logCategory }: UsageLogsTableProps) {
                 rowExpanded && 'bg-muted/40',
                 tintClass
               )}
-              getColumnClassName={() => (isCommon ? 'py-1.5' : 'py-3.5')}
+              getColumnClassName={getColumnClassName}
+              cellRenderColumns={table.options.columns}
               onClick={(event) => {
                 if (
                   (event.target as HTMLElement).closest(

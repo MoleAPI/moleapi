@@ -23,6 +23,7 @@ import {
   formatLatency,
   formatThroughput,
   getSuccessRateDotClass,
+  getSuccessRateTextClass,
 } from '@/features/performance-metrics/lib/format'
 import type { SuccessRatePoint } from '@/features/performance-metrics/types'
 import { cn } from '@/lib/utils'
@@ -89,7 +90,14 @@ export const ModelPerfBadge = memo(function ModelPerfBadge(
             className='text-muted-foreground flex items-center justify-between gap-1 text-[11px] leading-4'
           >
             <span>{t('Status')}</span>
-            <span className='font-mono'>
+            <span
+              className={cn(
+                'font-mono',
+                getSuccessRateTextClass(
+                  hasSuccessRate ? successRate : Number.NaN
+                )
+              )}
+            >
               {hasSuccessRate ? `${successRate.toFixed(2)}%` : '—'}
             </span>
           </dt>

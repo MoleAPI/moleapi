@@ -748,6 +748,14 @@ func revokeUserSessions(userID int, excludedSID, reason string) (int64, error) {
 		var affected int64
 		var revoked []UserSession
 		err := DB.Transaction(func(tx *gorm.DB) error {
+			if common.UsingMainDatabase(common.DatabaseTypeSQLite) {
+				// Reserve the write lock before reading, as another proof claim
+				// can prevent a deferred read transaction from upgrading its lock.
+				if err := tx.Model(&UserSession{}).Where("sid IN ? AND status = ?", sids, UserSessionStatusActive).
+					UpdateColumn("status", gorm.Expr("status")).Error; err != nil {
+					return err
+				}
+			}
 			if err := lockForUpdate(tx).Where("sid IN ? AND status = ?", sids, UserSessionStatusActive).Find(&revoked).Error; err != nil {
 				return err
 			}

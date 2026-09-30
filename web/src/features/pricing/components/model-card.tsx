@@ -55,35 +55,57 @@ import { ModelTagChip } from './model-tag-chip'
 
 export interface ModelCardProps {
   model: PricingModel
-  onClick: () => void
+
+  onClick: (modelName: string) => void
+
   priceRate?: number
+
   usdExchangeRate?: number
+
   tokenUnit?: TokenUnit
+
   showRechargePrice?: boolean
+
   selectedGroup?: string
+
   perf?: ModelPerfBadgeData
 }
 
 type Metric = {
   id: string
+
   label: string
+
   value: string
+
   unit?: string
+
   tone?: 'default' | 'success' | 'accent'
 }
 
 const CAPABILITY_LABEL_KEYS: Record<ModelCapability, string> = {
   function_calling: 'Function calling',
+
   streaming: 'Streaming',
+
   vision: 'Vision',
+
   json_mode: 'JSON mode',
+
   structured_output: 'Structured output',
+
   reasoning: 'Reasoning',
+
   tools: 'Tools',
+
   system_prompt: 'System prompt',
+
   web_search: 'Web search',
+
   code_interpreter: 'Code interpreter',
+
   caching: 'Prompt caching',
+
   embeddings: 'Embeddings',
 }
 
@@ -91,6 +113,7 @@ function formatRatio(ratio: number): string {
   const value = Number.isInteger(ratio)
     ? ratio.toString()
     : ratio.toFixed(3).replace(/0+$/, '').replace(/\.$/, '')
+
   return `x${value}`
 }
 
@@ -120,11 +143,17 @@ function PriceLine(props: Metric) {
 
 function PriceGroupColumn(props: {
   group: string
+
   ratio: number
+
   isCurrent: boolean
+
   lines: Metric[]
+
   examplePrice?: { label: string; formatted: string } | null
+
   notice?: string
+
   t: (key: string) => string
 }) {
   const discount = getDiscountPercent(props.ratio)
@@ -174,97 +203,147 @@ function PriceGroupColumn(props: {
 
 function getDynamicMetricTone(field: string): Metric['tone'] {
   if (field.includes('cache')) return 'success'
+
   if (field.includes('image') || field.includes('audio')) return 'accent'
+
   return undefined
 }
 
 export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
   const { t, i18n } = useTranslation()
+
   const billingTime = useBillingTime(props.model.billing_expr)
+
   const tokenUnit = props.tokenUnit ?? DEFAULT_TOKEN_UNIT
+
   const priceRate = props.priceRate ?? 1
+
   const usdExchangeRate = props.usdExchangeRate ?? 1
+
   const showRechargePrice = props.showRechargePrice ?? false
+
   const isTokenBased = isTokenBasedModel(props.model)
+
   const tokenUnitLabel = tokenUnit === 'K' ? '1K' : '1M'
+
   const tokenPriceUnit = `/ ${tokenUnitLabel}`
+
   const capabilities = props.model.capabilities || []
+
   const tags = parseTags(props.model.tags)
+
   const modelIconKey = props.model.icon || props.model.vendor_icon
+
   const modelIcon = modelIconKey ? getLobeIcon(modelIconKey, 28) : null
+
   const initial = props.model.model_name?.charAt(0).toUpperCase() || '?'
+
   const isDynamicPricing = isDynamicPricingModel(props.model)
+
   const isUnconfiguredTaskUsage = isUnconfiguredTaskUsageModel(props.model)
+
   const hasCachedPrice = isTokenBased && props.model.cache_ratio != null
+
   const dynamicSummary = isDynamicPricing
     ? getDynamicPricingSummary(props.model, {
         tokenUnit,
+
         now: billingTime === undefined ? undefined : new Date(billingTime),
+
         showRechargePrice,
+
         priceRate,
+
         usdExchangeRate,
+
         groupRatioMultiplier: getDynamicDisplayGroupRatio(
           props.model,
           props.selectedGroup
         ),
       })
     : null
+
   const description = props.model.description || ''
 
   const capabilityTags = capabilities.map(
     (capability) => CAPABILITY_LABEL_KEYS[capability] ?? capability
   )
+
   const allChips = [...new Set([...tags, ...capabilityTags])]
+
   const chips = allChips.slice(0, 5)
+
   const groupRatio = props.model.group_ratio || {}
+
   const visibleGroups = getDisplayedPriceGroups(
     props.model,
     props.selectedGroup
   )
+
   const bestDiscountPercent = visibleGroups.reduce<number | null>(
     (best, item) => {
       if (item.group === 'default') return best
+
       const discount = getDiscountPercent(item.ratio)
+
       return discount && (best == null || discount > best) ? discount : best
     },
+
     null
   )
 
   const handleDetailsClick = (e: React.MouseEvent) => {
     e.stopPropagation()
-    props.onClick()
+
+    props.onClick(props.model.model_name)
   }
 
   let specialPriceSummary: string | null = null
+
   if (dynamicSummary) {
     if (dynamicSummary.isSpecialExpression) {
       specialPriceSummary = dynamicSummary.rawExpression
     }
   }
+
   const priceGroups = visibleGroups.map((item) => {
     let lines: Metric[] = []
+
     let notice: string | undefined
+
     let examplePrice: { label: string; formatted: string } | null = null
 
     if (isDynamicPricing) {
       const dynamicOptions = {
         tokenUnit,
+
         now: billingTime === undefined ? undefined : new Date(billingTime),
+
         showRechargePrice,
+
         priceRate,
+
         usdExchangeRate,
+
         groupRatioMultiplier: item.ratio,
+
         usageSchema: props.model.billing_usage_schema,
       }
+
       const summary = getDynamicPricingSummary(props.model, dynamicOptions)
+
       examplePrice = getCardExamplePrice(props.model, dynamicOptions)
+
       lines = (summary?.entries ?? []).slice(0, 8).map((entry) => {
         const unitKey = getDynamicPriceUnitLabelKey(entry)
+
         const unit = entry.variable
           ? tokenPriceUnit
           : `/ ${taskUsageUnitLabel(entry, i18n.language, unitKey ? t(unitKey) : '')}`
+
         return {
           id: entry.key,
+
           label:
             entry.labelKind === 'schema'
               ? taskPriceLabel(
@@ -273,8 +352,11 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
                   i18n.language
                 )
               : t(entry.shortLabel),
+
           value: entry.formattedRange ?? stripTrailingZeros(entry.formatted),
+
           unit,
+
           tone: getDynamicMetricTone(entry.field),
         }
       })
@@ -284,7 +366,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       lines = [
         {
           id: 'input',
+
           label: t('Input'),
+
           value: stripTrailingZeros(
             formatGroupPrice(
               props.model,
@@ -297,11 +381,15 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               groupRatio
             )
           ),
+
           unit: tokenPriceUnit,
         },
+
         {
           id: 'output',
+
           label: t('Output'),
+
           value: stripTrailingZeros(
             formatGroupPrice(
               props.model,
@@ -314,13 +402,17 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               groupRatio
             )
           ),
+
           unit: tokenPriceUnit,
         },
       ]
+
       if (hasCachedPrice) {
         lines.push({
           id: 'cache',
+
           label: t('Cached'),
+
           value: stripTrailingZeros(
             formatGroupPrice(
               props.model,
@@ -333,14 +425,19 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               groupRatio
             )
           ),
+
           unit: tokenPriceUnit,
+
           tone: 'success',
         })
       }
+
       if (props.model.image_ratio != null) {
         lines.push({
           id: 'image',
+
           label: t('Image'),
+
           value: stripTrailingZeros(
             formatGroupPrice(
               props.model,
@@ -353,14 +450,19 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               groupRatio
             )
           ),
+
           unit: tokenPriceUnit,
+
           tone: 'accent',
         })
       }
+
       if (props.model.audio_ratio != null) {
         lines.push({
           id: 'audio-input',
+
           label: t('Audio In'),
+
           value: stripTrailingZeros(
             formatGroupPrice(
               props.model,
@@ -373,17 +475,22 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               groupRatio
             )
           ),
+
           unit: tokenPriceUnit,
+
           tone: 'accent',
         })
       }
+
       if (
         props.model.audio_ratio != null &&
         props.model.audio_completion_ratio != null
       ) {
         lines.push({
           id: 'audio-output',
+
           label: t('Audio Out'),
+
           value: stripTrailingZeros(
             formatGroupPrice(
               props.model,
@@ -396,7 +503,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               groupRatio
             )
           ),
+
           unit: tokenPriceUnit,
+
           tone: 'accent',
         })
       }
@@ -404,7 +513,9 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       lines = [
         {
           id: 'request',
+
           label: t('Per Request'),
+
           value: stripTrailingZeros(
             formatFixedPrice(
               props.model,
@@ -415,6 +526,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
               groupRatio
             )
           ),
+
           unit: `/ ${t('request')}`,
         },
       ]
@@ -434,7 +546,7 @@ export const ModelCard = memo(function ModelCard(props: ModelCardProps) {
       <button
         type='button'
         aria-label={`${t('Details')}: ${props.model.model_name}`}
-        onClick={props.onClick}
+        onClick={() => props.onClick(props.model.model_name)}
         className='focus-visible:ring-ring absolute inset-0 z-10 cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:outline-none'
       />
 

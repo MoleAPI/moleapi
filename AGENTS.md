@@ -12,7 +12,8 @@ This is an AI API gateway/proxy built with Go. It aggregates 40+ upstream AI pro
 - **Frontend**: React 19, TypeScript, Rsbuild, Base UI, Tailwind CSS
 - **Databases**: SQLite, MySQL, PostgreSQL (all three must be supported)
 - **Cache**: Redis (go-redis) + in-memory cache
-- **Auth**: JWT, WebAuthn/Passkeys, OAuth (GitHub, Discord, OIDC, etc.)
+- **Auth**: Browser sessions, API tokens and personal access tokens, JWT, WebAuthn/Passkeys, TOTP, OAuth/OIDC; Casbin authorization in `service/authz/`
+- **Extensions**: JavaScript task plugins executed by moejs; Electron desktop wrapper
 - **Frontend package manager**: Bun (preferred over npm/yarn/pnpm)
 
 ## Architecture
