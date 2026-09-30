@@ -74,7 +74,9 @@ import type { TopupRecord } from '../../types'
 
 interface BillingHistoryDialogProps {
   open: boolean
+
   onOpenChange: (open: boolean) => void
+
   initialUserKeyword?: string
 }
 
@@ -85,7 +87,9 @@ const BILLING_HISTORY_SKELETON_IDS = Array.from(
 
 function BillingDetailRow(props: {
   label: React.ReactNode
+
   value: React.ReactNode
+
   mono?: boolean
 }) {
   return (
@@ -100,46 +104,73 @@ function BillingDetailRow(props: {
 
 export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
   const { t, i18n } = useTranslation()
+
   const {
     records,
+
     total,
+
     page,
+
     pageSize,
+
     keyword,
+
     userKeyword,
+
     startTime,
+
     endTime,
+
     loading,
+
     completing,
+
     isAdmin,
+
     handlePageChange,
+
     handlePageSizeChange,
+
     handleSearch,
+
     handleUserSearch,
+
     handleStartTimeChange,
+
     handleEndTimeChange,
+
     resetFilters,
+
     handleCompleteOrder,
   } = useBillingHistory({ initialUserKeyword: props.initialUserKeyword })
+
   const currentUserId = useAuthStore((state) => state.auth.user?.id)
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
+
   const [detailRecord, setDetailRecord] = useState<TopupRecord | null>(null)
 
   const totalPages = Math.ceil(total / pageSize)
+
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+
   const detailAmount = detailRecord
     ? formatHistoricalTopUpAmount(detailRecord)
     : null
+
   const detailCredit = detailRecord
     ? formatHistoricalCreditedAmount(detailRecord)
     : null
+
   const detailStatus = detailRecord
     ? getStatusConfig(detailRecord.status)
     : null
+
   const detailInvoiceViewUrl = detailRecord
     ? getTopUpInvoiceUrl(detailRecord, currentUserId, isAdmin)
     : null
+
   const detailInvoiceDownloadUrl = detailRecord
     ? getTopUpInvoiceUrl(detailRecord, currentUserId, isAdmin, true)
     : null
@@ -147,6 +178,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
   const handleConfirmComplete = async () => {
     if (confirmTradeNo) {
       const success = await handleCompleteOrder(confirmTradeNo)
+
       if (success) {
         setConfirmTradeNo(null)
       }
@@ -155,7 +187,9 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
 
   const handleInvoice = async (record: TopupRecord, download = false) => {
     const popup = download ? null : window.open('about:blank', '_blank')
+
     if (popup) popup.opener = null
+
     try {
       const invoice = await fetchTopUpInvoiceFile(
         record,
@@ -163,25 +197,37 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
         isAdmin,
         download
       )
+
       if (!invoice) {
         popup?.close()
+
         return
       }
+
       if (download) {
         const link = document.createElement('a')
+
         link.href = invoice.url
+
         link.download = invoice.filename
+
         document.body.append(link)
+
         link.click()
+
         link.remove()
+
         URL.revokeObjectURL(invoice.url)
+
         return
       }
+
       if (popup) {
         popup.location.href = invoice.url
       } else {
         window.open(invoice.url, '_blank', 'noopener,noreferrer')
       }
+
       window.setTimeout(() => URL.revokeObjectURL(invoice.url), 60_000)
     } catch {
       popup?.close()
@@ -197,7 +243,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
         description={t(
           'View your topup transaction records and payment history'
         )}
-        contentClassName='flex max-h-[calc(100dvh-2rem)] flex-col max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4 sm:max-w-6xl'
+        contentClassName='flex max-h-(--dialog-available-height) flex-col max-sm:w-screen max-sm:max-w-none max-sm:rounded-none max-sm:p-4 sm:max-w-6xl'
         contentHeight='auto'
         bodyClassName='space-y-3'
       >
@@ -248,8 +294,11 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
             <Select
               items={[
                 { value: '10', label: t('10 / page') },
+
                 { value: '20', label: t('20 / page') },
+
                 { value: '50', label: t('50 / page') },
+
                 { value: '100', label: t('100 / page') },
               ]}
               value={pageSize.toString()}
@@ -316,12 +365,15 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                 <TableBody className='[&>tr]:h-11'>
                   {records.map((record) => {
                     const statusConfig = getStatusConfig(record.status)
+
                     const topUpAmount = formatHistoricalTopUpAmount(record)
+
                     const invoiceViewUrl = getTopUpInvoiceUrl(
                       record,
                       currentUserId,
                       isAdmin
                     )
+
                     const invoiceDownloadUrl = getTopUpInvoiceUrl(
                       record,
                       currentUserId,
@@ -396,6 +448,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                               className='h-7 px-2'
                               onClick={(event) => {
                                 event.stopPropagation()
+
                                 setDetailRecord(record)
                               }}
                             >
@@ -409,6 +462,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                 className='h-7 px-2'
                                 onClick={(event) => {
                                   event.stopPropagation()
+
                                   void handleInvoice(record)
                                 }}
                               >
@@ -427,6 +481,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                 className='h-7 px-2'
                                 onClick={(event) => {
                                   event.stopPropagation()
+
                                   void handleInvoice(record, true)
                                 }}
                               >
@@ -441,6 +496,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                 className='h-7 px-2'
                                 onClick={(event) => {
                                   event.stopPropagation()
+
                                   setConfirmTradeNo(record.trade_no)
                                 }}
                                 disabled={completing}

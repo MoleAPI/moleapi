@@ -2,9 +2,6 @@ package common
 
 import "strings"
 
-// ZImagePromptExtendMultiplier is the legacy Ali image request surcharge.
-const ZImagePromptExtendMultiplier = 2
-
 var (
 	SystemModelRedirectPrefix = "mole-"
 

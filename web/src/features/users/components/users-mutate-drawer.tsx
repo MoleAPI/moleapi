@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useQuery } from '@tanstack/react-query'
 import { CreditCard, Pencil } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -31,8 +31,8 @@ import {
   sideDrawerFormClassName,
   sideDrawerHeaderClassName,
 } from '@/components/drawer-layout'
+import { PermissionMatrix } from '@/components/permission-matrix'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Combobox } from '@/components/ui/combobox'
 import {
   Form,
@@ -71,11 +71,13 @@ import {
   EMPTY_PERMISSION_CATALOG,
   hasPermission,
   normalizeAdminPermissions,
+  type AdminPermissionMatrix,
 } from '@/lib/admin-permissions'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { formatQuota, parseQuotaFromDollars } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { ROLE } from '@/lib/roles'
+import { AuthOperationError } from '@/lib/secure-verification'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -102,107 +104,214 @@ import { useUsers } from './users-provider'
 
 type UsersMutateDrawerProps = {
   open: boolean
+
   onOpenChange: (open: boolean) => void
+
   currentRow?: User
 }
 
 export function UsersMutateDrawer({
   open,
+
   onOpenChange,
+
   currentRow,
 }: UsersMutateDrawerProps) {
   const { t } = useTranslation()
+
   const isUpdate = !!currentRow
-  const { triggerRefresh } = useUsers()
+
+  const { triggerRefresh, requestVerification } = useUsers()
+
   const currentUser = useAuthStore((s) => s.auth.user)
+
   const { status } = useStatus()
+
   const [isSubmitting, setIsSubmitting] = useState(false)
+
   const [quotaDialogOpen, setQuotaDialogOpen] = useState(false)
+
   const [billingDialogOpen, setBillingDialogOpen] = useState(false)
 
+  // Matrix as loaded from the server; an unchanged matrix is not resubmitted so
+
+  // routine edits of an administrator do not require step-up verification.
+
+  const loadedPermissions = useRef<AdminPermissionMatrix | undefined>(undefined)
+
   // Fetch groups
+
   const { data: groupsData } = useQuery({
     queryKey: ['groups'],
+
     queryFn: async () => requireServerSuccess(await getGroups()),
+
     staleTime: 5 * 60 * 1000,
   })
 
   const groups = groupsData?.data || []
 
   // Permission catalog is owned by the backend; fetched once and reused.
+
   const { data: permissionCatalog = EMPTY_PERMISSION_CATALOG } = useQuery({
     queryKey: ['admin-permission-catalog'],
+
     queryFn: async () => requireServerSuccess(await getPermissionCatalog()),
+
     staleTime: 5 * 60 * 1000,
   })
+
   const { data: oauthBindingsData } = useQuery({
     queryKey: ['user-oauth-bindings', currentRow?.id],
+
     queryFn: () => getUserOAuthBindings(currentRow?.id ?? 0),
+
     enabled: open && isUpdate && Boolean(currentRow?.id),
   })
 
   const form = useForm<UserFormValues>({
     resolver: zodResolver(userFormSchema),
+
     defaultValues: USER_FORM_DEFAULT_VALUES,
   })
 
   // Load existing data when updating
+
   useEffect(() => {
     if (open && isUpdate && currentRow) {
       // For update, fetch fresh data
+
       void getUser(currentRow.id)
         .then((result) => {
           if (result.success && result.data) {
+            loadedPermissions.current = result.data.admin_permissions
+
             form.reset(transformUserToFormDefaults(result.data))
           } else {
             handleServerError(result, t('Failed to load'))
           }
         })
+
         .catch((error) => handleServerError(error, t('Failed to load')))
     } else if (open && !isUpdate) {
       // For create, reset to defaults
+
       form.reset(USER_FORM_DEFAULT_VALUES)
     }
   }, [open, isUpdate, currentRow, form, t])
 
   const { meta: currencyMeta } = getCurrencyDisplay()
+
   const currencyLabel = getCurrencyLabel()
+
   const tokensOnly = currencyMeta.kind === 'tokens'
 
   const currentQuotaRaw = form.watch('quota_dollars') || 0
+
   const selectedRole = form.watch('role')
+
   const canEditAdminPermissions = currentUser?.role === ROLE.SUPER_ADMIN
+
   const targetIsAdmin = (selectedRole ?? currentRow?.role ?? 0) >= ROLE.ADMIN
+
   const oauthBindingMap = new Map(
     (oauthBindingsData?.data ?? []).map((binding: OAuthBinding) => [
       String(binding.provider_id),
+
       binding,
     ])
   )
+
   const customOAuthProviders = status?.custom_oauth_providers ?? []
 
   const onSubmit = async (data: UserFormValues) => {
     if (!isUpdate) {
       const passwordLength = data.password?.length || 0
+
       if (passwordLength < 8 || passwordLength > 20) {
         form.setError('password', {
           type: 'manual',
+
           message: t('Password must be between 8 and 20 characters'),
         })
+
         return
       }
     }
 
     setIsSubmitting(true)
+
     try {
       const payload = transformFormDataToPayload(
         data,
         currentRow?.id,
         permissionCatalog
       )
+
+      if (
+        isUpdate &&
+        payload.admin_permissions &&
+        JSON.stringify(payload.admin_permissions) ===
+          JSON.stringify(
+            normalizeAdminPermissions(
+              loadedPermissions.current,
+              permissionCatalog
+            )
+          )
+      ) {
+        delete payload.admin_permissions
+      }
+
+      // Resetting a password, rewriting admin permissions, or creating an
+
+      // administrator changes who can sign in or what they may do.
+
+      let proofToken: string | undefined
+
+      if (isUpdate && currentRow) {
+        if (payload.password || payload.admin_permissions) {
+          const proof = await requestVerification({
+            scope: 'admin.user.update',
+
+            context: { user_id: currentRow.id },
+
+            title: t('Verify to update user credentials'),
+
+            description: t(
+              'Confirm your identity before changing the account {{username}}.',
+
+              { username: currentRow.username }
+            ),
+          })
+
+          if (!proof) return
+
+          proofToken = proof.proof_token
+        }
+      } else if ((payload.role ?? 0) >= ROLE.ADMIN) {
+        const proof = await requestVerification({
+          scope: 'admin.user.create',
+
+          context: { role: payload.role ?? ROLE.ADMIN },
+
+          title: t('Verify to create administrator'),
+
+          description: t(
+            'Confirm your identity before creating an administrator account.'
+          ),
+        })
+
+        if (!proof) return
+
+        proofToken = proof.proof_token
+      }
+
       const result = isUpdate
-        ? await updateUser(payload as typeof payload & { id: number })
-        : await createUser(payload)
+        ? await updateUser(
+            payload as typeof payload & { id: number },
+            proofToken
+          )
+        : await createUser(payload, proofToken)
 
       if (result.success) {
         toast.success(
@@ -210,13 +319,18 @@ export function UsersMutateDrawer({
             ? t(SUCCESS_MESSAGES.USER_UPDATED)
             : t(SUCCESS_MESSAGES.USER_CREATED)
         )
+
         onOpenChange(false)
+
         triggerRefresh()
       } else {
         handleServerError(result, t(ERROR_MESSAGES.CREATE_FAILED))
       }
     } catch (error) {
-      handleServerError(error, t(ERROR_MESSAGES.UNEXPECTED))
+      handleServerError(
+        AuthOperationError.from(error),
+        t(ERROR_MESSAGES.UNEXPECTED)
+      )
     } finally {
       setIsSubmitting(false)
     }
@@ -224,11 +338,16 @@ export function UsersMutateDrawer({
 
   const refreshUserData = async () => {
     if (!currentRow) return
+
     try {
       const result = requireServerSuccess(await getUser(currentRow.id))
+
       if (result.success && result.data) {
+        loadedPermissions.current = result.data.admin_permissions
+
         form.reset(transformUserToFormDefaults(result.data))
       }
+
       triggerRefresh()
     } catch (error) {
       handleServerError(error, t('Failed to load'))
@@ -241,6 +360,7 @@ export function UsersMutateDrawer({
         open={open}
         onOpenChange={(v) => {
           onOpenChange(v)
+
           if (!v) {
             form.reset()
           }
@@ -299,6 +419,7 @@ export function UsersMutateDrawer({
                         <Select
                           items={[
                             { value: '1', label: t('Common User') },
+
                             { value: '10', label: t('Admin') },
                           ]}
                           onValueChange={(value) =>
@@ -388,6 +509,7 @@ export function UsersMutateDrawer({
                           <Combobox
                             options={groups.map((group) => ({
                               value: group,
+
                               label: group,
                             }))}
                             onValueChange={field.onChange}
@@ -532,54 +654,14 @@ export function UsersMutateDrawer({
                           field.value,
                           permissionCatalog
                         )
+
                         return (
                           <FormItem>
-                            <div className='space-y-3'>
-                              {permissionCatalog.resources.map((resource) => (
-                                <div
-                                  key={resource.resource}
-                                  className='space-y-2 rounded-md border p-3'
-                                >
-                                  <div className='text-sm font-medium'>
-                                    {t(resource.label_key)}
-                                  </div>
-                                  <div className='space-y-2'>
-                                    {resource.actions.map((option) => (
-                                      <label
-                                        key={option.action}
-                                        className='flex items-start gap-3'
-                                      >
-                                        <Checkbox
-                                          checked={
-                                            selected[resource.resource]?.[
-                                              option.action
-                                            ] === true
-                                          }
-                                          onCheckedChange={(checked) => {
-                                            field.onChange({
-                                              ...selected,
-                                              [resource.resource]: {
-                                                ...selected[resource.resource],
-                                                [option.action]:
-                                                  checked === true,
-                                              },
-                                            })
-                                          }}
-                                        />
-                                        <span className='flex flex-col gap-1'>
-                                          <span className='text-sm font-medium'>
-                                            {t(option.label_key)}
-                                          </span>
-                                          <span className='text-muted-foreground text-xs'>
-                                            {t(option.description_key)}
-                                          </span>
-                                        </span>
-                                      </label>
-                                    ))}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
+                            <PermissionMatrix
+                              resources={permissionCatalog.resources}
+                              value={selected}
+                              onChange={field.onChange}
+                            />
                             <FormMessage />
                           </FormItem>
                         )
@@ -632,6 +714,7 @@ export function UsersMutateDrawer({
                     ))}
                     {customOAuthProviders.map((provider) => {
                       const binding = oauthBindingMap.get(String(provider.id))
+
                       return (
                         <div key={`custom-oauth-${provider.id}`}>
                           <Label className='text-muted-foreground text-xs'>

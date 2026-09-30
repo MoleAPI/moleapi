@@ -13,7 +13,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from '@/components/ui/empty'
-import { AccessTokenCard } from '@/features/security/components/access-token-card'
+import { AccessTokensCard } from '@/features/security/components/access-tokens-card'
 import { LoginSessionsCard } from '@/features/security/components/login-sessions-card'
 import { PasskeyCard } from '@/features/security/components/passkey-card'
 import { TwoFACard } from '@/features/security/components/two-fa-card'
@@ -91,7 +91,7 @@ export function Profile() {
                   loading={loading}
                   onProfileUpdate={refreshProfile}
                 />
-                <AccessTokenCard />
+                <AccessTokensCard />
                 <LoginSessionsCard />
                 <ProfileSecurityCard
                   profile={profile}

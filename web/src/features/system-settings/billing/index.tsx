@@ -26,88 +26,171 @@ import {
 
 const defaultBillingSettings: BillingSettings = {
   QuotaForNewUser: 0,
-  PreConsumedQuota: 0,
+
   QuotaForInviter: 0,
+
   QuotaForInvitee: 0,
+
   QuotaForInviterOnFirstTopup: 0,
+
   TopUpLink: '',
-  'general_setting.docs_link': '',
+
   'quota_setting.enable_free_model_pre_consume': true,
+
   'quota_setting.default_invite_rebate_ratio': 0,
+
+  'quota_setting.trust_quota_usd': 10,
+
+  'quota_setting.pre_consume_multiplier': 1,
+
   QuotaPerUnit: 500000,
+
   USDExchangeRate: 7,
+
   'general_setting.quota_display_type': 'USD',
+
   'general_setting.custom_currency_symbol': '¤',
+
   'general_setting.custom_currency_exchange_rate': 1,
+
   DisplayInCurrencyEnabled: true,
+
   DisplayTokenStatEnabled: true,
+
   ModelPrice: '',
+
   ModelRatio: '',
+
   CacheRatio: '',
+
   CreateCacheRatio: '',
+
   CompletionRatio: '',
+
   ImageRatio: '',
+
   AudioRatio: '',
+
   AudioCompletionRatio: '',
+
   ExposeRatioEnabled: false,
+
   'billing_setting.billing_mode': '{}',
+
   'billing_setting.billing_expr': '{}',
+
   'billing_setting.plugin_billing_expr': '{}',
+
   'tool_price_setting.prices': '{}',
+
   TopupGroupRatio: '',
+
   GroupRatio: '',
+
   UserUsableGroups: '',
+
   GroupGroupRatio: '',
+
   AutoGroups: '',
+
   MaxTokenAutoGroups: 5,
+
   DefaultUseAutoGroup: false,
+
   'group_ratio_setting.group_special_usable_group': '{}',
+
   PayAddress: '',
+
   EpayId: '',
+
   EpayKey: '',
+
   Price: 7.3,
+
   MinTopUp: 1,
+
   CustomCallbackAddress: '',
+
   PayMethods: '',
+
   'payment_setting.amount_options': '',
+
   'payment_setting.amount_discount': '',
+
   'payment_setting.compliance_confirmed': false,
+
   'payment_setting.compliance_terms_version': '',
+
   'payment_setting.compliance_confirmed_at': 0,
+
   'payment_setting.compliance_confirmed_by': 0,
+
   'payment_setting.compliance_confirmed_ip': '',
+
   StripeApiSecret: '',
+
   StripeWebhookSecret: '',
+
   StripePriceId: '',
+
   StripeUnitPrice: 8.0,
+
   StripeMinTopUp: 1,
+
   StripePromotionCodesEnabled: false,
+
   CreemApiKey: '',
+
   CreemWebhookSecret: '',
+
   CreemTestMode: false,
+
   CreemProducts: '[]',
+
   WaffoEnabled: false,
+
   WaffoApiKey: '',
+
   WaffoPrivateKey: '',
+
   WaffoPublicCert: '',
+
   WaffoSandboxPublicCert: '',
+
   WaffoSandboxApiKey: '',
+
   WaffoSandboxPrivateKey: '',
+
   WaffoSandbox: false,
+
   WaffoMerchantId: '',
+
   WaffoCurrency: 'USD',
+
   WaffoUnitPrice: 1,
+
   WaffoMinTopUp: 1,
+
   WaffoNotifyUrl: '',
+
   WaffoReturnUrl: '',
+
   WaffoPayMethods: '[]',
+
   WaffoPancakeMerchantID: '',
+
   WaffoPancakePrivateKey: '',
+
   WaffoPancakeReturnURL: '',
+
   WaffoPancakeStoreID: '',
+
   WaffoPancakeProductID: '',
+
   'checkin_setting.enabled': false,
+
   'checkin_setting.min_quota': 1000,
+
   'checkin_setting.max_quota': 10000,
 }
 
