@@ -35,6 +35,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import DOMPurify from 'dompurify'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -89,6 +90,7 @@ import { toIntlLocale } from '@/i18n/languages'
 import { handleServerError } from '@/lib/handle-server-error'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
+import { useNotificationStore } from '@/stores/notification-store'
 
 import {
   downloadSupportAttachment,
@@ -112,9 +114,18 @@ import { TicketCreateForm } from './components/ticket-create-form'
 export function Support() {
   const { t } = useTranslation()
   const isAdmin = useIsAdmin()
-  const accountEmail = useAuthStore((state) => state.auth.user?.email)
+  const account = useAuthStore((state) => state.auth.user)
+  const accountEmail = account?.email
   const queryClient = useQueryClient()
-  const [selectedTicket, setSelectedTicket] = useState<string | null>(null)
+  const search = useSearch({ from: '/_authenticated/support/' })
+  const navigate = useNavigate({ from: '/support/' })
+  const selectedTicket = search.ticket ?? null
+  const setSelectedTicket = (id: string | null) => {
+    void navigate({ search: { ticket: id ?? undefined } })
+  }
+  const markSupportTicketRead = useNotificationStore(
+    (state) => state.markSupportTicketRead
+  )
   const [userPanel, setUserPanel] = useState<'overview' | 'ai' | 'create'>(
     'overview'
   )
@@ -140,7 +151,13 @@ export function Support() {
     queryFn: getSupportConfig,
   })
   const tickets = useInfiniteQuery({
-    queryKey: ['support', 'tickets'],
+    queryKey: [
+      'support',
+      'tickets',
+      account?.id,
+      account?.role,
+      account?.email,
+    ],
     queryFn: ({ pageParam }) => getSupportTickets(pageParam),
     initialPageParam: 0,
     getNextPageParam: (page) => (page.has_more ? page.next_from : undefined),
@@ -156,7 +173,14 @@ export function Support() {
   }, [tickets.dataUpdatedAt])
   const ticketList = tickets.data?.pages.flatMap((page) => page.tickets) ?? []
   const detail = useQuery({
-    queryKey: ['support', 'ticket', selectedTicket],
+    queryKey: [
+      'support',
+      'ticket',
+      selectedTicket,
+      account?.id,
+      account?.role,
+      account?.email,
+    ],
     queryFn: () => {
       if (!selectedTicket) throw new Error('Ticket ID is required')
       return getSupportTicket(selectedTicket)
@@ -164,6 +188,16 @@ export function Support() {
     enabled: selectedTicket != null,
     staleTime: 30_000,
   })
+  useEffect(() => {
+    const ticket = detail.data?.ticket
+    if (account?.id && ticket && ticket.id === selectedTicket) {
+      markSupportTicketRead(
+        account.id,
+        ticket.id,
+        ticket.modifiedTime || ticket.createdTime
+      )
+    }
+  }, [account?.id, selectedTicket, detail.data?.ticket, markSupportTicketRead])
   const sendReply = useMutation({
     mutationFn: async ({
       id,

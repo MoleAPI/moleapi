@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -277,7 +278,6 @@ func TestSetPublicUpstreamErrorClassifiesDomesticProviderCodes(t *testing.T) {
 			require.Equal(t, test.wantType, publicError.Type)
 			require.Equal(t, test.wantCode, publicError.Code)
 			require.Equal(t, test.wantParam, publicError.Param)
-			require.NotEqual(t, test.message, publicError.Message)
 			require.NotContains(t, publicError.Message, "sk-secret")
 		})
 	}
@@ -308,6 +308,50 @@ func TestSetPublicUpstreamErrorKeepsRawAdminDetail(t *testing.T) {
 	require.Equal(t, "upstream_unavailable", upstreamError.ToOpenAIError().Code)
 	require.NotContains(t, upstreamError.ToOpenAIError().Message, "sk-secret")
 	require.Equal(t, "overloaded_error", upstreamError.ToClaudeError().Type)
+}
+
+func TestRelayBadRequestPreservesSafeValidationDetails(t *testing.T) {
+	for _, tc := range []struct {
+		name, message, param string
+		status               int
+		visible              bool
+	}{
+		{"output minimum", "Invalid 'max_output_tokens': integer below minimum value. Expected a value >= 16, but got 8 instead.", "max_output_tokens", 400, true},
+		{"unknown field", "Unrecognized request argument supplied: reasoning_effort", "reasoning_effort", 400, true},
+		{"unsupported field", "include is not supported yet", "include", 400, true},
+		{"missing field", "contents is required", "contents", 400, true},
+		{"parameter replacement", "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.", "max_tokens", 400, true},
+		{"private route", "Invalid request for channel private-route in group internal-team", "", 400, false},
+		{"private credential", "Invalid request with sk-private-secret", "", 400, false},
+		{"private endpoint", "Invalid request at https://internal.example/path?key=private", "", 400, false},
+		{"private hostname", "Invalid request from edge.provider.example", "", 400, false},
+		{"private ipv6", "Invalid request from 2001:db8::1", "", 400, false},
+		{"private body", `Invalid request: {"api_key":"private"}`, "", 400, false},
+		{"upstream billing", "Invalid request: insufficient balance", "", 400, false},
+		{"oversized error", "Invalid request " + strings.Repeat("x", 3000), "", 400, false},
+		{"other status", "contents is required", "contents", 500, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := common.Marshal(map[string]any{"error": types.OpenAIError{Message: tc.message, Type: "invalid_request_error", Param: tc.param, Metadata: []byte(`{"private":"secret"}`)}})
+			require.NoError(t, err)
+			for _, debugBody := range []bool{false, true} {
+				upstream := RelayErrorHandler(context.Background(), &http.Response{StatusCode: tc.status, Body: io.NopCloser(bytes.NewReader(body))}, debugBody)
+				require.NotNil(t, upstream)
+				public := upstream.ToOpenAIError()
+				assert.Contains(t, upstream.Error(), tc.message)
+				assert.Empty(t, public.Metadata)
+				if tc.visible {
+					assert.Equal(t, http.StatusBadRequest, upstream.PublicStatusCode())
+					assert.Equal(t, tc.message, public.Message)
+					assert.Equal(t, tc.param, public.Param)
+					assert.Equal(t, tc.message, upstream.ToClaudeError().Message)
+				} else {
+					assert.NotEqual(t, tc.message, public.Message)
+					assert.NotContains(t, public.Message, "private")
+				}
+			}
+		})
+	}
 }
 
 func TestRelayErrorHandlerKeepsInvalidJSONBodyInDebugLog(t *testing.T) {

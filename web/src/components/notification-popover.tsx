@@ -16,8 +16,27 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { Link } from '@tanstack/react-router'
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
 import type { TFunction } from 'i18next'
-import { Bell, Megaphone } from 'lucide-react'
+import { Bell, Megaphone, Ticket } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { RichContent } from '@/components/rich-content'
@@ -40,6 +59,8 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import type { SupportTicket } from '@/features/support/api'
+import type { NotificationTab } from '@/hooks/use-notifications'
 import { getAnnouncementColorClass } from '@/lib/colors'
 import { formatDateTimeObject } from '@/lib/time'
 import { cn } from '@/lib/utils'
@@ -56,11 +77,19 @@ interface NotificationPopoverProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   unreadCount: number
-  activeTab: 'notice' | 'announcements'
-  onTabChange: (tab: 'notice' | 'announcements') => void
+  activeTab: NotificationTab
+  onTabChange: (tab: NotificationTab) => void
   notice: string
   announcements: AnnouncementItem[]
   loading: boolean
+  support?: {
+    enabled: boolean
+    tickets: (SupportTicket & { unread: boolean })[]
+    unreadCount: number
+    loading: boolean
+    error: boolean
+    retry: () => void
+  }
   className?: string
 }
 
@@ -299,9 +328,67 @@ export function NotificationPopover({
   notice,
   announcements,
   loading,
+  support,
   className,
 }: NotificationPopoverProps) {
   const { t } = useTranslation()
+  let ticketContent = (
+    <EmptyState icon={<Ticket />} title={t('No new ticket updates')} />
+  )
+  if (support?.tickets.length) {
+    ticketContent = (
+      <ScrollArea className='h-[min(52vh,28rem)]'>
+        <div className='flex flex-col gap-1'>
+          {support.tickets.map((ticket) => (
+            <Button
+              key={ticket.id}
+              role='link'
+              variant='ghost'
+              className='h-auto justify-start px-3 py-3 text-left whitespace-normal'
+              render={
+                <Link
+                  to='/support'
+                  search={{ ticket: ticket.id }}
+                  onClick={() => onOpenChange(false)}
+                />
+              }
+            >
+              <span className='min-w-0 flex-1 space-y-1'>
+                <span className='text-muted-foreground flex items-center gap-2 text-xs'>
+                  #{ticket.ticketNumber}
+                  {ticket.unread && (
+                    <Badge variant='secondary'>{t('Unread')}</Badge>
+                  )}
+                </span>
+                <span className='block [overflow-wrap:anywhere] break-words'>
+                  {ticket.subject}
+                </span>
+                <span className='text-muted-foreground block text-xs font-normal'>
+                  {getRelativeTime(
+                    ticket.modifiedTime || ticket.createdTime,
+                    t
+                  )}
+                </span>
+              </span>
+            </Button>
+          ))}
+        </div>
+      </ScrollArea>
+    )
+  }
+  if (support?.loading) {
+    ticketContent = <EmptyState icon={<Ticket />} title={t('Loading...')} />
+  }
+  if (support?.error) {
+    ticketContent = (
+      <div className='space-y-3 p-3'>
+        <p className='text-sm'>{t('Unable to load ticket updates.')}</p>
+        <Button variant='outline' size='sm' onClick={support.retry}>
+          {t('Retry')}
+        </Button>
+      </div>
+    )
+  }
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger
@@ -331,17 +418,24 @@ export function NotificationPopover({
         className='w-[min(26rem,calc(100vw-1rem))] gap-3 p-3'
       >
         <PopoverHeader className='gap-1 px-1'>
-          <PopoverTitle>{t('System Announcements')}</PopoverTitle>
+          <PopoverTitle>{t('Notifications')}</PopoverTitle>
           <p className='text-muted-foreground text-xs'>
             {t('Latest platform updates and notices')}
           </p>
         </PopoverHeader>
 
         <Tabs
-          value={activeTab}
+          value={
+            activeTab === 'tickets' && !support?.enabled ? 'notice' : activeTab
+          }
           onValueChange={onTabChange as (value: string) => void}
         >
-          <TabsList className='grid w-full grid-cols-2'>
+          <TabsList
+            className={cn(
+              'grid w-full grid-cols-2',
+              support?.enabled && 'grid-cols-3'
+            )}
+          >
             <TabsTrigger value='notice' className='gap-1.5'>
               <Bell className='size-3.5' />
               {t('Notice')}
@@ -350,6 +444,15 @@ export function NotificationPopover({
               <Megaphone className='size-3.5' />
               {t('Timeline')}
             </TabsTrigger>
+            {support?.enabled && (
+              <TabsTrigger value='tickets' className='gap-1.5'>
+                <Ticket className='size-3.5' />
+                {t('Tickets')}
+                {support.unreadCount > 0 && (
+                  <span className='tabular-nums'>({support.unreadCount})</span>
+                )}
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value='notice' className='mt-2'>
@@ -363,6 +466,21 @@ export function NotificationPopover({
               t={t}
             />
           </TabsContent>
+          {support?.enabled && (
+            <TabsContent value='tickets' className='mt-2'>
+              {ticketContent}
+              <Button
+                role='link'
+                variant='link'
+                size='sm'
+                render={
+                  <Link to='/support' onClick={() => onOpenChange(false)} />
+                }
+              >
+                {t('Support center')}
+              </Button>
+            </TabsContent>
+          )}
         </Tabs>
 
         <div className='flex justify-end'>
