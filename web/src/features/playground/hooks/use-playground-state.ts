@@ -272,11 +272,11 @@ export function usePlaygroundState(
   }, [conversationScope])
 
   const renameConversation = useCallback(
-    (title: string) => {
+    (sessionId: string, title: string) => {
       const trimmedTitle = title.trim().slice(0, 60)
-      if (!trimmedTitle || !activeSessionIdRef.current) return
+      if (!trimmedTitle || !sessionId) return
       const nextSessions = latestSessionsRef.current.map((session) =>
-        session.id === activeSessionIdRef.current
+        session.id === sessionId
           ? { ...session, title: trimmedTitle, updatedAt: Date.now() }
           : session
       )
