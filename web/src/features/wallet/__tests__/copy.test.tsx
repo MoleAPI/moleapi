@@ -90,6 +90,10 @@ it.each([
             stripe_min_topup: 1,
             amount_options: [100, 20],
             discount: {},
+            bonus: {},
+            quota_for_inviter: 0,
+            quota_for_invitee: 0,
+            quota_for_inviter_on_first_topup: 0,
           }}
           presetAmounts={[{ value: 100, discount: 0.8 }, { value: 20 }]}
           selectedPreset={null}
