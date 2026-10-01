@@ -316,7 +316,7 @@ export function RechargeFormCard({
                     value={localAmount}
                     onChange={(e) => handleAmountChange(e.target.value)}
                     min={minTopup}
-                    placeholder={`Minimum ${minTopup}`}
+                    placeholder={t('Minimum {{amount}}', { amount: minTopup })}
                     className='h-9 text-base sm:h-10 sm:text-lg'
                   />
                   <div className='bg-muted/30 flex min-h-9 items-center justify-between gap-2 rounded-md border px-3 lg:min-w-52'>

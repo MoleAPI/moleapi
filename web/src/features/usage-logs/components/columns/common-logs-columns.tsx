@@ -946,9 +946,7 @@ export function useCommonLogsColumns(
 
       {
         accessorKey: 'prompt_tokens',
-
-        header: 'Tokens',
-
+        header: t('Tokens', { context: 'usage' }),
         cell: ({ row }) => {
           const log = row.original
 
