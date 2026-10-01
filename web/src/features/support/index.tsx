@@ -110,6 +110,7 @@ import {
   type AssistantTicketDraft,
 } from './components/support-assistant'
 import { TicketCreateForm } from './components/ticket-create-form'
+import { useTicketUpdates } from './hooks/use-ticket-updates'
 
 export function Support() {
   const { t } = useTranslation()
@@ -161,7 +162,10 @@ export function Support() {
     queryFn: ({ pageParam }) => getSupportTickets(pageParam),
     initialPageParam: 0,
     getNextPageParam: (page) => (page.has_more ? page.next_from : undefined),
-    staleTime: 60_000,
+    staleTime: 5 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     enabled:
       config.data?.enabled === true && (isAdmin || Boolean(accountEmail)),
   })
@@ -186,8 +190,25 @@ export function Support() {
       return getSupportTicket(selectedTicket)
     },
     enabled: selectedTicket != null,
-    staleTime: 30_000,
+    staleTime: 5 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   })
+  const hasStaffReply =
+    detail.data?.conversations.some(
+      (message) =>
+        message.direction === 'out' ||
+        message.author?.type === 'AGENT' ||
+        message.commenter?.type === 'AGENT'
+    ) ?? false
+  useTicketUpdates(
+    detail.data?.ticket,
+    isAdmin,
+    hasStaffReply,
+    account?.id,
+    detail.refetch
+  )
   useEffect(() => {
     const ticket = detail.data?.ticket
     if (account?.id && ticket && ticket.id === selectedTicket) {

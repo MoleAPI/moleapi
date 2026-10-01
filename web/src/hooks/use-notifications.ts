@@ -16,10 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
-import { useState, useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo, useEffect } from 'react'
 
 import { getSupportConfig, getSupportTickets } from '@/features/support/api'
+import {
+  isSupportWorkingTime,
+  useSupportWorkingHours,
+} from '@/features/support/hooks/use-ticket-updates'
 import { useIsAdmin } from '@/hooks/use-admin'
 import { useStatus } from '@/hooks/use-status'
 import { getNotice } from '@/lib/api'
@@ -73,6 +77,7 @@ export function useNotifications() {
   const [activeTab, setActiveTab] = useState<NotificationTab>('notice')
   const user = useAuthStore((state) => state.auth.user)
   const isAdmin = useIsAdmin()
+  const workingHours = useSupportWorkingHours()
   const supportConfig = useQuery({
     queryKey: ['support', 'config'],
     queryFn: getSupportConfig,
@@ -83,16 +88,39 @@ export function useNotifications() {
   const supportEnabled = Boolean(
     user && supportConfig.data?.enabled && (isAdmin || user.email)
   )
-  const support = useInfiniteQuery({
-    queryKey: ['support', 'tickets', user?.id, user?.role, user?.email],
-    queryFn: ({ pageParam }) => getSupportTickets(pageParam),
-    initialPageParam: 0,
-    getNextPageParam: (page) => (page.has_more ? page.next_from : undefined),
-    enabled: supportEnabled,
-    staleTime: 60_000,
-    refetchInterval: 60_000,
+  const support = useQuery({
+    queryKey: [
+      'support',
+      'tickets',
+      'notifications',
+      user?.id,
+      user?.role,
+      user?.email,
+    ],
+    queryFn: () => getSupportTickets(0, 'notifications'),
+    enabled:
+      supportEnabled &&
+      ((isAdmin && workingHours) || (popoverOpen && activeTab === 'tickets')),
+    // ponytail: admins poll one recent page; users fetch notifications on demand.
+    staleTime: (isAdmin ? 30 : 5) * 60_000,
+    gcTime: 30 * 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
     meta: { errorToast: false },
   })
+
+  const refetchSupport = support.refetch
+  useEffect(() => {
+    if (!isAdmin || !supportEnabled || !workingHours) return
+    const timer = window.setInterval(() => {
+      // Recheck at execution time, including timers delayed while the tab slept.
+      if (isSupportWorkingTime() && document.visibilityState !== 'hidden') {
+        void refetchSupport()
+      }
+    }, 30 * 60_000)
+    return () => window.clearInterval(timer)
+  }, [isAdmin, supportEnabled, workingHours, refetchSupport])
 
   // Fetch Notice from API
   const {
@@ -125,10 +153,8 @@ export function useNotifications() {
     readSupportTickets,
   } = useNotificationStore()
 
-  // ponytail: reuse the recent-ticket list and its permissions. A server feed
-  // is the upgrade path if notifications must cover more than the latest page.
   const ticketNotifications = supportEnabled
-    ? (support.data?.pages[0]?.tickets ?? [])
+    ? (support.data?.tickets ?? [])
         .filter(
           (ticket) =>
             !ticket.isArchived &&

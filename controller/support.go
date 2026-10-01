@@ -16,12 +16,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/hot"
 	"github.com/shopspring/decimal"
 	"golang.org/x/net/html"
 )
@@ -378,6 +380,18 @@ func safeSupportContentDisposition(value string) string {
 	return disposition
 }
 
+type supportActivityCacheKey struct {
+	Config                               zohoDeskConfig
+	TicketID, ModifiedTime, CommentCount string
+	Revision                             uint64
+}
+
+// ponytail: share unchanged activity for a day within one server, bounded to 1024 entries.
+// Use a shared cache if multiple servers need to coordinate these reads.
+var supportActivityCache = hot.NewHotCache[supportActivityCacheKey, string](hot.LRU, 1024).
+	WithTTL(24 * time.Hour).Build()
+var supportActivityRevision atomic.Uint64
+
 var zohoDeskTokenCache struct {
 	sync.Mutex
 	token     string
@@ -466,6 +480,10 @@ func zohoDeskRequest(cfg zohoDeskConfig, method, path string, body any, result a
 	if res.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
 		return fmt.Errorf("Zoho Desk returned %d: %s", res.StatusCode, strings.TrimSpace(string(message)))
+	}
+	if method != http.MethodGet {
+		// Ignore pre-write activity even if a read was still in flight.
+		supportActivityRevision.Add(1)
 	}
 	if result == nil || res.StatusCode == http.StatusNoContent {
 		return nil
@@ -588,6 +606,7 @@ func ListSupportTickets(c *gin.Context) {
 	}
 	query := "?limit=20&from=" + strconv.Itoa(from) + "&sortBy=-modifiedTime&departmentId=" + url.QueryEscape(cfg.DepartmentID)
 	path := "/tickets" + query
+	notifications := c.Query("view") == "notifications"
 	archivedView := c.GetInt("role") >= common.RoleAdminUser && c.Query("view") == "archived"
 	if archivedView {
 		path = "/tickets/archivedTickets?limit=100&from=" + strconv.Itoa(from) + "&departmentId=" + url.QueryEscape(cfg.DepartmentID)
@@ -610,7 +629,7 @@ func ListSupportTickets(c *gin.Context) {
 	}
 	tickets := make([]zohoDeskTicket, 0, len(result.Data))
 	for _, ticket := range result.Data {
-		if ticket.DepartmentID != cfg.DepartmentID || (email != "" && !strings.EqualFold(ticket.Email, email)) {
+		if ticket.DepartmentID != cfg.DepartmentID || (email != "" && !strings.EqualFold(ticket.Email, email)) || (notifications && ticket.Archived) {
 			continue
 		}
 		if c.GetInt("role") >= common.RoleAdminUser {
@@ -648,7 +667,7 @@ func ListSupportTickets(c *gin.Context) {
 				return
 			}
 		}
-	} else if c.GetInt("role") >= common.RoleAdminUser && from == 0 {
+	} else if c.GetInt("role") >= common.RoleAdminUser && from == 0 && !notifications {
 		var archived struct {
 			Data []zohoDeskTicket `json:"data"`
 		}
@@ -671,12 +690,12 @@ func ListSupportTickets(c *gin.Context) {
 			}
 		}
 	}
-	// Portal replies are public comments, not email threads. Bound concurrent
-	// lookups to avoid exhausting Zoho's per-organization request allowance.
+	// Portal replies are public comments, not email threads. Reuse unchanged
+	// activity and bound concurrent lookups within this response.
 	var pending sync.WaitGroup
 	slots := make(chan struct{}, 4)
 	for i := range tickets {
-		if tickets[i].CommentCount == "" || tickets[i].CommentCount == "0" {
+		if tickets[i].Archived || tickets[i].CommentCount == "" || tickets[i].CommentCount == "0" {
 			continue
 		}
 		slots <- struct{}{}
@@ -684,15 +703,22 @@ func ListSupportTickets(c *gin.Context) {
 		go func(ticket *zohoDeskTicket) {
 			defer pending.Done()
 			defer func() { <-slots }()
-			var conversations struct {
-				Data []zohoDeskConversation `json:"data"`
-			}
 			ticket.Activity = "unknown"
-			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/conversations?limit=20", nil, &conversations); err == nil {
-				for i := range conversations.Data {
-					normalizeSupportPortalComment(&conversations.Data[i])
+			key := supportActivityCacheKey{cfg, ticket.ID, ticket.ModifiedTime, ticket.CommentCount, supportActivityRevision.Load()}
+			if key.ModifiedTime == "" {
+				key.ModifiedTime = time.Now().UTC().Truncate(5 * time.Minute).Format(time.RFC3339)
+			}
+			activity, found, err := supportActivityCache.GetWithLoaders(key, func(_ []supportActivityCacheKey) (map[supportActivityCacheKey]string, error) {
+				var conversations struct {
+					Data []zohoDeskConversation `json:"data"`
 				}
-				ticket.Activity = supportConversationActivity(conversations.Data)
+				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/conversations?limit=20", nil, &conversations); err != nil {
+					return nil, err
+				}
+				return map[supportActivityCacheKey]string{key: supportConversationActivity(conversations.Data)}, nil
+			})
+			if err == nil && found {
+				ticket.Activity = activity
 			}
 		}(&tickets[i])
 	}
@@ -955,6 +981,10 @@ func GetSupportTicket(c *gin.Context) {
 	}
 	ticket, ok := loadSupportTicket(c, cfg)
 	if !ok {
+		return
+	}
+	if c.Query("view") == "updates" {
+		common.ApiSuccess(c, gin.H{"modifiedTime": ticket.ModifiedTime})
 		return
 	}
 	if c.GetInt("role") >= common.RoleAdminUser {

@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -67,6 +68,117 @@ func TestZohoDeskRequestRefreshesTokenAndAuthenticatesAPIRequest(t *testing.T) {
 	}
 	require.NoError(t, zohoDeskRequest(cfg, http.MethodGet, "/tickets", nil, &result))
 	assert.Empty(t, result.Data)
+}
+
+func TestSupportNotificationReadsReuseActivityAndSkipArchives(t *testing.T) {
+	resetZohoDeskTokenCache()
+	supportActivityCache.Purge()
+	t.Cleanup(supportActivityCache.Purge)
+	var listCalls, archiveCalls, conversationCalls atomic.Int32
+	revision, direction, failConversation := "2026-10-01T01:00:00Z", "in", false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/oauth/v2/token":
+			_, _ = w.Write([]byte(`{"access_token":"access","expires_in":3600}`))
+		case "/api/v1/tickets":
+			listCalls.Add(1)
+			data, err := common.Marshal(gin.H{"data": []gin.H{
+				{"id": "42", "departmentId": "7", "commentCount": "1", "modifiedTime": revision},
+				{"id": "43", "departmentId": "8", "commentCount": "1"},
+			}})
+			require.NoError(t, err)
+			_, _ = w.Write(data)
+		case "/api/v1/tickets/archivedTickets":
+			archiveCalls.Add(1)
+			_, _ = w.Write([]byte(`{"data":[{"id":"45","departmentId":"7","commentCount":"1"}]}`))
+		case "/api/v1/tickets/42/conversations":
+			conversationCalls.Add(1)
+			if failConversation {
+				w.WriteHeader(http.StatusServiceUnavailable)
+				return
+			}
+			data, err := common.Marshal(gin.H{"data": []gin.H{{"type": "thread", "visibility": "public", "direction": direction, "createdTime": revision}}})
+			require.NoError(t, err)
+			_, _ = w.Write(data)
+		case "/api/v1/tickets/45/conversations":
+			conversationCalls.Add(1)
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		case "/api/v1/tickets/42":
+			assert.Equal(t, http.MethodPatch, r.Method)
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			t.Errorf("unexpected request: %s", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	common.OptionMapRWMutex.Lock()
+	previousOptions := common.OptionMap
+	common.OptionMap = map[string]string{
+		"ZohoDeskEnabled": "true", "ZohoDeskClientId": "client", "ZohoDeskClientSecret": "secret",
+		"ZohoDeskRefreshToken": "refresh", "ZohoDeskOrgId": "123", "ZohoDeskDepartmentId": "7",
+		"ZohoDeskApiDomain": server.URL, "ZohoDeskAccountsDomain": server.URL,
+	}
+	common.OptionMapRWMutex.Unlock()
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		common.OptionMap = previousOptions
+		common.OptionMapRWMutex.Unlock()
+		resetZohoDeskTokenCache()
+	})
+	request := func(view string) []zohoDeskTicket {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/support/tickets?view="+view, nil)
+		c.Set("role", common.RoleAdminUser)
+		ListSupportTickets(c)
+		var result struct {
+			Success bool
+			Data    struct{ Tickets []zohoDeskTicket }
+		}
+		require.NoError(t, common.Unmarshal(w.Body.Bytes(), &result))
+		require.True(t, result.Success, w.Body.String())
+		return result.Data.Tickets
+	}
+
+	for range 2 {
+		tickets := request("notifications")
+		require.Len(t, tickets, 1)
+		assert.Equal(t, "customer", tickets[0].Activity)
+	}
+	assert.EqualValues(t, 2, listCalls.Load())
+	assert.Zero(t, archiveCalls.Load())
+	assert.EqualValues(t, 1, conversationCalls.Load(), "unchanged activity should be reused")
+
+	revision, direction = "2026-10-01T02:00:00Z", "out"
+	assert.Equal(t, "agent", request("notifications")[0].Activity)
+	assert.EqualValues(t, 2, conversationCalls.Load(), "a changed ticket must refresh its activity")
+
+	revision, failConversation = "2026-10-01T03:00:00Z", true
+	assert.Equal(t, "unknown", request("notifications")[0].Activity)
+	failConversation = false
+	assert.Equal(t, "agent", request("notifications")[0].Activity)
+	assert.EqualValues(t, 4, conversationCalls.Load(), "failed reads must not be cached")
+
+	tickets := request("")
+	require.Len(t, tickets, 2, "archives remain available in the support workspace")
+	assert.True(t, tickets[1].Archived)
+	assert.Equal(t, "archived", tickets[1].Activity)
+	assert.EqualValues(t, 1, archiveCalls.Load())
+	assert.EqualValues(t, 4, conversationCalls.Load(), "archived conversations are unnecessary")
+
+	direction = "in"
+	require.NoError(t, zohoDeskRequest(getZohoDeskConfig(), http.MethodPatch, "/tickets/42", gin.H{"status": "Open"}, nil))
+	assert.Equal(t, "customer", request("notifications")[0].Activity)
+	assert.EqualValues(t, 5, conversationCalls.Load(), "writes refresh activity even before list metadata changes")
+
+	direction = "out"
+	common.OptionMapRWMutex.Lock()
+	common.OptionMap["ZohoDeskOrgId"] = "456"
+	common.OptionMapRWMutex.Unlock()
+	assert.Equal(t, "agent", request("notifications")[0].Activity)
+	assert.EqualValues(t, 6, conversationCalls.Load(), "organizations must not share cached activity")
 }
 
 func TestZohoDeskUploadAttachment(t *testing.T) {
@@ -385,6 +497,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			resetZohoDeskTokenCache()
 			status, department := "Open", "7"
 			patches := 0
+			var conversationReads atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
@@ -419,6 +532,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 				case "/api/v1/contacts/search":
 					_, _ = w.Write([]byte(`{"data":[{"id":"contact-1","email":"alice@example.com"}]}`))
 				case "/api/v1/tickets/42/conversations":
+					conversationReads.Add(1)
 					_, _ = w.Write([]byte(`{"data":[{"id":"1","type":"comment","isPublic":true,"content":"alice (UID 11): hello","commentedTime":"2026-09-18T10:00:00Z"},{"id":"2","type":"comment","isPublic":false,"content":"private note"},{"id":"3","type":"thread","visibility":"public","isDraft":true,"content":"draft"},{"id":"email","type":"thread","direction":"in","summary":"email preview"}]}`))
 				case "/api/v1/tickets/42/threads":
 					assert.Empty(t, r.URL.Query().Get("include"))
@@ -443,16 +557,41 @@ func TestSupportTicketWorkflow(t *testing.T) {
 				common.OptionMapRWMutex.Unlock()
 				resetZohoDeskTokenCache()
 			})
-			request := func(handler gin.HandlerFunc, role, id int, body string) *httptest.ResponseRecorder {
+			request := func(handler gin.HandlerFunc, role, id int, body string, view ...string) *httptest.ResponseRecorder {
 				w := httptest.NewRecorder()
 				c, _ := gin.CreateTestContext(w)
 				c.Request = httptest.NewRequest(http.MethodGet, "/", strings.NewReader(body))
+				if len(view) > 0 {
+					c.Request.URL.RawQuery = "view=" + view[0]
+				}
 				c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "attachment_id", Value: "2"}}
 				c.Set("id", id)
 				c.Set("role", role)
 				handler(c)
 				return w
 			}
+			for _, tc := range []struct {
+				role, id int
+				allowed  bool
+			}{
+				{common.RoleCommonUser, 11, true},
+				{common.RoleCommonUser, 12, false},
+				{common.RoleAdminUser, 12, true},
+			} {
+				var response struct {
+					Success bool
+					Data    map[string]any
+				}
+				require.NoError(t, common.Unmarshal(request(GetSupportTicket, tc.role, tc.id, "", "updates").Body.Bytes(), &response))
+				assert.Equal(t, tc.allowed, response.Success)
+				if tc.allowed {
+					assert.Equal(t, map[string]any{"modifiedTime": ""}, response.Data)
+				}
+			}
+			department = "8"
+			assert.Contains(t, request(GetSupportTicket, common.RoleAdminUser, 12, "", "updates").Body.String(), "Ticket not found")
+			department = "7"
+			assert.Zero(t, conversationReads.Load(), "update checks must not download conversations")
 			for _, tc := range []struct {
 				role, id int
 				target   string

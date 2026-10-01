@@ -102,7 +102,10 @@ export async function getSupportConfig() {
   return requireServerSuccess(response.data).data
 }
 
-export async function getSupportTickets(from = 0, view?: 'archived') {
+export async function getSupportTickets(
+  from = 0,
+  view?: 'archived' | 'notifications'
+) {
   const response = await api.get<
     ApiResponse<{
       tickets: SupportTicket[]
@@ -187,6 +190,14 @@ export async function getSupportTicket(id: string) {
       attachments: SupportAttachment[]
     }>
   >(`/api/support/tickets/${id}`)
+  return requireServerSuccess(response.data).data
+}
+
+export async function getSupportTicketUpdates(id: string) {
+  const response = await api.get<ApiResponse<{ modifiedTime: string }>>(
+    `/api/support/tickets/${id}`,
+    { params: { view: 'updates' } }
+  )
   return requireServerSuccess(response.data).data
 }
 
