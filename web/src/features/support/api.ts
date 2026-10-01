@@ -67,6 +67,8 @@ export type SupportTicket = {
   email: string
   createdTime: string
   modifiedTime: string
+  commentCount?: string
+  threadCount?: string
   statusType?: string
   isArchived?: boolean
   activity?: 'new' | 'customer' | 'agent' | 'unknown'
@@ -194,10 +196,11 @@ export async function getSupportTicket(id: string) {
 }
 
 export async function getSupportTicketUpdates(id: string) {
-  const response = await api.get<ApiResponse<{ modifiedTime: string }>>(
-    `/api/support/tickets/${id}`,
-    { params: { view: 'updates' } }
-  )
+  const response = await api.get<
+    ApiResponse<
+      Pick<SupportTicket, 'modifiedTime' | 'commentCount' | 'threadCount'>
+    >
+  >(`/api/support/tickets/${id}`, { params: { view: 'updates' } })
   return requireServerSuccess(response.data).data
 }
 

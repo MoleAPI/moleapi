@@ -61,53 +61,62 @@ test('checks start at opening time and pause while the tab is hidden', async () 
   unmount()
 })
 
-test('a new ticket checks only its update time; changed replies refresh once and stop after staff reply', async () => {
-  vi.useFakeTimers()
-  vi.setSystemTime(new Date('2026-10-02T01:00:00Z'))
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  const wrapper = ({ children }: PropsWithChildren) => (
-    <QueryClientProvider client={client}>{children}</QueryClientProvider>
-  )
-  const ticket = {
-    id: '42',
-    ticketNumber: '42',
-    subject: 'Help',
-    description: '',
-    status: 'Open',
-    category: '',
-    priority: '',
-    email: 'a@example.com',
-    createdTime: '2026-10-02T01:00:00Z',
-    modifiedTime: '2026-10-02T01:00:00Z',
+test.each(['modifiedTime', 'commentCount', 'threadCount'] as const)(
+  'a new ticket checks metadata; a changed %s refreshes once and checks stop after staff reply',
+  async (field) => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-02T01:00:00Z'))
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    const wrapper = ({ children }: PropsWithChildren) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    const ticket = {
+      id: '42',
+      ticketNumber: '42',
+      subject: 'Help',
+      description: '',
+      status: 'Open',
+      category: '',
+      priority: '',
+      email: 'a@example.com',
+      createdTime: '2026-10-02T01:00:00Z',
+      modifiedTime: '2026-10-02T01:00:00Z',
+      commentCount: '0',
+      threadCount: '1',
+    }
+    const metadata = {
+      modifiedTime: ticket.modifiedTime,
+      commentCount: '0',
+      threadCount: '1',
+    }
+    const get = vi.spyOn(api, 'get').mockImplementation(async () => ({
+      data: { success: true, data: { ...metadata } },
+    }))
+    const refresh = vi.fn().mockResolvedValue(undefined)
+    const { rerender, unmount } = renderHook(
+      ({ replied }) => useTicketUpdates(ticket, false, replied, 1, refresh),
+      { wrapper, initialProps: { replied: false } }
+    )
+    await act(() => vi.advanceTimersByTimeAsync(1))
+    expect(get).not.toHaveBeenCalled()
+    await act(() => vi.advanceTimersByTimeAsync(5 * 60_000))
+    expect(get).toHaveBeenCalledTimes(1)
+    expect(get).toHaveBeenLastCalledWith('/api/support/tickets/42', {
+      params: { view: 'updates' },
+    })
+    expect(refresh).not.toHaveBeenCalled()
+    metadata[field] = field === 'modifiedTime' ? '2026-10-02T01:09:00Z' : '2'
+    await act(() => vi.advanceTimersByTimeAsync(5 * 60_000))
+    expect(refresh).toHaveBeenCalledTimes(1)
+    rerender({ replied: true })
+    await act(() => vi.advanceTimersByTimeAsync(30 * 60_000))
+    expect(get).toHaveBeenCalledTimes(2)
+    unmount()
+    client.clear()
   }
-  let modifiedTime = ticket.modifiedTime
-  const get = vi.spyOn(api, 'get').mockImplementation(async () => ({
-    data: { success: true, data: { modifiedTime } },
-  }))
-  const refresh = vi.fn().mockResolvedValue(undefined)
-  const { rerender, unmount } = renderHook(
-    ({ replied }) => useTicketUpdates(ticket, false, replied, 1, refresh),
-    { wrapper, initialProps: { replied: false } }
-  )
-  await act(() => vi.advanceTimersByTimeAsync(1))
-  expect(get).not.toHaveBeenCalled()
-  await act(() => vi.advanceTimersByTimeAsync(5 * 60_000))
-  expect(get).toHaveBeenCalledTimes(1)
-  expect(get).toHaveBeenLastCalledWith('/api/support/tickets/42', {
-    params: { view: 'updates' },
-  })
-  expect(refresh).not.toHaveBeenCalled()
-  modifiedTime = '2026-10-02T01:09:00Z'
-  await act(() => vi.advanceTimersByTimeAsync(5 * 60_000))
-  expect(refresh).toHaveBeenCalledTimes(1)
-  rerender({ replied: true })
-  await act(() => vi.advanceTimersByTimeAsync(30 * 60_000))
-  expect(get).toHaveBeenCalledTimes(2)
-  unmount()
-  client.clear()
-})
+)
 
 test.each([
   {

@@ -77,11 +77,11 @@ export function useTicketUpdates(
     queryFn: () => {
       if (!ticket) throw new Error('Ticket ID is required')
       if (!isSupportWorkingTime() || document.visibilityState === 'hidden') {
-        return { modifiedTime: ticket.modifiedTime }
+        return ticket
       }
       return getSupportTicketUpdates(ticket.id)
     },
-    initialData: ticket ? { modifiedTime: ticket.modifiedTime } : undefined,
+    initialData: ticket,
     enabled: eligible && workingHours,
     staleTime: interval,
     refetchInterval: eligible && workingHours ? interval : false,
@@ -94,8 +94,10 @@ export function useTicketUpdates(
     if (
       eligible &&
       workingHours &&
-      updates.data?.modifiedTime &&
-      updates.data.modifiedTime !== ticket?.modifiedTime
+      updates.data &&
+      (updates.data.modifiedTime !== ticket?.modifiedTime ||
+        updates.data.commentCount !== ticket?.commentCount ||
+        updates.data.threadCount !== ticket?.threadCount)
     ) {
       void refresh()
     }
@@ -105,6 +107,8 @@ export function useTicketUpdates(
     updates.data,
     updates.dataUpdatedAt,
     ticket?.modifiedTime,
+    ticket?.commentCount,
+    ticket?.threadCount,
     refresh,
   ])
 }

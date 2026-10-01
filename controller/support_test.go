@@ -76,6 +76,7 @@ func TestSupportNotificationReadsReuseActivityAndSkipArchives(t *testing.T) {
 	t.Cleanup(supportActivityCache.Purge)
 	var listCalls, archiveCalls, conversationCalls atomic.Int32
 	revision, direction, failConversation := "2026-10-01T01:00:00Z", "in", false
+	threadCount := "1"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -84,7 +85,7 @@ func TestSupportNotificationReadsReuseActivityAndSkipArchives(t *testing.T) {
 		case "/api/v1/tickets":
 			listCalls.Add(1)
 			data, err := common.Marshal(gin.H{"data": []gin.H{
-				{"id": "42", "departmentId": "7", "commentCount": "1", "modifiedTime": revision},
+				{"id": "42", "departmentId": "7", "commentCount": "1", "threadCount": threadCount, "modifiedTime": revision},
 				{"id": "43", "departmentId": "8", "commentCount": "1"},
 			}})
 			require.NoError(t, err)
@@ -179,6 +180,9 @@ func TestSupportNotificationReadsReuseActivityAndSkipArchives(t *testing.T) {
 	common.OptionMapRWMutex.Unlock()
 	assert.Equal(t, "agent", request("notifications")[0].Activity)
 	assert.EqualValues(t, 6, conversationCalls.Load(), "organizations must not share cached activity")
+	threadCount, direction = "2", "in"
+	assert.Equal(t, "customer", request("notifications")[0].Activity)
+	assert.EqualValues(t, 7, conversationCalls.Load(), "a new email must refresh activity even if its timestamp is unchanged")
 }
 
 func TestZohoDeskUploadAttachment(t *testing.T) {
@@ -512,7 +516,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 						status = input.Status
 						patches++
 					}
-					data, err := common.Marshal(gin.H{"id": "42", "departmentId": department, "status": status, "statusType": status, "email": "alice@example.com"})
+					data, err := common.Marshal(gin.H{"id": "42", "departmentId": department, "status": status, "statusType": status, "email": "alice@example.com", "modifiedTime": "2026-10-01T01:00:00Z", "commentCount": "3", "threadCount": "1"})
 					require.NoError(t, err)
 					_, _ = w.Write(data)
 				case "/api/v1/tickets", "/api/v1/tickets/search":
@@ -585,7 +589,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 				require.NoError(t, common.Unmarshal(request(GetSupportTicket, tc.role, tc.id, "", "updates").Body.Bytes(), &response))
 				assert.Equal(t, tc.allowed, response.Success)
 				if tc.allowed {
-					assert.Equal(t, map[string]any{"modifiedTime": ""}, response.Data)
+					assert.Equal(t, map[string]any{"modifiedTime": "2026-10-01T01:00:00Z", "commentCount": "3", "threadCount": "1"}, response.Data)
 				}
 			}
 			department = "8"
