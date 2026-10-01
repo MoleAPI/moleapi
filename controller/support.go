@@ -48,6 +48,7 @@ type zohoDeskTicket struct {
 	StatusType   string `json:"statusType"`
 	Archived     bool   `json:"isArchived"`
 	CommentCount string `json:"commentCount"`
+	ThreadCount  string `json:"threadCount"`
 	LastThread   *struct {
 		Direction string `json:"direction"`
 		IsDraft   bool   `json:"isDraft"`
@@ -381,9 +382,9 @@ func safeSupportContentDisposition(value string) string {
 }
 
 type supportActivityCacheKey struct {
-	Config                               zohoDeskConfig
-	TicketID, ModifiedTime, CommentCount string
-	Revision                             uint64
+	Config                                            zohoDeskConfig
+	TicketID, ModifiedTime, CommentCount, ThreadCount string
+	Revision                                          uint64
 }
 
 // ponytail: share unchanged activity for a day within one server, bounded to 1024 entries.
@@ -704,7 +705,7 @@ func ListSupportTickets(c *gin.Context) {
 			defer pending.Done()
 			defer func() { <-slots }()
 			ticket.Activity = "unknown"
-			key := supportActivityCacheKey{cfg, ticket.ID, ticket.ModifiedTime, ticket.CommentCount, supportActivityRevision.Load()}
+			key := supportActivityCacheKey{cfg, ticket.ID, ticket.ModifiedTime, ticket.CommentCount, ticket.ThreadCount, supportActivityRevision.Load()}
 			if key.ModifiedTime == "" {
 				key.ModifiedTime = time.Now().UTC().Truncate(5 * time.Minute).Format(time.RFC3339)
 			}
@@ -984,7 +985,7 @@ func GetSupportTicket(c *gin.Context) {
 		return
 	}
 	if c.Query("view") == "updates" {
-		common.ApiSuccess(c, gin.H{"modifiedTime": ticket.ModifiedTime})
+		common.ApiSuccess(c, gin.H{"modifiedTime": ticket.ModifiedTime, "commentCount": ticket.CommentCount, "threadCount": ticket.ThreadCount})
 		return
 	}
 	if c.GetInt("role") >= common.RoleAdminUser {
