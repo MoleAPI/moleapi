@@ -636,6 +636,12 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'channel.status_update': 'Updated channel {{id}} status to {{status}}',
   'channel.status_update_batch':
     'Updated {{count}} of {{total}} channels to {{status}}',
+  'channel.model_auto_pause':
+    'Auto-paused model {{model}} on channel {{channel_name}} (ID: {{channel_id}})',
+  'channel.model_auto_recover':
+    'Auto-restored model {{model}} on channel {{channel_name}} (ID: {{channel_id}})',
+  'channel.model_manual_retest':
+    'Retested model {{model}} on channel {{id}} (success: {{success}})',
   'channel.fix': 'Repaired channel abilities',
   'channel.fetch_models': 'Fetched upstream channel models',
   'channel.codex_refresh': 'Refreshed Codex channel credentials',

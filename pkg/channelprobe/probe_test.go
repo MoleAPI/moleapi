@@ -86,6 +86,31 @@ func TestProbeResetsBaselineWhenModeChanges(t *testing.T) {
 	assert.Equal(t, StatusHealthy, change.State.Status)
 }
 
+func TestAutoPauseRecoveryUsesTwoPassHysteresis(t *testing.T) {
+	state := State{}
+	failure := Failure{OccurredAt: 10, StatusCode: 404, ErrorCode: "model_not_found", Requests: 3}
+
+	paused := state.Pause("model-a", "confirmed model failure", 10, 40, failure)
+	assert.True(t, paused.AutoPaused)
+	assert.Equal(t, StatusDegraded, paused.Status)
+	assert.Equal(t, int64(40), paused.NextProbeAt)
+
+	change := state.RecordAutoProbe("model-a", true, "pass", 40, 70, nil)
+	assert.False(t, change.Recovered)
+	assert.True(t, change.State.AutoPaused)
+	assert.Equal(t, int64(70), change.State.NextProbeAt)
+
+	change = state.RecordAutoProbe("model-a", true, "pass", 70, 100, nil)
+	assert.True(t, change.Recovered)
+	assert.False(t, change.State.AutoPaused)
+	assert.Empty(t, change.State.PauseReason)
+	assert.Zero(t, change.State.PausedAt)
+	assert.Equal(t, failure, *change.State.LastFailure)
+
+	healthy := state.RecordAutoProbe("model-b", true, "candidate_pass", 80, 0, nil)
+	assert.Equal(t, StatusHealthy, healthy.State.Status)
+}
+
 func requireChallenge(t *testing.T, level string) Challenge {
 	t.Helper()
 	challenges := GenerateChallenges(1, 42, level)
