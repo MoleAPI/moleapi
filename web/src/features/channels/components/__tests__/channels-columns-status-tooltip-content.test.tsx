@@ -27,6 +27,7 @@ import userEvent from '@testing-library/user-event'
 import { expect, test, vi } from 'vitest'
 
 import { retestChannelModel } from '../../api'
+import { formatRelativeTime } from '../../lib'
 import { channelSchema, type Channel } from '../../types'
 import { useChannelsColumns } from '../channels-columns'
 import { ChannelsProvider } from '../channels-provider'
@@ -84,6 +85,7 @@ test('keeps the long string inside the status tooltip is wrapped when show', asy
 
 test('shows auto-paused model details and offers an immediate retest', async () => {
   vi.mocked(retestChannelModel).mockResolvedValue({ success: true })
+  const pausedAt = Math.floor(Date.now() / 1000) - 60 * 60
   const channelItem = channelSchema.parse({
     id: 2,
     type: 1,
@@ -102,7 +104,7 @@ test('shows auto-paused model details and offers an immediate retest', async () 
             auto_paused: true,
             pause_reason:
               'Production failures confirmed by target and control probes',
-            paused_at: 1_700_000_000,
+            paused_at: pausedAt,
             next_probe_at: 1_700_001_800,
             last_probe_result: 'failed_target_passed_control',
           },
@@ -125,6 +127,9 @@ test('shows auto-paused model details and offers an immediate retest', async () 
   await user.click(screen.getByRole('button', { name: 'Auto-paused models' }))
   expect(screen.getByText('paused-model')).toBeInTheDocument()
   expect(screen.queryByText('removed-model')).not.toBeInTheDocument()
+  expect(screen.getByText('Paused at:', { exact: false })).toHaveTextContent(
+    formatRelativeTime(pausedAt, 'en')
+  )
 
   await user.click(
     screen.getByRole('button', { name: 'Retest and restore now' })

@@ -11,8 +11,8 @@ import (
 )
 
 var StartTime = time.Now().Unix() // unit: second
-var Version = "v0.10.9.4-dev7"    // this hard coding will be replaced automatically when building, no need to manually change
-var UpstreamVersion = "v1.0.0-rc.41"
+var Version = "v0.10.9.4-dev8"    // this hard coding will be replaced automatically when building, no need to manually change
+var UpstreamVersion = "relaykit/v0.2.2"
 var Commit = ""
 var SystemName = "New API"
 var Footer = ""

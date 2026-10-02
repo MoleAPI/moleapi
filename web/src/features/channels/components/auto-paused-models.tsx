@@ -29,12 +29,13 @@ import {
   PopoverTitle,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { toIntlLocale } from '@/i18n/languages'
 import { formatTimestampToDate } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
 import { createServerError } from '@/lib/server-error-message'
 
 import { retestChannelModel } from '../api'
-import { channelsQueryKeys } from '../lib'
+import { channelsQueryKeys, formatRelativeTime } from '../lib'
 import type { Channel } from '../types'
 
 type AutoPausedModel = {
@@ -81,7 +82,8 @@ function getAutoPausedModels(channel: Channel): AutoPausedModel[] {
 }
 
 export function AutoPausedModels(props: { channel: Channel }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const queryClient = useQueryClient()
   const pausedModels = getAutoPausedModels(props.channel)
   const mutation = useMutation({
@@ -144,7 +146,9 @@ export function AutoPausedModels(props: { channel: Channel }) {
                   </div>
                   <div>
                     {t('Paused at')}:{' '}
-                    {item.pausedAt ? formatTimestampToDate(item.pausedAt) : '-'}
+                    {item.pausedAt
+                      ? `${formatTimestampToDate(item.pausedAt)} (${formatRelativeTime(item.pausedAt, locale)})`
+                      : '-'}
                   </div>
                   <div>
                     {t('Next retest')}:{' '}

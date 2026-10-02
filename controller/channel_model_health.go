@@ -23,7 +23,7 @@ const (
 	modelFailureWindow = 15 * time.Minute
 	// ponytail: keep one conservative fixed cooldown; add a setting only if operations need different timings.
 	modelProbeCooldown    = 10 * time.Minute
-	modelRecoveryDelay    = 10 * time.Minute
+	modelRecoveryDelay    = 5 * time.Minute
 	modelFailureMinimum   = 3
 	modelFailureScanLimit = 5000
 )
