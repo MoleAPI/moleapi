@@ -82,6 +82,14 @@ export interface ChatCompletionRequest {
   temperature?: number
   top_p?: number
   max_tokens?: number
+  reasoning_effort?:
+    | 'none'
+    | 'minimal'
+    | 'low'
+    | 'medium'
+    | 'high'
+    | 'xhigh'
+    | 'max'
   frequency_penalty?: number
   presence_penalty?: number
   seed?: number

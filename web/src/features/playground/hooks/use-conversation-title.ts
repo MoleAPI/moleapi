@@ -11,12 +11,17 @@ export function useConversationTitle(props: {
   sessionId: string
   currentTitle: string
   group: string
-  onRename: (title: string) => void
+  onRename: (sessionId: string, title: string) => void
 }) {
   const requestedSessions = useRef(new Set<string>())
+  const eligibleSessions = useRef(new Set<string>())
   const { currentTitle, group, messages, onRename, sessionId } = props
 
   useEffect(() => {
+    if (sessionId && !currentTitle && messages.length === 0) {
+      eligibleSessions.current.add(sessionId)
+    }
+
     const firstUser = messages.find((message) => message.from === 'user')
     const lastMessage = messages.at(-1)
     const fallbackTitle = getConversationTitle(messages)
@@ -28,23 +33,26 @@ export function useConversationTitle(props: {
       lastMessage.status !== 'complete' ||
       !fallbackTitle ||
       currentTitle !== fallbackTitle ||
+      !eligibleSessions.current.has(sessionId) ||
       requestedSessions.current.has(sessionId)
     ) {
       return
     }
 
+    // ponytail: try once and keep the first-message fallback if title generation fails.
     requestedSessions.current.add(sessionId)
     void sendChatCompletion({
       model: DEFAULT_MODEL,
       group,
       stream: false,
+      max_tokens: 256,
+      reasoning_effort: 'low',
+      temperature: 0.2,
       messages: [
         {
-          role: 'system',
-          content:
-            'Summarize the user support conversation as a short title. Reply with only the title, no quotes, markdown, or punctuation. Keep it under 30 characters and use the conversation language.',
+          role: 'user',
+          content: `Write a short title for the conversation below. Reply with only the title, no explanation, quotes, markdown, or punctuation. Keep it under 30 characters and use the conversation language.\n\nConversation:\n${getMessageContent(firstUser)}`,
         },
-        { role: 'user', content: getMessageContent(firstUser) },
       ],
     })
       .then((response) => {
@@ -54,16 +62,8 @@ export function useConversationTitle(props: {
           .replaceAll(/^['"“”「」]+|['"“”「」]+$/g, '')
           .trim()
           .slice(0, 60)
-        if (title) onRename(title)
+        if (title) onRename(sessionId, title)
       })
-      .catch(() => {
-        requestedSessions.current.delete(sessionId)
-      })
-  }, [
-    currentTitle,
-    group,
-    messages,
-    onRename,
-    sessionId,
-  ])
+      .catch(() => undefined)
+  }, [currentTitle, group, messages, onRename, sessionId])
 }

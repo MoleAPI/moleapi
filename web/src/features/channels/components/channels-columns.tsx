@@ -96,6 +96,7 @@ import {
 } from '../lib/channel-success'
 import { parseUpstreamUpdateMeta } from '../lib/upstream-update-utils'
 import type { Channel } from '../types'
+import { AutoPausedModels } from './auto-paused-models'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { TaskPluginChannelBadge } from './channel-type-badge'
 import { useChannels } from './channels-provider'
@@ -1218,43 +1219,49 @@ export function useChannelsColumns(
 
             if (statusReason || statusTime) {
               return (
-                <TooltipProvider delay={100}>
-                  <Tooltip>
-                    <TooltipTrigger render={<span />}>
-                      <StatusBadge
-                        label={label}
-                        variant={config.variant}
-                        size='sm'
-                        copyable={false}
-                      />
-                    </TooltipTrigger>
-                    <TooltipContent side='top' className='max-w-xs'>
-                      <div className='space-y-1 text-xs'>
-                        {statusReason && (
-                          <div>
-                            {t('Reason:')} {statusReason}
-                          </div>
-                        )}
-                        {statusTime && (
-                          <div>
-                            {t('Time:')} {statusTime}
-                          </div>
-                        )}
-                      </div>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <div className='flex flex-col items-start gap-1'>
+                  <TooltipProvider delay={100}>
+                    <Tooltip>
+                      <TooltipTrigger render={<span />}>
+                        <StatusBadge
+                          label={label}
+                          variant={config.variant}
+                          size='sm'
+                          copyable={false}
+                        />
+                      </TooltipTrigger>
+                      <TooltipContent side='top' className='max-w-xs'>
+                        <div className='space-y-1 text-xs'>
+                          {statusReason && (
+                            <div className='wrap-anywhere'>
+                              {t('Reason:')} {statusReason}
+                            </div>
+                          )}
+                          {statusTime && (
+                            <div>
+                              {t('Time:')} {statusTime}
+                            </div>
+                          )}
+                        </div>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                  <AutoPausedModels channel={channel} />
+                </div>
               )
             }
           }
 
           return (
-            <StatusBadge
-              label={label}
-              variant={config.variant}
-              size='sm'
-              copyable={false}
-            />
+            <div className='flex flex-col items-start gap-1'>
+              <StatusBadge
+                label={label}
+                variant={config.variant}
+                size='sm'
+                copyable={false}
+              />
+              <AutoPausedModels channel={channel} />
+            </div>
           )
         },
         filterFn: (row, id, value) => {

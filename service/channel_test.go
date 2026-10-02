@@ -28,3 +28,10 @@ func TestShouldDisableChannelUsesStatusOrKeyword(t *testing.T) {
 	assert.True(t, ShouldDisableChannel(types.NewOpenAIError(errors.New("QUOTA EXHAUSTED"), types.ErrorCodeInvalidRequest, 400)))
 	assert.False(t, ShouldDisableChannel(types.NewOpenAIError(errors.New("bad request"), types.ErrorCodeInvalidRequest, 400)))
 }
+
+func TestShouldConfirmModelFailureKeepsChannelFailuresImmediate(t *testing.T) {
+	assert.True(t, ShouldConfirmModelFailure(types.NewOpenAIError(errors.New("missing"), types.ErrorCodeModelNotFound, 404)))
+	assert.True(t, ShouldConfirmModelFailure(types.NewOpenAIError(errors.New("bad response"), types.ErrorCodeBadResponse, 503)))
+	assert.False(t, ShouldConfirmModelFailure(types.NewOpenAIError(errors.New("network"), types.ErrorCodeDoRequestFailed, 500)))
+	assert.False(t, ShouldConfirmModelFailure(types.NewOpenAIError(errors.New("auth"), types.ErrorCodeChannelInvalidKey, 401)))
+}

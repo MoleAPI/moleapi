@@ -220,6 +220,12 @@ export interface ChannelBalanceResponse {
   raw_response?: string
 }
 
+export interface ChannelModelRetestResponse {
+  success: boolean
+  message?: string
+  error_code?: string
+}
+
 export interface FetchModelsResponse {
   success: boolean
   message?: string

@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/pkg/channelprobe"
 
 	"github.com/samber/lo"
 	"gorm.io/gorm"
@@ -215,8 +216,9 @@ func identityFilterRequiresKey(filters []dto.ChannelFilter) bool {
 }
 
 func (channel *Channel) AddAbilities(tx *gorm.DB) error {
-	models_ := strings.Split(channel.Models, ",")
+	models_ := channel.GetModels()
 	groups_ := strings.Split(channel.Group, ",")
+	probeState := channelprobe.StateFromOtherInfo(channel.OtherInfo)
 	abilitySet := make(map[string]struct{})
 	abilities := make([]Ability, 0, len(models_))
 	for _, model := range models_ {
@@ -230,7 +232,7 @@ func (channel *Channel) AddAbilities(tx *gorm.DB) error {
 				Group:     group,
 				Model:     model,
 				ChannelId: channel.Id,
-				Enabled:   channel.Status == common.ChannelStatusEnabled,
+				Enabled:   channel.Status == common.ChannelStatusEnabled && !probeState.IsAutoPaused(model),
 				Priority:  channel.Priority,
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,
@@ -276,6 +278,14 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 			}
 		}()
 	}
+	var currentState Channel
+	if err := tx.Select("other_info").First(&currentState, channel.Id).Error; err != nil {
+		if isNewTx {
+			tx.Rollback()
+		}
+		return err
+	}
+	probeState := channelprobe.StateFromOtherInfo(currentState.OtherInfo)
 
 	// First delete all abilities of this channel
 	err := tx.Where("channel_id = ?", channel.Id).Delete(&Ability{}).Error
@@ -302,7 +312,7 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 				Group:     group,
 				Model:     model,
 				ChannelId: channel.Id,
-				Enabled:   channel.Status == common.ChannelStatusEnabled,
+				Enabled:   channel.Status == common.ChannelStatusEnabled && !probeState.IsAutoPaused(model),
 				Priority:  channel.Priority,
 				Weight:    uint(channel.GetWeight()),
 				Tag:       channel.Tag,
@@ -332,11 +342,84 @@ func (channel *Channel) UpdateAbilities(tx *gorm.DB) error {
 }
 
 func UpdateAbilityStatus(channelId int, status bool) error {
-	return DB.Model(&Ability{}).Where("channel_id = ?", channelId).Select("enabled").Update("enabled", status).Error
+	if !status {
+		return DB.Model(&Ability{}).Where("channel_id = ?", channelId).Select("enabled").Update("enabled", false).Error
+	}
+	channel, err := GetChannelById(channelId, true)
+	if err != nil {
+		return err
+	}
+	return syncChannelAbilityStatus(DB, channel, channelprobe.StateFromOtherInfo(channel.OtherInfo))
 }
 
 func UpdateAbilityStatusByTag(tag string, status bool) error {
-	return DB.Model(&Ability{}).Where("tag = ?", tag).Select("enabled").Update("enabled", status).Error
+	if !status {
+		return DB.Model(&Ability{}).Where("tag = ?", tag).Select("enabled").Update("enabled", false).Error
+	}
+	var channels []*Channel
+	if err := DB.Where("tag = ?", tag).Find(&channels).Error; err != nil {
+		return err
+	}
+	return DB.Transaction(func(tx *gorm.DB) error {
+		for _, channel := range channels {
+			if err := syncChannelAbilityStatus(tx, channel, channelprobe.StateFromOtherInfo(channel.OtherInfo)); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+func syncChannelAbilityStatus(tx *gorm.DB, channel *Channel, state channelprobe.State) error {
+	if err := tx.Model(&Ability{}).Where("channel_id = ?", channel.Id).Select("enabled").Update("enabled", false).Error; err != nil {
+		return err
+	}
+	if channel.Status != common.ChannelStatusEnabled {
+		return nil
+	}
+	enabledModels := make([]string, 0, len(channel.GetModels()))
+	for _, modelName := range channel.GetModels() {
+		if !state.IsAutoPaused(modelName) {
+			enabledModels = append(enabledModels, modelName)
+		}
+	}
+	if len(enabledModels) == 0 {
+		return nil
+	}
+	return tx.Model(&Ability{}).
+		Where("channel_id = ? AND model IN ?", channel.Id, enabledModels).
+		Select("enabled").Update("enabled", true).Error
+}
+
+// SaveProbeState persists model health and its routing effect together.
+func (channel *Channel) SaveProbeState(state channelprobe.State) error {
+	var raw string
+	var current Channel
+	err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := lockForUpdate(tx).Select("id", "status", "models", "other_info").First(&current, channel.Id).Error; err != nil {
+			return err
+		}
+		var err error
+		raw, err = channelprobe.StateIntoOtherInfo(current.OtherInfo, state)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Update("other_info", raw).Error; err != nil {
+			return err
+		}
+		current.OtherInfo = raw
+		return syncChannelAbilityStatus(tx, &current, state)
+	})
+	if err != nil {
+		return err
+	}
+	channel.OtherInfo = raw
+	channel.Status = current.Status
+	channel.Models = current.Models
+	if common.MemoryCacheEnabled {
+		InitChannelCache()
+	}
+	return nil
 }
 
 func UpdateAbilityByTag(tag string, newTag *string, priority *int64, weight *uint) error {

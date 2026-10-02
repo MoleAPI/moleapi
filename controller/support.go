@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"io"
 	"math"
 	"mime"
@@ -16,15 +17,21 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
+	"github.com/samber/hot"
 	"github.com/shopspring/decimal"
 	"golang.org/x/net/html"
 )
+
+// ponytail: this small test seam avoids running an SMTP server in controller tests;
+// replace it with a queue only if ticket notifications need retries.
+var supportTicketEmailSender = common.SendEmail
 
 type zohoDeskConfig struct {
 	Enabled, ClientID, ClientSecret, RefreshToken, OrgID, DepartmentID string
@@ -46,6 +53,7 @@ type zohoDeskTicket struct {
 	StatusType   string `json:"statusType"`
 	Archived     bool   `json:"isArchived"`
 	CommentCount string `json:"commentCount"`
+	ThreadCount  string `json:"threadCount"`
 	LastThread   *struct {
 		Direction string `json:"direction"`
 		IsDraft   bool   `json:"isDraft"`
@@ -148,6 +156,23 @@ func normalizeSupportPortalComment(message *zohoDeskConversation) {
 	message.Author.Name = strings.TrimSpace(match[1])
 	message.Commenter.Type = "END_USER"
 	message.Commenter.Name = strings.TrimSpace(match[1])
+}
+
+func normalizeSupportConversationContent(message *zohoDeskConversation) {
+	if message.Type != "thread" {
+		return
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(message.ContentType)), "text/html") {
+		message.ContentType = "text/html"
+		return
+	}
+	tokens := html.NewTokenizer(strings.NewReader(message.Content))
+	for token := tokens.Next(); token != html.ErrorToken; token = tokens.Next() {
+		if token == html.StartTagToken || token == html.SelfClosingTagToken {
+			message.ContentType = "text/html"
+			return
+		}
+	}
 }
 
 func supportConversationMatchesTicketDescription(message zohoDeskConversation, ticket zohoDeskTicket) bool {
@@ -378,6 +403,18 @@ func safeSupportContentDisposition(value string) string {
 	return disposition
 }
 
+type supportActivityCacheKey struct {
+	Config                                            zohoDeskConfig
+	TicketID, ModifiedTime, CommentCount, ThreadCount string
+	Revision                                          uint64
+}
+
+// ponytail: share unchanged activity for a day within one server, bounded to 1024 entries.
+// Use a shared cache if multiple servers need to coordinate these reads.
+var supportActivityCache = hot.NewHotCache[supportActivityCacheKey, string](hot.LRU, 1024).
+	WithTTL(24 * time.Hour).Build()
+var supportActivityRevision atomic.Uint64
+
 var zohoDeskTokenCache struct {
 	sync.Mutex
 	token     string
@@ -466,6 +503,10 @@ func zohoDeskRequest(cfg zohoDeskConfig, method, path string, body any, result a
 	if res.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(res.Body, 2048))
 		return fmt.Errorf("Zoho Desk returned %d: %s", res.StatusCode, strings.TrimSpace(string(message)))
+	}
+	if method != http.MethodGet {
+		// Ignore pre-write activity even if a read was still in flight.
+		supportActivityRevision.Add(1)
 	}
 	if result == nil || res.StatusCode == http.StatusNoContent {
 		return nil
@@ -588,6 +629,7 @@ func ListSupportTickets(c *gin.Context) {
 	}
 	query := "?limit=20&from=" + strconv.Itoa(from) + "&sortBy=-modifiedTime&departmentId=" + url.QueryEscape(cfg.DepartmentID)
 	path := "/tickets" + query
+	notifications := c.Query("view") == "notifications"
 	archivedView := c.GetInt("role") >= common.RoleAdminUser && c.Query("view") == "archived"
 	if archivedView {
 		path = "/tickets/archivedTickets?limit=100&from=" + strconv.Itoa(from) + "&departmentId=" + url.QueryEscape(cfg.DepartmentID)
@@ -610,7 +652,7 @@ func ListSupportTickets(c *gin.Context) {
 	}
 	tickets := make([]zohoDeskTicket, 0, len(result.Data))
 	for _, ticket := range result.Data {
-		if ticket.DepartmentID != cfg.DepartmentID || (email != "" && !strings.EqualFold(ticket.Email, email)) {
+		if ticket.DepartmentID != cfg.DepartmentID || (email != "" && !strings.EqualFold(ticket.Email, email)) || (notifications && ticket.Archived) {
 			continue
 		}
 		if c.GetInt("role") >= common.RoleAdminUser {
@@ -648,7 +690,7 @@ func ListSupportTickets(c *gin.Context) {
 				return
 			}
 		}
-	} else if c.GetInt("role") >= common.RoleAdminUser && from == 0 {
+	} else if c.GetInt("role") >= common.RoleAdminUser && from == 0 && !notifications {
 		var archived struct {
 			Data []zohoDeskTicket `json:"data"`
 		}
@@ -671,12 +713,12 @@ func ListSupportTickets(c *gin.Context) {
 			}
 		}
 	}
-	// Portal replies are public comments, not email threads. Bound concurrent
-	// lookups to avoid exhausting Zoho's per-organization request allowance.
+	// Portal replies are public comments, not email threads. Reuse unchanged
+	// activity and bound concurrent lookups within this response.
 	var pending sync.WaitGroup
 	slots := make(chan struct{}, 4)
 	for i := range tickets {
-		if tickets[i].CommentCount == "" || tickets[i].CommentCount == "0" {
+		if tickets[i].Archived || tickets[i].CommentCount == "" || tickets[i].CommentCount == "0" {
 			continue
 		}
 		slots <- struct{}{}
@@ -684,15 +726,22 @@ func ListSupportTickets(c *gin.Context) {
 		go func(ticket *zohoDeskTicket) {
 			defer pending.Done()
 			defer func() { <-slots }()
-			var conversations struct {
-				Data []zohoDeskConversation `json:"data"`
-			}
 			ticket.Activity = "unknown"
-			if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/conversations?limit=20", nil, &conversations); err == nil {
-				for i := range conversations.Data {
-					normalizeSupportPortalComment(&conversations.Data[i])
+			key := supportActivityCacheKey{cfg, ticket.ID, ticket.ModifiedTime, ticket.CommentCount, ticket.ThreadCount, supportActivityRevision.Load()}
+			if key.ModifiedTime == "" {
+				key.ModifiedTime = time.Now().UTC().Truncate(5 * time.Minute).Format(time.RFC3339)
+			}
+			activity, found, err := supportActivityCache.GetWithLoaders(key, func(_ []supportActivityCacheKey) (map[supportActivityCacheKey]string, error) {
+				var conversations struct {
+					Data []zohoDeskConversation `json:"data"`
 				}
-				ticket.Activity = supportConversationActivity(conversations.Data)
+				if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/"+ticket.ID+"/conversations?limit=20", nil, &conversations); err != nil {
+					return nil, err
+				}
+				return map[supportActivityCacheKey]string{key: supportConversationActivity(conversations.Data)}, nil
+			})
+			if err == nil && found {
+				ticket.Activity = activity
 			}
 		}(&tickets[i])
 	}
@@ -811,6 +860,24 @@ func CreateSupportTicket(c *gin.Context) {
 	if err := zohoDeskRequest(cfg, http.MethodPost, "/tickets", body, &ticket); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	common.OptionMapRWMutex.RLock()
+	notificationEmail := strings.TrimSpace(common.OptionMap["SupportTicketNotificationEmail"])
+	common.OptionMapRWMutex.RUnlock()
+	if notificationEmail != "" {
+		ticketNumber := ticket.TicketNumber
+		if ticketNumber == "" {
+			ticketNumber = ticket.ID
+		}
+		name := strings.TrimSpace(user.DisplayName)
+		if name == "" {
+			name = user.Username
+		}
+		emailContent := strings.ReplaceAll(stdhtml.EscapeString(input.Content), "\n", "<br>")
+		emailBody := fmt.Sprintf("<p><strong>New support ticket #%s</strong></p><p>From: %s (%s)</p><p>Type: %s</p><p>Subject: %s</p><p>%s</p>", stdhtml.EscapeString(ticketNumber), stdhtml.EscapeString(name), stdhtml.EscapeString(user.Email), stdhtml.EscapeString(input.Type), stdhtml.EscapeString(input.Subject), emailContent)
+		if err := supportTicketEmailSender("[MoleAPI] New support ticket #"+ticketNumber+": "+input.Subject, notificationEmail, emailBody); err != nil {
+			common.SysError("failed to send new support ticket notification: " + err.Error())
+		}
 	}
 	common.ApiSuccess(c, ticket)
 }
@@ -957,6 +1024,10 @@ func GetSupportTicket(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if c.Query("view") == "updates" {
+		common.ApiSuccess(c, gin.H{"modifiedTime": ticket.ModifiedTime, "commentCount": ticket.CommentCount, "threadCount": ticket.ThreadCount})
+		return
+	}
 	if c.GetInt("role") >= common.RoleAdminUser {
 		user, err := model.GetUniqueUserByEmail(ticket.Email)
 		if err == nil {
@@ -1031,6 +1102,7 @@ func GetSupportTicket(c *gin.Context) {
 				continue
 			}
 			normalizeSupportPortalComment(&message)
+			normalizeSupportConversationContent(&message)
 			if c.GetInt("role") < common.RoleAdminUser {
 				publicAttachments := message.Attachments[:0]
 				for _, attachment := range message.Attachments {

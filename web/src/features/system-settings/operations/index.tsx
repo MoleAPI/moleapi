@@ -49,6 +49,7 @@ const defaultOperationsSettings: OperationsSettings = {
   ZohoDeskApiDomain: 'https://desk.zoho.com',
   ZohoDeskAccountsDomain: 'https://accounts.zoho.com',
   ZohoDeskFromEmail: 'support@moleapi.com',
+  SupportTicketNotificationEmail: 'tangdan0571@gmail.com',
   SupportDiscordUrl: '',
   SupportTelegramUrl: '',
   SupportQQUrl: '',

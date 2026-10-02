@@ -382,6 +382,7 @@ export type OperationsSettings = {
   ZohoDeskApiDomain: string
   ZohoDeskAccountsDomain: string
   ZohoDeskFromEmail: string
+  SupportTicketNotificationEmail: string
   SupportDiscordUrl: string
   SupportTelegramUrl: string
   SupportQQUrl: string

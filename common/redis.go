@@ -7,6 +7,7 @@ import (
 	"os"
 	"reflect"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -37,7 +38,31 @@ func InitRedisClient() (err error) {
 		FatalLog("failed to parse Redis connection string: " + err.Error())
 	}
 	opt.PoolSize = GetEnvOrDefault("REDIS_POOL_SIZE", 10)
-	RDB = redis.NewClient(opt)
+	sentinelMasterName := strings.TrimSpace(os.Getenv("REDIS_SENTINEL_MASTER_NAME"))
+	if sentinelMasterName == "" {
+		RDB = redis.NewClient(opt)
+	} else {
+		var sentinelAddrs []string
+		for _, addr := range strings.Split(os.Getenv("REDIS_SENTINEL_ADDRS"), ",") {
+			if addr = strings.TrimSpace(addr); addr != "" {
+				sentinelAddrs = append(sentinelAddrs, addr)
+			}
+		}
+		if len(sentinelAddrs) == 0 {
+			FatalLog("REDIS_SENTINEL_ADDRS must be set when REDIS_SENTINEL_MASTER_NAME is set")
+		}
+		RDB = redis.NewFailoverClient(&redis.FailoverOptions{
+			MasterName:       sentinelMasterName,
+			SentinelAddrs:    sentinelAddrs,
+			SentinelUsername: os.Getenv("REDIS_SENTINEL_USERNAME"),
+			SentinelPassword: os.Getenv("REDIS_SENTINEL_PASSWORD"),
+			Username:         opt.Username,
+			Password:         opt.Password,
+			DB:               opt.DB,
+			PoolSize:         opt.PoolSize,
+			TLSConfig:        opt.TLSConfig,
+		})
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

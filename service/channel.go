@@ -76,6 +76,23 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	return search
 }
 
+func ShouldConfirmModelFailure(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	switch err.GetErrorCode() {
+	case types.ErrorCodeModelNotFound,
+		types.ErrorCodeBadResponseStatusCode,
+		types.ErrorCodeBadResponse,
+		types.ErrorCodeBadResponseBody,
+		types.ErrorCodeEmptyResponse,
+		types.ErrorCodeReadResponseBodyFailed:
+		return err.StatusCode == 404 || err.StatusCode >= 500
+	default:
+		return err.StatusCode == 404
+	}
+}
+
 func ShouldEnableChannel(newAPIError *types.NewAPIError, status int) bool {
 	if !common.AutomaticEnableChannelEnabled {
 		return false
