@@ -4043,6 +4043,8 @@
     "New Purchasers": "Người mua mới",
     "New records include the fields below. Existing fields are kept unless explicitly selected.": "Bản ghi mới bao gồm các trường bên dưới. Trường hiện có được giữ nguyên trừ khi được chọn rõ ràng.",
     "New ticket": "Phiếu mới",
+    "New ticket details will be sent to this address. Leave blank to disable notifications.": "Chi tiết phiếu hỗ trợ mới sẽ được gửi đến địa chỉ này. Để trống để tắt thông báo.",
+    "New ticket notification email": "Email thông báo phiếu hỗ trợ mới",
     "New tickets will appear here.": "Vé mới sẽ xuất hiện ở đây.",
     "New User Purchase Rate": "Tỷ lệ mua của người dùng mới",
     "New User Quota": "Hạn mức người dùng mới",

@@ -348,6 +348,13 @@ func TestSupportPortalCommentNormalization(t *testing.T) {
 	assert.Equal(t, "in", message.Direction)
 	assert.Equal(t, "END_USER", message.Author.Type)
 	assert.Equal(t, "alice", message.Author.Name)
+
+	outbound := zohoDeskConversation{Type: "thread", ContentType: "text/plain", Content: "<div>Fixed and credited 1 USD</div>"}
+	normalizeSupportConversationContent(&outbound)
+	assert.Equal(t, "text/html", outbound.ContentType)
+	plain := zohoDeskConversation{Type: "thread", ContentType: "text/plain", Content: "2 < 3"}
+	normalizeSupportConversationContent(&plain)
+	assert.Equal(t, "text/plain", plain.ContentType)
 }
 
 func TestSupportConversationMatchesTicketDescription(t *testing.T) {
@@ -525,7 +532,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 						require.NoError(t, common.DecodeJson(r.Body, &input))
 						assert.Contains(t, input.Description, "Verified billing records (actual paid amounts)")
 						assert.Contains(t, input.Description, "Invoice total: CNY 13.00")
-						_, _ = w.Write([]byte(`{"id":"new-invoice"}`))
+						_, _ = w.Write([]byte(`{"id":"new-invoice","ticketNumber":"113"}`))
 						return
 					}
 					assert.Equal(t, "20", r.URL.Query().Get("limit"))
@@ -553,7 +560,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			t.Cleanup(server.Close)
 			common.OptionMapRWMutex.Lock()
 			previousOptions := common.OptionMap
-			common.OptionMap = map[string]string{"ZohoDeskEnabled": "true", "ZohoDeskClientId": "client", "ZohoDeskClientSecret": "secret", "ZohoDeskRefreshToken": "refresh", "ZohoDeskOrgId": "123", "ZohoDeskDepartmentId": "7", "ZohoDeskApiDomain": server.URL, "ZohoDeskAccountsDomain": server.URL}
+			common.OptionMap = map[string]string{"ZohoDeskEnabled": "true", "ZohoDeskClientId": "client", "ZohoDeskClientSecret": "secret", "ZohoDeskRefreshToken": "refresh", "ZohoDeskOrgId": "123", "ZohoDeskDepartmentId": "7", "ZohoDeskApiDomain": server.URL, "ZohoDeskAccountsDomain": server.URL, "SupportTicketNotificationEmail": "notify@example.com"}
 			common.OptionMapRWMutex.Unlock()
 			t.Cleanup(func() {
 				common.OptionMapRWMutex.Lock()
@@ -574,6 +581,13 @@ func TestSupportTicketWorkflow(t *testing.T) {
 				handler(c)
 				return w
 			}
+			previousEmailSender := supportTicketEmailSender
+			var notificationSubject, notificationReceiver, notificationBody string
+			supportTicketEmailSender = func(subject, receiver, content string) error {
+				notificationSubject, notificationReceiver, notificationBody = subject, receiver, content
+				return nil
+			}
+			t.Cleanup(func() { supportTicketEmailSender = previousEmailSender })
 			for _, tc := range []struct {
 				role, id int
 				allowed  bool
@@ -618,6 +632,10 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			invoice := request(CreateSupportTicket, common.RoleCommonUser, 11, `{"subject":"Combined invoice","content":"Please invoice these orders.","type":"Invoice Request","billing_record_ids":[1,2]}`)
 			assert.Contains(t, invoice.Body.String(), `"success":true`)
 			assert.Contains(t, invoice.Body.String(), `new-invoice`)
+			assert.Contains(t, notificationSubject, "#113: Combined invoice")
+			assert.Equal(t, "notify@example.com", notificationReceiver)
+			assert.Contains(t, notificationBody, "Alice@example.com")
+			assert.Contains(t, notificationBody, "Please invoice these orders.")
 			assert.Contains(t, request(CreateSupportTicket, common.RoleCommonUser, 11, `{"subject":"Combined invoice","content":"Please invoice these orders.","type":"Invoice Request"}`).Body.String(), `"success":false`)
 			status = "Closed"
 			assert.Contains(t, request(ReplySupportTicket, common.RoleCommonUser, 11, `{"content":"hello"}`).Body.String(), "Reopen the ticket")

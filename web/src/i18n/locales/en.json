@@ -4043,6 +4043,8 @@
     "New Purchasers": "New Purchasers",
     "New records include the fields below. Existing fields are kept unless explicitly selected.": "New records include the fields below. Existing fields are kept unless explicitly selected.",
     "New ticket": "New ticket",
+    "New ticket details will be sent to this address. Leave blank to disable notifications.": "New ticket details will be sent to this address. Leave blank to disable notifications.",
+    "New ticket notification email": "New ticket notification email",
     "New tickets will appear here.": "New tickets will appear here.",
     "New User Purchase Rate": "New User Purchase Rate",
     "New User Quota": "New User Quota",

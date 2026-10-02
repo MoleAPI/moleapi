@@ -4043,6 +4043,8 @@
     "New Purchasers": "Nouveaux acheteurs",
     "New records include the fields below. Existing fields are kept unless explicitly selected.": "Les nouveaux enregistrements incluent les champs ci-dessous. Les champs existants sont conservés sauf sélection explicite.",
     "New ticket": "Nouveau ticket",
+    "New ticket details will be sent to this address. Leave blank to disable notifications.": "Les détails des nouveaux tickets seront envoyés à cette adresse. Laissez vide pour désactiver les notifications.",
+    "New ticket notification email": "E-mail de notification des nouveaux tickets",
     "New tickets will appear here.": "De nouveaux billets apparaîtront ici.",
     "New User Purchase Rate": "Taux d’achat des nouveaux utilisateurs",
     "New User Quota": "Quota nouvel utilisateur",

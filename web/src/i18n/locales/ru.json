@@ -4043,6 +4043,8 @@
     "New Purchasers": "Новые покупатели",
     "New records include the fields below. Existing fields are kept unless explicitly selected.": "Новые записи включают перечисленные поля. Существующие поля сохраняются, если не выбраны явно.",
     "New ticket": "Новое обращение",
+    "New ticket details will be sent to this address. Leave blank to disable notifications.": "Сведения о новых заявках будут отправляться на этот адрес. Оставьте поле пустым, чтобы отключить уведомления.",
+    "New ticket notification email": "Почта для уведомлений о новых заявках",
     "New tickets will appear here.": "Здесь появятся новые билеты.",
     "New User Purchase Rate": "Доля покупок новых пользователей",
     "New User Quota": "Новая квота пользователя",

@@ -4043,6 +4043,8 @@
     "New Purchasers": "新規購入者",
     "New records include the fields below. Existing fields are kept unless explicitly selected.": "新規レコードには以下の項目が含まれます。既存の項目は明示的に選択しない限り保持されます。",
     "New ticket": "新規チケット",
+    "New ticket details will be sent to this address. Leave blank to disable notifications.": "新規チケットの詳細をこのアドレスに送信します。通知を無効にするには空欄にしてください。",
+    "New ticket notification email": "新規チケット通知メール",
     "New tickets will appear here.": "ここに新しいチケットが表示されます。",
     "New User Purchase Rate": "新規ユーザー購入率",
     "New User Quota": "新しいユーザー割り当て",

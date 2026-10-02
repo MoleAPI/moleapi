@@ -87,6 +87,7 @@ func InitOptionMap() {
 	common.OptionMap["ZohoDeskApiDomain"] = "https://desk.zoho.com"
 	common.OptionMap["ZohoDeskAccountsDomain"] = "https://accounts.zoho.com"
 	common.OptionMap["ZohoDeskFromEmail"] = "support@moleapi.com"
+	common.OptionMap["SupportTicketNotificationEmail"] = "tangdan0571@gmail.com"
 	common.OptionMap["SupportDiscordUrl"] = ""
 	common.OptionMap["SupportTelegramUrl"] = ""
 	common.OptionMap["SupportQQUrl"] = ""
@@ -272,6 +273,12 @@ func validateOptionValue(key string, value string) error {
 	if key == "ZohoDeskFromEmail" && strings.TrimSpace(value) != "" {
 		if _, err := mail.ParseAddress(value); err != nil {
 			return errors.New("invalid Zoho Desk sender email")
+		}
+	}
+	if key == "SupportTicketNotificationEmail" && strings.TrimSpace(value) != "" {
+		address, err := mail.ParseAddress(value)
+		if err != nil || address.Address != strings.TrimSpace(value) {
+			return errors.New("invalid support ticket notification email")
 		}
 	}
 	if key == "ZohoDeskApiDomain" || key == "ZohoDeskAccountsDomain" || strings.HasPrefix(key, "Support") && strings.HasSuffix(key, "Url") {
