@@ -56,8 +56,12 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	if oaiError := usageResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
+	responseBody, err = normalizeOpenAIImageResponse(responseBody, info)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+	}
 
-	info.UpdateImageCount(gjson.GetBytes(responseBody, "data.#").Int())
+	info.UpdateImageCount(openaiImageResponseCount(responseBody))
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
 
@@ -82,6 +86,95 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	service.IOCopyBytesGracefully(c, resp, responseBody)
 
 	return &usageResp.Usage, nil
+}
+
+func normalizeOpenAIImageResponse(responseBody []byte, info *relaycommon.RelayInfo) ([]byte, error) {
+	if openAIImageResponseWantsURL(info) {
+		return responseBody, nil
+	}
+
+	data := gjson.GetBytes(responseBody, "data")
+	if !data.IsArray() && !data.IsObject() {
+		return responseBody, nil
+	}
+	for index, image := range data.Array() {
+		path := "data"
+		if data.IsArray() {
+			path += "." + strconv.Itoa(index)
+		}
+		var err error
+		responseBody, err = inlineOpenAIImageData(responseBody, path, image)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return responseBody, nil
+}
+
+func normalizeOpenAIImageStreamChunk(chunk []byte, info *relaycommon.RelayInfo) ([]byte, error) {
+	if openAIImageResponseWantsURL(info) {
+		return chunk, nil
+	}
+	return inlineOpenAIImageData(chunk, "", gjson.ParseBytes(chunk))
+}
+
+func openAIImageResponseWantsURL(info *relaycommon.RelayInfo) bool {
+	if info == nil {
+		return false
+	}
+	request, ok := info.Request.(*dto.ImageRequest)
+	return ok && strings.EqualFold(strings.TrimSpace(request.ResponseFormat), "url")
+}
+
+func inlineOpenAIImageData(body []byte, path string, image gjson.Result) ([]byte, error) {
+	url := strings.TrimSpace(image.Get("url").String())
+	if url == "" {
+		return body, nil
+	}
+	b64Path, urlPath := "b64_json", "url"
+	if path != "" {
+		b64Path, urlPath = path+"."+b64Path, path+"."+urlPath
+	}
+	if strings.TrimSpace(image.Get("b64_json").String()) == "" {
+		_, encoded, err := service.GetImageFromUrl(url)
+		if err != nil {
+			return nil, fmt.Errorf("failed to download upstream image: %w", err)
+		}
+		body, err = sjson.SetBytes(body, b64Path, encoded)
+		if err != nil {
+			return nil, err
+		}
+	}
+	return sjson.DeleteBytes(body, urlPath)
+}
+
+func openaiImageResponseCount(responseBody []byte) int64 {
+	data := gjson.GetBytes(responseBody, "data")
+	if data.IsObject() {
+		if openaiImageDataHasField(data, "url") || openaiImageDataHasField(data, "b64_json") {
+			return 1
+		}
+		return 0
+	}
+	if !data.IsArray() {
+		return 0
+	}
+	var urls, b64s int64
+	data.ForEach(func(_, item gjson.Result) bool {
+		if openaiImageDataHasField(item, "url") {
+			urls++
+		}
+		if openaiImageDataHasField(item, "b64_json") {
+			b64s++
+		}
+		return true
+	})
+	return max(urls, b64s)
+}
+
+func openaiImageDataHasField(item gjson.Result, field string) bool {
+	value := item.Get(field)
+	return value.Type == gjson.String && value.Raw != `""`
 }
 
 // normalizeOpenAIUsage maps the OpenAI Images usage shape (input_tokens /
@@ -255,13 +348,17 @@ func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp 
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		raw := common.StringToByteSlice(data)
-		lastStreamData = raw
 		if isOpenAIImageStreamErrorEvent(raw) {
 			upstreamErr := types.NewOpenAIError(errors.New(extractOpenAIImageStreamErrorMessage(raw)), types.ErrorCodeBadResponseStatusCode, http.StatusBadGateway)
 			sr.Error(upstreamErr)
 			raw = common.StringToByteSlice(publicOpenAIStreamError(c, upstreamErr))
-			lastStreamData = raw
 		}
+		raw, err := normalizeOpenAIImageStreamChunk(raw, info)
+		if err != nil {
+			sr.Stop(err)
+			return
+		}
+		lastStreamData = raw
 		var chunk struct {
 			Type  string    `json:"type"`
 			Usage dto.Usage `json:"usage"`
@@ -328,10 +425,15 @@ func openaiImageChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		raw := common.StringToByteSlice(data)
-		lastStreamData = raw
 		if isOpenAIImageStreamErrorEvent(raw) {
 			sr.Error(fmt.Errorf("%s", extractOpenAIImageStreamErrorMessage(raw)))
 		}
+		raw, err := normalizeOpenAIImageStreamChunk(raw, info)
+		if err != nil {
+			sr.Stop(err)
+			return
+		}
+		lastStreamData = raw
 		var chunk struct {
 			Type  string    `json:"type"`
 			Usage dto.Usage `json:"usage"`
@@ -415,10 +517,15 @@ func openaiImageResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayIn
 
 	helper.StreamScannerHandler(c, resp, info, func(data string, sr *helper.StreamResult) {
 		raw := common.StringToByteSlice(data)
-		lastStreamData = raw
 		if isOpenAIImageStreamErrorEvent(raw) {
 			sr.Error(fmt.Errorf("%s", extractOpenAIImageStreamErrorMessage(raw)))
 		}
+		raw, err := normalizeOpenAIImageStreamChunk(raw, info)
+		if err != nil {
+			sr.Stop(err)
+			return
+		}
+		lastStreamData = raw
 
 		chunk := gjson.ParseBytes(raw)
 		chunkType := chunk.Get("type").String()
@@ -515,11 +622,15 @@ func openaiImageJSONAsChatStreamHandler(c *gin.Context, info *relaycommon.RelayI
 	if oaiError := usageResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
+	responseBody, err = normalizeOpenAIImageResponse(responseBody, info)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+	}
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
 
 	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
-	info.UpdateImageCount(imageCount)
+	info.UpdateImageCount(openaiImageResponseCount(responseBody))
 
 	helper.SetEventStreamHeaders(c)
 	c.Status(http.StatusOK)
@@ -581,11 +692,15 @@ func openaiImageJSONAsResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 	if oaiError := usageResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
+	responseBody, err = normalizeOpenAIImageResponse(responseBody, info)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+	}
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
 
 	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
-	info.UpdateImageCount(imageCount)
+	info.UpdateImageCount(openaiImageResponseCount(responseBody))
 
 	helper.SetEventStreamHeaders(c)
 	c.Status(http.StatusOK)
@@ -771,11 +886,15 @@ func openaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo,
 	if oaiError := usageResp.GetOpenAIError(); oaiError != nil && oaiError.Type != "" {
 		return nil, types.WithOpenAIError(*oaiError, resp.StatusCode)
 	}
+	responseBody, err = normalizeOpenAIImageResponse(responseBody, info)
+	if err != nil {
+		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusBadGateway)
+	}
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
 
 	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
-	info.UpdateImageCount(imageCount)
+	info.UpdateImageCount(openaiImageResponseCount(responseBody))
 
 	helper.SetEventStreamHeaders(c)
 	c.Status(http.StatusOK)
