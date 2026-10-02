@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -425,6 +426,7 @@ func TestStructuredModelFailureUsesOnlyModelScopedProviderErrors(t *testing.T) {
 		want   bool
 	}{
 		{name: "missing model", status: 404, code: "model_not_found", want: true},
+		{name: "wrong path is not a model failure", status: 404, code: "resource_not_found"},
 		{name: "provider response", status: 503, code: "bad_response_status_code", want: true},
 		{name: "network is channel scoped", status: 500, code: "do_request_failed"},
 		{name: "invalid user parameters", status: 400, code: "invalid_request"},
@@ -468,6 +470,43 @@ func TestCollectModelFailureCandidatesDeduplicatesRequests(t *testing.T) {
 	require.Len(t, candidates[channel.Id], 1)
 	assert.Equal(t, "model-a", candidates[channel.Id][0].Model)
 	assert.Equal(t, 3, candidates[channel.Id][0].Failure.Requests)
+}
+
+func TestCollectModelFailureCandidatesRespectsProbeCooldown(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	previous := common.AutomaticDisableChannelEnabled
+	common.AutomaticDisableChannelEnabled = true
+	t.Cleanup(func() { common.AutomaticDisableChannelEnabled = previous })
+	autoBan := 1
+	now := int64(10_000)
+	state := channelprobe.State{}
+	state.RecordAutoProbe("model-a", true, "candidate_pass", now-60, 0, nil)
+	otherInfo, err := channelprobe.StateIntoOtherInfo("", state)
+	require.NoError(t, err)
+	channel := &model.Channel{Name: "cooldown", Status: common.ChannelStatusEnabled, Models: "model-a", Group: "default", AutoBan: &autoBan, OtherInfo: otherInfo}
+	require.NoError(t, db.Create(channel).Error)
+	other, err := common.Marshal(map[string]any{"status_code": 404, "error_code": "model_not_found", "error_type": "upstream_error"})
+	require.NoError(t, err)
+	for _, requestID := range []string{"request-1", "request-2", "request-3"} {
+		require.NoError(t, db.Create(&model.Log{
+			CreatedAt: now - 1, Type: model.LogTypeError, ChannelId: channel.Id,
+			ModelName: "model-a", RequestId: requestID, Other: string(other),
+		}).Error)
+	}
+
+	assert.Empty(t, collectModelFailureCandidates([]*model.Channel{channel}, now)[channel.Id])
+	assert.Len(t, collectModelFailureCandidates([]*model.Channel{channel}, now+int64(modelProbeCooldown/time.Second))[channel.Id], 1)
+}
+
+func TestModelHealthProbeMatchesEndpointFamily(t *testing.T) {
+	channel := &model.Channel{Models: "text-embed-v4,bge-m3,gpt-4o,chat-backup"}
+	assert.Equal(t, string(constant.EndpointTypeEmbeddings), modelProbeEndpoint(channel, "text-embed-v4"))
+	assert.Equal(t, string(constant.EndpointTypeOpenAI), modelProbeEndpoint(channel, "gpt-4o"))
+
+	state := channelprobe.State{}
+	assert.Equal(t, "bge-m3", selectControlModel(channel, state, "text-embed-v4", string(constant.EndpointTypeEmbeddings)))
+	assert.Equal(t, "chat-backup", selectControlModel(channel, state, "gpt-4o", string(constant.EndpointTypeOpenAI)))
 }
 
 func TestRemovedProbeModelsPauseWithoutRequestsAndResumeWhenRestored(t *testing.T) {
