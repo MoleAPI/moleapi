@@ -22,13 +22,19 @@ import {
   getCoreRowModel,
   useReactTable,
 } from '@tanstack/react-table'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 
+import { retestChannelModel } from '../../api'
 import { channelSchema, type Channel } from '../../types'
 import { useChannelsColumns } from '../channels-columns'
 import { ChannelsProvider } from '../channels-provider'
+
+vi.mock('../../api', async () => {
+  const actual = await vi.importActual<typeof import('../../api')>('../../api')
+  return { ...actual, retestChannelModel: vi.fn() }
+})
 
 function ExampleAutoDisabledStatusCell(props: { channel: Channel }) {
   const table = useReactTable({
@@ -74,4 +80,56 @@ test('keeps the long string inside the status tooltip is wrapped when show', asy
   expect(await screen.findByText(reason, { exact: false })).toHaveClass(
     'wrap-anywhere'
   )
+})
+
+test('shows auto-paused model details and offers an immediate retest', async () => {
+  vi.mocked(retestChannelModel).mockResolvedValue({ success: true })
+  const channelItem = channelSchema.parse({
+    id: 2,
+    type: 1,
+    key: 'test-key',
+    name: 'Model health channel',
+    status: 1,
+    models: 'paused-model,healthy-model',
+    created_time: 1,
+    test_time: 0,
+    response_time: 0,
+    balance_updated_time: 0,
+    other_info: JSON.stringify({
+      channel_probe: {
+        models: {
+          'paused-model': {
+            auto_paused: true,
+            pause_reason:
+              'Production failures confirmed by target and control probes',
+            paused_at: 1_700_000_000,
+            next_probe_at: 1_700_001_800,
+            last_probe_result: 'failed_target_passed_control',
+          },
+          'removed-model': { auto_paused: true },
+        },
+      },
+    }),
+  })
+  const queryClient = new QueryClient()
+  const user = userEvent.setup()
+
+  render(
+    <QueryClientProvider client={queryClient}>
+      <ChannelsProvider>
+        <ExampleAutoDisabledStatusCell channel={channelItem} />
+      </ChannelsProvider>
+    </QueryClientProvider>
+  )
+
+  await user.click(screen.getByRole('button', { name: 'Auto-paused models' }))
+  expect(screen.getByText('paused-model')).toBeInTheDocument()
+  expect(screen.queryByText('removed-model')).not.toBeInTheDocument()
+
+  await user.click(
+    screen.getByRole('button', { name: 'Retest and restore now' })
+  )
+  await waitFor(() => {
+    expect(retestChannelModel).toHaveBeenCalledWith(2, 'paused-model')
+  })
 })

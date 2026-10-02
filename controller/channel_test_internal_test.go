@@ -402,6 +402,74 @@ func TestChannelTestModelsOnlyUsesModelsStillInChannel(t *testing.T) {
 	}
 }
 
+func TestChannelTestModelsSkipsAutoPausedModels(t *testing.T) {
+	state := channelprobe.State{}
+	state.Pause("paused", "confirmed", 10, 100, channelprobe.Failure{OccurredAt: 10, Requests: 3})
+	otherInfo, err := channelprobe.StateIntoOtherInfo("", state)
+	require.NoError(t, err)
+	channel := &model.Channel{Models: "paused,healthy", OtherInfo: otherInfo}
+
+	assert.Equal(t, []string{"healthy"}, channelTestModels(channel))
+}
+
+func TestStructuredModelFailureUsesOnlyModelScopedProviderErrors(t *testing.T) {
+	other := func(status int, code string) string {
+		encoded, err := common.Marshal(map[string]any{"status_code": status, "error_code": code, "error_type": "upstream_error"})
+		require.NoError(t, err)
+		return string(encoded)
+	}
+	tests := []struct {
+		name   string
+		status int
+		code   string
+		want   bool
+	}{
+		{name: "missing model", status: 404, code: "model_not_found", want: true},
+		{name: "provider response", status: 503, code: "bad_response_status_code", want: true},
+		{name: "network is channel scoped", status: 500, code: "do_request_failed"},
+		{name: "invalid user parameters", status: 400, code: "invalid_request"},
+		{name: "insufficient balance", status: 402, code: "insufficient_user_quota"},
+		{name: "content policy", status: 422, code: "content_policy_violation"},
+		{name: "cancelled", status: 499, code: "request_cancelled"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, ok := structuredModelFailure(&model.Log{ChannelId: 1, ModelName: "model-a", RequestId: "request", CreatedAt: 10, Other: other(tt.status, tt.code)})
+			assert.Equal(t, tt.want, ok)
+		})
+	}
+}
+
+func TestCollectModelFailureCandidatesDeduplicatesRequests(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	previous := common.AutomaticDisableChannelEnabled
+	common.AutomaticDisableChannelEnabled = true
+	t.Cleanup(func() { common.AutomaticDisableChannelEnabled = previous })
+	autoBan := 1
+	channel := &model.Channel{Name: "candidate", Status: common.ChannelStatusEnabled, Models: "model-a,model-b", Group: "default", AutoBan: &autoBan}
+	require.NoError(t, db.Create(channel).Error)
+	now := int64(10_000)
+	other, err := common.Marshal(map[string]any{"status_code": 404, "error_code": "model_not_found", "error_type": "upstream_error"})
+	require.NoError(t, err)
+	for _, requestID := range []string{"request-1", "request-1", "request-2", "request-3"} {
+		require.NoError(t, db.Create(&model.Log{
+			CreatedAt: now - 1, Type: model.LogTypeError, ChannelId: channel.Id,
+			ModelName: "model-a", RequestId: requestID, Other: string(other),
+		}).Error)
+	}
+	require.NoError(t, db.Create(&model.Log{
+		CreatedAt: now - 1, Type: model.LogTypeError, ChannelId: channel.Id,
+		ModelName: "model-b", TokenName: "模型测试", RequestId: "probe", Other: string(other),
+	}).Error)
+
+	candidates := collectModelFailureCandidates([]*model.Channel{channel}, now)
+
+	require.Len(t, candidates[channel.Id], 1)
+	assert.Equal(t, "model-a", candidates[channel.Id][0].Model)
+	assert.Equal(t, 3, candidates[channel.Id][0].Failure.Requests)
+}
+
 func TestRemovedProbeModelsPauseWithoutRequestsAndResumeWhenRestored(t *testing.T) {
 	channel := &model.Channel{
 		Id: 1, Status: common.ChannelStatusEnabled, Models: "replacement",

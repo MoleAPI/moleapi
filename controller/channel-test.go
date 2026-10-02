@@ -1150,11 +1150,14 @@ func recordChannelTestFailure(channel *model.Channel, testUserID int, result tes
 // channelTestSummary records the outcome of one channel test cycle so the
 // system task can persist a per-run result for history.
 type channelTestSummary struct {
-	Tested    int `json:"tested"`
-	Succeeded int `json:"succeeded"`
-	Failed    int `json:"failed"`
-	Disabled  int `json:"disabled"`
-	Enabled   int `json:"enabled"`
+	Tested         int `json:"tested"`
+	Succeeded      int `json:"succeeded"`
+	Failed         int `json:"failed"`
+	Disabled       int `json:"disabled"`
+	Enabled        int `json:"enabled"`
+	ModelTested    int `json:"model_tested"`
+	ModelPaused    int `json:"model_paused"`
+	ModelRecovered int `json:"model_recovered"`
 }
 
 func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
@@ -1195,13 +1198,8 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	if result.evaluation != nil && (result.probe.Mode == channelprobe.ModeIntelligence || result.probe.Mode == channelprobe.ModeCustom) {
 		stateChange = probeState.Apply(testModel, *result.evaluation, common.GetTimestamp(), milliseconds)
 	}
-	if raw, err := channelprobe.StateIntoOtherInfo(channel.OtherInfo, probeState); err == nil {
-		channel.OtherInfo = raw
-		if err := channel.SaveOtherInfo(); err != nil {
-			common.SysError(fmt.Sprintf("failed to save channel probe state: channel_id=%d error=%v", channel.Id, err))
-		}
-	} else {
-		common.SysError(fmt.Sprintf("failed to encode channel probe state: channel_id=%d error=%v", channel.Id, err))
+	if err := channel.SaveProbeState(probeState); err != nil {
+		common.SysError(fmt.Sprintf("failed to save channel probe state: channel_id=%d error=%v", channel.Id, err))
 	}
 
 	summary.Tested++
@@ -1209,13 +1207,10 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	shouldBanChannel := false
 	newAPIError := result.newAPIError
 	if newAPIError != nil {
-		shouldBanChannel = service.ShouldDisableChannel(result.newAPIError)
+		shouldBanChannel = service.ShouldDisableChannel(result.newAPIError) && !service.ShouldConfirmModelFailure(result.newAPIError)
 	}
-	if stateChange.Degraded {
-		err := fmt.Errorf("model %s failed three consecutive %s probes", testModel, result.probe.Mode)
-		newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusServiceUnavailable)
-		shouldBanChannel = common.AutomaticDisableChannelEnabled
-	}
+	// A model-specific probe result is handled by the target/control workflow;
+	// it must not disable the whole channel on its own.
 
 	if common.AutomaticDisableChannelEnabled && !shouldBanChannel && result.probe.Mode == channelprobe.ModeHi {
 		if milliseconds > disableThreshold {
@@ -1251,11 +1246,14 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 
 func channelTestModels(channel *model.Channel) []string {
 	settings := channel.GetOtherSettings()
+	probeState := channelprobe.StateFromOtherInfo(channel.OtherInfo)
 	models := settings.ChannelProbeModels
 	if len(models) == 0 {
-		channelModels := channel.GetModels()
-		if len(channelModels) > 0 {
-			models = []string{channelModels[0]}
+		for _, modelName := range channel.GetModels() {
+			if !probeState.IsAutoPaused(strings.TrimSpace(modelName)) {
+				models = []string{modelName}
+				break
+			}
 		}
 	}
 	available := make(map[string]struct{})
@@ -1273,6 +1271,9 @@ func channelTestModels(channel *model.Channel) []string {
 			continue
 		}
 		if _, ok := seen[modelName]; ok {
+			continue
+		}
+		if probeState.IsAutoPaused(modelName) {
 			continue
 		}
 		seen[modelName] = struct{}{}
@@ -1368,6 +1369,9 @@ func runChannelTestWorkers(
 		summary.Failed += result.Failed
 		summary.Disabled += result.Disabled
 		summary.Enabled += result.Enabled
+		summary.ModelTested += result.ModelTested
+		summary.ModelPaused += result.ModelPaused
+		summary.ModelRecovered += result.ModelRecovered
 		processed++
 		if report != nil && ctx.Err() == nil {
 			report(processed, total)
@@ -1425,6 +1429,14 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
 	allowDisable := operation_setting.NormalizeChannelTestMode(mode) != operation_setting.ChannelTestModePassiveRecovery
 	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report)
+	freshChannels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		return summary, err
+	}
+	modelSummary := runModelAutoHealthChecks(ctx, freshChannels, testUserID)
+	summary.ModelTested += modelSummary.ModelTested
+	summary.ModelPaused += modelSummary.ModelPaused
+	summary.ModelRecovered += modelSummary.ModelRecovered
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 	}

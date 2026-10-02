@@ -27,6 +27,7 @@ import type {
   BatchSetTagParams,
   Channel,
   ChannelBalanceResponse,
+  ChannelModelRetestResponse,
   ChannelOpsResponse,
   ChannelTestResponse,
   CopyChannelParams,
@@ -291,6 +292,18 @@ export async function testChannel(
   const res = await api.post(
     `/api/channel/test/${id}`,
     params ?? {},
+    channelActionConfig()
+  )
+  return res.data
+}
+
+export async function retestChannelModel(
+  id: number,
+  model: string
+): Promise<ChannelModelRetestResponse> {
+  const res = await api.post(
+    `/api/channel/${id}/model/retest`,
+    { model },
     channelActionConfig()
   )
   return res.data

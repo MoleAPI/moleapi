@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils'
 import { CHANNEL_STATUS } from '../constants'
 import { isTagAggregateRow, parseGroupsList } from '../lib'
 import type { Channel } from '../types'
+import { AutoPausedModels } from './auto-paused-models'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
 
@@ -112,6 +113,7 @@ function ChannelCardComponent({
             <div className='min-w-0 overflow-hidden'>{typeCell}</div>
           </div>
           <div className='flex shrink-0 items-center gap-1.5'>
+            {!isTagRow && <AutoPausedModels channel={row.original} />}
             {showStatusBadge && statusCell}
             {actionsCell}
           </div>

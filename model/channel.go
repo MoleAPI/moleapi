@@ -786,6 +786,10 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 			err := UpdateAbilityStatus(channelId, status == common.ChannelStatusEnabled)
 			if err != nil {
 				common.SysLog(fmt.Sprintf("failed to update ability status: channel_id=%d, error=%v", channelId, err))
+				return
+			}
+			if common.MemoryCacheEnabled {
+				InitChannelCache()
 			}
 		}
 	}()
@@ -830,8 +834,13 @@ func EnableChannelByTag(tag string) error {
 	if err != nil {
 		return err
 	}
-	err = UpdateAbilityStatusByTag(tag, true)
-	return err
+	if err = UpdateAbilityStatusByTag(tag, true); err != nil {
+		return err
+	}
+	if common.MemoryCacheEnabled {
+		InitChannelCache()
+	}
+	return nil
 }
 
 func DisableChannelByTag(tag string) error {
@@ -852,8 +861,13 @@ func DisableChannelByTag(tag string) error {
 	if err != nil {
 		return err
 	}
-	err = UpdateAbilityStatusByTag(tag, false)
-	return err
+	if err = UpdateAbilityStatusByTag(tag, false); err != nil {
+		return err
+	}
+	if common.MemoryCacheEnabled {
+		InitChannelCache()
+	}
+	return nil
 }
 
 func EditChannelByTag(tag string, newTag *string, modelMapping *string, models *string, group *string, priority *int64, weight *uint, paramOverride *string, headerOverride *string) error {
