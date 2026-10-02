@@ -20,8 +20,10 @@ import (
 )
 
 const (
-	modelFailureWindow    = 15 * time.Minute
-	modelRecoveryDelay    = 30 * time.Minute
+	modelFailureWindow = 15 * time.Minute
+	// ponytail: keep one conservative fixed cooldown; add a setting only if operations need different timings.
+	modelProbeCooldown    = 10 * time.Minute
+	modelRecoveryDelay    = 10 * time.Minute
 	modelFailureMinimum   = 3
 	modelFailureScanLimit = 5000
 )
@@ -55,7 +57,7 @@ func structuredModelFailure(log *model.Log) (channelprobe.Failure, bool) {
 		errorType = ""
 	}
 
-	if errorCode == string(types.ErrorCodeModelNotFound) || statusCode == http.StatusNotFound {
+	if errorCode == string(types.ErrorCodeModelNotFound) {
 		return channelprobe.Failure{OccurredAt: log.CreatedAt, StatusCode: statusCode, ErrorCode: errorCode, ErrorType: errorType}, true
 	}
 	if statusCode < 500 {
@@ -111,7 +113,9 @@ func collectModelFailureCandidates(channels []*model.Channel, now int64) map[int
 		modelName := strings.TrimSpace(log.ModelName)
 		state := channelprobe.StateFromOtherInfo(channel.OtherInfo)
 		modelState := state.Models[modelName]
-		if state.IsAutoPaused(modelName) || log.CreatedAt <= modelState.LastAutoProbeAt || !channelDeclaresModel(channel, modelName) {
+		if state.IsAutoPaused(modelName) || log.CreatedAt <= modelState.LastAutoProbeAt ||
+			(modelState.LastAutoProbeAt > 0 && now-modelState.LastAutoProbeAt < int64(modelProbeCooldown/time.Second)) ||
+			!channelDeclaresModel(channel, modelName) {
 			continue
 		}
 		failure, ok := structuredModelFailure(log)
@@ -153,11 +157,42 @@ func channelDeclaresModel(channel *model.Channel, modelName string) bool {
 	return false
 }
 
-func selectControlModel(channel *model.Channel, state channelprobe.State, target string) string {
+func modelProbeEndpoint(channel *model.Channel, modelName string) string {
+	endpoints := model.GetModelSupportEndpointTypes(modelName)
+	// Prefer a model-specific capability over a channel's generic chat compatibility.
+	for _, endpoint := range endpoints {
+		switch endpoint {
+		case constant.EndpointTypeEmbeddings, constant.EndpointTypeJinaRerank, constant.EndpointTypeImageGeneration:
+			return string(endpoint)
+		}
+	}
+	for _, endpoint := range endpoints {
+		switch endpoint {
+		case constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic, constant.EndpointTypeGemini:
+			return string(endpoint)
+		}
+	}
+
+	lowerModel := strings.ToLower(modelName)
+	switch {
+	case strings.Contains(lowerModel, "rerank"):
+		return string(constant.EndpointTypeJinaRerank)
+	case strings.Contains(lowerModel, "embedding"), strings.Contains(lowerModel, "embed"), strings.HasPrefix(lowerModel, "m3e"), strings.Contains(lowerModel, "bge-"), channel != nil && channel.Type == constant.ChannelTypeMokaAI:
+		return string(constant.EndpointTypeEmbeddings)
+	case common.IsImageGenerationModel(modelName), channel != nil && channel.Type == constant.ChannelTypeVolcEngine && strings.Contains(lowerModel, "seedream"):
+		return string(constant.EndpointTypeImageGeneration)
+	case strings.Contains(lowerModel, "codex"), channel != nil && channel.Type == constant.ChannelTypeCodex:
+		return string(constant.EndpointTypeOpenAIResponse)
+	default:
+		return string(constant.EndpointTypeOpenAI)
+	}
+}
+
+func selectControlModel(channel *model.Channel, state channelprobe.State, target string, endpoint string) string {
 	fallback := ""
 	for _, modelName := range channel.GetModels() {
 		modelName = strings.TrimSpace(modelName)
-		if modelName == "" || modelName == target || state.IsAutoPaused(modelName) {
+		if modelName == "" || modelName == target || state.IsAutoPaused(modelName) || modelProbeEndpoint(channel, modelName) != endpoint {
 			continue
 		}
 		if state.Models[modelName].Status == channelprobe.StatusHealthy {
@@ -172,7 +207,7 @@ func selectControlModel(channel *model.Channel, state channelprobe.State, target
 
 func testModelAvailability(ctx context.Context, channel *model.Channel, testUserID int, modelName string) testResult {
 	probe := newChannelProbeSpec(channelprobe.ModeHi, "model_health", "", "", "", time.Now().UnixNano())
-	result := testChannel(ctx, channel, testUserID, modelName, "", shouldUseStreamForAutomaticChannelTest(channel), probe)
+	result := testChannel(ctx, channel, testUserID, modelName, modelProbeEndpoint(channel, modelName), shouldUseStreamForAutomaticChannelTest(channel), probe)
 	if result.localErr != nil || result.newAPIError != nil {
 		recordChannelTestFailure(channel, testUserID, result)
 	}
@@ -273,7 +308,7 @@ func checkOneModelHealth(ctx context.Context, channel *model.Channel, testUserID
 		}
 		return summary
 	}
-	controlModel := selectControlModel(channel, state, modelName)
+	controlModel := selectControlModel(channel, state, modelName, modelProbeEndpoint(channel, modelName))
 	if controlModel == "" {
 		failure := failureFromTest(result, now, candidate.Failure.Requests)
 		state.RecordAutoProbe(modelName, false, "inconclusive_no_control", now, 0, &failure)
