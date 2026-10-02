@@ -56,6 +56,26 @@ func TestLegacyDalleValidationAndPricesRemainCompatible(t *testing.T) {
 	}
 }
 
+func TestGetAndValidOpenAIImageRequestResponseFormat(t *testing.T) {
+	for _, tc := range []struct {
+		name, body, want string
+	}{
+		{name: "defaults to base64", body: `{"model":"gpt-image-1","prompt":"draw a cat"}`, want: "b64_json"},
+		{name: "keeps explicit url", body: `{"model":"gpt-image-1","prompt":"draw a cat","response_format":"url"}`, want: "url"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", bytes.NewBufferString(tc.body))
+			c.Request.Header.Set("Content-Type", "application/json")
+
+			request, err := GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
+
+			require.NoError(t, err)
+			require.Equal(t, tc.want, request.ResponseFormat)
+		})
+	}
+}
+
 // TestGetAndValidOpenAIImageRequestMultipartStream verifies multipart image
 // edit parsing: the stream field is parsed and validated, and the request body
 // stays replayable for the upstream request.

@@ -16,6 +16,8 @@ import (
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/service"
+	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -78,6 +80,7 @@ func newImageTestContext(t *testing.T, body, contentType string, isStream bool) 
 	info := &relaycommon.RelayInfo{
 		ChannelMeta: &relaycommon.ChannelMeta{},
 		IsStream:    isStream,
+		Request:     &dto.ImageRequest{ResponseFormat: "url"},
 	}
 	return c, recorder, resp, info
 }
@@ -589,6 +592,65 @@ func TestOpenaiImageHandlerUsesPositiveActualCountForFixedPrice(t *testing.T) {
 			require.Equal(t, tt.body, recorder.Body.String())
 		})
 	}
+}
+
+func TestOpenaiImageHandlerReturnsBase64UnlessURLRequested(t *testing.T) {
+	service.InitHttpClient()
+	oldStreamingTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 30
+	t.Cleanup(func() { constant.StreamingTimeout = oldStreamingTimeout })
+	oldMaxFileDownloadMB := constant.MaxFileDownloadMB
+	constant.MaxFileDownloadMB = 1
+	t.Cleanup(func() { constant.MaxFileDownloadMB = oldMaxFileDownloadMB })
+	oldFetchSetting := *system_setting.GetFetchSetting()
+	system_setting.GetFetchSetting().EnableSSRFProtection = false
+	t.Cleanup(func() { *system_setting.GetFetchSetting() = oldFetchSetting })
+
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("image"))
+	}))
+	t.Cleanup(imageServer.Close)
+
+	for _, tc := range []struct {
+		name, responseFormat string
+		wantURL              bool
+	}{
+		{name: "default response is base64"},
+		{name: "explicit base64 response is base64", responseFormat: "b64_json"},
+		{name: "explicit url response keeps url", responseFormat: "url", wantURL: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"data":[{"url":%q,"revised_prompt":"draw a cat"}]}`, imageServer.URL+"/image.png")
+			c, recorder, resp, info := newImageTestContext(t, body, "application/json", false)
+			info.Request = &dto.ImageRequest{ResponseFormat: tc.responseFormat}
+
+			_, apiErr := OpenaiImageHandler(c, info, resp)
+
+			require.Nil(t, apiErr)
+			if tc.wantURL {
+				require.Contains(t, recorder.Body.String(), `"url"`)
+				require.NotContains(t, recorder.Body.String(), `"b64_json"`)
+				return
+			}
+			require.Contains(t, recorder.Body.String(), `"b64_json":"aW1hZ2U="`)
+			require.NotContains(t, recorder.Body.String(), `"url"`)
+			require.Contains(t, recorder.Body.String(), `"revised_prompt":"draw a cat"`)
+		})
+	}
+
+	t.Run("streamed url is returned as base64", func(t *testing.T) {
+		body := fmt.Sprintf("data: {\"type\":\"image_generation.completed\",\"url\":%q}\n\ndata: [DONE]\n\n", imageServer.URL+"/image.png")
+		c, recorder, resp, info := newImageTestContext(t, body, "text/event-stream", true)
+		info.Request = &dto.ImageRequest{ResponseFormat: "b64_json"}
+
+		_, apiErr := OpenaiImageStreamHandler(c, info, resp)
+
+		require.Nil(t, apiErr)
+		require.Contains(t, recorder.Body.String(), `"b64_json":"aW1hZ2U="`)
+		require.NotContains(t, recorder.Body.String(), `"url"`)
+		require.Contains(t, recorder.Body.String(), `data: [DONE]`)
+	})
 }
 
 // TestOpenaiImageHandlersReturnJSONError covers JSON error responses for both
