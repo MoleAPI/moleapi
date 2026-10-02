@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	stdhtml "html"
 	"io"
 	"math"
 	"mime"
@@ -27,6 +28,10 @@ import (
 	"github.com/shopspring/decimal"
 	"golang.org/x/net/html"
 )
+
+// ponytail: this small test seam avoids running an SMTP server in controller tests;
+// replace it with a queue only if ticket notifications need retries.
+var supportTicketEmailSender = common.SendEmail
 
 type zohoDeskConfig struct {
 	Enabled, ClientID, ClientSecret, RefreshToken, OrgID, DepartmentID string
@@ -151,6 +156,23 @@ func normalizeSupportPortalComment(message *zohoDeskConversation) {
 	message.Author.Name = strings.TrimSpace(match[1])
 	message.Commenter.Type = "END_USER"
 	message.Commenter.Name = strings.TrimSpace(match[1])
+}
+
+func normalizeSupportConversationContent(message *zohoDeskConversation) {
+	if message.Type != "thread" {
+		return
+	}
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(message.ContentType)), "text/html") {
+		message.ContentType = "text/html"
+		return
+	}
+	tokens := html.NewTokenizer(strings.NewReader(message.Content))
+	for token := tokens.Next(); token != html.ErrorToken; token = tokens.Next() {
+		if token == html.StartTagToken || token == html.SelfClosingTagToken {
+			message.ContentType = "text/html"
+			return
+		}
+	}
 }
 
 func supportConversationMatchesTicketDescription(message zohoDeskConversation, ticket zohoDeskTicket) bool {
@@ -839,6 +861,24 @@ func CreateSupportTicket(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	common.OptionMapRWMutex.RLock()
+	notificationEmail := strings.TrimSpace(common.OptionMap["SupportTicketNotificationEmail"])
+	common.OptionMapRWMutex.RUnlock()
+	if notificationEmail != "" {
+		ticketNumber := ticket.TicketNumber
+		if ticketNumber == "" {
+			ticketNumber = ticket.ID
+		}
+		name := strings.TrimSpace(user.DisplayName)
+		if name == "" {
+			name = user.Username
+		}
+		emailContent := strings.ReplaceAll(stdhtml.EscapeString(input.Content), "\n", "<br>")
+		emailBody := fmt.Sprintf("<p><strong>New support ticket #%s</strong></p><p>From: %s (%s)</p><p>Type: %s</p><p>Subject: %s</p><p>%s</p>", stdhtml.EscapeString(ticketNumber), stdhtml.EscapeString(name), stdhtml.EscapeString(user.Email), stdhtml.EscapeString(input.Type), stdhtml.EscapeString(input.Subject), emailContent)
+		if err := supportTicketEmailSender("[MoleAPI] New support ticket #"+ticketNumber+": "+input.Subject, notificationEmail, emailBody); err != nil {
+			common.SysError("failed to send new support ticket notification: " + err.Error())
+		}
+	}
 	common.ApiSuccess(c, ticket)
 }
 
@@ -1062,6 +1102,7 @@ func GetSupportTicket(c *gin.Context) {
 				continue
 			}
 			normalizeSupportPortalComment(&message)
+			normalizeSupportConversationContent(&message)
 			if c.GetInt("role") < common.RoleAdminUser {
 				publicAttachments := message.Attachments[:0]
 				for _, attachment := range message.Attachments {

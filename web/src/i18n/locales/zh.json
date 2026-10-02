@@ -4043,6 +4043,8 @@
     "New Purchasers": "新购用户",
     "New records include the fields below. Existing fields are kept unless explicitly selected.": "新增记录将包含下列字段；已有记录仅覆盖明确勾选的字段。",
     "New ticket": "新工单",
+    "New ticket details will be sent to this address. Leave blank to disable notifications.": "新工单详情将发送到此邮箱。留空则关闭通知。",
+    "New ticket notification email": "新工单通知邮箱",
     "New tickets will appear here.": "新工单将显示在这里。",
     "New User Purchase Rate": "新用户新购率",
     "New User Quota": "新用户配额",

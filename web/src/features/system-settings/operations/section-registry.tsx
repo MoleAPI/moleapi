@@ -94,6 +94,8 @@ const OPERATIONS_SECTIONS = [
           ZohoDeskApiDomain: settings.ZohoDeskApiDomain,
           ZohoDeskAccountsDomain: settings.ZohoDeskAccountsDomain,
           ZohoDeskFromEmail: settings.ZohoDeskFromEmail,
+          SupportTicketNotificationEmail:
+            settings.SupportTicketNotificationEmail,
           SupportDiscordUrl: settings.SupportDiscordUrl,
           SupportTelegramUrl: settings.SupportTelegramUrl,
           SupportQQUrl: settings.SupportQQUrl,

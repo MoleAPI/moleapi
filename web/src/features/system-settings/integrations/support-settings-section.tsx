@@ -54,6 +54,7 @@ const schema = z.object({
   ZohoDeskApiDomain: z.string().url(),
   ZohoDeskAccountsDomain: z.string().url(),
   ZohoDeskFromEmail: z.string().email(),
+  SupportTicketNotificationEmail: z.union([z.literal(''), z.string().email()]),
   SupportDiscordUrl: urlOrEmpty,
   SupportTelegramUrl: urlOrEmpty,
   SupportQQUrl: urlOrEmpty,
@@ -104,6 +105,12 @@ export function SupportSettingsSection(props: { defaultValues: Values }) {
     { name: 'ZohoDeskApiDomain', label: 'API domain' },
     { name: 'ZohoDeskAccountsDomain', label: 'Accounts domain' },
     { name: 'ZohoDeskFromEmail', label: 'Sender email' },
+    {
+      name: 'SupportTicketNotificationEmail',
+      label: 'New ticket notification email',
+      description:
+        'New ticket details will be sent to this address. Leave blank to disable notifications.',
+    },
     { name: 'SupportDiscordUrl', label: 'Discord link' },
     { name: 'SupportTelegramUrl', label: 'Telegram link' },
     { name: 'SupportQQUrl', label: 'QQ group link' },
