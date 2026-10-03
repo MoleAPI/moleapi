@@ -7,7 +7,6 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/pkg/channelprobe"
 	"github.com/QuantumNous/new-api/relay/channel/ali"
 	"github.com/QuantumNous/new-api/relay/channel/openai"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
@@ -93,7 +92,7 @@ func TestChannelTestOpenAIChatCompatibility(t *testing.T) {
 		{name: "o series", model: "o3-mini", upstream: "o3-mini", channelType: constant.ChannelTypeAzure, wantLimit: "max_completion_tokens", wantTokens: 64},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			request, ok := buildTestRequest(tt.model, tt.endpoint, &model.Channel{}, tt.stream, channelProbeSpec{Mode: channelprobe.ModeHi}).(*dto.GeneralOpenAIRequest)
+			request, ok := buildTestRequest(tt.model, tt.endpoint, &model.Channel{}, tt.stream).(*dto.GeneralOpenAIRequest)
 			require.True(t, ok)
 			encoded := convertChatCompatibilityRequest(t, request, tt.channelType, map[string]string{tt.model: tt.upstream})
 			want := map[string]any{

@@ -22,7 +22,7 @@ import (
 const (
 	modelFailureWindow = 15 * time.Minute
 	// ponytail: keep one conservative fixed cooldown; add a setting only if operations need different timings.
-	modelProbeCooldown    = 10 * time.Minute
+	modelProbeCooldown    = 5 * time.Minute
 	modelRecoveryDelay    = 5 * time.Minute
 	modelFailureMinimum   = 3
 	modelFailureScanLimit = 5000
@@ -31,6 +31,24 @@ const (
 type modelFailureCandidate struct {
 	Model   string
 	Failure channelprobe.Failure
+}
+
+type channelModelDailyHealth struct {
+	Date          string  `json:"date"`
+	Requests      int64   `json:"requests"`
+	Failures      int64   `json:"failures"`
+	FailureRate   float64 `json:"failure_rate"`
+	LastFailureAt int64   `json:"last_failure_at,omitempty"`
+}
+
+type channelModelHealth struct {
+	Model       string                    `json:"model"`
+	Status      string                    `json:"status"`
+	PausedAt    int64                     `json:"paused_at,omitempty"`
+	NextProbeAt int64                     `json:"next_probe_at,omitempty"`
+	LastFailure *channelprobe.Failure     `json:"last_failure,omitempty"`
+	Today       channelModelDailyHealth   `json:"today"`
+	Days        []channelModelDailyHealth `json:"days"`
 }
 
 func structuredModelFailure(log *model.Log) (channelprobe.Failure, bool) {
@@ -81,9 +99,11 @@ func collectModelFailureCandidates(channels []*model.Channel, now int64) map[int
 		return result
 	}
 	eligible := make(map[int]*model.Channel)
+	channelIDs := make([]int, 0, len(channels))
 	for _, channel := range channels {
 		if channel != nil && channel.Status == common.ChannelStatusEnabled && channel.GetAutoBan() {
 			eligible[channel.Id] = channel
+			channelIDs = append(channelIDs, channel.Id)
 		}
 	}
 	if len(eligible) == 0 {
@@ -93,7 +113,7 @@ func collectModelFailureCandidates(channels []*model.Channel, now int64) map[int
 	var logs []*model.Log
 	// ponytail: scan only the newest 5,000 structured errors; a busier install can move this aggregation into its log backend when this conservative scan becomes a measured limit.
 	err := model.LOG_DB.Select("id", "created_at", "channel_id", "model_name", "token_name", "request_id", "other").
-		Where("type = ? AND created_at >= ?", model.LogTypeError, now-int64(modelFailureWindow/time.Second)).
+		Where("type = ? AND created_at >= ? AND channel_id IN ?", model.LogTypeError, now-int64(modelFailureWindow/time.Second), channelIDs).
 		Order("created_at DESC").Limit(modelFailureScanLimit).Find(&logs).Error
 	if err != nil {
 		common.SysError("failed to scan model health errors: " + err.Error())
@@ -140,10 +160,48 @@ func collectModelFailureCandidates(channels []*model.Channel, now int64) map[int
 			if len(item.requests) < modelFailureMinimum {
 				continue
 			}
-			item.failure.Requests = len(item.requests)
-			result[channelID] = append(result[channelID], modelFailureCandidate{Model: modelName, Failure: item.failure})
+			channel := eligible[channelID]
+			modelState := channelprobe.StateFromOtherInfo(channel.OtherInfo).Models[modelName]
+			var recent []*model.Log
+			err := model.LOG_DB.Select("id", "created_at", "type", "channel_id", "model_name", "token_name", "request_id", "other").
+				Where("channel_id = ? AND model_name = ? AND type IN ? AND created_at >= ? AND created_at > ?", channelID, modelName, []int{model.LogTypeConsume, model.LogTypeError}, now-int64(modelFailureWindow/time.Second), modelState.LastAutoProbeAt).
+				Order("created_at DESC, id DESC").Limit(20).Find(&recent).Error
+			if err != nil {
+				common.SysError("failed to verify consecutive model failures: " + err.Error())
+				continue
+			}
+			seen := make(map[string]struct{}, len(recent))
+			consecutive := 0
+			latest := item.failure
+			for _, entry := range recent {
+				if entry.TokenName == "模型测试" || strings.TrimSpace(entry.RequestId) == "" {
+					continue
+				}
+				if _, ok := seen[entry.RequestId]; ok {
+					continue
+				}
+				seen[entry.RequestId] = struct{}{}
+				failure, ok := structuredModelFailure(entry)
+				if entry.Type != model.LogTypeError || !ok {
+					break
+				}
+				if consecutive == 0 {
+					latest = failure
+				}
+				consecutive++
+				if consecutive == modelFailureMinimum {
+					latest.Requests = consecutive
+					result[channelID] = append(result[channelID], modelFailureCandidate{Model: modelName, Failure: latest})
+					break
+				}
+			}
 		}
-		sort.Slice(result[channelID], func(i, j int) bool { return result[channelID][i].Model < result[channelID][j].Model })
+		sort.Slice(result[channelID], func(i, j int) bool {
+			if result[channelID][i].Failure.OccurredAt == result[channelID][j].Failure.OccurredAt {
+				return result[channelID][i].Model < result[channelID][j].Model
+			}
+			return result[channelID][i].Failure.OccurredAt < result[channelID][j].Failure.OccurredAt
+		})
 	}
 	return result
 }
@@ -188,25 +246,8 @@ func modelProbeEndpoint(channel *model.Channel, modelName string) string {
 	}
 }
 
-func selectControlModel(channel *model.Channel, state channelprobe.State, target string, endpoint string) string {
-	fallback := ""
-	for _, modelName := range channel.GetModels() {
-		modelName = strings.TrimSpace(modelName)
-		if modelName == "" || modelName == target || state.IsAutoPaused(modelName) || modelProbeEndpoint(channel, modelName) != endpoint {
-			continue
-		}
-		if state.Models[modelName].Status == channelprobe.StatusHealthy {
-			return modelName
-		}
-		if fallback == "" {
-			fallback = modelName
-		}
-	}
-	return fallback
-}
-
 func testModelAvailability(ctx context.Context, channel *model.Channel, testUserID int, modelName string) testResult {
-	probe := newChannelProbeSpec(channelprobe.ModeHi, "model_health", "", "", "", time.Now().UnixNano())
+	probe := newChannelProbeSpec("model_health")
 	result := testChannel(ctx, channel, testUserID, modelName, modelProbeEndpoint(channel, modelName), shouldUseStreamForAutomaticChannelTest(channel), probe)
 	if result.localErr != nil || result.newAPIError != nil {
 		recordChannelTestFailure(channel, testUserID, result)
@@ -256,10 +297,10 @@ func checkOneModelHealth(ctx context.Context, channel *model.Channel, testUserID
 	for _, declared := range channel.GetModels() {
 		declared = strings.TrimSpace(declared)
 		modelState := state.Models[declared]
-		if modelState.AutoPaused && modelState.NextProbeAt > 0 && modelState.NextProbeAt <= now {
+		if modelState.AutoPaused && modelState.NextProbeAt > 0 && modelState.NextProbeAt <= now &&
+			(modelName == "" || modelState.NextProbeAt < state.Models[modelName].NextProbeAt) {
 			modelName = declared
 			recovery = true
-			break
 		}
 	}
 	if modelName == "" && candidate != nil {
@@ -308,38 +349,15 @@ func checkOneModelHealth(ctx context.Context, channel *model.Channel, testUserID
 		}
 		return summary
 	}
-	controlModel := selectControlModel(channel, state, modelName, modelProbeEndpoint(channel, modelName))
-	if controlModel == "" {
-		failure := failureFromTest(result, now, candidate.Failure.Requests)
-		state.RecordAutoProbe(modelName, false, "inconclusive_no_control", now, 0, &failure)
-		if err := channel.SaveProbeState(state); err != nil {
-			common.SysError(fmt.Sprintf("failed to save inconclusive model probe: channel_id=%d model=%s error=%v", channel.Id, modelName, err))
-		}
-		return summary
-	}
-	controlResult := testModelAvailability(ctx, channel, testUserID, controlModel)
-	summary.ModelTested++
-	if modelAvailabilityPassed(controlResult) {
-		failure := candidate.Failure
-		state.Pause(modelName, "Production failures confirmed by target and control probes", now, nextProbeAt, failure)
-		if err := channel.SaveProbeState(state); err != nil {
-			common.SysError(fmt.Sprintf("failed to pause channel model: channel_id=%d model=%s error=%v", channel.Id, modelName, err))
-			return summary
-		}
-		summary.ModelPaused++
-		recordAutomaticModelAudit("channel.model_auto_pause", channel, modelName)
-		notifyAutomaticModelState(channel, modelName, true)
-		return summary
-	}
-	failure := failureFromTest(result, now, candidate.Failure.Requests)
-	state.RecordAutoProbe(modelName, false, "inconclusive_both_failed", now, 0, &failure)
+	failure := candidate.Failure
+	state.Pause(modelName, "Production failures confirmed by model ping", now, nextProbeAt, failure)
 	if err := channel.SaveProbeState(state); err != nil {
-		common.SysError(fmt.Sprintf("failed to save failed model probes: channel_id=%d model=%s error=%v", channel.Id, modelName, err))
+		common.SysError(fmt.Sprintf("failed to pause channel model: channel_id=%d model=%s error=%v", channel.Id, modelName, err))
+		return summary
 	}
-	if controlResult.newAPIError != nil && service.ShouldDisableChannel(controlResult.newAPIError) && channel.GetAutoBan() {
-		reason := controlResult.newAPIError.MaskSensitiveErrorWithStatusCode()
-		service.DisableChannel(*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(controlResult.context, constant.ContextKeyChannelKey), channel.GetAutoBan()), reason)
-	}
+	summary.ModelPaused++
+	recordAutomaticModelAudit("channel.model_auto_pause", channel, modelName)
+	notifyAutomaticModelState(channel, modelName, true)
 	return summary
 }
 
@@ -373,6 +391,81 @@ func runModelAutoHealthChecks(ctx context.Context, channels []*model.Channel, te
 	return runChannelTestWorkers(ctx, selected, operation_setting.GetMonitorSetting().ChannelTestConcurrency, func(ctx context.Context, channel *model.Channel) channelTestSummary {
 		return checkOneModelHealth(ctx, channel, testUserID, selectedCandidates[channel.Id], now)
 	}, nil)
+}
+
+func GetChannelModelHealth(c *gin.Context) {
+	channelID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	channel, err := model.GetChannelById(channelID, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	state := channelprobe.StateFromOtherInfo(channel.OtherInfo)
+	models := make([]channelModelHealth, 0, len(channel.GetModels()))
+	seenModels := make(map[string]struct{})
+	for _, modelName := range channel.GetModels() {
+		modelName = strings.TrimSpace(modelName)
+		if _, exists := seenModels[modelName]; modelName == "" || exists {
+			continue
+		}
+		modelState := state.Models[modelName]
+		status := "available"
+		if modelState.AutoPaused {
+			status = "disabled"
+		}
+		models = append(models, channelModelHealth{
+			Model: modelName, Status: status, PausedAt: modelState.PausedAt,
+			NextProbeAt: modelState.NextProbeAt, LastFailure: modelState.LastFailure,
+			Days: make([]channelModelDailyHealth, 0, 7),
+		})
+		seenModels[modelName] = struct{}{}
+	}
+
+	historyAvailable := model.LOG_DB != nil
+	if historyAvailable && len(models) > 0 {
+		now := time.Now()
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		for dayOffset := 0; dayOffset < 7; dayOffset++ {
+			start := today.AddDate(0, 0, -dayOffset)
+			end := start.AddDate(0, 0, 1)
+			counts, queryErr := model.GetChannelModelLogCounts(c.Request.Context(), channelID, start.Unix(), end.Unix())
+			if queryErr != nil {
+				common.ApiError(c, queryErr)
+				return
+			}
+			dayByModel := make(map[string]channelModelDailyHealth, len(models))
+			for _, item := range models {
+				dayByModel[item.Model] = channelModelDailyHealth{Date: start.Format("2006-01-02")}
+			}
+			for _, count := range counts {
+				day, ok := dayByModel[count.ModelName]
+				if !ok {
+					continue
+				}
+				day.Requests += count.Count
+				if count.Type == model.LogTypeError {
+					day.Failures += count.Count
+					day.LastFailureAt = max(day.LastFailureAt, count.LastAt)
+				}
+				dayByModel[count.ModelName] = day
+			}
+			for index := range models {
+				day := dayByModel[models[index].Model]
+				if day.Requests > 0 {
+					day.FailureRate = float64(day.Failures) * 100 / float64(day.Requests)
+				}
+				models[index].Days = append(models[index].Days, day)
+				if dayOffset == 0 {
+					models[index].Today = day
+				}
+			}
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true, "data": gin.H{"history_available": historyAvailable, "models": models}})
 }
 
 func RetestChannelModel(c *gin.Context) {

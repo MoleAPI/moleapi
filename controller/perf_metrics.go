@@ -4,14 +4,11 @@ import (
 	"context"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
-	"github.com/QuantumNous/new-api/pkg/channelprobe"
 	perfmetrics "github.com/QuantumNous/new-api/pkg/perf_metrics"
-	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
@@ -96,14 +93,6 @@ func GetChannelSuccessMetrics(c *gin.Context) {
 		})
 		return
 	}
-	channels, err := model.GetAllChannelsWithoutKey()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": err.Error(),
-		})
-		return
-	}
 	var usage24h map[int]int64
 	if c.Query("include_usage") == "true" {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
@@ -117,91 +106,10 @@ func GetChannelSuccessMetrics(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"data": gin.H{
-			"usage_24h":      usage24h,
-			"channels":       result.Channels,
-			"probe_overview": buildChannelProbeOverview(channels, c.Query("channel_test_mode")),
+			"usage_24h": usage24h,
+			"channels":  result.Channels,
 		},
 	})
-}
-
-type channelProbeOverviewItem struct {
-	ChannelId   int    `json:"channel_id"`
-	ChannelName string `json:"channel_name"`
-	Model       string `json:"model"`
-	Level       string `json:"level,omitempty"`
-	Status      string `json:"status"`
-	RecentPass  int    `json:"recent_pass"`
-	RecentTotal int    `json:"recent_total"`
-	LastTestAt  int64  `json:"last_test_at,omitempty"`
-}
-
-type channelProbeOverview struct {
-	Enabled         bool                       `json:"enabled"`
-	Mode            string                     `json:"mode"`
-	ChannelTestMode string                     `json:"channel_test_mode"`
-	EnabledChannels int                        `json:"enabled_channels"`
-	TotalModels     int                        `json:"total_models"`
-	Healthy         int                        `json:"healthy"`
-	Degraded        int                        `json:"degraded"`
-	Pending         int                        `json:"pending"`
-	Items           []channelProbeOverviewItem `json:"items"`
-}
-
-func buildChannelProbeOverview(channels []*model.Channel, requestedMode string) channelProbeOverview {
-	monitorSetting := operation_setting.GetMonitorSetting()
-	mode := monitorSetting.ChannelTestMode
-	if strings.TrimSpace(requestedMode) != "" {
-		mode = operation_setting.NormalizeChannelTestMode(requestedMode)
-	}
-	overview := channelProbeOverview{
-		Enabled:         monitorSetting.AutoTestChannelEnabled,
-		Mode:            monitorSetting.ChannelTestType,
-		ChannelTestMode: mode,
-		Items:           make([]channelProbeOverviewItem, 0),
-	}
-	for _, channel := range selectChannelsForAutomaticTest(channels, mode) {
-		if channel == nil {
-			continue
-		}
-		models := channelTestModels(channel)
-		if len(models) == 0 {
-			continue
-		}
-		overview.EnabledChannels++
-		state := channelprobe.StateFromOtherInfo(channel.OtherInfo)
-		for _, modelName := range models {
-			modelState, ok := state.Models[modelName]
-			status := modelState.Status
-			if !ok || status == "" {
-				status = channelprobe.StatusPending
-			}
-			item := channelProbeOverviewItem{
-				ChannelId:   channel.Id,
-				ChannelName: channel.Name,
-				Model:       modelName,
-				Level:       modelState.StableLevel,
-				Status:      status,
-				RecentTotal: len(modelState.Recent),
-				LastTestAt:  modelState.LastTestAt,
-			}
-			for _, sample := range modelState.Recent {
-				if sample.Outcome == channelprobe.OutcomePass {
-					item.RecentPass++
-				}
-			}
-			switch status {
-			case channelprobe.StatusHealthy:
-				overview.Healthy++
-			case channelprobe.StatusDegraded:
-				overview.Degraded++
-			default:
-				overview.Pending++
-			}
-			overview.TotalModels++
-			overview.Items = append(overview.Items, item)
-		}
-	}
-	return overview
 }
 
 func filterActiveGroups(groups []perfmetrics.GroupResult) []perfmetrics.GroupResult {
