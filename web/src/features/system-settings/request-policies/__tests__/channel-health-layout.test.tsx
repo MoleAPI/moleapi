@@ -107,10 +107,22 @@ describe('channel health layout', () => {
     )?.parentElement
     expect(grid).toHaveAttribute('data-settings-form-span', 'full')
     for (const control of [
+      screen.getByRole('spinbutton', {
+        name: 'Failed-model detection interval (minutes)',
+      }),
       screen.getByRole('textbox', { name: 'Auto-disable status codes' }),
       screen.getByRole('textbox', { name: 'Failure keywords' }),
     ]) {
       expect(formItemOf(control)?.parentElement).toBe(grid)
     }
+  })
+
+  it('disables the failed-model interval when failure handling is off', () => {
+    show()
+    expect(
+      screen.getByRole('spinbutton', {
+        name: 'Failed-model detection interval (minutes)',
+      })
+    ).toBeDisabled()
   })
 })

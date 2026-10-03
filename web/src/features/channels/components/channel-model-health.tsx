@@ -118,8 +118,11 @@ export function ChannelModelHealthTable(props: ChannelModelHealthTableProps) {
                   </TableCell>
                   <TableCell>
                     <Badge
-                      variant={
-                        item.status === 'disabled' ? 'destructive' : 'secondary'
+                      variant='outline'
+                      className={
+                        item.status === 'disabled'
+                          ? 'border-destructive/40 bg-destructive/10 text-destructive'
+                          : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
                       }
                     >
                       {item.status === 'disabled'
@@ -142,9 +145,9 @@ export function ChannelModelHealthTable(props: ChannelModelHealthTableProps) {
                   <TableCell className='text-right'>
                     <Button
                       type='button'
-                      variant='ghost'
+                      variant='destructive'
                       size='sm'
-                      className='text-destructive hover:text-destructive'
+                      className='bg-destructive text-destructive-foreground hover:bg-destructive/90 dark:bg-destructive dark:hover:bg-destructive/90'
                       onClick={() => props.onDelete(item.model)}
                     >
                       {t('Delete')}
@@ -154,14 +157,17 @@ export function ChannelModelHealthTable(props: ChannelModelHealthTableProps) {
                 {expanded && (
                   <TableRow>
                     <TableCell colSpan={6} className='bg-muted/20 p-3'>
-                      <div className='grid gap-2 sm:grid-cols-2 lg:grid-cols-4'>
+                      <ul
+                        aria-label={t('Daily model health history')}
+                        className='bg-background divide-y rounded-md border'
+                      >
                         {item.days.map((day) => (
-                          <div
+                          <li
                             key={day.date}
-                            className='bg-background rounded-md border p-2 text-xs'
+                            className='grid gap-1 px-3 py-2 text-xs sm:grid-cols-[minmax(7rem,1fr)_auto_auto] sm:items-center sm:gap-5'
                           >
-                            <div className='font-medium'>{day.date}</div>
-                            <div className='text-muted-foreground mt-1'>
+                            <span className='font-medium'>{day.date}</span>
+                            <span className='text-muted-foreground'>
                               {t(
                                 '{{failures}} failures / {{requests}} requests',
                                 {
@@ -169,14 +175,14 @@ export function ChannelModelHealthTable(props: ChannelModelHealthTableProps) {
                                   requests: formatNumber(day.requests, locale),
                                 }
                               )}
-                            </div>
-                            <div className='text-muted-foreground'>
+                            </span>
+                            <span className='text-muted-foreground'>
                               {t('Failure rate')}:{' '}
                               {formatNumber(day.failure_rate, locale)}%
-                            </div>
-                          </div>
+                            </span>
+                          </li>
                         ))}
-                      </div>
+                      </ul>
                     </TableCell>
                   </TableRow>
                 )}

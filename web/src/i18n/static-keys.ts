@@ -888,6 +888,7 @@ export const STATIC_I18N_KEYS = [
   'Install, configure, test, and remove task plugins.',
   'Operations',
   'View performance, system tasks, and system information.',
+  'Automatic failed-model detection',
   'Run and manage maintenance tasks and performance settings.',
   // Access token groups, expiry presets, form messages and audit templates.
   'Personal',

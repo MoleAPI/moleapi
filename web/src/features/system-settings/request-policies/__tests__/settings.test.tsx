@@ -212,6 +212,13 @@ describe('request policy settings', () => {
       'monitor_setting.channel_test_concurrency',
       4,
     ],
+    [
+      'health',
+      'Failed-model detection interval (minutes)',
+      '5',
+      'monitor_setting.model_health_check_minutes',
+      5,
+    ],
   ])(
     'saving a changed %s field writes only that original option key',
     async (section, label, input, key, value) => {
