@@ -59,6 +59,7 @@ func TestRequestPolicyAndChannelUsageDatabaseMatrix(t *testing.T) {
 				`{"options":{"RetryTimes":"3","monitor_setting.channel_test_concurrency":"99"}}`,
 				`{"options":{"RetryTimes":"3","monitor_setting.channel_test_type":"hi"}}`,
 				`{"options":{"channel_affinity_setting.session_mode":"invalid"}}`,
+				`{"options":{"ChannelDisableThreshold":"5"}}`,
 				`{"options":{"ZohoDeskClientSecret":"forbidden"}}`,
 			} {
 				response = request(body)

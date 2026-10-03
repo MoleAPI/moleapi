@@ -731,7 +731,7 @@ func TestChannelHealthCheckCountsLocalErrorsAsFailed(t *testing.T) {
 	}
 	require.NoError(t, db.Create(channel).Error)
 
-	summary := testChannelForHealthCheck(context.Background(), channel, 0, true, 1)
+	summary := testChannelForHealthCheck(context.Background(), channel, 0, true)
 
 	assert.Equal(t, channelTestSummary{Tested: 1, Failed: 1}, summary)
 }

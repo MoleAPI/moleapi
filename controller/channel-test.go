@@ -944,16 +944,11 @@ func TestChannel(c *gin.Context) {
 		requestCtx = c.Request.Context()
 	}
 	if request.Scheduled {
-		disableThreshold := int64(common.ChannelDisableThreshold * 1000)
-		if disableThreshold == 0 {
-			disableThreshold = 10000000
-		}
 		summary := testChannelForHealthCheck(
 			requestCtx,
 			channel,
 			testUserID,
 			true,
-			disableThreshold,
 		)
 		c.JSON(http.StatusOK, gin.H{
 			"success": summary.Tested > 0 && summary.Failed == 0,
@@ -1027,7 +1022,7 @@ type channelTestSummary struct {
 	ModelRecovered int `json:"model_recovered"`
 }
 
-func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool, disableThreshold int64) channelTestSummary {
+func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, testUserID int, allowDisable bool) channelTestSummary {
 	summary := channelTestSummary{}
 	probeModels := channelTestModels(channel)
 	if len(probeModels) == 0 {
@@ -1060,14 +1055,6 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	}
 	// A model-specific probe result is handled by the target/control workflow;
 	// it must not disable the whole channel on its own.
-
-	if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
-		if milliseconds > disableThreshold {
-			err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
-			newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
-			shouldBanChannel = true
-		}
-	}
 
 	if result.localErr == nil && newAPIError == nil {
 		summary.Succeeded++
@@ -1203,16 +1190,12 @@ func performChannelTests(ctx context.Context, channels []*model.Channel, testUse
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	disableThreshold := int64(common.ChannelDisableThreshold * 1000)
-	if disableThreshold == 0 {
-		disableThreshold = 10000000 // an impossible value
-	}
 	return runChannelTestWorkers(
 		ctx,
 		channels,
 		concurrency,
 		func(ctx context.Context, channel *model.Channel) channelTestSummary {
-			return testChannelForHealthCheck(ctx, channel, testUserID, allowDisable, disableThreshold)
+			return testChannelForHealthCheck(ctx, channel, testUserID, allowDisable)
 		},
 		report,
 	)

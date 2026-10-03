@@ -107,9 +107,6 @@ describe('channel health layout', () => {
     )?.parentElement
     expect(grid).toHaveAttribute('data-settings-form-span', 'full')
     for (const control of [
-      screen.getByRole('spinbutton', {
-        name: 'Health check timeout threshold (seconds)',
-      }),
       screen.getByRole('textbox', { name: 'Auto-disable status codes' }),
       screen.getByRole('textbox', { name: 'Failure keywords' }),
     ]) {

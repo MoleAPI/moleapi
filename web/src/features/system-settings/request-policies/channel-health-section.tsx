@@ -62,12 +62,6 @@ import { safeNumberFieldProps } from '../utils/numeric-field'
 import type { HealthSettings } from './defaults'
 import { useSavePolicy } from './use-save-policy'
 
-const numericString = z.string().refine((value) => {
-  const trimmed = value.trim()
-  if (!trimmed) return true
-  return !Number.isNaN(Number(trimmed)) && Number(trimmed) >= 0
-}, 'Enter a non-negative number or leave empty')
-
 const channelTestModes = [
   'scheduled_all',
   'auto_detect',
@@ -82,7 +76,6 @@ const createChannelHealthSchema = (
 ) =>
   z
     .object({
-      ChannelDisableThreshold: numericString,
       AutomaticDisableChannelEnabled: z.boolean(),
       AutomaticEnableChannelEnabled: z.boolean(),
       AutomaticDisableKeywords: z.string(),
@@ -132,7 +125,6 @@ function normalizeLineEndings(value: string) {
 }
 
 type NormalizedChannelHealthValues = {
-  ChannelDisableThreshold: string
   AutomaticDisableChannelEnabled: boolean
   AutomaticEnableChannelEnabled: boolean
   AutomaticDisableKeywords: string
@@ -159,7 +151,6 @@ function normalizeChannelTestMode(value?: string): ChannelTestMode {
 const buildFormDefaults = (
   defaults: ChannelHealthSectionProps['defaultValues']
 ): ChannelHealthFormInput => ({
-  ChannelDisableThreshold: defaults.ChannelDisableThreshold ?? '',
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
@@ -182,7 +173,6 @@ const buildFormDefaults = (
 const normalizeDefaults = (
   defaults: ChannelHealthSectionProps['defaultValues']
 ): NormalizedChannelHealthValues => ({
-  ChannelDisableThreshold: (defaults.ChannelDisableThreshold ?? '').trim(),
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
@@ -205,7 +195,6 @@ const normalizeDefaults = (
 const normalizeFormValues = (
   values: ChannelHealthFormValues
 ): NormalizedChannelHealthValues => ({
-  ChannelDisableThreshold: values.ChannelDisableThreshold.trim(),
   AutomaticDisableChannelEnabled: values.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: values.AutomaticEnableChannelEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
@@ -530,33 +519,6 @@ export function ChannelHealthSection({
                       />
                     </FormControl>
                   </SettingsSwitchItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name='ChannelDisableThreshold'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      {t('Health check timeout threshold (seconds)')}
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type='number'
-                        min={0}
-                        step={1}
-                        value={field.value}
-                        onChange={(event) => field.onChange(event.target.value)}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'Scheduled or bulk health checks can disable a channel when this duration is exceeded, if both global and channel auto-disable are enabled.'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
                 )}
               />
 
