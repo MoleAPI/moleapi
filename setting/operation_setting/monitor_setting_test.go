@@ -113,3 +113,11 @@ func TestValidateChannelTestConcurrency(t *testing.T) {
 	assert.Error(t, ValidateChannelTestConcurrency("33"))
 	assert.Error(t, ValidateChannelTestConcurrency("1.5"))
 }
+
+func TestValidateModelHealthCheckMinutes(t *testing.T) {
+	require.NoError(t, ValidateModelHealthCheckMinutes("1"))
+	require.NoError(t, ValidateModelHealthCheckMinutes("1440"))
+	assert.Error(t, ValidateModelHealthCheckMinutes("0"))
+	assert.Error(t, ValidateModelHealthCheckMinutes("1441"))
+	assert.Error(t, ValidateModelHealthCheckMinutes("1.5"))
+}

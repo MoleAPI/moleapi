@@ -49,15 +49,17 @@ func TestRequestPolicyAndChannelUsageDatabaseMatrix(t *testing.T) {
 				UpdateRequestPolicy(c)
 				return w
 			}
-			response := request(`{"options":{"RetryTimes":"2","channel_affinity_setting.session_mode":"strict","monitor_setting.channel_test_mode":"auto_detect"}}`)
+			response := request(`{"options":{"RetryTimes":"2","channel_affinity_setting.session_mode":"strict","monitor_setting.channel_test_mode":"auto_detect","monitor_setting.model_health_check_minutes":"5"}}`)
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 			assert.Equal(t, 2, common.RetryTimes)
 			assert.Equal(t, "strict", operation_setting.GetChannelAffinitySetting().SessionMode)
 			assert.Equal(t, "auto_detect", operation_setting.GetMonitorSetting().ChannelTestMode)
+			assert.Equal(t, 5, operation_setting.GetMonitorSetting().ModelHealthCheckMinutes)
 			for _, body := range []string{
 				`{"options":{"RetryTimes":"-1"}}`,
 				`{"options":{"RetryTimes":"3","monitor_setting.channel_test_concurrency":"99"}}`,
 				`{"options":{"RetryTimes":"3","monitor_setting.channel_test_type":"hi"}}`,
+				`{"options":{"monitor_setting.model_health_check_minutes":"0"}}`,
 				`{"options":{"channel_affinity_setting.session_mode":"invalid"}}`,
 				`{"options":{"ChannelDisableThreshold":"5"}}`,
 				`{"options":{"ZohoDeskClientSecret":"forbidden"}}`,

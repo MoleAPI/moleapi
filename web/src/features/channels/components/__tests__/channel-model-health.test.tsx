@@ -73,22 +73,29 @@ describe('channel model health table', () => {
     render(
       <ChannelModelHealthTable
         channelId={7}
-        models={['model-a']}
+        models={['model-a', 'model-b']}
         onDelete={onDelete}
       />,
       { wrapper: Providers }
     )
 
     const modelButton = await screen.findByRole('button', { name: 'model-a' })
-    expect(screen.getByText('Disabled')).toBeVisible()
+    expect(screen.getByText('Disabled')).toHaveClass('text-destructive')
+    expect(screen.getByText('Available')).toHaveClass('text-emerald-700')
     expect(screen.getByText('3 / 4')).toBeVisible()
     expect(modelButton).toHaveAttribute('aria-expanded', 'false')
 
     await user.click(modelButton)
     expect(modelButton).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByText('2026-10-03')).toBeVisible()
+    const history = screen.getByRole('list', {
+      name: 'Daily model health history',
+    })
+    expect(history).toBeVisible()
+    expect(screen.getByRole('listitem')).toHaveTextContent('2026-10-03')
 
-    await user.click(screen.getByRole('button', { name: 'Delete' }))
+    const deleteButtons = screen.getAllByRole('button', { name: 'Delete' })
+    expect(deleteButtons[0]).toHaveClass('bg-destructive')
+    await user.click(deleteButtons[0])
     expect(onDelete).toHaveBeenCalledWith('model-a')
   })
 })

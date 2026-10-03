@@ -31,7 +31,10 @@ func (modelHealthHandler) Type() string { return model.SystemTaskTypeModelHealth
 
 func (modelHealthHandler) Enabled() bool { return common.AutomaticDisableChannelEnabled }
 
-func (modelHealthHandler) Interval() time.Duration { return time.Minute }
+func (modelHealthHandler) Interval() time.Duration {
+	minutes := operation_setting.GetMonitorSetting().ModelHealthCheckMinutes
+	return time.Duration(minutes) * time.Minute
+}
 
 func (modelHealthHandler) NewPayload() any { return nil }
 

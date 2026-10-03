@@ -70,6 +70,7 @@ const channelTestModes = [
 ] as const
 type ChannelTestMode = (typeof channelTestModes)[number]
 const MAX_CHANNEL_TEST_CONCURRENCY = 32
+const MAX_MODEL_HEALTH_CHECK_MINUTES = 1440
 
 const createChannelHealthSchema = (
   t: (key: string, options?: Record<string, unknown>) => string
@@ -93,6 +94,25 @@ const createChannelHealthSchema = (
           .max(
             MAX_CHANNEL_TEST_CONCURRENCY,
             t('Channel test concurrency must be between 1 and 32')
+          ),
+        model_health_check_minutes: z.coerce
+          .number()
+          .int(
+            t(
+              'Failed-model detection interval must be between 1 and 1440 minutes'
+            )
+          )
+          .min(
+            1,
+            t(
+              'Failed-model detection interval must be between 1 and 1440 minutes'
+            )
+          )
+          .max(
+            MAX_MODEL_HEALTH_CHECK_MINUTES,
+            t(
+              'Failed-model detection interval must be between 1 and 1440 minutes'
+            )
           ),
         channel_test_mode: z.enum(channelTestModes),
       }),
@@ -132,6 +152,7 @@ type NormalizedChannelHealthValues = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
+  'monitor_setting.model_health_check_minutes': number
   'monitor_setting.channel_test_mode': ChannelTestMode
 }
 
@@ -164,6 +185,8 @@ const buildFormDefaults = (
       defaults['monitor_setting.auto_test_channel_minutes'],
     channel_test_concurrency:
       defaults['monitor_setting.channel_test_concurrency'],
+    model_health_check_minutes:
+      defaults['monitor_setting.model_health_check_minutes'] ?? 1,
     channel_test_mode: normalizeChannelTestMode(
       defaults['monitor_setting.channel_test_mode']
     ),
@@ -187,6 +210,8 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_minutes'],
   'monitor_setting.channel_test_concurrency':
     defaults['monitor_setting.channel_test_concurrency'],
+  'monitor_setting.model_health_check_minutes':
+    defaults['monitor_setting.model_health_check_minutes'] ?? 1,
   'monitor_setting.channel_test_mode': normalizeChannelTestMode(
     defaults['monitor_setting.channel_test_mode']
   ),
@@ -209,6 +234,8 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_minutes,
   'monitor_setting.channel_test_concurrency':
     values.monitor_setting.channel_test_concurrency,
+  'monitor_setting.model_health_check_minutes':
+    values.monitor_setting.model_health_check_minutes,
   'monitor_setting.channel_test_mode': values.monitor_setting.channel_test_mode,
 })
 
@@ -546,6 +573,34 @@ export function ChannelHealthSection({
                             {t('Normalized:')} {autoDisableParsed.normalized}
                           </span>
                         )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.model_health_check_minutes'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('Failed-model detection interval (minutes)')}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={1}
+                        max={MAX_MODEL_HEALTH_CHECK_MINUTES}
+                        step={1}
+                        disabled={!form.watch('AutomaticDisableChannelEnabled')}
+                        {...safeNumberFieldProps(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'How often production failures are scanned and paused models are checked for recovery. This runs independently of scheduled channel tests.'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
