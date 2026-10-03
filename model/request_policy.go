@@ -58,7 +58,7 @@ func requestPolicyDefaultOptions() map[string]string {
 }
 
 func IsRequestPolicyOption(key string) bool {
-	if strings.HasPrefix(key, "channel_affinity_setting.") || key == "monitor_setting.channel_test_type" || key == "monitor_setting.channel_test_custom_prompt" || key == "monitor_setting.channel_test_custom_answer" {
+	if strings.HasPrefix(key, "channel_affinity_setting.") {
 		return true
 	}
 	switch key {
@@ -153,12 +153,6 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 	}
 	if err := operation_setting.ValidateChannelTestConcurrency(raw["monitor_setting.channel_test_concurrency"]); err != nil {
 		return nil, err
-	}
-	if err := operation_setting.ValidateChannelTestType(raw[operation_setting.ChannelTestTypeOptionKey]); err != nil {
-		return nil, err
-	}
-	if raw[operation_setting.ChannelTestTypeOptionKey] == "custom" && (strings.TrimSpace(raw[operation_setting.ChannelTestCustomPromptOptionKey]) == "" || strings.TrimSpace(raw[operation_setting.ChannelTestCustomAnswerOptionKey]) == "") {
-		return nil, fmt.Errorf("custom checks require a prompt and expected answer")
 	}
 	for _, key := range []string{"ChannelDisableThreshold", "monitor_setting.auto_test_channel_minutes"} {
 		if raw[key] == "" && key == "ChannelDisableThreshold" {

@@ -28,7 +28,7 @@ func channelSettingsOnlyChangeProbeSettings(updated, origin string) bool {
 	if !ok {
 		return false
 	}
-	for _, key := range []string{"channel_probe_enabled", "channel_probe_models"} {
+	for _, key := range []string{"channel_probe_enabled"} {
 		delete(updatedSettings, key)
 		delete(originSettings, key)
 	}

@@ -1,10 +1,8 @@
-import { describe, expect, test } from 'vitest'
+import { expect, test } from 'vitest'
 
 import { channelSchema } from '../../types'
 import {
-  getChannelProbeStats,
   getChannelSuccessStats,
-  type ChannelProbeMetric,
   type ChannelSuccessMetric,
 } from '../channel-success'
 import { aggregateChannelsByTag } from '../channel-utils'
@@ -41,38 +39,5 @@ test('aggregates success rate using request counts instead of averaging percenta
     request_count: 10,
     success_count: 9,
     success_rate: 90,
-  })
-})
-
-describe('channel probe status', () => {
-  test('reports degraded when any model is degraded', () => {
-    const metrics = new Map<number, ChannelProbeMetric[]>([
-      [
-        base.id,
-        [
-          {
-            channel_id: 1,
-            channel_name: 'First',
-            model: 'a',
-            status: 'healthy',
-            recent_pass: 1,
-            recent_total: 1,
-          },
-          {
-            channel_id: 1,
-            channel_name: 'First',
-            model: 'b',
-            status: 'degraded',
-            recent_pass: 0,
-            recent_total: 1,
-          },
-        ],
-      ],
-    ])
-    expect(getChannelProbeStats(base, metrics)?.status).toBe('degraded')
-  })
-
-  test('returns no result before a channel has probe data', () => {
-    expect(getChannelProbeStats(base, new Map())).toBeUndefined()
   })
 })

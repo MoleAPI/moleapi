@@ -7597,5 +7597,13 @@
     "Zhipu GLM": "智谱GLM",
     "Zhipu V4": "智谱 V4",
     "Zoom": "缩放"
-  }
+  },
+  "Failed to load model health": "加载模型健康状态失败",
+  "Channel model health": "渠道模型状态",
+  "Current status and request failures for each model.": "查看各模型的当前状态和请求失败情况。",
+  "Request history is unavailable because error logs are disabled.": "错误日志已关闭，暂时无法显示请求历史。",
+  "Today failures": "今日失败",
+  "Failure rate": "失败率",
+  "Last failure": "最近失败",
+  "{{failures}} failures / {{requests}} requests": "{{failures}} 次失败 / {{requests}} 次请求"
 }

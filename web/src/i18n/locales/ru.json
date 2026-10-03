@@ -7597,5 +7597,13 @@
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom"
-  }
+  },
+  "Failed to load model health": "Не удалось загрузить состояние моделей",
+  "Channel model health": "Состояние моделей канала",
+  "Current status and request failures for each model.": "Текущее состояние и ошибки запросов для каждой модели.",
+  "Request history is unavailable because error logs are disabled.": "История запросов недоступна, так как журнал ошибок отключён.",
+  "Today failures": "Ошибки сегодня",
+  "Failure rate": "Доля ошибок",
+  "Last failure": "Последняя ошибка",
+  "{{failures}} failures / {{requests}} requests": "{{failures}} ошибок / {{requests}} запросов"
 }

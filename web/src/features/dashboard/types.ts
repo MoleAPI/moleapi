@@ -67,34 +67,6 @@ export interface ChannelSuccessSummary {
 export interface ChannelSuccessData {
   usage_24h?: Record<number, number> | null
   channels: ChannelSuccessSummary[]
-  probe_overview: ChannelProbeOverview
-}
-
-export interface ChannelProbeOverviewItem {
-  channel_id: number
-  channel_name: string
-  model: string
-  level?: 'basic' | 'standard' | 'advanced' | 'custom'
-  status: 'pending' | 'healthy' | 'degraded'
-  recent_pass: number
-  recent_total: number
-  last_test_at?: number
-}
-
-export interface ChannelProbeOverview {
-  enabled: boolean
-  mode: 'hi' | 'intelligence' | 'custom'
-  channel_test_mode:
-    | 'scheduled_all'
-    | 'auto_detect'
-    | 'auto_disable'
-    | 'passive_recovery'
-  enabled_channels: number
-  total_models: number
-  healthy: number
-  degraded: number
-  pending: number
-  items: ChannelProbeOverviewItem[]
 }
 
 export interface AdminBusinessMetrics {

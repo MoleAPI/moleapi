@@ -30,7 +30,6 @@ const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'test_model',
   'auto_ban',
   'channel_probe_enabled',
-  'channel_probe_models',
   'tag',
   'remark',
   'param_override',

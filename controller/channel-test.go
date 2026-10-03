@@ -50,38 +50,11 @@ type testResult struct {
 const automaticChannelTestTimeout = 90 * time.Second
 
 type channelProbeSpec struct {
-	Mode           string
-	Source         string
-	Prompt         string
-	ExpectedAnswer string
-	Challenge      channelprobe.Challenge
-	Seed           int64
-	FallbackReason string
+	Source string
 }
 
-func newChannelProbeSpec(mode string, source string, customPrompt string, customAnswer string, level string, seed int64) channelProbeSpec {
-	mode = operation_setting.NormalizeChannelTestType(mode)
-	spec := channelProbeSpec{Mode: mode, Source: source, Seed: seed}
-	switch mode {
-	case channelprobe.ModeIntelligence:
-		challenges := channelprobe.GenerateChallenges(1, seed, level)
-		if len(challenges) == 0 {
-			challenges = channelprobe.GenerateChallenges(1, seed, channelprobe.LevelAdvanced)
-		}
-		spec.Challenge = challenges[0]
-		spec.Prompt = spec.Challenge.Prompt
-		spec.ExpectedAnswer = spec.Challenge.Answer
-	case channelprobe.ModeCustom:
-		spec.Prompt = strings.TrimSpace(customPrompt)
-		spec.ExpectedAnswer = strings.TrimSpace(customAnswer)
-		if spec.Prompt == "" {
-			spec.Mode = channelprobe.ModeHi
-			spec.FallbackReason = "custom_prompt_empty"
-		}
-	default:
-		spec.Mode = channelprobe.ModeHi
-	}
-	return spec
+func newChannelProbeSpec(source string) channelProbeSpec {
+	return channelProbeSpec{Source: source}
 }
 
 func normalizeChannelTestEndpoint(channel *model.Channel, endpointType string) string {
@@ -122,9 +95,6 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		result.probe = probe
 		result.latencyMs = time.Since(tik).Milliseconds()
 	}()
-	if probe.Mode != channelprobe.ModeHi {
-		isStream = false
-	}
 	var unsupportedTestChannelTypes = []int{
 		constant.ChannelTypeMidjourney,
 		constant.ChannelTypeMidjourneyPlus,
@@ -278,12 +248,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 		}
 	}
 
-	request := buildTestRequest(testModel, endpointType, channel, isStream, probe)
-	if probe.Mode != channelprobe.ModeHi && !supportsPromptTest(request) {
-		probe = newChannelProbeSpec(channelprobe.ModeHi, probe.Source, "", "", "", probe.Seed)
-		probe.FallbackReason = "unsupported_endpoint"
-		request = buildTestRequest(testModel, endpointType, channel, isStream, probe)
-	}
+	request := buildTestRequest(testModel, endpointType, channel, isStream)
 
 	info, err := relaycommon.GenRelayInfo(c, relayFormat, request, nil)
 
@@ -551,10 +516,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			newAPIError: types.NewOpenAIError(bodyErr, types.ErrorCodeBadResponseBody, http.StatusInternalServerError),
 		}
 	}
-	evaluation := channelprobe.Evaluation{Mode: probe.Mode, Outcome: channelprobe.OutcomePass}
-	if probe.Mode != channelprobe.ModeHi {
-		evaluation = channelprobe.Evaluate(probe.Mode, probe.Challenge, extractTestResponseText(respBody), probe.ExpectedAnswer)
-	}
+	evaluation := channelprobe.Evaluation{Mode: channelprobe.ModeHi, Outcome: channelprobe.OutcomePass}
 	result.evaluation = &evaluation
 	info.SetEstimatePromptTokens(usage.PromptTokens)
 
@@ -632,24 +594,11 @@ func buildTestLogOther(c *gin.Context, info *relaycommon.RelayInfo, priceData ho
 
 func channelProbeLogInfo(probe channelProbeSpec, evaluation *channelprobe.Evaluation) map[string]interface{} {
 	info := map[string]interface{}{
-		"mode":   probe.Mode,
+		"mode":   channelprobe.ModeHi,
 		"source": probe.Source,
-	}
-	if probe.Seed != 0 {
-		info["seed"] = probe.Seed
-	}
-	if probe.FallbackReason != "" {
-		info["fallback_reason"] = probe.FallbackReason
 	}
 	if evaluation != nil {
 		info["outcome"] = evaluation.Outcome
-		if evaluation.QuestionID != "" {
-			info["question_id"] = evaluation.QuestionID
-			info["question_kind"] = evaluation.QuestionKind
-			info["level"] = evaluation.Level
-			info["expected_answer"] = evaluation.ExpectedAnswer
-			info["actual_answer"] = evaluation.ActualAnswer
-		}
 	}
 	return info
 }
@@ -784,61 +733,9 @@ func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 	return message
 }
 
-func supportsPromptTest(request dto.Request) bool {
-	switch request.(type) {
-	case *dto.GeneralOpenAIRequest, *dto.OpenAIResponsesRequest, *dto.ClaudeRequest, *dto.GeminiChatRequest:
-		return true
-	default:
-		return false
-	}
-}
-
-func extractTestResponseText(body []byte) string {
-	for _, path := range []string{
-		"choices.0.message.content",
-		"choices.0.text",
-		"output_text",
-	} {
-		value := gjson.GetBytes(body, path)
-		if value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
-			return value.String()
-		}
-	}
-	// Reasoning-capable APIs may emit thinking blocks before the answer block.
-	for _, item := range gjson.GetBytes(body, "choices.0.message.content").Array() {
-		if value := item.Get("text"); value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
-			return value.String()
-		}
-	}
-	for _, item := range gjson.GetBytes(body, "output").Array() {
-		for _, content := range item.Get("content").Array() {
-			if value := content.Get("text"); value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
-				return value.String()
-			}
-		}
-	}
-	for _, content := range gjson.GetBytes(body, "content").Array() {
-		if value := content.Get("text"); value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
-			return value.String()
-		}
-	}
-	for _, candidate := range gjson.GetBytes(body, "candidates").Array() {
-		for _, part := range candidate.Get("content.parts").Array() {
-			if value := part.Get("text"); value.Type == gjson.String && strings.TrimSpace(value.String()) != "" {
-				return value.String()
-			}
-		}
-	}
-	return ""
-}
-
-func buildTestRequest(model string, endpointType string, channel *model.Channel, isStream bool, probe channelProbeSpec) dto.Request {
+func buildTestRequest(model string, endpointType string, channel *model.Channel, isStream bool) dto.Request {
 	prompt := "hi"
 	maxTokens := uint(16)
-	if probe.Mode != channelprobe.ModeHi {
-		prompt = probe.Prompt
-		maxTokens = 512
-	}
 	testResponsesInput := json.RawMessage(common.GetJsonString([]map[string]string{{"role": "user", "content": prompt}}))
 
 	// 根据端点类型构建不同的测试请求
@@ -982,13 +879,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 		testRequest.StreamOptions = &dto.StreamOptions{IncludeUsage: true}
 	}
 
-	if probe.Mode != channelprobe.ModeHi {
-		if dto.IsOpenAIReasoningOModel(model) || dto.IsOpenAIGPT5Model(model) {
-			testRequest.MaxCompletionTokens = lo.ToPtr(maxTokens)
-		} else {
-			testRequest.MaxTokens = lo.ToPtr(maxTokens)
-		}
-	} else if dto.IsOpenAIReasoningOModel(model) || dto.IsOpenAIGPT5Model(model) {
+	if dto.IsOpenAIReasoningOModel(model) || dto.IsOpenAIGPT5Model(model) {
 		testRequest.MaxCompletionTokens = lo.ToPtr(uint(64))
 	} else if strings.Contains(model, "thinking") {
 		if !strings.Contains(model, "claude") {
@@ -1004,14 +895,10 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 }
 
 type channelTestRequest struct {
-	Model          string `json:"model"`
-	EndpointType   string `json:"endpoint_type"`
-	Stream         bool   `json:"stream"`
-	Scheduled      bool   `json:"scheduled"`
-	TestType       string `json:"test_type"`
-	Prompt         string `json:"prompt"`
-	ExpectedAnswer string `json:"expected_answer"`
-	Level          string `json:"level"`
+	Model        string `json:"model"`
+	EndpointType string `json:"endpoint_type"`
+	Stream       bool   `json:"stream"`
+	Scheduled    bool   `json:"scheduled"`
 }
 
 func TestChannel(c *gin.Context) {
@@ -1036,13 +923,9 @@ func TestChannel(c *gin.Context) {
 	request := channelTestRequest{
 		Model:        c.Query("model"),
 		EndpointType: c.Query("endpoint_type"),
-		TestType:     c.Query("test_type"),
-		Prompt:       c.Query("prompt"),
-		Level:        c.Query("level"),
 	}
 	request.Stream, _ = strconv.ParseBool(c.Query("stream"))
 	request.Scheduled, _ = strconv.ParseBool(c.Query("scheduled"))
-	request.ExpectedAnswer = c.Query("expected_answer")
 	if c.Request.Method == http.MethodPost {
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, 16<<10)
 		if err := common.DecodeJson(c.Request.Body, &request); err != nil {
@@ -1050,21 +933,7 @@ func TestChannel(c *gin.Context) {
 			return
 		}
 	}
-	if strings.TrimSpace(request.TestType) != "" {
-		if err := operation_setting.ValidateChannelTestType(request.TestType); err != nil {
-			common.ApiError(c, err)
-			return
-		}
-	}
-	if err := operation_setting.ValidateChannelTestText(request.Prompt, operation_setting.MaxChannelTestPromptLength); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	if err := operation_setting.ValidateChannelTestText(request.ExpectedAnswer, operation_setting.MaxChannelTestAnswerLength); err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	probe := newChannelProbeSpec(request.TestType, "manual", request.Prompt, request.ExpectedAnswer, request.Level, time.Now().UnixNano())
+	probe := newChannelProbeSpec("manual")
 	testUserID, err := resolveChannelTestUserID(c)
 	if err != nil {
 		common.ApiError(c, err)
@@ -1104,7 +973,6 @@ func TestChannel(c *gin.Context) {
 		if result.newAPIError != nil {
 			resp["error_code"] = result.newAPIError.GetErrorCode()
 		}
-		resp["probe"] = result.evaluation
 		c.JSON(http.StatusOK, resp)
 		return
 	}
@@ -1125,7 +993,6 @@ func TestChannel(c *gin.Context) {
 		"success": true,
 		"message": "",
 		"time":    consumedTime,
-		"probe":   result.evaluation,
 	})
 }
 
@@ -1172,17 +1039,8 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	testCtx, cancel := context.WithTimeout(ctx, automaticChannelTestTimeout)
 	defer cancel()
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
-	probeState := channelprobe.StateFromOtherInfo(channel.OtherInfo)
-	testModel := probeState.SelectModel(probeModels)
-	monitorSetting := operation_setting.GetMonitorSetting()
-	testType := monitorSetting.ChannelTestType
-	level := probeState.LevelFor(testModel)
-	probe := newChannelProbeSpec(testType, "scheduled", monitorSetting.ChannelTestCustomPrompt, monitorSetting.ChannelTestCustomAnswer, level, time.Now().UnixNano())
-	if probe.Mode == channelprobe.ModeCustom && probe.ExpectedAnswer == "" {
-		probe = newChannelProbeSpec(channelprobe.ModeHi, "scheduled", "", "", "", probe.Seed)
-		probe.FallbackReason = "custom_answer_empty"
-	}
-	blockedModelBefore := probeState.BlockedModel
+	testModel := probeModels[0]
+	probe := newChannelProbeSpec("scheduled")
 	tik := time.Now()
 	result := testChannel(testCtx, channel, testUserID, testModel, "", shouldUseStreamForAutomaticChannelTest(channel), probe)
 	milliseconds := time.Since(tik).Milliseconds()
@@ -1191,15 +1049,6 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	}
 	if result.localErr != nil {
 		recordChannelTestFailure(channel, testUserID, result)
-		probeState.RecordRequestError(testModel, common.GetTimestamp())
-	}
-
-	stateChange := channelprobe.StateChange{}
-	if result.evaluation != nil && (result.probe.Mode == channelprobe.ModeIntelligence || result.probe.Mode == channelprobe.ModeCustom) {
-		stateChange = probeState.Apply(testModel, *result.evaluation, common.GetTimestamp(), milliseconds)
-	}
-	if err := channel.SaveProbeState(probeState); err != nil {
-		common.SysError(fmt.Sprintf("failed to save channel probe state: channel_id=%d error=%v", channel.Id, err))
 	}
 
 	summary.Tested++
@@ -1212,7 +1061,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	// A model-specific probe result is handled by the target/control workflow;
 	// it must not disable the whole channel on its own.
 
-	if common.AutomaticDisableChannelEnabled && !shouldBanChannel && result.probe.Mode == channelprobe.ModeHi {
+	if common.AutomaticDisableChannelEnabled && !shouldBanChannel {
 		if milliseconds > disableThreshold {
 			err := fmt.Errorf("响应时间 %.2fs 超过阈值 %.2fs", float64(milliseconds)/1000.0, float64(disableThreshold)/1000.0)
 			newAPIError = types.NewOpenAIError(err, types.ErrorCodeChannelResponseTimeExceeded, http.StatusRequestTimeout)
@@ -1231,11 +1080,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		summary.Disabled++
 	}
 
-	probeRecoveryReady := result.probe.Mode == channelprobe.ModeHi
-	if result.evaluation != nil && result.evaluation.Passed() {
-		probeRecoveryReady = blockedModelBefore == "" || stateChange.Recovered
-	}
-	if result.localErr == nil && result.context != nil && probeRecoveryReady && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+	if result.localErr == nil && result.context != nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
 		service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 		summary.Enabled++
 	}
@@ -1245,43 +1090,14 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 }
 
 func channelTestModels(channel *model.Channel) []string {
-	settings := channel.GetOtherSettings()
 	probeState := channelprobe.StateFromOtherInfo(channel.OtherInfo)
-	models := settings.ChannelProbeModels
-	if len(models) == 0 {
-		for _, modelName := range channel.GetModels() {
-			if !probeState.IsAutoPaused(strings.TrimSpace(modelName)) {
-				models = []string{modelName}
-				break
-			}
-		}
-	}
-	available := make(map[string]struct{})
 	for _, modelName := range channel.GetModels() {
-		available[strings.TrimSpace(modelName)] = struct{}{}
-	}
-	normalized := make([]string, 0, len(models))
-	seen := make(map[string]struct{}, len(models))
-	for _, modelName := range models {
 		modelName = strings.TrimSpace(modelName)
-		if modelName == "" {
-			continue
+		if modelName != "" && !probeState.IsAutoPaused(modelName) {
+			return []string{modelName}
 		}
-		if _, ok := available[modelName]; !ok {
-			continue
-		}
-		if _, ok := seen[modelName]; ok {
-			continue
-		}
-		if probeState.IsAutoPaused(modelName) {
-			continue
-		}
-		seen[modelName] = struct{}{}
-		normalized = append(normalized, modelName)
 	}
-	// ponytail: an empty intersection pauses probes without changing saved settings;
-	// restoring an eligible model resumes testing on the next scheduled cycle.
-	return normalized
+	return nil
 }
 
 // runChannelTestWorkers executes independent channel tests with bounded
@@ -1429,14 +1245,6 @@ func runChannelTestTask(ctx context.Context, mode string, notify bool, report fu
 	concurrency := operation_setting.GetMonitorSetting().ChannelTestConcurrency
 	allowDisable := operation_setting.NormalizeChannelTestMode(mode) != operation_setting.ChannelTestModePassiveRecovery
 	summary := performChannelTests(ctx, selected, testUserID, allowDisable, concurrency, report)
-	freshChannels, err := model.GetAllChannels(0, 0, true, false)
-	if err != nil {
-		return summary, err
-	}
-	modelSummary := runModelAutoHealthChecks(ctx, freshChannels, testUserID)
-	summary.ModelTested += modelSummary.ModelTested
-	summary.ModelPaused += modelSummary.ModelPaused
-	summary.ModelRecovered += modelSummary.ModelRecovered
 	if notify && (ctx == nil || ctx.Err() == nil) {
 		service.NotifyRootUser(dto.NotifyTypeChannelTest, "通道测试完成", "所有通道测试已完成")
 	}

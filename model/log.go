@@ -38,6 +38,22 @@ func ChannelQuotaUsage(ctx context.Context, start, end int64) (map[int]int64, er
 	return usage, nil
 }
 
+type ChannelModelLogCount struct {
+	ModelName string `json:"model_name"`
+	Type      int    `json:"type"`
+	Count     int64  `json:"count"`
+	LastAt    int64  `json:"last_at"`
+}
+
+func GetChannelModelLogCounts(ctx context.Context, channelID int, start, end int64) ([]ChannelModelLogCount, error) {
+	var rows []ChannelModelLogCount
+	err := LOG_DB.WithContext(ctx).Model(&Log{}).
+		Select("model_name, type, COUNT(*) AS count, MAX(created_at) AS last_at").
+		Where("channel_id = ? AND created_at >= ? AND created_at < ? AND model_name <> ? AND type IN ? AND token_name <> ?", channelID, start, end, "", []int{LogTypeConsume, LogTypeError}, "模型测试").
+		Group("model_name, type").Scan(&rows).Error
+	return rows, err
+}
+
 func applyExplicitLogTextFilter(tx *gorm.DB, column string, value string) (*gorm.DB, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {

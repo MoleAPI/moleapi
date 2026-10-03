@@ -7597,5 +7597,13 @@
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom"
-  }
+  },
+  "Failed to load model health": "Failed to load model health",
+  "Channel model health": "Channel model health",
+  "Current status and request failures for each model.": "Current status and request failures for each model.",
+  "Request history is unavailable because error logs are disabled.": "Request history is unavailable because error logs are disabled.",
+  "Today failures": "Today failures",
+  "Failure rate": "Failure rate",
+  "Last failure": "Last failure",
+  "{{failures}} failures / {{requests}} requests": "{{failures}} failures / {{requests}} requests"
 }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -21,7 +22,6 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/types"
 	"github.com/gin-gonic/gin"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -309,60 +309,13 @@ func TestBuildTestLogOtherInjectsTieredInfo(t *testing.T) {
 	other := buildTestLogOther(ctx, info, priceData, usage, &billingexpr.TieredResult{
 		MatchedTier:  "base",
 		RequestRules: requestRules,
-	}, newChannelProbeSpec(channelprobe.ModeHi, "manual", "", "", "", 1), channelprobe.Evaluation{Mode: channelprobe.ModeHi, Outcome: channelprobe.OutcomePass})
+	}, newChannelProbeSpec("manual"), channelprobe.Evaluation{Mode: channelprobe.ModeHi, Outcome: channelprobe.OutcomePass})
 
 	fields := other.Snapshot()
 	require.Equal(t, "tiered_expr", fields["billing_mode"])
 	require.Equal(t, "base", fields["matched_tier"])
 	require.Equal(t, requestRules, fields["request_rules"])
 	require.NotEmpty(t, fields["expr_b64"])
-}
-
-func TestExtractTestResponseTextSkipsReasoningBlocks(t *testing.T) {
-	body := []byte(`{"output":[{"type":"reasoning","content":[]},{"type":"message","content":[{"type":"output_text","text":"ANSWER:42"}]}]}`)
-	assert.Equal(t, "ANSWER:42", extractTestResponseText(body))
-}
-
-func TestBuildIntelligenceProbeUsesGPT5CompletionBudget(t *testing.T) {
-	request := buildTestRequest(
-		"gpt-5.6-sol",
-		"",
-		&model.Channel{},
-		false,
-		newChannelProbeSpec(channelprobe.ModeIntelligence, "manual", "", "", channelprobe.LevelAdvanced, 42),
-	)
-	chatRequest, ok := request.(*dto.GeneralOpenAIRequest)
-	require.True(t, ok)
-	require.NotNil(t, chatRequest.MaxCompletionTokens)
-	assert.Equal(t, uint(512), *chatRequest.MaxCompletionTokens)
-	assert.Nil(t, chatRequest.MaxTokens)
-}
-
-func TestBuildChannelProbeOverviewUsesExistingChannelJSON(t *testing.T) {
-	probeState, err := channelprobe.StateIntoOtherInfo(`{"status_reason":"kept"}`, channelprobe.State{Models: map[string]channelprobe.ModelState{
-		"model-a": {
-			StableLevel: channelprobe.LevelStandard,
-			Status:      channelprobe.StatusHealthy,
-			Recent:      []channelprobe.Sample{{Outcome: channelprobe.OutcomePass}},
-		},
-	}})
-	require.NoError(t, err)
-	disabled := false
-	disabledSettings, err := common.Marshal(dto.ChannelOtherSettings{ChannelProbeEnabled: &disabled})
-	require.NoError(t, err)
-	disabledSettingsText := string(disabledSettings)
-
-	overview := buildChannelProbeOverview([]*model.Channel{
-		{Id: 1, Name: "primary", Models: "model-a,model-b", OtherInfo: probeState, Status: common.ChannelStatusEnabled},
-		{Id: 2, Name: "off", Models: "model-c", OtherSettings: disabledSettingsText, Status: common.ChannelStatusEnabled},
-	}, operation_setting.ChannelTestModeAutoDetect)
-
-	assert.Equal(t, 1, overview.EnabledChannels)
-	assert.Equal(t, 1, overview.TotalModels)
-	assert.Equal(t, 1, overview.Healthy)
-	assert.Equal(t, 0, overview.Pending)
-	require.Len(t, overview.Items, 1)
-	assert.Equal(t, channelprobe.LevelStandard, overview.Items[0].Level)
 }
 
 func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
@@ -376,31 +329,9 @@ func TestResolveChannelTestUserIDUsesRequestUser(t *testing.T) {
 	require.Equal(t, 2, userID)
 }
 
-func TestChannelTestModelsOnlyUsesModelsStillInChannel(t *testing.T) {
-	tests := []struct {
-		name      string
-		models    string
-		probes    []string
-		testModel *string
-		want      []string
-	}{
-		{name: "partial removal keeps configured order", models: "a,c", probes: []string{"c", "b", "a", "c"}, want: []string{"c", "a"}},
-		{name: "all selected models removed pauses without fallback", models: "c", probes: []string{"a", "b"}},
-		{name: "empty channel pauses", probes: []string{"a"}},
-		{name: "blank entries do not cause fallback", models: "a", probes: []string{" "}},
-		{name: "legacy test model does not replace first channel model", models: "b", testModel: lo.ToPtr("a"), want: []string{"b"}},
-		{name: "blank legacy test model uses first channel model", models: "a,b", testModel: lo.ToPtr(" "), want: []string{"a"}},
-		{name: "no explicit selection uses first channel model", models: " a ,b,a", want: []string{"a"}},
-		{name: "legacy test model does not override first channel model", models: "a,b", testModel: lo.ToPtr("b"), want: []string{"a"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			settings, err := common.Marshal(dto.ChannelOtherSettings{ChannelProbeModels: tt.probes})
-			require.NoError(t, err)
-			channel := &model.Channel{Models: tt.models, TestModel: tt.testModel, OtherSettings: string(settings)}
-			assert.Equal(t, tt.want, append([]string(nil), channelTestModels(channel)...))
-		})
-	}
+func TestChannelTestModelsUsesFirstAvailableModel(t *testing.T) {
+	channel := &model.Channel{Models: " a ,b,a"}
+	assert.Equal(t, []string{"a"}, channelTestModels(channel))
 }
 
 func TestChannelTestModelsSkipsAutoPausedModels(t *testing.T) {
@@ -499,38 +430,76 @@ func TestCollectModelFailureCandidatesRespectsProbeCooldown(t *testing.T) {
 	assert.Len(t, collectModelFailureCandidates([]*model.Channel{channel}, now+int64(modelProbeCooldown/time.Second))[channel.Id], 1)
 }
 
+func TestGetChannelModelHealthReturnsCurrentStatusAndDailyStats(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	state := channelprobe.State{}
+	state.Pause("model-a", "confirmed", 10, 300, channelprobe.Failure{OccurredAt: 10, Requests: 3})
+	otherInfo, err := channelprobe.StateIntoOtherInfo("", state)
+	require.NoError(t, err)
+	channel := &model.Channel{Name: "health", Status: common.ChannelStatusEnabled, Models: "model-a,model-b", Group: "default", OtherInfo: otherInfo}
+	require.NoError(t, db.Create(channel).Error)
+	now := time.Now().Unix()
+	require.NoError(t, db.Create(&[]model.Log{
+		{CreatedAt: now, Type: model.LogTypeConsume, ChannelId: channel.Id, ModelName: "model-a", TokenName: "user"},
+		{CreatedAt: now, Type: model.LogTypeError, ChannelId: channel.Id, ModelName: "model-a", TokenName: "user"},
+		{CreatedAt: now, Type: model.LogTypeError, ChannelId: channel.Id, ModelName: "model-a", TokenName: "模型测试"},
+	}).Error)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/channel/%d/model-health", channel.Id), nil)
+	c.Params = gin.Params{{Key: "id", Value: strconv.Itoa(channel.Id)}}
+
+	GetChannelModelHealth(c)
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var response struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Models []channelModelHealth `json:"models"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(w.Body.Bytes(), &response))
+	require.True(t, response.Success)
+	require.Len(t, response.Data.Models, 2)
+	assert.Equal(t, "disabled", response.Data.Models[0].Status)
+	assert.Equal(t, int64(2), response.Data.Models[0].Today.Requests)
+	assert.Equal(t, int64(1), response.Data.Models[0].Today.Failures)
+	assert.Equal(t, 50.0, response.Data.Models[0].Today.FailureRate)
+}
+
 func TestModelHealthProbeMatchesEndpointFamily(t *testing.T) {
 	channel := &model.Channel{Models: "text-embed-v4,bge-m3,gpt-4o,chat-backup"}
 	assert.Equal(t, string(constant.EndpointTypeEmbeddings), modelProbeEndpoint(channel, "text-embed-v4"))
 	assert.Equal(t, string(constant.EndpointTypeOpenAI), modelProbeEndpoint(channel, "gpt-4o"))
-
-	state := channelprobe.State{}
-	assert.Equal(t, "bge-m3", selectControlModel(channel, state, "text-embed-v4", string(constant.EndpointTypeEmbeddings)))
-	assert.Equal(t, "chat-backup", selectControlModel(channel, state, "gpt-4o", string(constant.EndpointTypeOpenAI)))
 }
 
-func TestRemovedProbeModelsPauseWithoutRequestsAndResumeWhenRestored(t *testing.T) {
-	channel := &model.Channel{
-		Id: 1, Status: common.ChannelStatusEnabled, Models: "replacement",
-		OtherSettings: `{"channel_probe_enabled":true,"channel_probe_models":["removed"]}`,
-		OtherInfo:     `{"channel_probe":{"blocked_model":"removed"}}`,
+func TestCollectModelFailureCandidatesRequiresConsecutiveFailures(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	previous := common.AutomaticDisableChannelEnabled
+	common.AutomaticDisableChannelEnabled = true
+	t.Cleanup(func() { common.AutomaticDisableChannelEnabled = previous })
+	autoBan := 1
+	channel := &model.Channel{Name: "candidate", Status: common.ChannelStatusEnabled, Models: "model-a", Group: "default", AutoBan: &autoBan}
+	require.NoError(t, db.Create(channel).Error)
+	now := int64(10_000)
+	other, err := common.Marshal(map[string]any{"status_code": 503, "error_code": "bad_response_status_code", "error_type": "upstream_error"})
+	require.NoError(t, err)
+	for index, logType := range []int{model.LogTypeError, model.LogTypeError, model.LogTypeError, model.LogTypeConsume, model.LogTypeError, model.LogTypeError} {
+		require.NoError(t, db.Create(&model.Log{
+			CreatedAt: now - int64(index+1), Type: logType, ChannelId: channel.Id,
+			ModelName: "model-a", RequestId: fmt.Sprintf("request-%d", index), Other: string(other),
+		}).Error)
 	}
-	settingsBefore, stateBefore := channel.OtherSettings, channel.OtherInfo
-	// A paused channel must return before any upstream request or database access.
-	assert.Equal(t, channelTestSummary{}, testChannelForHealthCheck(context.Background(), channel, 0, true, 1))
-	assert.Equal(t, settingsBefore, channel.OtherSettings)
-	assert.Equal(t, stateBefore, channel.OtherInfo)
-	overview := buildChannelProbeOverview([]*model.Channel{channel}, "")
-	assert.Zero(t, overview.EnabledChannels)
-	assert.Zero(t, overview.TotalModels)
-	assert.Empty(t, overview.Items)
 
-	channel.Models = "replacement,removed"
-	assert.Equal(t, []string{"removed"}, channelTestModels(channel))
-	overview = buildChannelProbeOverview([]*model.Channel{channel}, "")
-	assert.Equal(t, 1, overview.EnabledChannels)
-	require.Len(t, overview.Items, 1)
-	assert.Equal(t, "removed", overview.Items[0].Model)
+	assert.Len(t, collectModelFailureCandidates([]*model.Channel{channel}, now)[channel.Id], 1)
+
+	require.NoError(t, db.Create(&model.Log{
+		CreatedAt: now, Type: model.LogTypeConsume, ChannelId: channel.Id,
+		ModelName: "model-a", RequestId: "latest-success",
+	}).Error)
+	assert.Empty(t, collectModelFailureCandidates([]*model.Channel{channel}, now)[channel.Id])
 }
 
 func TestSelectChannelsForAutomaticTestAutoDisableUsesEligibleChannels(t *testing.T) {

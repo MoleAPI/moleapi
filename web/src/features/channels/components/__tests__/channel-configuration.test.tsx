@@ -204,7 +204,7 @@ afterEach(() => {
   })
 })
 
-test('restores scheduled probe controls and preserves removed model selections', async () => {
+test('restores scheduled probe control and drops legacy model selections', async () => {
   editingChannel.settings = JSON.stringify({
     channel_probe_enabled: false,
     channel_probe_models: ['removed-model'],
@@ -220,15 +220,15 @@ test('restores scheduled probe controls and preserves removed model selections',
   expect(
     screen.getByRole('switch', { name: 'Scheduled probe' })
   ).not.toBeChecked()
-  expect(screen.getByText('Scheduled probe models')).toBeVisible()
   await user.click(screen.getByRole('button', { name: 'Update Channel' }))
   await waitFor(() => expect(put).toHaveBeenCalled())
   const payload = put.mock.calls[0][1] as { settings: string }
-  expect(JSON.parse(payload.settings)).toMatchObject({
+  const settings = JSON.parse(payload.settings)
+  expect(settings).toMatchObject({
     channel_probe_enabled: false,
-    channel_probe_models: ['removed-model'],
     allow_service_tier: true,
   })
+  expect(settings).not.toHaveProperty('channel_probe_models')
 })
 
 // Editing opens the sheet on the left, so the sheet spans x = 0..900 and the

@@ -208,6 +208,7 @@ import {
   nextTaskPluginBaseUrl,
 } from '../../lib/task-plugin-base-url'
 import type { Channel } from '../../types'
+import { ChannelModelHealthTable } from '../channel-model-health'
 import { ChannelPluginExtensions } from '../channel-plugin-extensions'
 import { ChannelQuickOptions } from '../channel-quick-options'
 import { ChannelTypeLogo } from '../channel-type-badge'
@@ -2284,34 +2285,6 @@ export function ChannelMutateDrawer({
       />
       <FormField
         control={form.control}
-        name='channel_probe_models'
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel>{t('Scheduled probe models')}</FormLabel>
-            <FormControl>
-              <MultiSelect
-                options={currentModelsArray.map((model) => ({
-                  value: model,
-                  label: model,
-                }))}
-                selected={field.value ?? []}
-                onChange={field.onChange}
-                placeholder={t('Select models from this channel')}
-                maxVisibleChips={6}
-              />
-            </FormControl>
-            <FormDescription>
-              {t(
-                'Defaults to the first channel model; choose more models from this channel when needed.'
-              )}
-            </FormDescription>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-
-      <FormField
-        control={form.control}
         name='auto_ban'
         render={({ field }) => (
           <FormItem className='flex items-center justify-between'>
@@ -3583,6 +3556,17 @@ export function ChannelMutateDrawer({
               )}
             />
           </div>
+          {isEditing && currentRow && (
+            <ChannelModelHealthTable
+              channelId={currentRow.id}
+              models={currentModelsArray}
+              onDelete={(model) =>
+                updateModels(
+                  currentModelsArray.filter((item) => item !== model)
+                )
+              }
+            />
+          )}
         </div>
       </ChannelModelsSection>
     </div>

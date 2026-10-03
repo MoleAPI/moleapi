@@ -7597,5 +7597,13 @@
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V 4",
     "Zoom": "ズーム"
-  }
+  },
+  "Failed to load model health": "モデル状態の読み込みに失敗しました",
+  "Channel model health": "チャネルのモデル状態",
+  "Current status and request failures for each model.": "各モデルの現在の状態とリクエスト失敗を表示します。",
+  "Request history is unavailable because error logs are disabled.": "エラーログが無効なため、リクエスト履歴を表示できません。",
+  "Today failures": "今日の失敗",
+  "Failure rate": "失敗率",
+  "Last failure": "直近の失敗",
+  "{{failures}} failures / {{requests}} requests": "{{failures}} 件失敗 / {{requests}} 件のリクエスト"
 }

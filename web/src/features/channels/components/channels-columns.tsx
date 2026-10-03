@@ -79,7 +79,6 @@ import {
   parseModelsList,
   parseGroupsList,
   parseChannelSettings,
-  parseChannelOtherSettings,
   channelsQueryKeys,
   handleUpdateChannelField,
   handleUpdateTagField,
@@ -88,9 +87,7 @@ import {
   type TagRow,
 } from '../lib'
 import {
-  getChannelProbeStats,
   getChannelSuccessStats,
-  type ChannelProbeMetric,
   type ChannelSuccessMetric,
   type ChannelSuccessStats,
 } from '../lib/channel-success'
@@ -733,91 +730,6 @@ function ChannelSuccessRateCell({
   )
 }
 
-function ChannelReliabilityCell({
-  channel,
-  channelProbeById,
-  probeEnabled,
-}: {
-  channel: Channel
-  channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
-  probeEnabled?: boolean
-}) {
-  const { t } = useTranslation()
-  const probeStats = getChannelProbeStats(channel, channelProbeById)
-  const probeDisabled = isTagAggregateRow(channel)
-    ? channel.children.every(
-        (child) =>
-          parseChannelOtherSettings(child.settings).channel_probe_enabled ===
-          false
-      )
-    : parseChannelOtherSettings(channel.settings).channel_probe_enabled ===
-      false
-  if (probeDisabled) {
-    return <span className='text-muted-foreground text-xs'>-</span>
-  }
-  if (!probeStats) {
-    return probeEnabled ? (
-      <StatusBadge
-        label={t('Pending')}
-        variant='neutral'
-        size='sm'
-        copyable={false}
-        className='-ml-1.5'
-      />
-    ) : (
-      <span className='text-muted-foreground text-xs'>-</span>
-    )
-  }
-  const degradedCount =
-    probeStats?.items.filter((item) => item.status === 'degraded').length ?? 0
-  let probeLabel = probeStats ? t(probeStats.status) : ''
-  if (probeStats?.status === 'degraded') {
-    probeLabel = t('Degraded {{count}}', { count: degradedCount })
-  }
-  let variant: StatusBadgeProps['variant'] = 'neutral'
-  if (probeStats?.status === 'healthy') variant = 'success'
-  if (probeStats?.status === 'degraded') variant = 'danger'
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <div className='-ml-1.5 flex items-center gap-1'>
-              {probeStats && (
-                <StatusBadge
-                  label={probeLabel}
-                  variant={variant}
-                  size='sm'
-                  copyable={false}
-                />
-              )}
-            </div>
-          }
-        />
-        <TooltipContent side='top'>
-          <div className='max-h-72 space-y-2 overflow-y-auto text-xs'>
-            {probeStats?.items.map((item) => (
-              <div
-                key={`${item.channel_id}-${item.model}`}
-                className='border-t pt-1.5'
-              >
-                <div className='font-medium'>{item.model}</div>
-                <div className='text-muted-foreground'>
-                  {t(item.status)}
-                  {item.level ? ` · ${t(item.level)}` : ''}
-                  {item.recent_total > 0
-                    ? ` · ${item.recent_pass}/${item.recent_total}`
-                    : ''}
-                </div>
-              </div>
-            ))}
-          </div>
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  )
-}
-
 /**
  * Generate channels columns configuration
  */
@@ -826,8 +738,6 @@ export function useChannelsColumns(
     enableSelection?: boolean
     usage24h?: Record<number, number> | null
     channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
-    channelProbeById?: ReadonlyMap<number, ChannelProbeMetric[]>
-    probeEnabled?: boolean
   } = {}
 ): ColumnDef<Channel>[] {
   const { t } = useTranslation()
@@ -1433,22 +1343,6 @@ export function useChannelsColumns(
         enableSorting: false,
       },
 
-      // Reliability column
-      {
-        id: 'reliability',
-        header: t('Reliability'),
-        meta: { mobileHidden: true },
-        cell: ({ row }) => (
-          <ChannelReliabilityCell
-            channel={row.original}
-            channelProbeById={options.channelProbeById}
-            probeEnabled={options.probeEnabled}
-          />
-        ),
-        size: 140,
-        enableSorting: false,
-      },
-
       // Response Time column
       {
         accessorKey: 'response_time',
@@ -1501,8 +1395,6 @@ export function useChannelsColumns(
       sensitiveVisible,
       options.channelSuccessById,
       options.usage24h,
-      options.channelProbeById,
-      options.probeEnabled,
     ]
   )
 }
