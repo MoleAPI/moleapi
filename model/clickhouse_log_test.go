@@ -9,6 +9,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	gormclickhouse "gorm.io/driver/clickhouse"
+	"gorm.io/gorm"
 )
 
 func TestIsClickHouseDSN(t *testing.T) {
@@ -114,6 +116,29 @@ func TestClickHouseCreateTableHasTTL(t *testing.T) {
 func TestClickHouseLogOrder(t *testing.T) {
 	assert.Equal(t, "created_at desc, request_id desc", clickHouseLogOrder(""))
 	assert.Equal(t, "logs.created_at desc, logs.request_id desc", clickHouseLogOrder("logs."))
+}
+
+func TestClickHouseLogPaginationEnablesLazyMaterialization(t *testing.T) {
+	dsn := strings.TrimSpace(os.Getenv("TEST_CLICKHOUSE_DSN"))
+	if dsn == "" {
+		t.Skip("TEST_CLICKHOUSE_DSN is not configured")
+	}
+	db, err := gorm.Open(gormclickhouse.Open(dsn), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+
+	originalLogDatabaseType := common.LogDatabaseType()
+	common.SetLogDatabaseType(common.DatabaseTypeClickHouse)
+	t.Cleanup(func() { common.SetLogDatabaseType(originalLogDatabaseType) })
+
+	var limit uint64
+	err = optimizeClickHouseLogPagination(db).
+		Raw("SELECT getSetting('query_plan_max_limit_for_lazy_materialization')").
+		Scan(&limit).Error
+	require.NoError(t, err)
+	assert.Zero(t, limit)
 }
 
 func TestBuildLogLikeConditionUsesStandardEscape(t *testing.T) {
