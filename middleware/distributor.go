@@ -201,13 +201,13 @@ func Distribute() func(c *gin.Context) {
 }
 
 // channelSupportsRequestPath reports whether a channel can serve the request path.
-// Advanced Custom-like channels are path-checked; all other channel types always
+// Advanced Custom channels are path-checked; all other channel types always
 // pass. A routed channel is usable only when one of its routes matches.
 func channelSupportsRequestPath(channel *model.Channel, requestPath string, requestModel string) bool {
 	if channel == nil {
 		return false
 	}
-	if !constant.IsAdvancedCustomLikeChannelType(channel.Type) {
+	if channel.Type != constant.ChannelTypeAdvancedCustom {
 		return true
 	}
 	config := channel.GetOtherSettings().AdvancedCustom

@@ -1188,7 +1188,6 @@ export function useChannelsColumns(
           return false
         },
         size: 120,
-        enableSorting: false,
       },
 
       // Models column
@@ -1299,7 +1298,6 @@ export function useChannelsColumns(
         header: t('Used'),
         cell: ({ row }) => <UsedQuotaCell channel={row.original} />,
         size: 120,
-        enableSorting: false,
       },
 
       {
@@ -1325,7 +1323,6 @@ export function useChannelsColumns(
           )
         },
         size: 100,
-        enableSorting: false,
       },
 
       // Success rate column
