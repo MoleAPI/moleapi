@@ -219,8 +219,12 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 		order = clickHouseLogOrder("")
 	}
 	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
+	if err != nil {
+		common.SysError("failed to search token logs: " + err.Error())
+		return nil, errors.New("查询日志失败")
+	}
 	formatUserLogs(logs, 0)
-	return logs, err
+	return logs, nil
 }
 
 func RecordLog(userId int, logType int, content string) {
@@ -417,7 +421,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 		Username:         username,
 		CreatedAt:        common.GetTimestamp(),
 		Type:             LogTypeError,
-		Content:          content,
+		Content:          common.LogDetailPreview(content),
 		PromptTokens:     0,
 		CompletionTokens: 0,
 		TokenName:        tokenName,

@@ -50,10 +50,14 @@ func ExportLogs(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"success": false, "message": "Unable to start export"})
 		return
 	}
+	order := "created_at ASC, id ASC"
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		order = "created_at ASC, request_id ASC"
+	}
 	// No Other metadata, prompts, credentials, or internal diagnostics are exported.
 	query = query.
 		Select([]string{"user_id", "username", "created_at", "type", "content", "token_name", "model_name", "quota", "prompt_tokens", "completion_tokens", "use_time", "is_stream", "channel_id", "group", "request_id"}).
-		Order("created_at ASC, id ASC")
+		Order(order)
 	if !request.AllUsers {
 		query = query.Where("user_id = ?", c.GetInt("id"))
 	}
