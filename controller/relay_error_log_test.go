@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,13 +68,15 @@ func TestProcessChannelErrorUsesSnapshotWithoutLeakingChannelMetadata(t *testing
 		ChannelName: "snapshot-channel",
 		AutoBan:     false,
 	}
-	apiErr := types.NewOpenAIError(errors.New("upstream failed"), types.ErrorCodeBadResponseStatusCode, http.StatusBadGateway)
+	apiErr := types.NewOpenAIError(errors.New(strings.Repeat("x", common.LogDetailContentLimit+100)), types.ErrorCodeBadResponseStatusCode, http.StatusBadGateway)
 
 	processChannelError(ctx, channelSnapshot, apiErr, nil)
 
 	var stored model.Log
 	require.NoError(t, database.First(&stored).Error)
 	assert.Equal(t, channelSnapshot.ChannelId, stored.ChannelId)
+	assert.Contains(t, stored.Content, "[truncated")
+	assert.Less(t, len(stored.Content), common.LogDetailContentLimit+100)
 	storedOther, err := common.StrToMap(stored.Other)
 	require.NoError(t, err)
 	assert.Equal(t, float64(http.StatusBadGateway), storedOther["status_code"])

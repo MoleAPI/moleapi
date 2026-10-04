@@ -627,6 +627,9 @@ func TestAuditIsolationVisibilityAndFailureContracts(t *testing.T) {
 			tx.AddError(errors.New("audit store unavailable"))
 		}
 	}))
+	failedResponse := auditRequest(router, "GET", "/api/audit/self?category=security", pat)
+	assert.Contains(t, failedResponse.Body.String(), "Unable to read audit logs")
+	assert.NotContains(t, failedResponse.Body.String(), "audit store unavailable")
 	_, err := model.GetUserAccessTokenStatus(user.Id)
 	require.Error(t, err, "audit query failure must not look like never used")
 	model.LOG_DB.Callback().Query().Remove("audit:fail")

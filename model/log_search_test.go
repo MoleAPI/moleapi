@@ -70,7 +70,7 @@ func TestLogListSearchMatchesUserIdAndBothRequestIds(t *testing.T) {
 	assert.Equal(t, "bob", logs[0].Username)
 }
 
-func TestGetAllLogsHidesDatabaseErrors(t *testing.T) {
+func TestLogReadsHideDatabaseErrors(t *testing.T) {
 	previousLogDB := LOG_DB
 	previousLogDatabaseType := common.LogDatabaseType()
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
@@ -93,6 +93,9 @@ func TestGetAllLogsHidesDatabaseErrors(t *testing.T) {
 	}))
 
 	_, _, err = GetAllLogs(LogTypeUnknown, 0, 0, "", "", "", 0, 10, 0, "", "", "")
+	assert.EqualError(t, err, "查询日志失败")
+
+	_, err = GetLogByTokenId(42)
 	assert.EqualError(t, err, "查询日志失败")
 }
 

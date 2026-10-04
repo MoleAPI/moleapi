@@ -220,11 +220,13 @@ func GetAuditLogs(filter AuditLogFilter, start, limit, viewerRole int) ([]*Audit
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
+		common.SysError("failed to count audit logs: " + err.Error())
+		return nil, 0, errors.New("Unable to read audit logs")
 	}
 	logs := make([]*AuditLog, 0)
 	if err := query.Order("created_at DESC").Order("event_id DESC").Offset(start).Limit(limit).Find(&logs).Error; err != nil {
-		return nil, 0, err
+		common.SysError("failed to read audit logs: " + err.Error())
+		return nil, 0, errors.New("Unable to read audit logs")
 	}
 	visibility := logOtherVisibilityUser
 	if !filter.SelfView && viewerRole >= common.RoleRootUser {
