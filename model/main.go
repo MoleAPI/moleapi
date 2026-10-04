@@ -382,6 +382,9 @@ func migrateDB() error {
 	if err != nil {
 		return err
 	}
+	if err := migrateLegacyCodingPlanChannelTypes(DB); err != nil {
+		return fmt.Errorf("migrate legacy coding plan channels: %w", err)
+	}
 	if err := InitializeUserAuthVersions(); err != nil {
 		return err
 	}
@@ -414,11 +417,32 @@ func migrateLOGDB() error {
 }
 
 func migrateClickHouseLogDB() error {
-	ttlDays := clickHouseLogTTLDays()
-	if err := LOG_DB.Exec(clickHouseLogCreateTableSQL(ttlDays)).Error; err != nil {
+	clusterName, err := clickHouseClusterName()
+	if err != nil {
 		return err
 	}
-	return syncClickHouseLogTTL(ttlDays)
+	ttlDays := clickHouseLogTTLDays()
+	if err := LOG_DB.Exec(clickHouseLogCreateTableSQL(ttlDays, clusterName)).Error; err != nil {
+		return err
+	}
+	return syncClickHouseLogTTL(ttlDays, clusterName)
+}
+
+func clickHouseClusterName() (string, error) {
+	name := strings.TrimSpace(os.Getenv("LOG_SQL_CLICKHOUSE_CLUSTER_NAME"))
+	for _, char := range name {
+		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '_' {
+			return "", fmt.Errorf("LOG_SQL_CLICKHOUSE_CLUSTER_NAME must contain only letters, digits, and underscores")
+		}
+	}
+	return name, nil
+}
+
+func clickHouseClusterClause(clusterName string) string {
+	if clusterName == "" {
+		return ""
+	}
+	return " ON CLUSTER `" + clusterName + "`"
 }
 
 func clickHouseLogTTLDays() int {
@@ -444,9 +468,13 @@ func clickHouseLogTTLClause(ttlDays int) string {
 	return "\nTTL " + expression
 }
 
-func clickHouseLogCreateTableSQL(ttlDays int) string {
+func clickHouseLogCreateTableSQL(ttlDays int, clusterName string) string {
+	engine := "MergeTree()"
+	if clusterName != "" {
+		engine = "ReplicatedMergeTree('/clickhouse/tables/{shard}/logs', '{replica}')"
+	}
 	return fmt.Sprintf(`
-CREATE TABLE IF NOT EXISTS logs (
+CREATE TABLE IF NOT EXISTS logs%s (
 	id Int64 DEFAULT 0,
 	user_id Int32 DEFAULT 0,
 	created_at Int64 DEFAULT 0,
@@ -468,15 +496,15 @@ CREATE TABLE IF NOT EXISTS logs (
 	upstream_request_id String DEFAULT '',
 	other String DEFAULT ''
 )
-ENGINE = MergeTree()
+ENGINE = %s
 PARTITION BY toYYYYMM(toDateTime(created_at))
-ORDER BY (created_at, request_id)%s`, clickHouseLogTTLClause(ttlDays))
+ORDER BY (created_at, request_id)%s`, clickHouseClusterClause(clusterName), engine, clickHouseLogTTLClause(ttlDays))
 }
 
-func syncClickHouseLogTTL(ttlDays int) error {
+func syncClickHouseLogTTL(ttlDays int, clusterName string) error {
 	expression := clickHouseLogTTLExpression(ttlDays)
 	if expression != "" {
-		return LOG_DB.Exec("ALTER TABLE logs MODIFY TTL " + expression).Error
+		return LOG_DB.Exec("ALTER TABLE logs" + clickHouseClusterClause(clusterName) + " MODIFY TTL " + expression).Error
 	}
 
 	hasTTL, err := clickHouseLogTableHasTTL()
@@ -486,7 +514,7 @@ func syncClickHouseLogTTL(ttlDays int) error {
 	if !hasTTL {
 		return nil
 	}
-	return LOG_DB.Exec("ALTER TABLE logs REMOVE TTL").Error
+	return LOG_DB.Exec("ALTER TABLE logs" + clickHouseClusterClause(clusterName) + " REMOVE TTL").Error
 }
 
 func clickHouseLogTableHasTTL() (bool, error) {

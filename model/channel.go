@@ -61,6 +61,8 @@ type Channel struct {
 
 const ChannelStatusReasonAllKeysDisabled = "All keys are disabled"
 
+const legacyCodingPlanChannelMigrationKey = "migration.channel_types_without_coding_plan"
+
 type ChannelInfo struct {
 	IsMultiKey             bool                  `json:"is_multi_key"`                        // 是否多Key模式
 	MultiKeySize           int                   `json:"multi_key_size"`                      // 多Key模式下的Key数量
@@ -82,6 +84,8 @@ var channelSortColumns = map[string]string{
 	"name":          "name",
 	"priority":      "priority",
 	"balance":       "balance",
+	"status":        "status",
+	"used_quota":    "used_quota",
 	"response_time": "response_time",
 	"test_time":     "test_time",
 }
@@ -89,7 +93,8 @@ var channelSortColumns = map[string]string{
 func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) ChannelSortOptions {
 	normalizedSortBy := strings.ToLower(strings.TrimSpace(sortBy))
 	normalizedSortOrder := strings.ToLower(strings.TrimSpace(sortOrder))
-	if _, ok := channelSortColumns[normalizedSortBy]; !ok {
+	_, databaseColumn := channelSortColumns[normalizedSortBy]
+	if !databaseColumn && normalizedSortBy != "usage_24h" {
 		normalizedSortBy = ""
 		normalizedSortOrder = ""
 	} else if normalizedSortOrder != "asc" {
@@ -101,6 +106,10 @@ func NewChannelSortOptions(sortBy string, sortOrder string, idSort bool) Channel
 		SortOrder: normalizedSortOrder,
 		IDSort:    idSort,
 	}
+}
+
+func (options ChannelSortOptions) IsUsage24h() bool {
+	return options.SortBy == "usage_24h"
 }
 
 func (options ChannelSortOptions) Apply(query *gorm.DB) *gorm.DB {
@@ -129,6 +138,79 @@ func resolveChannelSortOptions(idSort bool, sortOptions []ChannelSortOptions) Ch
 	options := sortOptions[0]
 	options.IDSort = options.IDSort || idSort
 	return options
+}
+
+func migrateLegacyCodingPlanChannelTypes(db *gorm.DB) error {
+	var marker Option
+	err := db.Where(&Option{Key: legacyCodingPlanChannelMigrationKey}).First(&marker).Error
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return err
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
+		var legacyChannels []Channel
+		if err := tx.Select("id", "base_url", "settings").Where("type = ?", 59).Find(&legacyChannels).Error; err != nil {
+			return err
+		}
+		for _, channel := range legacyChannels {
+			var settings dto.ChannelOtherSettings
+			if channel.OtherSettings != "" {
+				if err := common.UnmarshalJsonStr(channel.OtherSettings, &settings); err != nil {
+					return fmt.Errorf("read legacy coding plan channel %d settings: %w", channel.Id, err)
+				}
+			}
+			provider := strings.TrimSpace(settings.CodingPlanProvider)
+			providerWasExplicit := provider != ""
+			if provider == "" && channel.BaseURL != nil {
+				provider = strings.TrimSpace(*channel.BaseURL)
+			}
+			preset, ok := dto.ResolveCodingPlanPreset(provider)
+			if !ok {
+				if providerWasExplicit {
+					return fmt.Errorf("legacy coding plan channel %d has unknown provider %q", channel.Id, provider)
+				}
+				continue
+			}
+			if settings.AdvancedCustom == nil {
+				settings.AdvancedCustom = preset.AdvancedCustomConfig()
+				if err := settings.AdvancedCustom.Validate(); err != nil {
+					return fmt.Errorf("convert legacy coding plan channel %d: %w", channel.Id, err)
+				}
+			}
+			settings.CodingPlanProvider = ""
+			encoded, err := common.Marshal(settings)
+			if err != nil {
+				return err
+			}
+			if err := tx.Model(&Channel{}).Where("id = ?", channel.Id).Updates(map[string]any{
+				"type":     constant.ChannelTypeAdvancedCustom,
+				"settings": string(encoded),
+			}).Error; err != nil {
+				return err
+			}
+		}
+
+		// The removed local type occupied 59, so the three types added after it
+		// return to their upstream IDs. The task-plugin filter avoids rewriting a
+		// vLLM channel created by the already-restored frontend.
+		for _, move := range []struct{ from, to int }{
+			{60, constant.ChannelTypeSub2API},
+			{61, constant.ChannelTypeNewAPI},
+		} {
+			if err := tx.Model(&Channel{}).Where("type = ?", move.from).Update("type", move.to).Error; err != nil {
+				return err
+			}
+		}
+		if err := tx.Model(&Channel{}).
+			Where("type = ? AND setting LIKE ?", 62, "%\"task_plugin_key\"%").
+			Update("type", constant.ChannelTypeTaskPlugin).Error; err != nil {
+			return err
+		}
+		return tx.Create(&Option{Key: legacyCodingPlanChannelMigrationKey, Value: "done"}).Error
+	})
 }
 
 func NormalizeChannelGroupFilter(group string) string {
@@ -1032,13 +1114,10 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
-	if err := channel.applyCodingPlanPreset(channelOtherSettings); err != nil {
-		return err
-	}
 	if err := channelOtherSettings.ValidateToolLossPolicy(); err != nil {
 		return err
 	}
-	if constant.IsAdvancedCustomLikeChannelType(channel.Type) {
+	if channel.Type == constant.ChannelTypeAdvancedCustom {
 		if channelOtherSettings.AdvancedCustom == nil {
 			return fmt.Errorf("advanced_custom is required")
 		}
@@ -1048,7 +1127,7 @@ func (channel *Channel) ValidateSettings() error {
 			return err
 		}
 	}
-	if constant.IsAdvancedCustomLikeChannelType(channel.Type) && channelOtherSettings.UpstreamModelUpdateCheckEnabled {
+	if channel.Type == constant.ChannelTypeAdvancedCustom && channelOtherSettings.UpstreamModelUpdateCheckEnabled {
 		if _, ok := channelOtherSettings.AdvancedCustom.ModelListRoute(); !ok {
 			return fmt.Errorf("advanced custom channels require a %s route when upstream model update checks are enabled", dto.AdvancedCustomModelListPath)
 		}
@@ -1088,44 +1167,16 @@ func (channel *Channel) GetOtherSettings() dto.ChannelOtherSettings {
 			_ = channel.Save()           // 保存修改
 		}
 	}
-	if err := channel.applyCodingPlanPreset(&setting); err != nil {
-		common.SysLog(fmt.Sprintf("failed to apply coding plan preset: channel_id=%d, error=%v", channel.Id, err))
-	}
 	return setting
 }
 
 func (channel *Channel) SetOtherSettings(setting dto.ChannelOtherSettings) {
-	if err := channel.applyCodingPlanPreset(&setting); err != nil {
-		common.SysLog(fmt.Sprintf("failed to apply coding plan preset before marshal: channel_id=%d, error=%v", channel.Id, err))
-	}
 	settingBytes, err := common.Marshal(setting)
 	if err != nil {
 		common.SysLog(fmt.Sprintf("failed to marshal setting: channel_id=%d, error=%v", channel.Id, err))
 		return
 	}
 	channel.OtherSettings = string(settingBytes)
-}
-
-func (channel *Channel) applyCodingPlanPreset(setting *dto.ChannelOtherSettings) error {
-	if channel.Type != constant.ChannelTypeCodingPlan {
-		return nil
-	}
-	provider := strings.TrimSpace(setting.CodingPlanProvider)
-	if provider == "" && channel.BaseURL != nil {
-		provider = strings.TrimSpace(*channel.BaseURL)
-	}
-	if provider == "" {
-		return fmt.Errorf("coding plan provider is required")
-	}
-	preset, ok := dto.ResolveCodingPlanPreset(provider)
-	if !ok {
-		return fmt.Errorf("unknown coding plan provider: %s", provider)
-	}
-	setting.CodingPlanProvider = preset.ID
-	if setting.AdvancedCustom != nil {
-		return nil
-	}
-	return setting.ApplyCodingPlanPreset(preset.ID)
 }
 
 func (channel *Channel) GetParamOverride() map[string]interface{} {

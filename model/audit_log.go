@@ -294,14 +294,22 @@ func MigrateAuditLogs() error {
 	if !common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		return LOG_DB.AutoMigrate(&AuditLog{})
 	}
-	return LOG_DB.Exec(`CREATE TABLE IF NOT EXISTS audit_logs (
+	clusterName, err := clickHouseClusterName()
+	if err != nil {
+		return err
+	}
+	engine := "MergeTree()"
+	if clusterName != "" {
+		engine = "ReplicatedMergeTree('/clickhouse/tables/{shard}/audit_logs', '{replica}')"
+	}
+	return LOG_DB.Exec(fmt.Sprintf(`CREATE TABLE IF NOT EXISTS audit_logs%s (
 		id Int64 DEFAULT 0, event_id String, user_id Int64, username String, actor_role Int32,
 		created_at Int64, category String, action String, token_ref String,
 		auth_method String, ip String, user_agent String, method String, route String,
 		status Int32, success UInt8, request_id String, content String, other JSON
-	) ENGINE = MergeTree()
+	) ENGINE = %s
 	PARTITION BY toYYYYMM(toDateTime(created_at))
-	ORDER BY (created_at, event_id)`).Error
+	ORDER BY (created_at, event_id)`, clickHouseClusterClause(clusterName), engine)).Error
 }
 
 func ValidAuditCategory(category string) bool {

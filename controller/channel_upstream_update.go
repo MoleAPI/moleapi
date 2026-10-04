@@ -398,7 +398,7 @@ func fetchChannelUpstreamModelIDs(channel *model.Channel) ([]string, error) {
 		return normalizeModelNames(models), nil
 	}
 
-	if constant.IsAdvancedCustomLikeChannelType(channel.Type) {
+	if channel.Type == constant.ChannelTypeAdvancedCustom {
 		return fetchAdvancedCustomUpstreamModelIDs(channel, baseURL)
 	}
 

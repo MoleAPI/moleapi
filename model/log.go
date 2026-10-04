@@ -690,7 +690,8 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	if err != nil {
 		return nil, 0, err
 	}
-	err = tx.Model(&Log{}).Limit(logSearchCountLimit).Count(&total).Error
+	limited := tx.Session(&gorm.Session{}).Model(&Log{}).Select("1").Limit(logSearchCountLimit)
+	err = LOG_DB.Table("(?) AS limited_logs", limited).Count(&total).Error
 	if err != nil {
 		common.SysError("failed to count user logs: " + err.Error())
 		return nil, 0, errors.New("查询日志失败")

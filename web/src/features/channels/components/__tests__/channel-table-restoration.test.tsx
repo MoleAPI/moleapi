@@ -108,7 +108,7 @@ describe('channel table restored controls', () => {
     expect(setOpen).toHaveBeenCalledWith('test-channel')
   })
 
-  test('places the compact 24 hour column after used quota and narrows type', () => {
+  test('places the compact 24 hour column after used quota and enables the requested sorts', () => {
     const { result } = renderHook(
       () => useChannelsColumns({ enableSelection: false, usage24h: {} }),
       { wrapper: TestProviders }
@@ -120,5 +120,8 @@ describe('channel table restored controls', () => {
     expect(ids.indexOf('usage_24h')).toBe(ids.indexOf('used_quota') + 1)
     expect(usageColumn.header).toBe('24 Hours')
     expect(typeColumn.size).toBe(160)
+    for (const id of ['status', 'used_quota', 'usage_24h']) {
+      expect(result.current[ids.indexOf(id)].enableSorting).not.toBe(false)
+    }
   })
 })

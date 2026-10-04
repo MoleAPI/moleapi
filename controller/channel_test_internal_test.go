@@ -53,6 +53,49 @@ func TestGetChannelDefaultBaseURLsUsesBuiltInDefaults(t *testing.T) {
 	assert.NotContains(t, response.Data, constant.ChannelTypeTaskPlugin)
 }
 
+func TestGetAllChannelsSortsStatusUsedAnd24HourUsage(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	channels := []model.Channel{
+		{Name: "low", Key: "key", Status: 0, UsedQuota: 100, Group: "default"},
+		{Name: "high", Key: "key", Status: 3, UsedQuota: 300, Group: "default"},
+		{Name: "middle", Key: "key", Status: 1, UsedQuota: 200, Group: "default"},
+	}
+	require.NoError(t, db.Create(&channels).Error)
+	now := time.Now().Unix()
+	require.NoError(t, db.Create(&[]model.Log{
+		{ChannelId: channels[0].Id, Type: model.LogTypeConsume, CreatedAt: now - 10, Quota: 200},
+		{ChannelId: channels[1].Id, Type: model.LogTypeConsume, CreatedAt: now - 10, Quota: 900},
+		{ChannelId: channels[2].Id, Type: model.LogTypeConsume, CreatedAt: now - 10, Quota: 500},
+	}).Error)
+
+	getNames := func(sortBy, sortOrder string, pageSize int) []string {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/channel/?sort_by=%s&sort_order=%s&page_size=%d", sortBy, sortOrder, pageSize), nil)
+		GetAllChannels(ctx)
+		require.Equal(t, http.StatusOK, recorder.Code)
+		var response struct {
+			Success bool `json:"success"`
+			Data    struct {
+				Items []model.Channel `json:"items"`
+			} `json:"data"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		require.True(t, response.Success, recorder.Body.String())
+		names := make([]string, 0, len(response.Data.Items))
+		for _, channel := range response.Data.Items {
+			names = append(names, channel.Name)
+		}
+		return names
+	}
+
+	assert.Equal(t, []string{"low", "middle", "high"}, getNames("status", "asc", 20))
+	assert.Equal(t, []string{"high", "middle", "low"}, getNames("used_quota", "desc", 20))
+	assert.Equal(t, []string{"high", "middle"}, getNames("usage_24h", "desc", 2))
+}
+
 func TestValidateChannelProxy(t *testing.T) {
 	tests := []struct {
 		name    string

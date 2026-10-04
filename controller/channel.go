@@ -164,6 +164,33 @@ func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm
 	return query
 }
 
+func sortChannelsBy24HourUsage(ctx context.Context, channels []*model.Channel, options model.ChannelSortOptions) error {
+	if !options.IsUsage24h() || len(channels) < 2 {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	now := time.Now().Unix()
+	usage, err := model.ChannelQuotaUsage(ctx, now-86400, now)
+	if err != nil {
+		return err
+	}
+
+	// ponytail: usage lives in the separate log database, so sort the filtered
+	// list in memory; denormalize this metric only if channel counts make it costly.
+	slices.SortStableFunc(channels, func(a, b *model.Channel) int {
+		aUsage, bUsage := usage[a.Id], usage[b.Id]
+		if aUsage == bUsage {
+			return a.Id - b.Id
+		}
+		if (aUsage < bUsage) == (options.SortOrder == "asc") {
+			return -1
+		}
+		return 1
+	})
+	return nil
+}
+
 func GetChannelOps(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{
 		"retry_times": common.RetryTimes,
@@ -236,15 +263,25 @@ func GetAllChannels(c *gin.Context) {
 			return
 		}
 
-		err := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).
-			Limit(pageInfo.GetPageSize()).
-			Offset(pageInfo.GetStartIdx()).
-			Omit("key").
-			Find(&channelData).Error
+		query := sortOptions.Apply(buildChannelListQuery(groupFilter, statusFilter, typeFilter)).Omit("key")
+		if !sortOptions.IsUsage24h() {
+			query = query.Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx())
+		}
+		err := query.Find(&channelData).Error
 		if err != nil {
 			common.SysError("failed to get channels: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道列表失败，请稍后重试"})
 			return
+		}
+		if err := sortChannelsBy24HourUsage(c.Request.Context(), channelData, sortOptions); err != nil {
+			common.SysError("failed to sort channels by 24 hour usage: " + err.Error())
+			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道用量失败，请稍后重试"})
+			return
+		}
+		if sortOptions.IsUsage24h() {
+			startIdx := min(pageInfo.GetStartIdx(), len(channelData))
+			endIdx := min(startIdx+pageInfo.GetPageSize(), len(channelData))
+			channelData = channelData[startIdx:endIdx]
 		}
 	}
 
@@ -441,6 +478,11 @@ func SearchChannels(c *gin.Context) {
 			}
 		}
 		channelData = filtered
+	}
+	if err := sortChannelsBy24HourUsage(c.Request.Context(), channelData, sortOptions); err != nil {
+		common.SysError("failed to sort searched channels by 24 hour usage: " + err.Error())
+		c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道用量失败，请稍后重试"})
+		return
 	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("p", "1"))
@@ -1417,7 +1459,7 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 		if err != nil {
 			return nil, err
 		}
-		if !constant.IsAdvancedCustomLikeChannelType(savedChannel.Type) {
+		if savedChannel.Type != constant.ChannelTypeAdvancedCustom {
 			return nil, fmt.Errorf("channel %d is not an advanced custom channel", req.ChannelID)
 		}
 		channel = savedChannel
@@ -1432,7 +1474,7 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 		}
 	}
 
-	if !constant.IsAdvancedCustomLikeChannelType(channel.Type) {
+	if channel.Type != constant.ChannelTypeAdvancedCustom {
 		return nil, fmt.Errorf("channel type must be advanced custom")
 	}
 	if req.BaseURL != nil {
@@ -1444,23 +1486,13 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 	if req.AdvancedCustom != nil {
 		rawConfig := strings.TrimSpace(*req.AdvancedCustom)
 		if rawConfig == "" {
-			if channel.Type != constant.ChannelTypeCodingPlan {
-				return nil, fmt.Errorf("advanced_custom is required")
-			}
-			if err := settings.ApplyCodingPlanPreset(resolveCodingPlanPreviewProvider(channel, req)); err != nil {
-				return nil, err
-			}
-		} else {
-			var config dto.AdvancedCustomConfig
-			if err := common.UnmarshalJsonStr(rawConfig, &config); err != nil {
-				return nil, err
-			}
-			settings.AdvancedCustom = &config
+			return nil, fmt.Errorf("advanced_custom is required")
 		}
-	} else if channel.Type == constant.ChannelTypeCodingPlan {
-		if err := settings.ApplyCodingPlanPreset(resolveCodingPlanPreviewProvider(channel, req)); err != nil {
+		var config dto.AdvancedCustomConfig
+		if err := common.UnmarshalJsonStr(rawConfig, &config); err != nil {
 			return nil, err
 		}
+		settings.AdvancedCustom = &config
 	} else if req.ChannelID <= 0 {
 		return nil, fmt.Errorf("advanced_custom is required")
 	}
@@ -1488,20 +1520,6 @@ func buildAdvancedCustomModelPreviewChannel(req fetchModelsRequest) (*model.Chan
 	return channel, nil
 }
 
-func resolveCodingPlanPreviewProvider(channel *model.Channel, req fetchModelsRequest) string {
-	if req.BaseURL != nil && strings.TrimSpace(*req.BaseURL) != "" {
-		return strings.TrimSpace(*req.BaseURL)
-	}
-	settings := channel.GetOtherSettings()
-	if settings.CodingPlanProvider != "" {
-		return settings.CodingPlanProvider
-	}
-	if channel.BaseURL != nil {
-		return strings.TrimSpace(*channel.BaseURL)
-	}
-	return ""
-}
-
 func FetchModels(c *gin.Context) {
 	var req fetchModelsRequest
 
@@ -1514,7 +1532,7 @@ func FetchModels(c *gin.Context) {
 	}
 
 	var channel *model.Channel
-	if constant.IsAdvancedCustomLikeChannelType(req.Type) || req.ChannelID > 0 {
+	if req.Type == constant.ChannelTypeAdvancedCustom || req.ChannelID > 0 {
 		var err error
 		channel, err = buildAdvancedCustomModelPreviewChannel(req)
 		if err != nil {

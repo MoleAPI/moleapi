@@ -56,10 +56,11 @@ const (
 	ChannelTypeReplicate      = 56
 	ChannelTypeCodex          = 57
 	ChannelTypeAdvancedCustom = 58
-	ChannelTypeCodingPlan     = 59
-	ChannelTypeSub2API        = 60
-	ChannelTypeNewAPI         = 61
-	ChannelTypeTaskPlugin     = 62
+	ChannelTypeSub2API        = 59
+	ChannelTypeNewAPI         = 60
+	ChannelTypeTaskPlugin     = 61
+	ChannelTypeVLLM           = 62
+	ChannelTypeSGLang         = 63
 	ChannelTypeDummy          // this one is only for count, do not add any channel after this
 
 )
@@ -130,6 +131,7 @@ var ChannelBaseURLs = []string{
 	"",                                          //60
 	"",                                          //61
 	"",                                          //62
+	"",                                          //63
 }
 
 func GetChannelBaseURL(channelType int) string {
@@ -195,10 +197,11 @@ var ChannelTypeNames = map[int]string{
 	ChannelTypeReplicate:      "Replicate",
 	ChannelTypeCodex:          "ChatGPT Subscription (Codex)",
 	ChannelTypeAdvancedCustom: "Advanced Custom",
-	ChannelTypeCodingPlan:     "Coding Plan",
 	ChannelTypeSub2API:        "Sub2API",
 	ChannelTypeNewAPI:         "New API",
 	ChannelTypeTaskPlugin:     "Task Plugin",
+	ChannelTypeVLLM:           "vLLM",
+	ChannelTypeSGLang:         "SGLang",
 }
 
 func GetChannelTypeName(channelType int) string {
@@ -206,10 +209,6 @@ func GetChannelTypeName(channelType int) string {
 		return name
 	}
 	return "Unknown"
-}
-
-func IsAdvancedCustomLikeChannelType(channelType int) bool {
-	return channelType == ChannelTypeAdvancedCustom || channelType == ChannelTypeCodingPlan
 }
 
 type ChannelSpecialBase struct {
