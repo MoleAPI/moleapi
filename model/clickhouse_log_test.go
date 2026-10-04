@@ -78,16 +78,31 @@ func TestClickHouseLogTTLClause(t *testing.T) {
 }
 
 func TestClickHouseLogCreateTableSQL(t *testing.T) {
-	withoutTTL := clickHouseLogCreateTableSQL(0)
+	withoutTTL := clickHouseLogCreateTableSQL(0, "")
 	assert.Contains(t, withoutTTL, "CREATE TABLE IF NOT EXISTS logs")
 	assert.Contains(t, withoutTTL, "ENGINE = MergeTree()")
 	assert.Contains(t, withoutTTL, "PARTITION BY toYYYYMM(toDateTime(created_at))")
 	assert.Contains(t, withoutTTL, "ORDER BY (created_at, request_id)")
 	assert.NotContains(t, withoutTTL, "TTL ")
 
-	withTTL := clickHouseLogCreateTableSQL(30)
+	withTTL := clickHouseLogCreateTableSQL(30, "")
 	assert.Contains(t, withTTL, "ORDER BY (created_at, request_id)")
 	assert.Contains(t, withTTL, "TTL toDateTime(created_at) + INTERVAL 30 DAY DELETE")
+
+	clustered := clickHouseLogCreateTableSQL(0, "mole_tokyo")
+	assert.Contains(t, clustered, "CREATE TABLE IF NOT EXISTS logs ON CLUSTER `mole_tokyo`")
+	assert.Contains(t, clustered, "ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/logs', '{replica}')")
+}
+
+func TestClickHouseClusterName(t *testing.T) {
+	t.Setenv("LOG_SQL_CLICKHOUSE_CLUSTER_NAME", "mole_tokyo")
+	name, err := clickHouseClusterName()
+	require.NoError(t, err)
+	assert.Equal(t, "mole_tokyo", name)
+
+	t.Setenv("LOG_SQL_CLICKHOUSE_CLUSTER_NAME", "mole-tokyo")
+	_, err = clickHouseClusterName()
+	require.Error(t, err)
 }
 
 func TestClickHouseCreateTableHasTTL(t *testing.T) {

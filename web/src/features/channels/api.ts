@@ -28,6 +28,7 @@ import type {
   Channel,
   ChannelBalanceResponse,
   ChannelModelRetestResponse,
+  ChannelModelHealthResponse,
   ChannelOpsResponse,
   ChannelTestResponse,
   CopyChannelParams,
@@ -283,10 +284,6 @@ export async function testChannel(
     endpoint_type?: string
     stream?: boolean
     scheduled?: boolean
-    test_type?: 'hi' | 'intelligence' | 'custom'
-    prompt?: string
-    expected_answer?: string
-    level?: 'basic' | 'standard' | 'advanced'
   }
 ): Promise<ChannelTestResponse> {
   const res = await api.post(
@@ -295,6 +292,13 @@ export async function testChannel(
     channelActionConfig()
   )
   return res.data
+}
+
+export async function getChannelModelHealth(
+  id: number
+): Promise<ChannelModelHealthResponse> {
+  const res = await api.get(`/api/channel/${id}/model-health`)
+  return requireServerSuccess(res.data)
 }
 
 export async function retestChannelModel(

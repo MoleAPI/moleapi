@@ -14,9 +14,7 @@ type MonitorSetting struct {
 	AutoTestChannelMinutes  float64 `json:"auto_test_channel_minutes"`
 	ChannelTestMode         string  `json:"channel_test_mode"`
 	ChannelTestConcurrency  int     `json:"channel_test_concurrency"`
-	ChannelTestType         string  `json:"channel_test_type"`
-	ChannelTestCustomPrompt string  `json:"channel_test_custom_prompt"`
-	ChannelTestCustomAnswer string  `json:"channel_test_custom_answer"`
+	ModelHealthCheckMinutes int     `json:"model_health_check_minutes"`
 }
 
 const (
@@ -30,22 +28,20 @@ const (
 	ChannelTestModeScheduledProbes = "scheduled_probes"
 
 	ChannelTestConcurrencyOptionKey  = "monitor_setting.channel_test_concurrency"
-	ChannelTestTypeOptionKey         = "monitor_setting.channel_test_type"
-	ChannelTestCustomPromptOptionKey = "monitor_setting.channel_test_custom_prompt"
-	ChannelTestCustomAnswerOptionKey = "monitor_setting.channel_test_custom_answer"
 	DefaultChannelTestConcurrency    = 1
 	MaxChannelTestConcurrency        = 32
-	MaxChannelTestPromptLength       = 4000
-	MaxChannelTestAnswerLength       = 500
+	ModelHealthCheckMinutesOptionKey = "monitor_setting.model_health_check_minutes"
+	DefaultModelHealthCheckMinutes   = 1
+	MaxModelHealthCheckMinutes       = 1440
 )
 
 // 默认配置
 var monitorSetting = MonitorSetting{
-	AutoTestChannelEnabled: false,
-	AutoTestChannelMinutes: 10,
-	ChannelTestMode:        ChannelTestModeScheduledAll,
-	ChannelTestConcurrency: DefaultChannelTestConcurrency,
-	ChannelTestType:        "hi",
+	AutoTestChannelEnabled:  false,
+	AutoTestChannelMinutes:  10,
+	ChannelTestMode:         ChannelTestModeScheduledAll,
+	ChannelTestConcurrency:  DefaultChannelTestConcurrency,
+	ModelHealthCheckMinutes: DefaultModelHealthCheckMinutes,
 }
 
 func init() {
@@ -70,7 +66,9 @@ func GetMonitorSetting() *MonitorSetting {
 	}
 	monitorSetting.ChannelTestMode = NormalizeChannelTestMode(monitorSetting.ChannelTestMode)
 	monitorSetting.ChannelTestConcurrency = NormalizeChannelTestConcurrency(monitorSetting.ChannelTestConcurrency)
-	monitorSetting.ChannelTestType = NormalizeChannelTestType(monitorSetting.ChannelTestType)
+	if monitorSetting.ModelHealthCheckMinutes < 1 || monitorSetting.ModelHealthCheckMinutes > MaxModelHealthCheckMinutes {
+		monitorSetting.ModelHealthCheckMinutes = DefaultModelHealthCheckMinutes
+	}
 	return &monitorSetting
 }
 
@@ -89,30 +87,6 @@ func NormalizeChannelTestMode(value string) string {
 	}
 }
 
-func NormalizeChannelTestType(value string) string {
-	switch strings.TrimSpace(value) {
-	case "intelligence", "custom":
-		return strings.TrimSpace(value)
-	default:
-		return "hi"
-	}
-}
-
-func ValidateChannelTestType(value string) error {
-	value = strings.TrimSpace(value)
-	if value != "hi" && value != "intelligence" && value != "custom" {
-		return fmt.Errorf("channel test type must be hi, intelligence, or custom")
-	}
-	return nil
-}
-
-func ValidateChannelTestText(value string, maxLength int) error {
-	if len([]rune(value)) > maxLength {
-		return fmt.Errorf("channel test text must not exceed %d characters", maxLength)
-	}
-	return nil
-}
-
 func NormalizeChannelTestConcurrency(concurrency int) int {
 	if concurrency < 1 {
 		return DefaultChannelTestConcurrency
@@ -127,6 +101,14 @@ func ValidateChannelTestConcurrency(value string) error {
 	concurrency, err := strconv.Atoi(value)
 	if err != nil || concurrency < 1 || concurrency > MaxChannelTestConcurrency {
 		return fmt.Errorf("channel test concurrency must be between 1 and %d", MaxChannelTestConcurrency)
+	}
+	return nil
+}
+
+func ValidateModelHealthCheckMinutes(value string) error {
+	minutes, err := strconv.Atoi(value)
+	if err != nil || minutes < 1 || minutes > MaxModelHealthCheckMinutes {
+		return fmt.Errorf("model health check interval must be between 1 and %d minutes", MaxModelHealthCheckMinutes)
 	}
 	return nil
 }

@@ -62,12 +62,6 @@ import { safeNumberFieldProps } from '../utils/numeric-field'
 import type { HealthSettings } from './defaults'
 import { useSavePolicy } from './use-save-policy'
 
-const numericString = z.string().refine((value) => {
-  const trimmed = value.trim()
-  if (!trimmed) return true
-  return !Number.isNaN(Number(trimmed)) && Number(trimmed) >= 0
-}, 'Enter a non-negative number or leave empty')
-
 const channelTestModes = [
   'scheduled_all',
   'auto_detect',
@@ -76,13 +70,13 @@ const channelTestModes = [
 ] as const
 type ChannelTestMode = (typeof channelTestModes)[number]
 const MAX_CHANNEL_TEST_CONCURRENCY = 32
+const MAX_MODEL_HEALTH_CHECK_MINUTES = 1440
 
 const createChannelHealthSchema = (
   t: (key: string, options?: Record<string, unknown>) => string
 ) =>
   z
     .object({
-      ChannelDisableThreshold: numericString,
       AutomaticDisableChannelEnabled: z.boolean(),
       AutomaticEnableChannelEnabled: z.boolean(),
       AutomaticDisableKeywords: z.string(),
@@ -101,27 +95,29 @@ const createChannelHealthSchema = (
             MAX_CHANNEL_TEST_CONCURRENCY,
             t('Channel test concurrency must be between 1 and 32')
           ),
+        model_health_check_minutes: z.coerce
+          .number()
+          .int(
+            t(
+              'Failed-model detection interval must be between 1 and 1440 minutes'
+            )
+          )
+          .min(
+            1,
+            t(
+              'Failed-model detection interval must be between 1 and 1440 minutes'
+            )
+          )
+          .max(
+            MAX_MODEL_HEALTH_CHECK_MINUTES,
+            t(
+              'Failed-model detection interval must be between 1 and 1440 minutes'
+            )
+          ),
         channel_test_mode: z.enum(channelTestModes),
-        channel_test_type: z.enum(['hi', 'intelligence', 'custom']),
-        channel_test_custom_prompt: z.string().max(4000),
-        channel_test_custom_answer: z.string().max(500),
       }),
     })
     .superRefine((values, ctx) => {
-      if (values.monitor_setting.channel_test_type === 'custom') {
-        for (const key of [
-          'channel_test_custom_prompt',
-          'channel_test_custom_answer',
-        ] as const) {
-          if (!values.monitor_setting[key].trim()) {
-            ctx.addIssue({
-              code: 'custom',
-              path: ['monitor_setting', key],
-              message: t('Required'),
-            })
-          }
-        }
-      }
       const disableParsed = parseHttpStatusCodeRules(
         values.AutomaticDisableStatusCodes
       )
@@ -149,7 +145,6 @@ function normalizeLineEndings(value: string) {
 }
 
 type NormalizedChannelHealthValues = {
-  ChannelDisableThreshold: string
   AutomaticDisableChannelEnabled: boolean
   AutomaticEnableChannelEnabled: boolean
   AutomaticDisableKeywords: string
@@ -157,9 +152,7 @@ type NormalizedChannelHealthValues = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
-  'monitor_setting.channel_test_type': 'hi' | 'intelligence' | 'custom'
-  'monitor_setting.channel_test_custom_prompt': string
-  'monitor_setting.channel_test_custom_answer': string
+  'monitor_setting.model_health_check_minutes': number
   'monitor_setting.channel_test_mode': ChannelTestMode
 }
 
@@ -179,7 +172,6 @@ function normalizeChannelTestMode(value?: string): ChannelTestMode {
 const buildFormDefaults = (
   defaults: ChannelHealthSectionProps['defaultValues']
 ): ChannelHealthFormInput => ({
-  ChannelDisableThreshold: defaults.ChannelDisableThreshold ?? '',
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
@@ -187,17 +179,14 @@ const buildFormDefaults = (
   ),
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
   monitor_setting: {
-    channel_test_type: defaults['monitor_setting.channel_test_type'] ?? 'hi',
-    channel_test_custom_prompt:
-      defaults['monitor_setting.channel_test_custom_prompt'] ?? '',
-    channel_test_custom_answer:
-      defaults['monitor_setting.channel_test_custom_answer'] ?? '',
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
     auto_test_channel_minutes:
       defaults['monitor_setting.auto_test_channel_minutes'],
     channel_test_concurrency:
       defaults['monitor_setting.channel_test_concurrency'],
+    model_health_check_minutes:
+      defaults['monitor_setting.model_health_check_minutes'] ?? 1,
     channel_test_mode: normalizeChannelTestMode(
       defaults['monitor_setting.channel_test_mode']
     ),
@@ -207,7 +196,6 @@ const buildFormDefaults = (
 const normalizeDefaults = (
   defaults: ChannelHealthSectionProps['defaultValues']
 ): NormalizedChannelHealthValues => ({
-  ChannelDisableThreshold: (defaults.ChannelDisableThreshold ?? '').trim(),
   AutomaticDisableChannelEnabled: defaults.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: defaults.AutomaticEnableChannelEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
@@ -222,12 +210,8 @@ const normalizeDefaults = (
     defaults['monitor_setting.auto_test_channel_minutes'],
   'monitor_setting.channel_test_concurrency':
     defaults['monitor_setting.channel_test_concurrency'],
-  'monitor_setting.channel_test_type':
-    defaults['monitor_setting.channel_test_type'] ?? 'hi',
-  'monitor_setting.channel_test_custom_prompt':
-    defaults['monitor_setting.channel_test_custom_prompt'] ?? '',
-  'monitor_setting.channel_test_custom_answer':
-    defaults['monitor_setting.channel_test_custom_answer'] ?? '',
+  'monitor_setting.model_health_check_minutes':
+    defaults['monitor_setting.model_health_check_minutes'] ?? 1,
   'monitor_setting.channel_test_mode': normalizeChannelTestMode(
     defaults['monitor_setting.channel_test_mode']
   ),
@@ -236,7 +220,6 @@ const normalizeDefaults = (
 const normalizeFormValues = (
   values: ChannelHealthFormValues
 ): NormalizedChannelHealthValues => ({
-  ChannelDisableThreshold: values.ChannelDisableThreshold.trim(),
   AutomaticDisableChannelEnabled: values.AutomaticDisableChannelEnabled,
   AutomaticEnableChannelEnabled: values.AutomaticEnableChannelEnabled,
   AutomaticDisableKeywords: normalizeLineEndings(
@@ -251,11 +234,8 @@ const normalizeFormValues = (
     values.monitor_setting.auto_test_channel_minutes,
   'monitor_setting.channel_test_concurrency':
     values.monitor_setting.channel_test_concurrency,
-  'monitor_setting.channel_test_type': values.monitor_setting.channel_test_type,
-  'monitor_setting.channel_test_custom_prompt':
-    values.monitor_setting.channel_test_custom_prompt,
-  'monitor_setting.channel_test_custom_answer':
-    values.monitor_setting.channel_test_custom_answer,
+  'monitor_setting.model_health_check_minutes':
+    values.monitor_setting.model_health_check_minutes,
   'monitor_setting.channel_test_mode': values.monitor_setting.channel_test_mode,
 })
 
@@ -493,88 +473,6 @@ export function ChannelHealthSection({
 
               <FormField
                 control={form.control}
-                name='monitor_setting.channel_test_type'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t('Probe type')}</FormLabel>
-                    <Select
-                      items={[
-                        { value: 'hi', label: t('Hi check') },
-                        {
-                          value: 'intelligence',
-                          label: t('Intelligence check'),
-                        },
-                        { value: 'custom', label: t('Custom prompt check') },
-                      ]}
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent alignItemWithTrigger={false}>
-                        <SelectGroup>
-                          <SelectItem value='hi'>{t('Hi check')}</SelectItem>
-                          <SelectItem value='intelligence'>
-                            {t('Intelligence check')}
-                          </SelectItem>
-                          <SelectItem value='custom'>
-                            {t('Custom prompt check')}
-                          </SelectItem>
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                    <FormDescription>
-                      {t(
-                        'Intelligence and custom checks require three consecutive misses before disabling a calibrated channel.'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {form.watch('monitor_setting.channel_test_type') === 'custom' && (
-                <>
-                  <FormField
-                    control={form.control}
-                    name='monitor_setting.channel_test_custom_prompt'
-                    render={({ field }) => (
-                      <FormItem className='lg:col-span-2'>
-                        <FormLabel>{t('Custom prompt')}</FormLabel>
-                        <FormControl>
-                          <Textarea rows={4} maxLength={4000} {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Sent once for each scheduled model probe.')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                  <FormField
-                    control={form.control}
-                    name='monitor_setting.channel_test_custom_answer'
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('Expected answer')}</FormLabel>
-                        <FormControl>
-                          <Input maxLength={500} {...field} />
-                        </FormControl>
-                        <FormDescription>
-                          {t('Compared after ignoring spaces and letter case.')}
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </>
-              )}
-
-              <FormField
-                control={form.control}
                 name='monitor_setting.channel_test_concurrency'
                 render={({ field }) => (
                   <FormItem>
@@ -653,33 +551,6 @@ export function ChannelHealthSection({
 
               <FormField
                 control={form.control}
-                name='ChannelDisableThreshold'
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>
-                      {t('Health check timeout threshold (seconds)')}
-                    </FormLabel>
-                    <FormControl>
-                      <Input
-                        type='number'
-                        min={0}
-                        step={1}
-                        value={field.value}
-                        onChange={(event) => field.onChange(event.target.value)}
-                      />
-                    </FormControl>
-                    <FormDescription>
-                      {t(
-                        'Scheduled or bulk health checks can disable a channel when this duration is exceeded, if both global and channel auto-disable are enabled.'
-                      )}
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
                 name='AutomaticDisableStatusCodes'
                 render={({ field }) => (
                   <FormItem>
@@ -702,6 +573,34 @@ export function ChannelHealthSection({
                             {t('Normalized:')} {autoDisableParsed.normalized}
                           </span>
                         )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='monitor_setting.model_health_check_minutes'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('Failed-model detection interval (minutes)')}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min={1}
+                        max={MAX_MODEL_HEALTH_CHECK_MINUTES}
+                        step={1}
+                        disabled={!form.watch('AutomaticDisableChannelEnabled')}
+                        {...safeNumberFieldProps(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'How often production failures are scanned and paused models are checked for recovery. This runs independently of scheduled channel tests.'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

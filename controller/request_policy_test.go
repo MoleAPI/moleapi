@@ -49,21 +49,19 @@ func TestRequestPolicyAndChannelUsageDatabaseMatrix(t *testing.T) {
 				UpdateRequestPolicy(c)
 				return w
 			}
-			response := request(`{"options":{"RetryTimes":"2","channel_affinity_setting.session_mode":"strict","monitor_setting.channel_test_mode":"auto_detect","monitor_setting.channel_test_type":"intelligence"}}`)
+			response := request(`{"options":{"RetryTimes":"2","channel_affinity_setting.session_mode":"strict","monitor_setting.channel_test_mode":"auto_detect","monitor_setting.model_health_check_minutes":"5"}}`)
 			require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 			assert.Equal(t, 2, common.RetryTimes)
 			assert.Equal(t, "strict", operation_setting.GetChannelAffinitySetting().SessionMode)
-			assert.Equal(t, "intelligence", operation_setting.GetMonitorSetting().ChannelTestType)
 			assert.Equal(t, "auto_detect", operation_setting.GetMonitorSetting().ChannelTestMode)
-			var option model.Option
-			require.NoError(t, db.Where(&model.Option{Key: "monitor_setting.channel_test_type"}).First(&option).Error)
-			assert.Equal(t, "intelligence", option.Value)
+			assert.Equal(t, 5, operation_setting.GetMonitorSetting().ModelHealthCheckMinutes)
 			for _, body := range []string{
-				`{"options":{"RetryTimes":"-1","monitor_setting.channel_test_type":"hi"}}`,
+				`{"options":{"RetryTimes":"-1"}}`,
 				`{"options":{"RetryTimes":"3","monitor_setting.channel_test_concurrency":"99"}}`,
-				`{"options":{"RetryTimes":"3","monitor_setting.channel_test_type":"invalid"}}`,
+				`{"options":{"RetryTimes":"3","monitor_setting.channel_test_type":"hi"}}`,
+				`{"options":{"monitor_setting.model_health_check_minutes":"0"}}`,
 				`{"options":{"channel_affinity_setting.session_mode":"invalid"}}`,
-				`{"options":{"monitor_setting.channel_test_type":"custom"}}`,
+				`{"options":{"ChannelDisableThreshold":"5"}}`,
 				`{"options":{"ZohoDeskClientSecret":"forbidden"}}`,
 			} {
 				response = request(body)
@@ -85,6 +83,16 @@ func TestRequestPolicyAndChannelUsageDatabaseMatrix(t *testing.T) {
 			var count int64
 			require.NoError(t, logDB.Model(&model.Log{}).Count(&count).Error)
 			assert.EqualValues(t, len(logs), count)
+			healthLogs := []model.Log{
+				{Type: model.LogTypeConsume, ChannelId: 1, ModelName: "model-a", TokenName: "user", CreatedAt: 150},
+				{Type: model.LogTypeError, ChannelId: 1, ModelName: "model-a", TokenName: "user", CreatedAt: 151},
+				{Type: model.LogTypeError, ChannelId: 1, ModelName: "model-a", TokenName: "模型测试", CreatedAt: 152},
+			}
+			require.NoError(t, logDB.Create(&healthLogs).Error)
+			counts, err := model.GetChannelModelLogCounts(context.Background(), 1, 100, 200)
+			require.NoError(t, err)
+			require.Len(t, counts, 2)
+			assert.Equal(t, int64(2), counts[0].Count+counts[1].Count)
 		})
 	}
 }

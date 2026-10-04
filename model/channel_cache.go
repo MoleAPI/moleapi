@@ -35,7 +35,7 @@ func InitChannelCache() {
 	DB.Find(&channels)
 	for _, channel := range channels {
 		newChannelId2channel[channel.Id] = channel
-		if constant.IsAdvancedCustomLikeChannelType(channel.Type) {
+		if channel.Type == constant.ChannelTypeAdvancedCustom {
 			if config := channel.GetOtherSettings().AdvancedCustom; config != nil {
 				newChannel2advancedCustomConfig[channel.Id] = config
 			}
@@ -223,7 +223,7 @@ func filterChannelsByRequestPathAndModel(channels []int, requestPath string, mod
 			filtered = append(filtered, channelId)
 			continue
 		}
-		if !constant.IsAdvancedCustomLikeChannelType(channel.Type) {
+		if channel.Type != constant.ChannelTypeAdvancedCustom {
 			filtered = append(filtered, channelId)
 			continue
 		}
@@ -312,7 +312,7 @@ func CacheUpdateChannel(channel *Channel) {
 		channel2advancedCustomConfig = make(map[int]*kitdto.AdvancedCustomConfig)
 	}
 	delete(channel2advancedCustomConfig, channel.Id)
-	if constant.IsAdvancedCustomLikeChannelType(channel.Type) {
+	if channel.Type == constant.ChannelTypeAdvancedCustom {
 		if config := channel.GetOtherSettings().AdvancedCustom; config != nil {
 			channel2advancedCustomConfig[channel.Id] = config
 		}

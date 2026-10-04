@@ -65,7 +65,6 @@ func InitOptionMap() {
 	common.OptionMap[setting.TaskPluginDisabledFactoryKeysKey] = "[]"
 	jsplugin.DefaultRegistry.SetDisabledFactoryKeys(nil)
 	common.OptionMap["DataExportEnabled"] = strconv.FormatBool(common.DataExportEnabled)
-	common.OptionMap["ChannelDisableThreshold"] = strconv.FormatFloat(common.ChannelDisableThreshold, 'f', -1, 64)
 	common.OptionMap["EmailDomainRestrictionEnabled"] = strconv.FormatBool(common.EmailDomainRestrictionEnabled)
 	common.OptionMap["EmailAliasRestrictionEnabled"] = strconv.FormatBool(common.EmailAliasRestrictionEnabled)
 	common.OptionMap["EmailDomainWhitelist"] = strings.Join(common.EmailDomainWhitelist, ",")
@@ -310,14 +309,8 @@ func validateOptionValue(key string, value string) error {
 	if key == operation_setting.ChannelTestConcurrencyOptionKey {
 		return operation_setting.ValidateChannelTestConcurrency(value)
 	}
-	if key == operation_setting.ChannelTestTypeOptionKey {
-		return operation_setting.ValidateChannelTestType(value)
-	}
-	if key == operation_setting.ChannelTestCustomPromptOptionKey {
-		return operation_setting.ValidateChannelTestText(value, operation_setting.MaxChannelTestPromptLength)
-	}
-	if key == operation_setting.ChannelTestCustomAnswerOptionKey {
-		return operation_setting.ValidateChannelTestText(value, operation_setting.MaxChannelTestAnswerLength)
+	if key == operation_setting.ModelHealthCheckMinutesOptionKey {
+		return operation_setting.ValidateModelHealthCheckMinutes(value)
 	}
 	if key == "MaxTokenAutoGroups" {
 		return setting.ValidateMaxTokenAutoGroups(value)
@@ -396,7 +389,7 @@ func UpdateOptionsBulk(values map[string]string) error {
 }
 
 func updateOptionMap(key string, value string) (err error) {
-	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey {
+	if key == retiredThemeOptionKey || key == legacyAccessTokenRetireAtKey || key == legacyCodingPlanChannelMigrationKey {
 		common.OptionMapRWMutex.Lock()
 		delete(common.OptionMap, key)
 		common.OptionMapRWMutex.Unlock()
@@ -747,8 +740,6 @@ func updateOptionMap(key string, value string) (err error) {
 	//	common.ChatLink = value
 	//case "ChatLink2":
 	//	common.ChatLink2 = value
-	case "ChannelDisableThreshold":
-		common.ChannelDisableThreshold, _ = strconv.ParseFloat(value, 64)
 	case "QuotaPerUnit":
 		common.QuotaPerUnit, _ = strconv.ParseFloat(value, 64)
 	case "SensitiveWords":

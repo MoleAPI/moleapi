@@ -113,7 +113,6 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   channel_probe_enabled?: boolean
-  channel_probe_models?: string[]
   advanced_custom?: AdvancedCustomConfig
 }
 
@@ -197,20 +196,11 @@ export interface ChannelTestResponse {
   message?: string
   error_code?: string
   time?: number
-  probe?: {
-    mode: 'hi' | 'intelligence' | 'custom'
-    question_id?: string
-    question_kind?: string
-    level?: 'basic' | 'standard' | 'advanced'
-    outcome: 'pass' | 'wrong' | 'no_answer' | 'completed'
-  }
   data?: {
     response_time?: number
     error?: string
   }
 }
-
-export type ChannelTestProbe = NonNullable<ChannelTestResponse['probe']>
 
 export interface ChannelBalanceResponse {
   success: boolean
@@ -224,6 +214,39 @@ export interface ChannelModelRetestResponse {
   success: boolean
   message?: string
   error_code?: string
+}
+
+export interface ChannelModelDailyHealth {
+  date: string
+  requests: number
+  failures: number
+  failure_rate: number
+  last_failure_at?: number
+}
+
+export interface ChannelModelHealth {
+  model: string
+  status: 'available' | 'disabled'
+  paused_at?: number
+  next_probe_at?: number
+  last_failure?: {
+    occurred_at: number
+    status_code?: number
+    error_type?: string
+    error_code?: string
+    requests?: number
+  }
+  today: ChannelModelDailyHealth
+  days: ChannelModelDailyHealth[]
+}
+
+export interface ChannelModelHealthResponse {
+  success: boolean
+  message?: string
+  data?: {
+    history_available: boolean
+    models: ChannelModelHealth[]
+  }
 }
 
 export interface FetchModelsResponse {
@@ -287,6 +310,9 @@ export type ChannelSortBy =
   | 'name'
   | 'priority'
   | 'balance'
+  | 'status'
+  | 'used_quota'
+  | 'usage_24h'
   | 'response_time'
   | 'test_time'
 

@@ -19,9 +19,38 @@ import (
 // service.StartSystemTaskRunner.
 func RegisterScheduledSystemTasks() {
 	service.RegisterSystemTaskHandler(channelTestHandler{})
+	service.RegisterSystemTaskHandler(modelHealthHandler{})
 	service.RegisterSystemTaskHandler(modelUpdateHandler{})
 	service.RegisterSystemTaskHandler(midjourneyPollHandler{})
 	service.RegisterSystemTaskHandler(asyncTaskPollHandler{})
+}
+
+type modelHealthHandler struct{}
+
+func (modelHealthHandler) Type() string { return model.SystemTaskTypeModelHealth }
+
+func (modelHealthHandler) Enabled() bool { return common.AutomaticDisableChannelEnabled }
+
+func (modelHealthHandler) Interval() time.Duration {
+	minutes := operation_setting.GetMonitorSetting().ModelHealthCheckMinutes
+	return time.Duration(minutes) * time.Minute
+}
+
+func (modelHealthHandler) NewPayload() any { return nil }
+
+func (modelHealthHandler) Run(ctx context.Context, task *model.SystemTask, runnerID string) {
+	testUserID, err := resolveChannelTestUserID(nil)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	channels, err := model.GetAllChannels(0, 0, true, false)
+	if err != nil {
+		finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusFailed, nil, err)
+		return
+	}
+	summary := runModelAutoHealthChecks(ctx, channels, testUserID)
+	finishSystemTaskHandler(task, runnerID, model.SystemTaskStatusSucceeded, summary, nil)
 }
 
 // channelTestHandler runs the scheduled "test all channels" job. Enablement and

@@ -24,7 +24,6 @@ export type RetrySettings = {
   AutomaticRetryStatusCodes: string
 }
 export type HealthSettings = {
-  ChannelDisableThreshold: string
   AutomaticDisableChannelEnabled: boolean
   AutomaticEnableChannelEnabled: boolean
   AutomaticDisableKeywords: string
@@ -32,6 +31,7 @@ export type HealthSettings = {
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
+  'monitor_setting.model_health_check_minutes': number
   'monitor_setting.channel_test_mode':
     | 'scheduled_all'
     | 'auto_ban_only'
@@ -39,9 +39,6 @@ export type HealthSettings = {
     | 'auto_disable'
     | 'scheduled_probes'
     | 'passive_recovery'
-  'monitor_setting.channel_test_type': 'hi' | 'intelligence' | 'custom'
-  'monitor_setting.channel_test_custom_prompt': string
-  'monitor_setting.channel_test_custom_answer': string
 }
 export type FilteringSettings = Pick<
   SecuritySettings,
@@ -56,7 +53,6 @@ export const defaultRequestPolicySettings: RequestPolicySettings = {
   RetryTimes: 0,
   AutomaticRetryStatusCodes:
     '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
-  ChannelDisableThreshold: '',
   AutomaticDisableChannelEnabled: false,
   AutomaticEnableChannelEnabled: false,
   AutomaticDisableKeywords: '',
@@ -64,10 +60,8 @@ export const defaultRequestPolicySettings: RequestPolicySettings = {
   'monitor_setting.auto_test_channel_enabled': false,
   'monitor_setting.auto_test_channel_minutes': 10,
   'monitor_setting.channel_test_concurrency': 1,
+  'monitor_setting.model_health_check_minutes': 1,
   'monitor_setting.channel_test_mode': 'scheduled_all',
-  'monitor_setting.channel_test_type': 'hi',
-  'monitor_setting.channel_test_custom_prompt': '',
-  'monitor_setting.channel_test_custom_answer': '',
   'channel_affinity_setting.enabled': false,
   'channel_affinity_setting.session_mode': '',
   'channel_affinity_setting.switch_on_success': true,

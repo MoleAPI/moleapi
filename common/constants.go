@@ -11,7 +11,7 @@ import (
 )
 
 var StartTime = time.Now().Unix() // unit: second
-var Version = "v0.10.9.4"         // this hard coding will be replaced automatically when building, no need to manually change
+var Version = "v0.10.9.5"         // this hard coding will be replaced automatically when building, no need to manually change
 var UpstreamVersion = "v1.0.0-rc.41"
 var Commit = ""
 var SystemName = "New API"
@@ -128,7 +128,6 @@ var QuotaForNewUser = 0
 var QuotaForInviter = 0
 var QuotaForInvitee = 0
 var QuotaForInviterOnFirstTopup = 0
-var ChannelDisableThreshold = 5.0
 var AutomaticDisableChannelEnabled = false
 var AutomaticEnableChannelEnabled = false
 var QuotaRemindThreshold = 1000

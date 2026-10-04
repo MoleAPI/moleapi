@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import type { Row } from '@tanstack/react-table'
-import { render, renderHook, screen, waitFor } from '@testing-library/react'
+import { render, renderHook, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
@@ -66,7 +66,6 @@ vi.mock('@/lib/admin-permissions', () => ({
 
 const { useChannelsColumns } = await import('../channels-columns')
 const { DataTableRowActions } = await import('../data-table-row-actions')
-const { ChannelTestDialog } = await import('../dialogs/channel-test-dialog')
 
 function TestProviders(props: { children: ReactNode }) {
   return (
@@ -109,43 +108,7 @@ describe('channel table restored controls', () => {
     expect(setOpen).toHaveBeenCalledWith('test-channel')
   })
 
-  test('offers intelligence and custom connection checks in the dialog', async () => {
-    const user = userEvent.setup()
-    render(<ChannelTestDialog open onOpenChange={vi.fn()} />, {
-      wrapper: TestProviders,
-    })
-
-    await user.click(screen.getByRole('combobox', { name: 'Probe type' }))
-    expect(
-      screen.getByRole('option', { name: 'Intelligence check' })
-    ).toBeVisible()
-    await user.click(
-      screen.getByRole('option', { name: 'Custom prompt check' })
-    )
-
-    expect(screen.getByLabelText('Custom prompt')).toBeVisible()
-    expect(screen.getByLabelText('Expected answer')).toBeVisible()
-    await user.type(screen.getByLabelText('Custom prompt'), 'Reply with mole')
-    await user.type(screen.getByLabelText('Expected answer'), 'mole')
-    await user.click(
-      screen.getAllByRole('button', { name: 'Test Connection' })[0]
-    )
-
-    await waitFor(() =>
-      expect(api.post).toHaveBeenCalledWith(
-        '/api/channel/test/7',
-        expect.objectContaining({
-          model: 'gpt-4o',
-          test_type: 'custom',
-          prompt: 'Reply with mole',
-          expected_answer: 'mole',
-        }),
-        expect.any(Object)
-      )
-    )
-  })
-
-  test('places the compact 24 hour column after used quota and narrows type', () => {
+  test('places the compact 24 hour column after used quota and enables the requested sorts', () => {
     const { result } = renderHook(
       () => useChannelsColumns({ enableSelection: false, usage24h: {} }),
       { wrapper: TestProviders }
@@ -157,5 +120,8 @@ describe('channel table restored controls', () => {
     expect(ids.indexOf('usage_24h')).toBe(ids.indexOf('used_quota') + 1)
     expect(usageColumn.header).toBe('24 Hours')
     expect(typeColumn.size).toBe(160)
+    for (const id of ['status', 'used_quota', 'usage_24h']) {
+      expect(result.current[ids.indexOf(id)].enableSorting).not.toBe(false)
+    }
   })
 })

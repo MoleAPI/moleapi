@@ -82,7 +82,7 @@ export function useChannelMutateForm(props: UseChannelMutateFormParams) {
           )
           probeSettings.channel_probe_enabled =
             data.channel_probe_enabled !== false
-          probeSettings.channel_probe_models = data.channel_probe_models ?? []
+          delete probeSettings.channel_probe_models
           for (const field of SENSITIVE_UPDATE_FIELDS) {
             delete payload[field]
           }

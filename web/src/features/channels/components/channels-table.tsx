@@ -61,7 +61,6 @@ import {
   isTagAggregateRow,
   getChannelTypeLabel,
 } from '../lib'
-import type { ChannelProbeMetric } from '../lib/channel-success'
 import type { Channel, ChannelSortBy } from '../types'
 import { ChannelCard } from './channel-card'
 import { ChannelTypeLogo } from './channel-type-badge'
@@ -80,6 +79,9 @@ const CHANNEL_SORTABLE_COLUMNS = new Set<ChannelSortBy>([
   'name',
   'priority',
   'balance',
+  'status',
+  'used_quota',
+  'usage_24h',
   'response_time',
 ])
 
@@ -334,23 +336,11 @@ export function ChannelsTable() {
       ),
     [channelSuccessData]
   )
-  const channelProbeById = useMemo(() => {
-    const grouped = new Map<number, ChannelProbeMetric[]>()
-    for (const item of channelSuccessData?.data.probe_overview?.items ?? []) {
-      const current = grouped.get(item.channel_id) ?? []
-      current.push(item)
-      grouped.set(item.channel_id, current)
-    }
-    return grouped
-  }, [channelSuccessData])
-
   // Columns configuration
   const columns = useChannelsColumns({
     enableSelection: batchMode,
     channelSuccessById,
     usage24h: channelSuccessData?.data.usage_24h,
-    channelProbeById,
-    probeEnabled: channelSuccessData?.data.probe_overview?.enabled,
   })
 
   // React Table instance

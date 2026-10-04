@@ -1,7 +1,6 @@
 package operation_setting
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -115,12 +114,10 @@ func TestValidateChannelTestConcurrency(t *testing.T) {
 	assert.Error(t, ValidateChannelTestConcurrency("1.5"))
 }
 
-func TestChannelTestTypeValidationAndNormalization(t *testing.T) {
-	for _, value := range []string{"hi", "intelligence", "custom"} {
-		require.NoError(t, ValidateChannelTestType(value))
-	}
-	assert.Error(t, ValidateChannelTestType("unknown"))
-	assert.Equal(t, "hi", NormalizeChannelTestType(""))
-	assert.Equal(t, "intelligence", NormalizeChannelTestType("intelligence"))
-	assert.Error(t, ValidateChannelTestText(strings.Repeat("a", MaxChannelTestPromptLength+1), MaxChannelTestPromptLength))
+func TestValidateModelHealthCheckMinutes(t *testing.T) {
+	require.NoError(t, ValidateModelHealthCheckMinutes("1"))
+	require.NoError(t, ValidateModelHealthCheckMinutes("1440"))
+	assert.Error(t, ValidateModelHealthCheckMinutes("0"))
+	assert.Error(t, ValidateModelHealthCheckMinutes("1441"))
+	assert.Error(t, ValidateModelHealthCheckMinutes("1.5"))
 }
