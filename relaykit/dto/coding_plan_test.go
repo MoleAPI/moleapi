@@ -61,6 +61,22 @@ func TestOpenCodeGoPresetUsesNativeResponses(t *testing.T) {
 	assert.Equal(t, "https://opencode.ai/zen/go/v1/messages", messages.UpstreamPath)
 }
 
+func TestCodingPlanPresetsIncludeVolcengineAgentAndCommandCode(t *testing.T) {
+	for _, test := range []struct {
+		provider string
+		openAI   string
+	}{
+		{CodingPlanProviderVolcengineAgent, "https://ark.cn-beijing.volces.com/api/plan"},
+		{CodingPlanProviderCommandCode, "https://api.commandcode.ai/provider/v1"},
+	} {
+		settings := &ChannelOtherSettings{}
+		require.NoError(t, settings.ApplyCodingPlanPreset(test.provider))
+		route, ok := settings.AdvancedCustom.MatchPath(advancedCustomEndpointPathOpenAICompletions)
+		require.True(t, ok)
+		assert.Equal(t, test.openAI+"/chat/completions", route.UpstreamPath)
+	}
+}
+
 func TestCodingPlanPresetBuildsCustomPlaceholderRoutes(t *testing.T) {
 	settings := &ChannelOtherSettings{}
 	require.NoError(t, settings.ApplyCodingPlanPreset(CodingPlanProviderCustom))
@@ -80,4 +96,31 @@ func TestCodingPlanPresetRejectsUnknownProvider(t *testing.T) {
 	err := (&ChannelOtherSettings{}).ApplyCodingPlanPreset("missing-provider")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "unknown coding plan provider")
+}
+
+func TestCodingPlanQuotaConfigValidatesWindows(t *testing.T) {
+	config := &CodingPlanQuotaConfig{
+		Unit: CodingPlanQuotaUnitTokens,
+		Windows: []CodingPlanQuotaWindow{
+			{DurationSeconds: 5 * 60 * 60, Limit: 1000},
+			{DurationSeconds: 7 * 24 * 60 * 60, Limit: 5000},
+		},
+	}
+	require.NoError(t, config.Validate())
+
+	config.Windows[1].DurationSeconds = config.Windows[0].DurationSeconds
+	assert.Error(t, config.Validate())
+}
+
+func TestCodingPlanQuotaConfigRejectsInvalidValues(t *testing.T) {
+	for name, config := range map[string]*CodingPlanQuotaConfig{
+		"unknown unit":  {Unit: "credits", Windows: []CodingPlanQuotaWindow{{DurationSeconds: 60, Limit: 1}}},
+		"empty windows": {Unit: CodingPlanQuotaUnitRequests},
+		"zero limit":    {Unit: CodingPlanQuotaUnitRequests, Windows: []CodingPlanQuotaWindow{{DurationSeconds: 60, Limit: 0}}},
+		"short window":  {Unit: CodingPlanQuotaUnitRequests, Windows: []CodingPlanQuotaWindow{{DurationSeconds: 1, Limit: 1}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Error(t, config.Validate())
+		})
+	}
 }

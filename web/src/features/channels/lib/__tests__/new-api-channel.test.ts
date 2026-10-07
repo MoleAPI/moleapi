@@ -26,6 +26,7 @@ import {
   CHANNEL_TYPE_OPTIONS,
   MODEL_FETCHABLE_TYPES,
 } from '../../constants'
+import { CHANNEL_TYPE_ADVANCED_CUSTOM } from '../advanced-custom'
 import { channelSchema } from '../../types'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
@@ -101,6 +102,64 @@ describe('New API channel', () => {
     })
 
     expect(result.success).toBe(true)
+  })
+})
+
+describe('Coding plan channel settings', () => {
+  test('round-trips provider metadata and local quota windows', () => {
+    const form = channelFormSchema.parse({
+      ...CHANNEL_FORM_DEFAULT_VALUES,
+      name: 'Command Code',
+      type: CHANNEL_TYPE_ADVANCED_CUSTOM,
+      base_url: 'https://api.commandcode.ai/provider/v1',
+      key: 'test-key',
+      models: 'command-code-model',
+      advanced_custom: JSON.stringify({
+        advanced_routes: [
+          {
+            incoming_path: '/v1/chat/completions',
+            upstream_path: '/v1/chat/completions',
+            converter: 'none',
+          },
+        ],
+      }),
+      coding_plan_provider: 'command-code',
+      coding_plan_quota: JSON.stringify({
+        unit: 'requests',
+        windows: [{ duration_seconds: 3600, limit: 12 }],
+      }),
+    })
+
+    const payload = transformFormDataToCreatePayload(form)
+    const settings = JSON.parse(payload.channel.settings ?? '{}')
+    expect(settings).toMatchObject({
+      coding_plan_provider: 'command-code',
+      coding_plan_quota: {
+        unit: 'requests',
+        windows: [{ duration_seconds: 3600, limit: 12 }],
+      },
+    })
+  })
+
+  test('rejects invalid local quota windows', () => {
+    const result = channelFormSchema.safeParse({
+      ...CHANNEL_FORM_DEFAULT_VALUES,
+      name: 'Invalid quota',
+      type: CHANNEL_TYPE_ADVANCED_CUSTOM,
+      key: 'test-key',
+      models: 'model',
+      advanced_custom: JSON.stringify({
+        advanced_routes: [
+          {
+            incoming_path: '/v1/chat/completions',
+            upstream_path: '/v1/chat/completions',
+            converter: 'none',
+          },
+        ],
+      }),
+      coding_plan_quota: '{"unit":"requests","windows":[]}',
+    })
+    expect(result.success).toBe(false)
   })
 })
 

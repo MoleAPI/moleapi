@@ -113,7 +113,19 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   channel_probe_enabled?: boolean
+  coding_plan_provider?: string
+  coding_plan_quota?: CodingPlanQuotaConfig
   advanced_custom?: AdvancedCustomConfig
+}
+
+export interface CodingPlanQuotaWindow {
+  duration_seconds: number
+  limit: number
+}
+
+export interface CodingPlanQuotaConfig {
+  unit: 'requests' | 'tokens'
+  windows: CodingPlanQuotaWindow[]
 }
 
 export interface AdvancedCustomConfig {

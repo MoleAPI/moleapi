@@ -571,6 +571,9 @@ func updateAllChannelsBalance() error {
 	if err != nil {
 		return err
 	}
+	now := time.Now()
+	service.UpdateCodingPlanQuotaChannels(channels, now)
+	service.UpdateOfficialCodingPlanQuotaChannels(channels, now)
 	for _, channel := range channels {
 		if channel.Status != common.ChannelStatusEnabled {
 			continue

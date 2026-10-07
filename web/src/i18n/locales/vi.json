@@ -7603,6 +7603,22 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
+    "Coding plan provider": "Nhà cung cấp gói lập trình",
+    "Command Code": "Command Code",
+    "Custom Coding Plan": "Gói lập trình tùy chỉnh",
+    "Doubao Coding Plan": "Gói lập trình Doubao",
+    "GLM Coding Plan (China)": "Gói lập trình GLM (Trung Quốc)",
+    "GLM Coding Plan (International)": "Gói lập trình GLM (Quốc tế)",
+    "Kimi Coding Plan": "Gói lập trình Kimi",
+    "Local coding plan quota": "Hạn ngạch gói lập trình cục bộ",
+    "MiniMax Token Plan": "Gói token MiniMax",
+    "No coding plan preset": "Không dùng preset gói lập trình",
+    "OpenCode Go": "OpenCode Go",
+    "Optional preset metadata for coding-plan channels. Leave empty for a generic custom upstream.": "Siêu dữ liệu preset tùy chọn cho kênh gói lập trình. Để trống để dùng nguồn tùy chỉnh chung.",
+    "Optional rolling windows. The channel is paused when any configured window reaches its limit.": "Các cửa sổ cuộn tùy chọn. Kênh sẽ tạm dừng khi bất kỳ cửa sổ nào đạt giới hạn.",
+    "Qwen Coding Plan": "Gói lập trình Qwen",
+    "Qwen Token Plan": "Gói token Qwen",
+    "Volcengine Agent Plan": "Gói Volcengine Agent",
     "Zoom": "Zoom"
   }
 }
