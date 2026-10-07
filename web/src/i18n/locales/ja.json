@@ -7603,6 +7603,22 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V 4",
+    "Coding plan provider": "コーディングプランプロバイダー",
+    "Command Code": "Command Code",
+    "Custom Coding Plan": "カスタムコーディングプラン",
+    "Doubao Coding Plan": "Doubao コーディングプラン",
+    "GLM Coding Plan (China)": "GLM コーディングプラン（中国）",
+    "GLM Coding Plan (International)": "GLM コーディングプラン（国際）",
+    "Kimi Coding Plan": "Kimi コーディングプラン",
+    "Local coding plan quota": "ローカルコーディングプラン割り当て",
+    "MiniMax Token Plan": "MiniMax トークンプラン",
+    "No coding plan preset": "コーディングプランのプリセットなし",
+    "OpenCode Go": "OpenCode Go",
+    "Optional preset metadata for coding-plan channels. Leave empty for a generic custom upstream.": "コーディングプランチャネル用の任意のプリセット情報。汎用カスタム上流を使う場合は空欄にしてください。",
+    "Optional rolling windows. The channel is paused when any configured window reaches its limit.": "任意のローリングウィンドウ。設定したウィンドウのいずれかが上限に達するとチャネルを一時停止します。",
+    "Qwen Coding Plan": "Qwen コーディングプラン",
+    "Qwen Token Plan": "Qwen トークンプラン",
+    "Volcengine Agent Plan": "Volcengine Agent プラン",
     "Zoom": "ズーム"
   }
 }

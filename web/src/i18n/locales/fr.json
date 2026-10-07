@@ -7603,6 +7603,22 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
+    "Coding plan provider": "Fournisseur de forfait de codage",
+    "Command Code": "Command Code",
+    "Custom Coding Plan": "Forfait de codage personnalisé",
+    "Doubao Coding Plan": "Forfait de codage Doubao",
+    "GLM Coding Plan (China)": "Forfait de codage GLM (Chine)",
+    "GLM Coding Plan (International)": "Forfait de codage GLM (international)",
+    "Kimi Coding Plan": "Forfait de codage Kimi",
+    "Local coding plan quota": "Quota local du forfait de codage",
+    "MiniMax Token Plan": "Forfait de jetons MiniMax",
+    "No coding plan preset": "Aucun préréglage de forfait de codage",
+    "OpenCode Go": "OpenCode Go",
+    "Optional preset metadata for coding-plan channels. Leave empty for a generic custom upstream.": "Métadonnées de préréglage facultatives pour les canaux de forfait de codage. Laissez vide pour une source personnalisée générique.",
+    "Optional rolling windows. The channel is paused when any configured window reaches its limit.": "Fenêtres glissantes facultatives. Le canal est suspendu lorsqu'une fenêtre configurée atteint sa limite.",
+    "Qwen Coding Plan": "Forfait de codage Qwen",
+    "Qwen Token Plan": "Forfait de jetons Qwen",
+    "Volcengine Agent Plan": "Forfait Agent Volcengine",
     "Zoom": "Zoom"
   }
 }

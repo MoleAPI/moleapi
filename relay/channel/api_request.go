@@ -549,7 +549,16 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	resp, err := relayClient.Do(req)
 	if err != nil {
 		logger.LogError(c, "do request failed: "+err.Error())
-		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
+		options := []types.NewAPIErrorOptions{
+			types.ErrOptionWithHideErrMsg("upstream error: do request failed"),
+		}
+		// A canceled request cannot be recovered by trying another channel. The
+		// client has already gone away (or this request's deadline has expired),
+		// so keep the error internal and stop the retry loop.
+		if req.Context().Err() != nil {
+			options = append(options, types.ErrOptionWithSkipRetry())
+		}
+		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, options...)
 	}
 	if resp == nil {
 		return nil, errors.New("resp is nil")

@@ -21,6 +21,9 @@ func ShouldRetryRelayError(c *gin.Context, openaiErr *types.NewAPIError, retryTi
 	if openaiErr == nil {
 		return false
 	}
+	if c != nil && c.Request != nil && c.Request.Context().Err() != nil {
+		return false
+	}
 	if ShouldSkipRetryAfterChannelAffinityFailure(c) {
 		return false
 	}

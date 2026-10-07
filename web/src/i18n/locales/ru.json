@@ -7603,6 +7603,22 @@
     "Zhipu": "Zhipu",
     "Zhipu GLM": "Zhipu GLM",
     "Zhipu V4": "Zhipu V4",
+    "Coding plan provider": "Поставщик плана программирования",
+    "Command Code": "Command Code",
+    "Custom Coding Plan": "Пользовательский план программирования",
+    "Doubao Coding Plan": "План программирования Doubao",
+    "GLM Coding Plan (China)": "План программирования GLM (Китай)",
+    "GLM Coding Plan (International)": "План программирования GLM (международный)",
+    "Kimi Coding Plan": "План программирования Kimi",
+    "Local coding plan quota": "Локальная квота плана программирования",
+    "MiniMax Token Plan": "Токен-план MiniMax",
+    "No coding plan preset": "Без пресета плана программирования",
+    "OpenCode Go": "OpenCode Go",
+    "Optional preset metadata for coding-plan channels. Leave empty for a generic custom upstream.": "Необязательные метаданные пресета для каналов с планом программирования. Оставьте пустым для обычного пользовательского источника.",
+    "Optional rolling windows. The channel is paused when any configured window reaches its limit.": "Необязательные скользящие окна. Канал приостанавливается при достижении лимита любого настроенного окна.",
+    "Qwen Coding Plan": "План программирования Qwen",
+    "Qwen Token Plan": "Токен-план Qwen",
+    "Volcengine Agent Plan": "План Volcengine Agent",
     "Zoom": "Zoom"
   }
 }

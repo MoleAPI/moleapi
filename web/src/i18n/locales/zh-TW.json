@@ -7603,6 +7603,22 @@
     "Zhipu": "智譜",
     "Zhipu GLM": "智譜GLM",
     "Zhipu V4": "智譜 V4",
+    "Coding plan provider": "程式方案提供者",
+    "Command Code": "Command Code",
+    "Custom Coding Plan": "自訂程式方案",
+    "Doubao Coding Plan": "豆包程式方案",
+    "GLM Coding Plan (China)": "GLM 程式方案（中國）",
+    "GLM Coding Plan (International)": "GLM 程式方案（國際）",
+    "Kimi Coding Plan": "Kimi 程式方案",
+    "Local coding plan quota": "本地程式方案配額",
+    "MiniMax Token Plan": "MiniMax Token 方案",
+    "No coding plan preset": "不使用程式方案預設",
+    "OpenCode Go": "OpenCode Go",
+    "Optional preset metadata for coding-plan channels. Leave empty for a generic custom upstream.": "程式方案頻道的選用預設資訊。留白以使用一般自訂上游。",
+    "Optional rolling windows. The channel is paused when any configured window reaches its limit.": "選用的滾動視窗。任何設定視窗達到上限時，頻道將暫停。",
+    "Qwen Coding Plan": "通義千問程式方案",
+    "Qwen Token Plan": "通義千問 Token 方案",
+    "Volcengine Agent Plan": "火山方舟 Agent 方案",
     "Zoom": "縮放"
   }
 }

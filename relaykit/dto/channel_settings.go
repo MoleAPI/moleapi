@@ -130,9 +130,12 @@ type ChannelOtherSettings struct {
 	UpstreamModelUpdateLastRemovedModels  []string      `json:"upstream_model_update_last_removed_models,omitempty"`  // 上次检测到的可删除模型
 	UpstreamModelUpdateIgnoredModels      []string      `json:"upstream_model_update_ignored_models,omitempty"`       // 手动忽略的模型
 	ChannelProbeEnabled                   *bool         `json:"channel_probe_enabled,omitempty"`
-	// CodingPlanProvider is read only by the one-time migration to Advanced Custom.
-	CodingPlanProvider string                `json:"coding_plan_provider,omitempty"`
-	AdvancedCustom     *AdvancedCustomConfig `json:"advanced_custom,omitempty"`
+	// CodingPlanProvider selects provider-specific subscription probes for an
+	// Advanced Custom coding-plan channel. It also remains useful when only a
+	// local quota is configured, because it identifies the upstream plan.
+	CodingPlanProvider string                 `json:"coding_plan_provider,omitempty"`
+	CodingPlanQuota    *CodingPlanQuotaConfig `json:"coding_plan_quota,omitempty"`
+	AdvancedCustom     *AdvancedCustomConfig  `json:"advanced_custom,omitempty"`
 	// ToolLossPolicy is a channel-level opt-in for request-phase conversion
 	// rejection. Empty follows the default allow policy. Accepted values:
 	// "", "allow", "safe", "strict".
