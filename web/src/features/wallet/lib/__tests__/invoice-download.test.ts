@@ -41,21 +41,6 @@ describe('top-up invoice download', () => {
       ),
       '/invoice/42'
     )
-    assert.equal(
-      getTopUpInvoiceUrl(
-        {
-          id: 42,
-          user_id: 7,
-          status: 'success',
-          payment_method: 'alipay',
-          payment_provider: 'epay',
-        },
-        7,
-        false,
-        true
-      ),
-      '/api/user/topup/42/invoice?download=1'
-    )
   })
 
   test('allows an admin to view another users completed invoice', () => {

@@ -540,6 +540,11 @@ func TestSupportTicketWorkflow(t *testing.T) {
 						_, _ = w.Write([]byte(`{"id":"new-invoice","ticketNumber":"113"}`))
 						return
 					}
+					if r.URL.Query().Get("limit") == "100" {
+						assert.Equal(t, "Alice@example.com", r.URL.Query().Get("email"))
+						_, _ = w.Write([]byte(`{"data":[{"id":"newest-invoice","departmentId":"7","email":"Alice@example.com","category":"Invoice Request","description":"Please invoice these orders.\n\nVerified billing records (actual paid amounts)\n#1 | paid-1 | CNY 12.34 | alipay\n#2 | paid-2 | CNY 0.66 | wxpay\nInvoice total: CNY 13.00"},{"id":"other-user","departmentId":"7","email":"bob@example.com","category":"Invoice Request","description":"Verified billing records (actual paid amounts)\n#3 | foreign | CNY 99.00 | alipay"}]}`))
+						return
+					}
 					assert.Equal(t, "20", r.URL.Query().Get("limit"))
 					assert.Equal(t, "7", r.URL.Query().Get("departmentId"))
 					_, _ = w.Write([]byte(`{"data":[{"id":"42","departmentId":"7","email":"alice@example.com","commentCount":"1"},{"id":"43","departmentId":"7","email":"bob@example.com"},{"id":"44","departmentId":"8","email":"alice@example.com"}]}`))
@@ -578,7 +583,11 @@ func TestSupportTicketWorkflow(t *testing.T) {
 				c, _ := gin.CreateTestContext(w)
 				c.Request = httptest.NewRequest(http.MethodGet, "/", strings.NewReader(body))
 				if len(view) > 0 {
-					c.Request.URL.RawQuery = "view=" + view[0]
+					if strings.Contains(view[0], "=") {
+						c.Request.URL.RawQuery = view[0]
+					} else {
+						c.Request.URL.RawQuery = "view=" + view[0]
+					}
 				}
 				c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "attachment_id", Value: "2"}}
 				c.Set("id", id)
@@ -642,6 +651,16 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			assert.Contains(t, notificationBody, "Alice@example.com")
 			assert.Contains(t, notificationBody, "Please invoice these orders.")
 			assert.Contains(t, request(CreateSupportTicket, common.RoleCommonUser, 11, `{"subject":"Combined invoice","content":"Please invoice these orders.","type":"Invoice Request"}`).Body.String(), `"success":false`)
+			var invoiceTickets struct {
+				Success bool `json:"success"`
+				Data    struct {
+					Tickets map[int]string `json:"tickets"`
+				} `json:"data"`
+			}
+			recorder := request(GetSupportInvoiceTickets, common.RoleCommonUser, 11, "", "record_ids=1,2,3")
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &invoiceTickets))
+			require.True(t, invoiceTickets.Success)
+			assert.Equal(t, map[int]string{1: "newest-invoice", 2: "newest-invoice"}, invoiceTickets.Data.Tickets)
 			status = "Closed"
 			assert.Contains(t, request(ReplySupportTicket, common.RoleCommonUser, 11, `{"content":"hello"}`).Body.String(), "Reopen the ticket")
 			department = "8"

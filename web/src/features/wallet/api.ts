@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { api } from '@/lib/api'
+import { requireServerSuccess } from '@/lib/server-error-message'
 
 import type {
   RedemptionRequest,
@@ -329,6 +330,17 @@ export async function getAllBillingHistory(
   }
   const res = await api.get(`/api/user/topup?${params.toString()}`)
   return res.data
+}
+
+export async function getInvoiceTicketIds(
+  recordIds: number[]
+): Promise<Record<number, string>> {
+  const response = await api.get<
+    ApiResponse<{ tickets: Record<number, string> }>
+  >('/api/support/invoice-tickets', {
+    params: { record_ids: recordIds.join(',') },
+  })
+  return requireServerSuccess(response.data).data?.tickets ?? {}
 }
 
 /**

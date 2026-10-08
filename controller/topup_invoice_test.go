@@ -154,8 +154,8 @@ func TestGetTopUpInvoiceShowsCompletedOrderInlineForOwner(t *testing.T) {
 	assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
 	assert.Contains(t, recorder.Header().Get("Content-Security-Policy"), "allow-downloads")
 	body := recorder.Body.String()
-	assert.Contains(t, body, "<h1>Invoice</h1>")
-	assert.Contains(t, body, "Invoice No.")
+	assert.Contains(t, body, "<h1>Top-up receipt</h1>")
+	assert.Contains(t, body, "Receipt No.")
 	assert.Contains(t, body, "Edit information")
 	assert.Contains(t, body, "Download PDF")
 	assert.Contains(t, body, `class="brand-icon"`)
@@ -191,7 +191,8 @@ func TestGetTopUpInvoiceReturnsDataForAuthenticatedPage(t *testing.T) {
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
 	assert.True(t, response.Success)
 	assert.True(t, response.Data.CanEdit)
-	assert.Equal(t, "INV-"+strconv.Itoa(topUp.Id), response.Data.InvoiceNo)
+	assert.Equal(t, formatTopUpReceiptNumber(topUp), response.Data.InvoiceNo)
+	assert.Regexp(t, `^INV-202605-[A-Z2-7]{8}$`, response.Data.InvoiceNo)
 	assert.Equal(t, user.DisplayName, response.Data.CustomerName)
 	assert.Equal(t, topUp.TradeNo, response.Data.TradeNo)
 }
@@ -259,7 +260,7 @@ func TestGetTopUpInvoiceRejectsIncompleteOrder(t *testing.T) {
 	recorder := performTopUpInvoiceRequest(topUp.Id, user, false)
 
 	requireTopUpInvoiceAPIError(t, recorder, "仅成功订单支持下载凭证")
-	assert.NotContains(t, recorder.Body.String(), "<h1>Invoice</h1>")
+	assert.NotContains(t, recorder.Body.String(), "<h1>Top-up receipt</h1>")
 }
 
 func TestGetTopUpInvoiceRejectsWaffoPancakeOrder(t *testing.T) {
