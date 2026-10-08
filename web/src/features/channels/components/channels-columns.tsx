@@ -736,7 +736,8 @@ function ChannelSuccessRateCell({
 export function useChannelsColumns(
   options: {
     enableSelection?: boolean
-    usage24h?: Record<number, number> | null
+    usage?: Record<number, number> | null
+    usagePeriodLabel?: string
     channelSuccessById?: ReadonlyMap<number, ChannelSuccessMetric>
   } = {}
 ): ColumnDef<Channel>[] {
@@ -1302,23 +1303,23 @@ export function useChannelsColumns(
 
       {
         id: 'usage_24h',
-        header: t('24 Hours'),
+        header: t(options.usagePeriodLabel ?? '24 Hours'),
         cell: ({ row }) => {
-          if (!options.usage24h) {
+          if (!options.usage) {
             return <span className='text-muted-foreground'>-</span>
           }
           const channel = row.original
           const quota = isTagAggregateRow(channel)
             ? channel.children.reduce(
-                (sum, child) => sum + (options.usage24h?.[child.id] ?? 0),
+                (sum, child) => sum + (options.usage?.[child.id] ?? 0),
                 0
               )
-            : (options.usage24h[channel.id] ?? 0)
+            : (options.usage[channel.id] ?? 0)
           return (
             <UsedQuotaCell
               channel={channel}
               quota={quota}
-              label='Last 24h usage'
+              label={options.usagePeriodLabel ?? '24 Hours'}
             />
           )
         },
@@ -1391,7 +1392,8 @@ export function useChannelsColumns(
       t,
       sensitiveVisible,
       options.channelSuccessById,
-      options.usage24h,
+      options.usage,
+      options.usagePeriodLabel,
     ]
   )
 }

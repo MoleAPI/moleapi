@@ -65,9 +65,12 @@ export interface ChannelSuccessSummary {
 }
 
 export interface ChannelSuccessData {
+  usage?: Record<number, number> | null
   usage_24h?: Record<number, number> | null
   channels: ChannelSuccessSummary[]
 }
+
+export type ChannelUsagePeriod = '24h' | 'yesterday' | '7d' | '30d'
 
 export interface AdminBusinessMetrics {
   new_users: number

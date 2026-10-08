@@ -478,6 +478,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
 			require.NoError(t, db.Create(&model.User{Id: 11, Username: "alice", Email: "Alice@example.com", AffCode: "alice"}).Error)
 			require.NoError(t, db.Create(&model.User{Id: 12, Username: "bob", Email: "bob@example.com", AffCode: "bob"}).Error)
+			require.NoError(t, db.Create(&model.User{Id: 14, Username: "no-email", AffCode: "no-email"}).Error)
 			var version string
 			query := "SELECT VERSION()"
 			if kind == "sqlite" {
@@ -514,6 +515,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			status, department := "Open", "7"
 			patches := 0
 			var conversationReads atomic.Int32
+			var invoiceSearches atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
@@ -541,6 +543,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 						return
 					}
 					if r.URL.Query().Get("limit") == "100" {
+						invoiceSearches.Add(1)
 						assert.Equal(t, "Alice@example.com", r.URL.Query().Get("email"))
 						_, _ = w.Write([]byte(`{"data":[{"id":"newest-invoice","departmentId":"7","email":"Alice@example.com","category":"Invoice Request","description":"Please invoice these orders.\n\nVerified billing records (actual paid amounts)\n#1 | paid-1 | CNY 12.34 | alipay\n#2 | paid-2 | CNY 0.66 | wxpay\nInvoice total: CNY 13.00"},{"id":"other-user","departmentId":"7","email":"bob@example.com","category":"Invoice Request","description":"Verified billing records (actual paid amounts)\n#3 | foreign | CNY 99.00 | alipay"}]}`))
 						return
@@ -661,6 +664,13 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &invoiceTickets))
 			require.True(t, invoiceTickets.Success)
 			assert.Equal(t, map[int]string{1: "newest-invoice", 2: "newest-invoice"}, invoiceTickets.Data.Tickets)
+			searchesBefore := invoiceSearches.Load()
+			invoiceTickets.Data.Tickets = nil
+			recorder = request(GetSupportInvoiceTickets, common.RoleCommonUser, 14, "", "record_ids=1")
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &invoiceTickets))
+			require.True(t, invoiceTickets.Success)
+			assert.Empty(t, invoiceTickets.Data.Tickets)
+			assert.Equal(t, searchesBefore, invoiceSearches.Load(), "users without email must not query Zoho")
 			status = "Closed"
 			assert.Contains(t, request(ReplySupportTicket, common.RoleCommonUser, 11, `{"content":"hello"}`).Body.String(), "Reopen the ticket")
 			department = "8"

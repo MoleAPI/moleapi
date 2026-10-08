@@ -157,6 +157,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
   } = useBillingHistory({ initialUserKeyword: props.initialUserKeyword })
 
   const currentUserId = useAuthStore((state) => state.auth.user?.id)
+  const currentUserEmail = useAuthStore((state) => state.auth.user?.email)
 
   const invoiceRecordIds = useMemo(
     () =>
@@ -169,10 +170,14 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
   )
 
   const invoiceTicketsQuery = useQuery({
-    queryKey: ['top-up-invoice-tickets', invoiceRecordIds],
+    queryKey: ['top-up-invoice-tickets', currentUserId, invoiceRecordIds],
     queryFn: () => getInvoiceTicketIds(invoiceRecordIds),
-    enabled: props.open && invoiceRecordIds.length > 0,
+    enabled:
+      props.open &&
+      Boolean(currentUserEmail?.trim()) &&
+      invoiceRecordIds.length > 0,
     staleTime: 30_000,
+    retry: false,
   })
 
   const invoiceTickets = invoiceTicketsQuery.data ?? {}
@@ -474,37 +479,34 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                 {t('View receipt')}
                               </Button>
                             )}
-                            {canRequestInvoice &&
-                              invoiceTicketsQuery.isSuccess && (
-                                <Button
-                                  size='sm'
-                                  variant='ghost'
-                                  className='h-7 px-2'
-                                  render={
-                                    <Link
-                                      to='/support'
-                                      search={
-                                        invoiceTicketId
-                                          ? { ticket: invoiceTicketId }
-                                          : { invoice_record: record.id }
-                                      }
-                                      onClick={(event) =>
-                                        event.stopPropagation()
-                                      }
-                                    />
-                                  }
-                                  nativeButton={false}
-                                >
-                                  <HugeiconsIcon
-                                    icon={InvoiceIcon}
-                                    strokeWidth={2}
-                                    data-icon='inline-start'
+                            {canRequestInvoice && (
+                              <Button
+                                size='sm'
+                                variant='ghost'
+                                className='h-7 px-2'
+                                render={
+                                  <Link
+                                    to='/support'
+                                    search={
+                                      invoiceTicketId
+                                        ? { ticket: invoiceTicketId }
+                                        : { invoice_record: record.id }
+                                    }
+                                    onClick={(event) => event.stopPropagation()}
                                   />
-                                  {invoiceTicketId
-                                    ? t('View invoice request')
-                                    : t('Request tax invoice')}
-                                </Button>
-                              )}
+                                }
+                                nativeButton={false}
+                              >
+                                <HugeiconsIcon
+                                  icon={InvoiceIcon}
+                                  strokeWidth={2}
+                                  data-icon='inline-start'
+                                />
+                                {invoiceTicketId
+                                  ? t('View invoice request')
+                                  : t('Request tax invoice')}
+                              </Button>
+                            )}
                             {officialInvoiceUrl && (
                               <Button
                                 size='sm'
@@ -622,7 +624,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                   {t('View receipt')}
                 </Button>
               )}
-              {detailCanRequestInvoice && invoiceTicketsQuery.isSuccess && (
+              {detailCanRequestInvoice && (
                 <Button
                   size='sm'
                   render={

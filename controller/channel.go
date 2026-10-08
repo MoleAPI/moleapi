@@ -164,14 +164,29 @@ func buildChannelListQuery(group string, statusFilter int, typeFilter int) *gorm
 	return query
 }
 
-func sortChannelsBy24HourUsage(ctx context.Context, channels []*model.Channel, options model.ChannelSortOptions) error {
+func channelUsageRange(period string, now time.Time) (int64, int64) {
+	end := now.Unix()
+	switch period {
+	case "yesterday":
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		return today.AddDate(0, 0, -1).Unix(), today.Unix()
+	case "7d":
+		return now.Add(-7 * 24 * time.Hour).Unix(), end
+	case "30d":
+		return now.Add(-30 * 24 * time.Hour).Unix(), end
+	default:
+		return now.Add(-24 * time.Hour).Unix(), end
+	}
+}
+
+func sortChannelsByUsage(ctx context.Context, channels []*model.Channel, options model.ChannelSortOptions, period string) error {
 	if !options.IsUsage24h() || len(channels) < 2 {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	now := time.Now().Unix()
-	usage, err := model.ChannelQuotaUsage(ctx, now-86400, now)
+	start, end := channelUsageRange(period, time.Now())
+	usage, err := model.ChannelQuotaUsage(ctx, start, end)
 	if err != nil {
 		return err
 	}
@@ -273,8 +288,8 @@ func GetAllChannels(c *gin.Context) {
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道列表失败，请稍后重试"})
 			return
 		}
-		if err := sortChannelsBy24HourUsage(c.Request.Context(), channelData, sortOptions); err != nil {
-			common.SysError("failed to sort channels by 24 hour usage: " + err.Error())
+		if err := sortChannelsByUsage(c.Request.Context(), channelData, sortOptions, c.Query("usage_period")); err != nil {
+			common.SysError("failed to sort channels by period usage: " + err.Error())
 			c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道用量失败，请稍后重试"})
 			return
 		}
@@ -479,8 +494,8 @@ func SearchChannels(c *gin.Context) {
 		}
 		channelData = filtered
 	}
-	if err := sortChannelsBy24HourUsage(c.Request.Context(), channelData, sortOptions); err != nil {
-		common.SysError("failed to sort searched channels by 24 hour usage: " + err.Error())
+	if err := sortChannelsByUsage(c.Request.Context(), channelData, sortOptions, c.Query("usage_period")); err != nil {
+		common.SysError("failed to sort searched channels by period usage: " + err.Error())
 		c.JSON(http.StatusOK, gin.H{"success": false, "message": "获取渠道用量失败，请稍后重试"})
 		return
 	}

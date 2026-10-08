@@ -43,9 +43,11 @@ const SENSITIVE_MASK = '••••'
 function ChannelCardComponent({
   row,
   isSelected,
+  usagePeriodLabel = '24 Hours',
 }: {
   row: Row<Channel>
   isSelected: boolean
+  usagePeriodLabel?: string
 }) {
   const { t } = useTranslation()
   const { sensitiveVisible } = useChannels()
@@ -65,7 +67,7 @@ function ChannelCardComponent({
     success_rate: t('Success rate'),
     reliability: t('Reliability'),
     response_time: t('Response'),
-    usage_24h: t('Last 24h usage'),
+    usage_24h: t(usagePeriodLabel),
   }
 
   const groups = parseGroupsList(row.original.group ?? '')

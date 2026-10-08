@@ -755,10 +755,6 @@ func GetSupportInvoiceTickets(c *gin.Context) {
 		common.ApiErrorMsg(c, "Support tickets are not configured yet.")
 		return
 	}
-	user, ok := supportUser(c)
-	if !ok {
-		return
-	}
 
 	wanted := make(map[int]struct{})
 	for _, value := range strings.Split(c.Query("record_ids"), ",") {
@@ -771,6 +767,15 @@ func GetSupportInvoiceTickets(c *gin.Context) {
 	}
 	if len(wanted) == 0 {
 		common.ApiErrorMsg(c, "Invalid billing records.")
+		return
+	}
+	user, err := model.GetUserById(c.GetInt("id"), false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if strings.TrimSpace(user.Email) == "" {
+		common.ApiSuccess(c, gin.H{"tickets": map[int]string{}})
 		return
 	}
 
