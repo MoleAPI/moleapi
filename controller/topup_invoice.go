@@ -258,7 +258,6 @@ func GetTopUpInvoice(c *gin.Context) {
 
 	user, _ := model.GetUserById(topUp.UserId, false)
 	view := newTopUpInvoiceView(topUp, user)
-	view.CanEdit = !isAdminView
 	if c.Query("format") == "json" {
 		if isAdminView {
 			recordManageAuditFor(c, topUp.UserId, "topup.invoice_view", map[string]interface{}{
@@ -312,7 +311,9 @@ func UpdateTopUpInvoice(c *gin.Context) {
 	}
 
 	topUp := model.GetTopUpById(id)
-	if topUp == nil || topUp.UserId != c.GetInt("id") {
+	requesterID := c.GetInt("id")
+	isAdminUpdate := topUp != nil && topUp.UserId != requesterID && c.GetInt("role") >= common.RoleAdminUser
+	if topUp == nil || (topUp.UserId != requesterID && !isAdminUpdate) {
 		common.ApiErrorMsg(c, "Top-up order not found")
 		return
 	}
@@ -342,6 +343,12 @@ func UpdateTopUpInvoice(c *gin.Context) {
 	if err := topUp.UpdateInvoiceDetails(string(encoded)); err != nil {
 		common.ApiErrorMsg(c, "Unable to save invoice information")
 		return
+	}
+	if isAdminUpdate {
+		recordManageAuditFor(c, topUp.UserId, "topup.invoice_update", map[string]interface{}{
+			"topup_id": topUp.Id,
+			"trade_no": topUp.TradeNo,
+		})
 	}
 	common.ApiSuccess(c, nil)
 }
