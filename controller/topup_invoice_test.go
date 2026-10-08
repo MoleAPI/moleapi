@@ -169,6 +169,33 @@ func TestGetTopUpInvoiceShowsCompletedOrderInlineForOwner(t *testing.T) {
 	assert.Contains(t, body, user.Email)
 }
 
+func TestGetTopUpInvoiceReturnsDataForAuthenticatedPage(t *testing.T) {
+	db := setupTopUpInvoiceTestDB(t)
+	user := insertTopUpInvoiceUser(t, db, "invoice_page", common.RoleCommonUser)
+	topUp := insertTopUpInvoiceOrder(t, db, user.Id, common.TopUpStatusSuccess)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/user/topup/"+strconv.Itoa(topUp.Id)+"/invoice?format=json", nil)
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(topUp.Id)}}
+	ctx.Set("id", user.Id)
+	ctx.Set("username", user.Username)
+	ctx.Set("role", user.Role)
+	GetTopUpInvoice(ctx)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Success bool             `json:"success"`
+		Data    topUpInvoiceView `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.True(t, response.Success)
+	assert.True(t, response.Data.CanEdit)
+	assert.Equal(t, "INV-"+strconv.Itoa(topUp.Id), response.Data.InvoiceNo)
+	assert.Equal(t, user.DisplayName, response.Data.CustomerName)
+	assert.Equal(t, topUp.TradeNo, response.Data.TradeNo)
+}
+
 func TestGetTopUpInvoiceDownloadsCompletedOrderWhenRequested(t *testing.T) {
 	db := setupTopUpInvoiceTestDB(t)
 	user := insertTopUpInvoiceUser(t, db, "invoice_download", common.RoleCommonUser)

@@ -37,25 +37,26 @@ type topUpInvoiceDetails struct {
 }
 
 type topUpInvoiceView struct {
-	LogoDataURI     template.URL
-	SystemName      string
-	InvoiceNo       string
-	InvoiceDetails  topUpInvoiceDetails
-	CustomerName    string
-	CustomerEmail   string
-	CustomerCompany string
-	CustomerTaxID   string
-	CustomerAddress string
-	TradeNo         string
-	GatewayTradeNo  string
-	PaymentMethod   string
-	PaymentProvider string
-	TopUpAmount     string
-	CreditedQuota   string
-	PaidAmount      string
-	CreatedAt       string
-	CompletedAt     string
-	IssuedAt        string
+	LogoDataURI     template.URL        `json:"-"`
+	SystemName      string              `json:"system_name"`
+	InvoiceNo       string              `json:"invoice_no"`
+	InvoiceDetails  topUpInvoiceDetails `json:"invoice_details"`
+	CustomerName    string              `json:"customer_name"`
+	CustomerEmail   string              `json:"customer_email"`
+	CustomerCompany string              `json:"customer_company"`
+	CustomerTaxID   string              `json:"customer_tax_id"`
+	CustomerAddress string              `json:"customer_address"`
+	TradeNo         string              `json:"trade_no"`
+	GatewayTradeNo  string              `json:"gateway_trade_no"`
+	PaymentMethod   string              `json:"payment_method"`
+	PaymentProvider string              `json:"payment_provider"`
+	TopUpAmount     string              `json:"top_up_amount"`
+	CreditedQuota   string              `json:"credited_quota"`
+	PaidAmount      string              `json:"paid_amount"`
+	CreatedAt       string              `json:"created_at"`
+	CompletedAt     string              `json:"completed_at"`
+	IssuedAt        string              `json:"issued_at"`
+	CanEdit         bool                `json:"can_edit"`
 }
 
 var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!doctype html>
@@ -108,7 +109,7 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
 <body>
   <main>
     <div class="actions">
-      <button type="button" id="edit-details">Edit information</button>
+      {{if .CanEdit}}<button type="button" id="edit-details">Edit information</button>{{end}}
       <button type="button" class="primary" id="download-pdf">Download PDF</button>
     </div>
     <header>
@@ -188,7 +189,7 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
     const text = (id, value) => { document.getElementById(id).textContent = value || '-' }
     const address = () => [field('address').value, field('city').value, field('state').value, field('postal_code').value, field('country').value].map((value) => value.trim()).filter(Boolean).join(', ')
 
-    document.getElementById('edit-details').addEventListener('click', () => dialog.showModal())
+    document.getElementById('edit-details')?.addEventListener('click', () => dialog.showModal())
     document.getElementById('cancel-details').addEventListener('click', () => dialog.close())
     document.getElementById('download-pdf').addEventListener('click', () => { window.location.href = window.location.pathname + '?download=1' })
     form.addEventListener('submit', async (event) => {
@@ -256,6 +257,19 @@ func GetTopUpInvoice(c *gin.Context) {
 	}
 
 	user, _ := model.GetUserById(topUp.UserId, false)
+	view := newTopUpInvoiceView(topUp, user)
+	view.CanEdit = !isAdminView
+	if c.Query("format") == "json" {
+		if isAdminView {
+			recordManageAuditFor(c, topUp.UserId, "topup.invoice_view", map[string]interface{}{
+				"topup_id": topUp.Id,
+				"trade_no": topUp.TradeNo,
+			})
+		}
+		c.Header("Cache-Control", "private, no-store")
+		common.ApiSuccess(c, view)
+		return
+	}
 	isDownload := c.Query("download") == "1"
 	filename := fmt.Sprintf("invoice-%s.html", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
 	contentType := "text/html; charset=utf-8"
@@ -265,7 +279,7 @@ func GetTopUpInvoice(c *gin.Context) {
 		contentType = "application/pdf"
 		filename = fmt.Sprintf("invoice-%s.pdf", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
 	} else {
-		invoiceBytes, err = renderTopUpInvoice(topUp, user)
+		invoiceBytes, err = renderTopUpInvoiceView(view)
 	}
 	if err != nil {
 		common.ApiErrorMsg(c, "生成充值凭证失败")
@@ -373,9 +387,12 @@ func renderTopUpInvoice(topUp *model.TopUp, user *model.User) ([]byte, error) {
 	if topUp == nil {
 		return nil, fmt.Errorf("topup is nil")
 	}
+	return renderTopUpInvoiceView(newTopUpInvoiceView(topUp, user))
+}
 
+func renderTopUpInvoiceView(view topUpInvoiceView) ([]byte, error) {
 	var buf bytes.Buffer
-	if err := topUpInvoiceTemplate.Execute(&buf, newTopUpInvoiceView(topUp, user)); err != nil {
+	if err := topUpInvoiceTemplate.Execute(&buf, view); err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
@@ -525,6 +542,7 @@ func newTopUpInvoiceView(topUp *model.TopUp, user *model.User) topUpInvoiceView 
 		CreatedAt:       formatTopUpInvoiceTime(topUp.CreateTime),
 		CompletedAt:     formatTopUpInvoiceTime(topUp.CompleteTime),
 		IssuedAt:        time.Now().Format("2006-01-02 15:04:05 MST"),
+		CanEdit:         true,
 	}
 }
 
