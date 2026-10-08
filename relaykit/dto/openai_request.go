@@ -93,6 +93,7 @@ type GeneralOpenAIRequest struct {
 	ThinkingBudget         json.RawMessage `json:"thinking_budget,omitempty"`
 	ChatTemplateKwargs     json.RawMessage `json:"chat_template_kwargs,omitempty"`
 	EnableSearch           json.RawMessage `json:"enable_search,omitempty"`
+	SearchOptions          json.RawMessage `json:"search_options,omitempty"`
 	// ollama Params
 	Think json.RawMessage `json:"think,omitempty"`
 	// baidu v2
@@ -235,6 +236,14 @@ func (r *GeneralOpenAIRequest) GetTokenCountMeta() *types.TokenCountMeta {
 				}
 			}
 		}
+		// Assistant tool calls replayed in agent loops are part of the prompt.
+		for _, toolCall := range message.ParseToolCalls() {
+			if len(toolCall.Custom) > 0 {
+				texts = append(texts, string(toolCall.Custom))
+				continue
+			}
+			texts = append(texts, toolCall.Function.Name, toolCall.Function.Arguments)
+		}
 	}
 
 	tools := r.Tools
@@ -243,12 +252,17 @@ func (r *GeneralOpenAIRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	}
 	for _, tool := range tools {
 		tokenCountMeta.ToolsCount++
+		if len(tool.Custom) > 0 {
+			texts = append(texts, string(tool.Custom))
+			continue
+		}
 		texts = append(texts, tool.Function.Name)
 		if tool.Function.Description != "" {
 			texts = append(texts, tool.Function.Description)
 		}
 		if tool.Function.Parameters != nil {
-			texts = append(texts, fmt.Sprintf("%v", tool.Function.Parameters))
+			parameters, _ := kitutil.Marshal(tool.Function.Parameters)
+			texts = append(texts, string(parameters))
 		}
 	}
 	//toolTokens := CountTokenInput(countStr, request.Model)
@@ -378,6 +392,19 @@ type ToolCallRequest struct {
 	Type     string          `json:"type"`
 	Function FunctionRequest `json:"function"`
 	Custom   json.RawMessage `json:"custom,omitempty"`
+	// Native is a complete vendor tool object sent instead of the fields
+	// above. Function has no omitempty, so a non-function tool would
+	// otherwise carry "function":{"name":""}, which vendor schemas with
+	// additionalProperties:false reject. Never read from client JSON.
+	Native json.RawMessage `json:"-"`
+}
+
+func (t ToolCallRequest) MarshalJSON() ([]byte, error) {
+	if len(t.Native) > 0 {
+		return t.Native, nil
+	}
+	type Alias ToolCallRequest
+	return kitutil.Marshal((*Alias)(&t))
 }
 
 type FunctionRequest struct {
@@ -554,9 +581,11 @@ func (m *MediaContent) ToFileSource() types.FileSource {
 }
 
 type MessageImageUrl struct {
-	Url      string `json:"url"`
-	Detail   string `json:"detail,omitempty"`
-	MimeType string
+	Url    string `json:"url"`
+	Detail string `json:"detail,omitempty"`
+	// MimeType is in-memory metadata for converters and token counting; it is
+	// not part of the Chat image_url object.
+	MimeType string `json:"-"`
 }
 
 func (m *MessageImageUrl) IsRemoteImage() bool {
@@ -761,9 +790,9 @@ func (m *Message) ParseContent() []MediaContent {
 
 		case ContentTypeImageURL:
 			imageUrl := contentItem["image_url"]
-			temp := &MessageImageUrl{
-				Detail: "high",
-			}
+			// An omitted detail stays empty: upstream defaults it to auto, which
+			// costs more than high on gpt-5.5 and later.
+			temp := &MessageImageUrl{}
 			switch v := imageUrl.(type) {
 			case string:
 				temp.Url = v
@@ -1113,7 +1142,12 @@ func (r *OpenAIResponsesRequest) GetTokenCountMeta() *types.TokenCountMeta {
 	}
 
 	if len(r.Instructions) > 0 {
-		texts = append(texts, string(r.Instructions))
+		var instructions string
+		if kitutil.GetJsonType(r.Instructions) == "string" && kitutil.Unmarshal(r.Instructions, &instructions) == nil {
+			texts = append(texts, instructions)
+		} else {
+			texts = append(texts, string(r.Instructions))
+		}
 	}
 
 	if len(r.Metadata) > 0 {
@@ -1172,6 +1206,11 @@ type Input struct {
 	Type    string          `json:"type,omitempty"`
 	Role    string          `json:"role,omitempty"`
 	Content json.RawMessage `json:"content,omitempty"`
+	// Tool-call items replayed in agent loops.
+	Name      string          `json:"name,omitempty"`
+	Arguments json.RawMessage `json:"arguments,omitempty"`
+	ToolInput json.RawMessage `json:"input,omitempty"`
+	Output    json.RawMessage `json:"output,omitempty"`
 }
 
 type MediaInput struct {
@@ -1186,7 +1225,8 @@ type MediaInput struct {
 // Reference implementation mirrors Message.ParseContent:
 //   - input can be a string, treated as an input_text item
 //   - input can be an array of objects with a `type` field
-//     supported types: input_text, input_image, input_file
+//     supported types: input_text, output_text, input_image, input_file
+//   - tool-call items contribute their name, arguments or input, and output as input_text
 func (r *OpenAIResponsesRequest) ParseInput() []MediaInput {
 	if r.Input == nil {
 		return nil
@@ -1211,15 +1251,28 @@ func (r *OpenAIResponsesRequest) ParseInput() []MediaInput {
 		var inputs []Input
 		_ = kitutil.Unmarshal(r.Input, &inputs)
 		for _, input := range inputs {
-			if kitutil.GetJsonType(input.Content) == "string" {
+			content := input.Content
+			switch input.Type {
+			case "function_call":
+				content = input.Arguments
+			case "custom_tool_call":
+				content = input.ToolInput
+			case "function_call_output", "custom_tool_call_output", "local_shell_call_output":
+				content = input.Output
+			}
+			if input.Name != "" {
+				mediaInputs = append(mediaInputs, MediaInput{Type: "input_text", Text: input.Name})
+			}
+
+			if kitutil.GetJsonType(content) == "string" {
 				var str string
-				_ = kitutil.Unmarshal(input.Content, &str)
+				_ = kitutil.Unmarshal(content, &str)
 				mediaInputs = append(mediaInputs, MediaInput{Type: "input_text", Text: str})
 			}
 
-			if kitutil.GetJsonType(input.Content) == "array" {
+			if kitutil.GetJsonType(content) == "array" {
 				var array []any
-				_ = kitutil.Unmarshal(input.Content, &array)
+				_ = kitutil.Unmarshal(content, &array)
 				for _, itemAny := range array {
 					// Already parsed MediaContent
 					if media, ok := itemAny.(MediaInput); ok {
@@ -1238,7 +1291,7 @@ func (r *OpenAIResponsesRequest) ParseInput() []MediaInput {
 						continue
 					}
 					switch typeVal {
-					case "input_text":
+					case "input_text", "output_text":
 						text, _ := item["text"].(string)
 						mediaInputs = append(mediaInputs, MediaInput{Type: "input_text", Text: text})
 					case "input_image":

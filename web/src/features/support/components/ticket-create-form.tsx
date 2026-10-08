@@ -469,7 +469,7 @@ export function TicketCreateForm(props: {
             <FieldLegend>{t('Invoice information')}</FieldLegend>
             <FieldDescription>
               {t(
-                'Only orders paid with WeChat Pay or Alipay are eligible for invoicing. Invoices are issued by our partner and are available as ordinary or special VAT invoices.'
+                'Completed LanTu and Epay orders are eligible for invoicing. Invoices are issued by our partner and are available as ordinary or special VAT invoices.'
               )}
             </FieldDescription>
             <FieldGroup>

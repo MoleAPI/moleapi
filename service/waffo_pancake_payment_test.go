@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/glebarez/sqlite"
@@ -112,4 +113,22 @@ func TestResolveWaffoPancakeTradeNoPreservesDatabaseErrors(t *testing.T) {
 	}})
 	require.ErrorIs(t, err, queryErr)
 	assert.NotErrorIs(t, err, ErrWaffoPancakePaymentRejected)
+}
+
+func TestWaffoPancakeInvoiceURLOnlyAllowsProviderLinks(t *testing.T) {
+	valid := "https://pancake.waffo.ai/invoice/PAY_test?token=test-token"
+	var webhookData waffoPancakeWebhookData
+	require.NoError(t, common.Unmarshal([]byte(`{"orderId":"ORD_test","invoiceUrl":"`+valid+`"}`), &webhookData))
+	assert.Equal(t, "ORD_test", webhookData.OrderID)
+	assert.Equal(t, valid, webhookData.InvoiceURL)
+	assert.Equal(t, valid, waffoPancakeInvoiceURL("  "+valid+"  "))
+	for _, value := range []string{
+		"http://pancake.waffo.ai/invoice/PAY_test?token=test-token",
+		"https://pancake.waffo.ai.evil.example/invoice/PAY_test?token=test-token",
+		"https://user@pancake.waffo.ai/invoice/PAY_test?token=test-token",
+		"https://pancake.waffo.ai:443/invoice/PAY_test?token=test-token",
+		"not a URL",
+	} {
+		assert.Empty(t, waffoPancakeInvoiceURL(value))
+	}
 }

@@ -65,6 +65,7 @@ func TestRequestConverterRegistryListsSupportedTextConverters(t *testing.T) {
 				ConverterGeminiContentToOpenAIChat,
 				ConverterOpenAIChatToOpenAIResponses,
 			},
+			advancedCustom: true,
 		},
 		{
 			converter:      requestConverterResponsesToClaude,
@@ -289,26 +290,36 @@ func TestConvertRequestClaudeToResponsesDropsIncompatibleContextManagement(t *te
 }
 
 func TestConvertRequestClaudeAdaptiveThinkingPreservesEffort(t *testing.T) {
+	adaptive := &dto.Thinking{Type: "adaptive", Display: "summarized"}
 	tests := []struct {
 		name         string
+		originModel  string
+		thinking     *dto.Thinking
 		outputConfig []byte
 		wantEffort   string
 	}{
-		{name: "adaptive default", wantEffort: "high"},
-		{name: "explicit low", outputConfig: mustRawMessage(t, map[string]any{"effort": "low"}), wantEffort: "low"},
-		{name: "explicit xhigh", outputConfig: mustRawMessage(t, map[string]any{"effort": "xhigh"}), wantEffort: "xhigh"},
+		{name: "adaptive default", originModel: "gpt-5.6-sol", thinking: adaptive, wantEffort: "high"},
+		{name: "explicit low", originModel: "gpt-5.6-sol", thinking: adaptive, outputConfig: mustRawMessage(t, map[string]any{"effort": "low"}), wantEffort: "low"},
+		{name: "explicit xhigh", originModel: "gpt-5.6-sol", thinking: adaptive, outputConfig: mustRawMessage(t, map[string]any{"effort": "xhigh"}), wantEffort: "xhigh"},
+		// Claude models think by default at their own default effort: medium on
+		// Opus 5.5, high on the others.
+		{name: "opus 5.5 adaptive default", originModel: "claude-opus-5-5", thinking: adaptive, wantEffort: "medium"},
+		{name: "opus 5.5 without thinking", originModel: "claude-opus-5-5", wantEffort: "medium"},
+		{name: "opus 5.5 explicit high", originModel: "claude-opus-5-5", thinking: adaptive, outputConfig: mustRawMessage(t, map[string]any{"effort": "high"}), wantEffort: "high"},
+		{name: "opus 5 adaptive default", originModel: "claude-opus-5", thinking: adaptive, wantEffort: "high"},
+		{name: "opus 5 without thinking", originModel: "claude-opus-5", wantEffort: "high"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			info := &convmeta.Values{
-				OriginModelName: "gpt-5.6-sol",
+				OriginModelName: tt.originModel,
 				ConversionChain: []types.RelayFormat{types.RelayFormatClaude},
 			}
 			req := &dto.ClaudeRequest{
 				Model:        "gpt-5.6-sol",
 				OutputConfig: tt.outputConfig,
-				Thinking:     &dto.Thinking{Type: "adaptive", Display: "summarized"},
+				Thinking:     tt.thinking,
 				Messages: []dto.ClaudeMessage{
 					{Role: "user", Content: "hello"},
 				},
@@ -325,6 +336,111 @@ func TestConvertRequestClaudeAdaptiveThinkingPreservesEffort(t *testing.T) {
 			assert.Equal(t, tt.wantEffort, info.GetReasoningEffort())
 		})
 	}
+}
+
+func TestApplyClaudeThinkingModelLabelsNativeThinkingWithModelDefaultEffort(t *testing.T) {
+	tests := []struct {
+		name         string
+		model        string
+		thinkingType string
+		outputConfig []byte
+		wantEffort   string
+	}{
+		{name: "opus 5.5 adaptive", model: "claude-opus-5-5", thinkingType: "adaptive", wantEffort: "medium"},
+		{name: "opus 5.5 enabled", model: "claude-opus-5-5", thinkingType: "enabled", wantEffort: "medium"},
+		{name: "opus 5.5 explicit high", model: "claude-opus-5-5", thinkingType: "adaptive", outputConfig: mustRawMessage(t, map[string]any{"effort": "high"}), wantEffort: "high"},
+		{name: "opus 5 adaptive", model: "claude-opus-5", thinkingType: "adaptive", wantEffort: "high"},
+		{name: "sonnet 5.5 adaptive", model: "claude-sonnet-5-5", thinkingType: "adaptive", wantEffort: "high"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			info := &convmeta.Values{OriginModelName: tt.model, UpstreamModelName: tt.model}
+			req := &dto.ClaudeRequest{
+				Model:        tt.model,
+				Thinking:     &dto.Thinking{Type: tt.thinkingType},
+				OutputConfig: tt.outputConfig,
+				Messages:     []dto.ClaudeMessage{{Role: "user", Content: "hello"}},
+			}
+
+			require.NoError(t, ApplyClaudeThinkingModel(req, info))
+			assert.Equal(t, tt.wantEffort, info.GetReasoningEffort())
+			assert.Equal(t, tt.thinkingType, req.Thinking.Type)
+			assert.Equal(t, tt.outputConfig, []byte(req.OutputConfig))
+		})
+	}
+}
+
+func TestGeminiThinkingLevelCaseInsensitiveAcrossPaths(t *testing.T) {
+	newRequest := func(level string) *dto.GeminiChatRequest {
+		return &dto.GeminiChatRequest{
+			Contents: []dto.GeminiChatContent{{Role: "user", Parts: []dto.GeminiPart{{Text: "hello"}}}},
+			GenerationConfig: dto.GeminiChatGenerationConfig{
+				ThinkingConfig: &dto.GeminiThinkingConfig{ThinkingLevel: level},
+			},
+		}
+	}
+
+	t.Run("native passthrough records canonical effort without rewriting wire value", func(t *testing.T) {
+		info := &convmeta.Values{OriginModelName: "gemini-3.7-flash", UpstreamModelName: "gemini-3.7-flash"}
+		req := newRequest(" MEDIUM ")
+		require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info))
+		assert.Equal(t, "medium", info.GetReasoningEffort())
+		assert.Equal(t, " MEDIUM ", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
+	})
+
+	t.Run("native passthrough keeps unknown level as sent", func(t *testing.T) {
+		info := &convmeta.Values{OriginModelName: "gemini-3.7-flash", UpstreamModelName: "gemini-3.7-flash"}
+		req := newRequest("ULTRA")
+		require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info))
+		assert.Equal(t, "ULTRA", info.GetReasoningEffort())
+	})
+
+	t.Run("suffix state canonicalizes uppercase level against normalized effort", func(t *testing.T) {
+		info := &convmeta.Values{
+			OriginModelName:     "gemini-3.7-flash-thinking-medium",
+			UpstreamModelName:   "gemini-3.7-flash",
+			ChannelMetaAttached: true,
+			ReasoningConversion: &dto.ReasoningConversionState{Mode: "enabled", Effort: "medium"},
+		}
+		req := newRequest("MEDIUM")
+		require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info))
+		assert.Equal(t, "medium", info.GetReasoningEffort())
+		assert.Equal(t, "medium", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
+	})
+
+	t.Run("gemini to openai conversion accepts uppercase level", func(t *testing.T) {
+		info := &convmeta.Values{
+			OriginModelName:   "gemini-3.7-flash",
+			UpstreamModelName: "gemini-3.7-flash",
+			ConversionChain:   []types.RelayFormat{types.RelayFormatGemini},
+		}
+		result, err := ConvertRequest(nil, info, types.RelayFormatOpenAI, newRequest("MEDIUM"))
+		require.NoError(t, err)
+		openaiReq, ok := result.Value.(*dto.GeneralOpenAIRequest)
+		require.True(t, ok)
+		assert.Equal(t, "medium", openaiReq.ReasoningEffort)
+		assert.Equal(t, "medium", info.GetReasoningEffort())
+	})
+
+	t.Run("gemini to openai conversion adjusts unsupported level with a diagnostic", func(t *testing.T) {
+		info := &convmeta.Values{
+			OriginModelName:   "gemini-3-pro-preview",
+			UpstreamModelName: "gemini-3-pro-preview",
+			ConversionChain:   []types.RelayFormat{types.RelayFormatGemini},
+		}
+		result, err := ConvertRequest(nil, info, types.RelayFormatOpenAI, newRequest("MINIMAL"))
+		require.NoError(t, err)
+		openaiReq, ok := result.Value.(*dto.GeneralOpenAIRequest)
+		require.True(t, ok)
+		assert.Equal(t, "low", openaiReq.ReasoningEffort)
+		assert.Equal(t, "low", info.GetReasoningEffort())
+		codes := make([]string, 0, len(result.Diagnostics))
+		for _, diagnostic := range result.Diagnostics {
+			codes = append(codes, diagnostic.Code)
+		}
+		assert.Contains(t, codes, "gemini_level_adjusted")
+	})
 }
 
 func TestConvertRequestViaExecutesExplicitPath(t *testing.T) {

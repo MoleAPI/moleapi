@@ -30,7 +30,7 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 }
 
 func ApplyGeminiThinkingConfigChecked(geminiRequest *dto.GeminiChatRequest, info convmeta.Meta, oaiRequest ...dto.GeneralOpenAIRequest) error {
-	return reasoning.AsClientError(sharedgemini.ApplyThinkingConfig(geminiRequest, info, oaiRequest...))
+	return reasoning.AsClientError(sharedgemini.ApplyThinkingConfigContext(context.Background(), geminiRequest, info, oaiRequest...))
 }
 
 func ApplyClaudeThinkingModel(claudeRequest *dto.ClaudeRequest, info convmeta.Meta) error {

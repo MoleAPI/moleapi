@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/QuantumNous/new-api/model"
@@ -67,6 +68,12 @@ type WaffoPancakeWebhookData struct {
 	TaxAmount                     string
 	ProductName                   string
 	MerchantProvidedBuyerIdentity string
+	InvoiceURL                    string
+}
+
+type waffoPancakeWebhookData struct {
+	pancake.WebhookEventData
+	InvoiceURL string `json:"invoiceUrl"`
 }
 
 // NormalizedEventType returns the event type or empty string for a nil event.
@@ -222,7 +229,7 @@ func VerifyConfiguredWaffoPancakeWebhook(payload string, signatureHeader string,
 	if environment != string(pancake.EnvironmentTest) && environment != string(pancake.EnvironmentProd) {
 		return nil, fmt.Errorf("invalid waffo pancake webhook environment")
 	}
-	evt, err := pancake.VerifyWebhookTyped[pancake.WebhookEventData](payload, signatureHeader, &pancake.VerifyWebhookOptions{
+	evt, err := pancake.VerifyWebhookTyped[waffoPancakeWebhookData](payload, signatureHeader, &pancake.VerifyWebhookOptions{
 		Environment: pancake.Environment(environment),
 	})
 	if err != nil {
@@ -255,8 +262,17 @@ func VerifyConfiguredWaffoPancakeWebhook(payload string, signatureHeader string,
 			TaxAmount:                     evt.Data.TaxAmount,
 			ProductName:                   evt.Data.ProductName,
 			MerchantProvidedBuyerIdentity: identity,
+			InvoiceURL:                    waffoPancakeInvoiceURL(evt.Data.InvoiceURL),
 		},
 	}, nil
+}
+
+func waffoPancakeInvoiceURL(value string) string {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Scheme != "https" || parsed.Host != "pancake.waffo.ai" || parsed.User != nil {
+		return ""
+	}
+	return parsed.String()
 }
 
 func validateWaffoPancakeStore(storeID string) error {

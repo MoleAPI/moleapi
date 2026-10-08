@@ -6,6 +6,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/tokenkit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -19,10 +20,10 @@ func TestResponsesUsageAccumulatorTerminalAccounting(t *testing.T) {
 	}{
 		{eventType: "response.completed", wantImages: 1},
 		{eventType: "response.done", wantImages: 1},
-		{eventType: "response.incomplete"},
-		{eventType: "response.failed"},
-		{eventType: "response.cancelled"},
-		{eventType: "response.canceled"},
+		{eventType: "response.incomplete", wantImages: 1},
+		{eventType: "response.failed", wantImages: 1},
+		{eventType: "response.cancelled", wantImages: 1},
+		{eventType: "response.canceled", wantImages: 1},
 	} {
 		t.Run(tc.eventType, func(t *testing.T) {
 			info := &relaycommon.RelayInfo{OriginModelName: "gpt-5.1"}
@@ -33,10 +34,10 @@ func TestResponsesUsageAccumulatorTerminalAccounting(t *testing.T) {
 				{Type: dto.BuildInCallFunctionCall, Name: "responses_priced_fn"},
 				{Type: dto.BuildInCallFunctionCall, Name: "responses_unpriced_fn"},
 			} {
-				accumulator.Observe(&dto.ResponsesStreamResponse{Type: dto.ResponsesOutputTypeItemDone, Item: &item})
+				accumulator.Observe(&dto.ResponsesStreamResponse{Type: dto.ResponsesOutputTypeItemDone, Item: &item}, nil)
 			}
 			image := dto.ResponsesOutput{ID: "image-1", Type: dto.ResponsesOutputTypeImageGenerationCall, Status: "completed", Result: "image-data"}
-			accumulator.Observe(&dto.ResponsesStreamResponse{Type: dto.ResponsesOutputTypeItemDone, Item: &image})
+			accumulator.Observe(&dto.ResponsesStreamResponse{Type: dto.ResponsesOutputTypeItemDone, Item: &image}, nil)
 			upstream := &dto.Usage{InputTokens: 20, OutputTokens: 5, TotalTokens: 25, InputTokensDetails: &dto.InputTokenDetails{CachedTokens: 4}}
 			upstream.BillingUsage = dto.NewOpenAIResponsesBillingUsage(upstream)
 			terminal := &dto.ResponsesStreamResponse{
@@ -45,8 +46,8 @@ func TestResponsesUsageAccumulatorTerminalAccounting(t *testing.T) {
 					Usage: upstream, Output: []dto.ResponsesOutput{image},
 				},
 			}
-			accumulator.Observe(terminal)
-			accumulator.Observe(terminal)
+			accumulator.Observe(terminal, nil)
+			accumulator.Observe(terminal, nil)
 			usage := accumulator.Finish()
 
 			assert.Equal(t, 20, usage.PromptTokens)
@@ -78,11 +79,11 @@ func TestResponsesUsageAccumulatorInterruptedTextFallback(t *testing.T) {
 			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "gpt-4o"}}
 			info.SetEstimatePromptTokens(100)
 			accumulator := NewResponsesUsageAccumulator(info)
-			accumulator.Observe(&dto.ResponsesStreamResponse{Type: "response.output_text.delta", Delta: "hello"})
+			accumulator.Observe(&dto.ResponsesStreamResponse{Type: "response.output_text.delta", Delta: "hello"}, nil)
 			if withUsage {
 				upstream := &dto.Usage{InputTokens: 20, InputTokensDetails: &dto.InputTokenDetails{CachedTokens: 4}}
 				upstream.BillingUsage = dto.NewOpenAIResponsesBillingUsage(upstream)
-				accumulator.Observe(&dto.ResponsesStreamResponse{Type: "response.failed", Response: &dto.OpenAIResponsesResponse{Usage: upstream}})
+				accumulator.Observe(&dto.ResponsesStreamResponse{Type: "response.failed", Response: &dto.OpenAIResponsesResponse{Usage: upstream}}, nil)
 			}
 			usage := accumulator.Finish()
 			assert.Equal(t, 1, usage.CompletionTokens)
@@ -100,7 +101,7 @@ func TestResponsesUsageAccumulatorInterruptedTextFallback(t *testing.T) {
 				assert.Equal(t, 100, usage.PromptTokens)
 				assert.Equal(t, 101, usage.TotalTokens)
 			}
-			accumulator.Observe(&dto.ResponsesStreamResponse{Type: "response.output_text.delta", Delta: " late output"})
+			accumulator.Observe(&dto.ResponsesStreamResponse{Type: "response.output_text.delta", Delta: " late output"}, nil)
 			assert.Equal(t, usage, accumulator.Finish())
 			assert.Equal(t, 1, usage.CompletionTokens)
 		})
@@ -113,11 +114,11 @@ func TestResponsesUsageAccumulatorDisconnectBillsCompletedImage(t *testing.T) {
 	accumulator.Observe(&dto.ResponsesStreamResponse{
 		Type: dto.ResponsesOutputTypeItemDone,
 		Item: &dto.ResponsesOutput{ID: "complete-image", Type: dto.ResponsesOutputTypeImageGenerationCall, Status: "completed", Result: "final-image-data"},
-	})
+	}, nil)
 	accumulator.Observe(&dto.ResponsesStreamResponse{
 		Type: dto.ResponsesOutputTypeItemDone,
 		Item: &dto.ResponsesOutput{ID: "partial-image", Type: dto.ResponsesOutputTypeImageGenerationCall, Status: "partial", Result: "partial-image-data"},
-	})
+	}, nil)
 	usage := accumulator.Finish()
 	assert.Zero(t, usage.TotalTokens)
 	require.Contains(t, info.ResponsesUsageInfo.BuiltInTools, dto.BuildInToolImageGeneration)
@@ -219,4 +220,91 @@ func TestApplyResponsesUsagePreservesBillingSnapshotAcrossPartialUpdates(t *test
 	require.NotNil(t, dst.BillingUsage)
 	assert.Equal(t, src.BillingUsage, dst.BillingUsage)
 	assert.NotSame(t, src.BillingUsage, dst.BillingUsage)
+}
+func TestResponsesUsageAccumulatorMissingUsageEstimation(t *testing.T) {
+	const model = "gpt-4o"
+	const summary = "Inspect the repository before editing."
+	const arguments = `{"command":["bash","-lc","ls"]}`
+	inProgress := &dto.OpenAIResponsesResponse{Status: []byte(`"in_progress"`)}
+	for _, tc := range []struct {
+		name           string
+		events         []dto.ResponsesStreamResponse
+		wantPrompt     int
+		wantCompletion int
+	}{
+		{
+			name: "tool call stream cut before terminal usage",
+			events: []dto.ResponsesStreamResponse{
+				{Type: "response.created", Response: inProgress},
+				{Type: "response.reasoning_summary_text.delta", Delta: summary},
+				{Type: "response.function_call_arguments.delta", Delta: arguments},
+				{Type: dto.ResponsesOutputTypeItemDone, Item: &dto.ResponsesOutput{Type: dto.BuildInCallFunctionCall, Name: "shell"}},
+			},
+			wantPrompt:     100,
+			wantCompletion: tokenkit.Count(model, summary+arguments),
+		},
+		{
+			name: "created only then disconnect bills the prompt",
+			events: []dto.ResponsesStreamResponse{
+				{Type: "response.created", Response: inProgress},
+			},
+			wantPrompt: 100,
+		},
+		{
+			name: "incomplete without usage bills the prompt",
+			events: []dto.ResponsesStreamResponse{
+				{Type: "response.created", Response: inProgress},
+				{Type: "response.incomplete", Response: &dto.OpenAIResponsesResponse{Status: []byte(`"incomplete"`)}},
+			},
+			wantPrompt: 100,
+		},
+		{
+			name: "completed without usage estimates from terminal output",
+			events: []dto.ResponsesStreamResponse{
+				{Type: "response.completed", Response: &dto.OpenAIResponsesResponse{
+					Status: []byte(`"completed"`),
+					Output: []dto.ResponsesOutput{{
+						Type:    "message",
+						Role:    "assistant",
+						Content: []dto.ResponsesOutputContent{{Type: "output_text", Text: "final answer"}},
+					}},
+				}},
+			},
+			wantPrompt:     100,
+			wantCompletion: tokenkit.Count(model, "final answer"),
+		},
+		{
+			name: "explicit failure without usage bills nothing",
+			events: []dto.ResponsesStreamResponse{
+				{Type: "response.created", Response: inProgress},
+				{Type: "response.failed", Response: &dto.OpenAIResponsesResponse{Status: []byte(`"failed"`)}},
+			},
+		},
+		{
+			name: "flat error event bills nothing",
+			events: []dto.ResponsesStreamResponse{
+				{Type: "response.created", Response: inProgress},
+				{Type: "error", Code: "server_error"},
+			},
+		},
+		{
+			name: "no upstream events bills nothing",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			info := &relaycommon.RelayInfo{
+				ChannelMeta:  &relaycommon.ChannelMeta{UpstreamModelName: model},
+				StreamStatus: relaycommon.NewStreamStatus(),
+			}
+			info.SetEstimatePromptTokens(100)
+			accumulator := NewResponsesUsageAccumulator(info)
+			for i := range tc.events {
+				accumulator.Observe(&tc.events[i], nil)
+			}
+			usage := accumulator.Finish()
+			assert.Equal(t, tc.wantPrompt, usage.PromptTokens)
+			assert.Equal(t, tc.wantCompletion, usage.CompletionTokens)
+			assert.Equal(t, tc.wantPrompt+tc.wantCompletion, usage.TotalTokens)
+		})
+	}
 }

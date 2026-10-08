@@ -120,6 +120,8 @@ test('shows provider-specific receipt and invoice guidance', async () => {
             complete_time: 101,
             payment_method: 'waffo_pancake',
             payment_provider: 'waffo_pancake',
+            invoice_url:
+              'https://pancake.waffo.ai/invoice/PAY_test?token=test-token',
           },
           {
             id: 2,
@@ -154,9 +156,15 @@ test('shows provider-specific receipt and invoice guidance', async () => {
   fireEvent.click(waffoRow as HTMLTableRowElement)
   expect(
     screen.getByText(
-      'Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.'
+      'Waffo Pancake issued this invoice. Open it to update the billing details or download it.'
     )
   ).toBeVisible()
+  expect(
+    screen.getAllByRole('button', { name: 'View or edit invoice' })[0]
+  ).toHaveAttribute(
+    'href',
+    'https://pancake.waffo.ai/invoice/PAY_test?token=test-token'
+  )
   fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0])
 
   const cryptoRow = screen.getByText('crypto-order').closest('tr')

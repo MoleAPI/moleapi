@@ -166,7 +166,7 @@ func (s *ChannelOtherSettings) ValidateToolLossPolicy() error {
 const (
 	advancedCustomConverterNone                        = "none"
 	advancedCustomConverterClaudeMessagesToOpenAIChat  = "anthropic_messages_to_openai_chat_completions"
-	advancedCustomConverterClaudeMessagesToResponses   = "claude_messages_to_openai_responses"
+	advancedCustomConverterClaudeMessagesToResponses   = advancedCustomConverterClaudeMessagesToOpenAIResponses
 	advancedCustomConverterGeminiContentToClaude       = "gemini_generate_content_to_claude_messages"
 	advancedCustomConverterOpenAICompletionsToChat     = "openai_completions_to_openai_chat_completions"
 	advancedCustomConverterOpenAIChatToClaudeMessages  = "openai_chat_completions_to_anthropic_messages"
@@ -176,6 +176,10 @@ const (
 	advancedCustomConverterOpenAIResponsesToGemini     = "openai_responses_to_gemini_generate_content"
 	advancedCustomConverterGeminiContentToOpenAIChat   = "gemini_generate_content_to_openai_chat_completions"
 	advancedCustomConverterOpenAIChatToGeminiContent   = "openai_chat_completions_to_gemini_generate_content"
+	// Same values as relayconvert.ConverterClaudeMessagesToOpenAIResponses and
+	// relayconvert.ConverterGeminiContentToOpenAIResponses.
+	advancedCustomConverterClaudeMessagesToOpenAIResponses = "claude_messages_to_openai_responses"
+	advancedCustomConverterGeminiContentToOpenAIResponses  = "gemini_generate_content_to_openai_responses"
 )
 
 const (
@@ -389,7 +393,7 @@ func advancedCustomRouteUpstreamTextEndpointType(route AdvancedCustomRoute) (typ
 		advancedCustomConverterOpenAIResponsesToOpenAIChat,
 		advancedCustomConverterGeminiContentToOpenAIChat:
 		return types.EndpointTypeOpenAI, true
-	case advancedCustomConverterClaudeMessagesToResponses,
+	case advancedCustomConverterClaudeMessagesToOpenAIResponses,
 		advancedCustomConverterOpenAIChatToOpenAIResponses:
 		return types.EndpointTypeOpenAIResponse, true
 	case advancedCustomConverterOpenAIChatToClaudeMessages,
@@ -429,7 +433,7 @@ func advancedCustomTextConverter(incomingEndpoint types.EndpointType, upstreamEn
 		case types.EndpointTypeOpenAI:
 			return advancedCustomConverterOpenAIChatToOpenAIResponses, true
 		case types.EndpointTypeAnthropic:
-			return advancedCustomConverterClaudeMessagesToResponses, true
+			return advancedCustomConverterClaudeMessagesToOpenAIResponses, true
 		}
 	case types.EndpointTypeAnthropic:
 		switch incomingEndpoint {
@@ -553,7 +557,7 @@ func IsAdvancedCustomConverterAllowed(converter string) bool {
 	switch converter {
 	case advancedCustomConverterNone,
 		advancedCustomConverterClaudeMessagesToOpenAIChat,
-		advancedCustomConverterClaudeMessagesToResponses,
+		advancedCustomConverterClaudeMessagesToOpenAIResponses,
 		advancedCustomConverterGeminiContentToClaude,
 		advancedCustomConverterOpenAICompletionsToChat,
 		advancedCustomConverterOpenAIChatToClaudeMessages,
@@ -562,7 +566,8 @@ func IsAdvancedCustomConverterAllowed(converter string) bool {
 		advancedCustomConverterOpenAIResponsesToOpenAIChat,
 		advancedCustomConverterOpenAIResponsesToGemini,
 		advancedCustomConverterGeminiContentToOpenAIChat,
-		advancedCustomConverterOpenAIChatToGeminiContent:
+		advancedCustomConverterOpenAIChatToGeminiContent,
+		advancedCustomConverterGeminiContentToOpenAIResponses:
 		return true
 	default:
 		return false
@@ -743,7 +748,7 @@ func validateAdvancedCustomConverterPath(index int, incomingPath string, convert
 	case advancedCustomConverterNone:
 		return nil
 	case advancedCustomConverterClaudeMessagesToOpenAIChat,
-		advancedCustomConverterClaudeMessagesToResponses:
+		advancedCustomConverterClaudeMessagesToOpenAIResponses:
 		if incomingPath == "/v1/messages" {
 			return nil
 		}
@@ -764,7 +769,8 @@ func validateAdvancedCustomConverterPath(index int, incomingPath string, convert
 			return nil
 		}
 	case advancedCustomConverterGeminiContentToClaude,
-		advancedCustomConverterGeminiContentToOpenAIChat:
+		advancedCustomConverterGeminiContentToOpenAIChat,
+		advancedCustomConverterGeminiContentToOpenAIResponses:
 		if strings.Contains(incomingPath, ":generateContent") || strings.Contains(incomingPath, ":streamGenerateContent") {
 			return nil
 		}

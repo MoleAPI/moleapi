@@ -284,6 +284,7 @@ func TestWaffoSettlementsPersistQuotaAndAuditOnce(t *testing.T) {
 		callerIP string
 		gateway  string
 		currency string
+		invoice  string
 	}{
 		{
 			name:     "waffo",
@@ -302,6 +303,7 @@ func TestWaffoSettlementsPersistQuotaAndAuditOnce(t *testing.T) {
 			callerIP: "203.0.113.21",
 			gateway:  "pancake-gateway-1",
 			currency: "USD",
+			invoice:  "https://pancake.waffo.ai/invoice/PAY_test?token=test-token",
 		},
 	}
 
@@ -318,7 +320,7 @@ func TestWaffoSettlementsPersistQuotaAndAuditOnce(t *testing.T) {
 				}
 			} else {
 				settle = func() error {
-					return RechargeWaffoPancakeWithPaymentDetails(testCase.tradeNo, testCase.gateway, testCase.currency, testCase.callerIP)
+					return RechargeWaffoPancakeWithPaymentDetails(testCase.tradeNo, testCase.gateway, testCase.currency, testCase.invoice, testCase.callerIP)
 				}
 			}
 
@@ -332,6 +334,7 @@ func TestWaffoSettlementsPersistQuotaAndAuditOnce(t *testing.T) {
 			assert.Positive(t, topUp.CompleteTime)
 			assert.Equal(t, testCase.gateway, topUp.GatewayTradeNo)
 			assert.Equal(t, testCase.currency, topUp.PaymentCurrency)
+			assert.Equal(t, testCase.invoice, topUp.InvoiceURL)
 			assert.Equal(t, 207, getUserQuotaForPaymentGuardTest(t, testCase.userID))
 
 			log := getTopUpLogForSettlementTest(t, testCase.userID)

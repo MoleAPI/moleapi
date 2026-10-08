@@ -350,6 +350,8 @@ export interface TopupRecord {
   gateway_trade_no?: string | null
   /** Gateway family that owns the order */
   payment_provider?: string | null
+  /** Provider-hosted invoice link for Waffo Pancake orders */
+  invoice_url?: string | null
   /** Payment method type */
   payment_method: string
   /** Creation timestamp */
