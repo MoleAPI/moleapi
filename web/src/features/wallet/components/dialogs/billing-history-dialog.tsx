@@ -19,7 +19,14 @@ For commercial licensing, please contact support@quantumnous.com
 import { InvoiceIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { Link } from '@tanstack/react-router'
-import { Search, ChevronLeft, ChevronRight, Eye, Download } from 'lucide-react'
+import {
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  Download,
+  ExternalLink,
+} from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -66,6 +73,7 @@ import {
   getPaymentMethodName,
   formatTimestamp,
   getTopUpInvoiceUrl,
+  getWaffoPancakeInvoiceUrl,
   fetchTopUpInvoiceFile,
 } from '../../lib/billing'
 import {
@@ -180,6 +188,10 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
 
   const detailCanRequestInvoice =
     detailRecord && !isAdmin && canRequestTopUpInvoice(detailRecord)
+
+  const detailOfficialInvoiceUrl = detailRecord
+    ? getWaffoPancakeInvoiceUrl(detailRecord)
+    : null
 
   const detailIsWaffoPancake =
     detailRecord?.payment_method === 'waffo_pancake' ||
@@ -395,6 +407,8 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                       true
                     )
 
+                    const officialInvoiceUrl = getWaffoPancakeInvoiceUrl(record)
+
                     return (
                       <TableRow
                         key={record.id}
@@ -501,6 +515,25 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                               >
                                 <Download className='size-3.5' />
                                 {t('Download receipt')}
+                              </Button>
+                            )}
+                            {officialInvoiceUrl && (
+                              <Button
+                                size='sm'
+                                variant='ghost'
+                                className='h-7 px-2'
+                                render={
+                                  <a
+                                    href={officialInvoiceUrl}
+                                    target='_blank'
+                                    rel='noreferrer'
+                                    onClick={(event) => event.stopPropagation()}
+                                  />
+                                }
+                                nativeButton={false}
+                              >
+                                <ExternalLink className='size-3.5' />
+                                {t('View or edit invoice')}
                               </Button>
                             )}
                             {isAdmin && record.status === 'pending' && (
@@ -623,6 +656,22 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                   {t('Request invoice')}
                 </Button>
               )}
+              {detailOfficialInvoiceUrl && (
+                <Button
+                  size='sm'
+                  render={
+                    <a
+                      href={detailOfficialInvoiceUrl}
+                      target='_blank'
+                      rel='noreferrer'
+                    />
+                  }
+                  nativeButton={false}
+                >
+                  <ExternalLink className='size-3.5' />
+                  {t('View or edit invoice')}
+                </Button>
+              )}
               <Button
                 size='sm'
                 variant='secondary'
@@ -691,9 +740,13 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
             {detailIsWaffoPancake && (
               <Alert>
                 <AlertDescription>
-                  {t(
-                    'Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.'
-                  )}
+                  {detailOfficialInvoiceUrl
+                    ? t(
+                        'Waffo Pancake issued this invoice. Open it to update the billing details or download it.'
+                      )
+                    : t(
+                        'Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.'
+                      )}
                 </AlertDescription>
               </Alert>
             )}

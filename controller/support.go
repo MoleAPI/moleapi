@@ -770,8 +770,10 @@ func supportInvoiceSummary(userID int, ids []int) (string, error) {
 	lines := []string{"Verified billing records (actual paid amounts)"}
 	totals := make(map[string]decimal.Decimal)
 	for _, order := range orders {
-		if order.Status != "success" || (order.PaymentMethod != "alipay" && order.PaymentMethod != "wxpay" && order.PaymentMethod != model.PaymentMethodLanTu) || order.Money <= 0 || math.IsNaN(order.Money) || math.IsInf(order.Money, 0) {
-			return "", errors.New("Only completed WeChat Pay or Alipay orders can be invoiced.")
+		provider := strings.ToLower(order.PaymentProvider)
+		supported := provider == model.PaymentProviderEpay || provider == model.PaymentProviderLanTu || order.PaymentMethod == "alipay" || order.PaymentMethod == "wxpay" || order.PaymentMethod == model.PaymentMethodLanTu
+		if order.Status != "success" || !supported || order.Money <= 0 || math.IsNaN(order.Money) || math.IsInf(order.Money, 0) {
+			return "", errors.New("Only completed LanTu and Epay orders can be invoiced.")
 		}
 		currency := strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
 		if currency == "" {

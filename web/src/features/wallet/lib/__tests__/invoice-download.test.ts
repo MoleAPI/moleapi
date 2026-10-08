@@ -25,6 +25,7 @@ import {
   getInvoiceFilename,
   getTopUpInvoiceDownloadUrl,
   getTopUpInvoiceUrl,
+  getWaffoPancakeInvoiceUrl,
 } from '../billing'
 
 describe('top-up invoice download', () => {
@@ -141,6 +142,27 @@ describe('top-up invoice download', () => {
       ),
       null
     )
+    const invoiceUrl =
+      'https://pancake.waffo.ai/invoice/PAY_test?token=test-token'
+    assert.equal(
+      getWaffoPancakeInvoiceUrl({
+        status: 'success',
+        payment_method: 'waffo_pancake',
+        payment_provider: 'waffo_pancake',
+        invoice_url: invoiceUrl,
+      }),
+      invoiceUrl
+    )
+    assert.equal(
+      getWaffoPancakeInvoiceUrl({
+        status: 'success',
+        payment_method: 'waffo_pancake',
+        payment_provider: 'waffo_pancake',
+        invoice_url:
+          'https://pancake.waffo.ai.evil.example/invoice/PAY_test?token=test-token',
+      }),
+      null
+    )
   })
 
   test('only allows supported fiat records to request an invoice', () => {
@@ -150,6 +172,7 @@ describe('top-up invoice download', () => {
           id: 42,
           status: 'success',
           payment_method,
+          payment_provider: payment_method === 'lantu' ? 'lantu' : 'epay',
           money: 12.34,
         }),
         true
@@ -161,10 +184,21 @@ describe('top-up invoice download', () => {
           id: 42,
           status: 'success',
           payment_method,
+          payment_provider: payment_method,
           money: 12.34,
         }),
         false
       )
     }
+    assert.equal(
+      canRequestTopUpInvoice({
+        id: 42,
+        status: 'success',
+        payment_method: 'custom_epay_method',
+        payment_provider: 'epay',
+        money: 12.34,
+      }),
+      true
+    )
   })
 })

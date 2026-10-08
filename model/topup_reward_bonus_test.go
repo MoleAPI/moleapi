@@ -69,7 +69,7 @@ func TestEveryRealTopupPathRebatesInviterExactlyOnce(t *testing.T) {
 			return RechargeWaffoWithPaymentDetails(tradeNo, "gateway", "USD", "203.0.113.1")
 		}},
 		{name: "waffo pancake", provider: PaymentProviderWaffoPancake, settle: func(tradeNo string) error {
-			return RechargeWaffoPancakeWithPaymentDetails(tradeNo, "gateway", "USD", "203.0.113.1")
+			return RechargeWaffoPancakeWithPaymentDetails(tradeNo, "gateway", "USD", "", "203.0.113.1")
 		}},
 		{name: "manual completion", provider: PaymentProviderEpay, settle: func(tradeNo string) error {
 			return ManualCompleteTopUp(tradeNo, "203.0.113.1")

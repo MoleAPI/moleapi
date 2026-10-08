@@ -128,16 +128,50 @@ export function getTopUpInvoiceDownloadUrl(
 }
 
 export function canRequestTopUpInvoice(
-  record: Pick<TopupRecord, 'id' | 'status' | 'payment_method' | 'money'>
+  record: Pick<
+    TopupRecord,
+    'id' | 'status' | 'payment_method' | 'payment_provider' | 'money'
+  >
 ): boolean {
+  const provider = record.payment_provider?.toLowerCase()
   return (
     Number.isSafeInteger(record.id) &&
     record.id > 0 &&
     record.status === 'success' &&
-    ['alipay', 'wxpay', 'lantu'].includes(record.payment_method) &&
+    (provider === 'epay' ||
+      provider === 'lantu' ||
+      ['alipay', 'wxpay', 'lantu'].includes(record.payment_method)) &&
     Number.isFinite(record.money) &&
     record.money > 0
   )
+}
+
+export function getWaffoPancakeInvoiceUrl(
+  record: Pick<
+    TopupRecord,
+    'status' | 'payment_method' | 'payment_provider' | 'invoice_url'
+  >
+): string | null {
+  const value = record.invoice_url?.trim()
+  if (
+    !value ||
+    record.status !== 'success' ||
+    (record.payment_method !== 'waffo_pancake' &&
+      record.payment_provider !== 'waffo_pancake')
+  ) {
+    return null
+  }
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' &&
+      url.host === 'pancake.waffo.ai' &&
+      !url.username &&
+      !url.password
+      ? value
+      : null
+  } catch {
+    return null
+  }
 }
 
 export function getInvoiceFilename(

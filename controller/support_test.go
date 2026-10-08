@@ -492,6 +492,8 @@ func TestSupportTicketWorkflow(t *testing.T) {
 				{Id: 4, UserId: 11, TradeNo: "pending", Money: 99, PaymentMethod: "alipay", Status: "pending"},
 				{Id: 5, UserId: 11, TradeNo: "stripe", Money: 99, PaymentMethod: "stripe", Status: "success"},
 				{Id: 6, UserId: 11, TradeNo: "usd", Money: 2.50, PaymentMethod: "alipay", PaymentCurrency: "USD", Status: "success"},
+				{Id: 7, UserId: 11, TradeNo: "epay-custom", Money: 3.25, PaymentMethod: "custom", PaymentProvider: model.PaymentProviderEpay, Status: "success"},
+				{Id: 8, UserId: 11, TradeNo: "lantu", Money: 4.75, PaymentMethod: model.PaymentMethodLanTu, PaymentProvider: model.PaymentProviderLanTu, Status: "success"},
 			}
 			require.NoError(t, db.Create(&orders).Error)
 			summary, err := supportInvoiceSummary(11, []int{1, 2, 6})
@@ -500,6 +502,9 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			assert.Contains(t, summary, "Invoice total: USD 2.50")
 			assert.Contains(t, summary, "paid-1 | CNY 12.34")
 			assert.NotContains(t, summary, "500")
+			providerSummary, err := supportInvoiceSummary(11, []int{7, 8})
+			require.NoError(t, err)
+			assert.Contains(t, providerSummary, "Invoice total: CNY 8.00")
 			for _, ids := range [][]int{nil, {1, 1}, {3}, {4}, {5}, {999}, make([]int, 51)} {
 				_, err := supportInvoiceSummary(11, ids)
 				require.Error(t, err, "invalid selection: %v", ids)
