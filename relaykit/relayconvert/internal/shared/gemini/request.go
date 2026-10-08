@@ -1,35 +1,56 @@
 package gemini
 
 import (
+	"context"
 	"fmt"
+	"maps"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/internal/convdiag"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 )
 
-var SupportedMimeTypes = map[string]bool{
-	"application/pdf": true,
-	"audio/mpeg":      true,
-	"audio/mp3":       true,
-	"audio/wav":       true,
-	"image/png":       true,
-	"image/jpeg":      true,
-	"image/jpg":       true,
-	"image/webp":      true,
-	"image/heic":      true,
-	"image/heif":      true,
-	"text/plain":      true,
-	"video/mov":       true,
-	"video/mpeg":      true,
-	"video/mp4":       true,
-	"video/mpg":       true,
-	"video/avi":       true,
-	"video/wmv":       true,
-	"video/mpegps":    true,
-	"video/flv":       true,
+// supportedMimeTypes follows the Blob.mimeType list in the Gemini API
+// reference (https://ai.google.dev/api/generate-content#Blob). Audio and
+// video are listed there as audio/* and video/*; IsSupportedMimeType accepts
+// them by prefix.
+var supportedMimeTypes = map[string]bool{
+	"image/png":                 true,
+	"image/jpeg":                true,
+	"image/jpg":                 true,
+	"image/webp":                true,
+	"image/heic":                true,
+	"image/heif":                true,
+	"image/gif":                 true,
+	"image/avif":                true,
+	"text/plain":                true,
+	"text/html":                 true,
+	"text/css":                  true,
+	"text/javascript":           true,
+	"text/x-typescript":         true,
+	"text/csv":                  true,
+	"text/markdown":             true,
+	"text/x-python":             true,
+	"text/xml":                  true,
+	"text/rtf":                  true,
+	"application/x-javascript":  true,
+	"application/x-typescript":  true,
+	"application/x-python-code": true,
+	"application/json":          true,
+	"application/x-ipynb+json":  true,
+	"application/rtf":           true,
+	"application/pdf":           true,
+}
+
+// IsSupportedMimeType reports whether Gemini accepts inline data of the MIME
+// type.
+func IsSupportedMimeType(mimeType string) bool {
+	mimeType = strings.ToLower(mimeType)
+	return supportedMimeTypes[mimeType] || strings.HasPrefix(mimeType, "audio/") || strings.HasPrefix(mimeType, "video/")
 }
 
 var SafetySettingCategories = []string{
@@ -74,6 +95,10 @@ func AttachFirstTextThoughtSignature(opts *convmeta.Options, parts []dto.GeminiP
 }
 
 func ApplyThinkingConfig(geminiRequest *dto.GeminiChatRequest, info convmeta.Meta, oaiRequest ...dto.GeneralOpenAIRequest) error {
+	return ApplyThinkingConfigContext(context.Background(), geminiRequest, info, oaiRequest...)
+}
+
+func ApplyThinkingConfigContext(ctx context.Context, geminiRequest *dto.GeminiChatRequest, info convmeta.Meta, oaiRequest ...dto.GeneralOpenAIRequest) error {
 	opts := convmeta.OptionsOf(info)
 	if geminiRequest == nil {
 		return nil
@@ -110,6 +135,9 @@ func ApplyThinkingConfig(geminiRequest *dto.GeminiChatRequest, info convmeta.Met
 			effort := ""
 			if config := geminiRequest.GenerationConfig.ThinkingConfig; config != nil {
 				effort = config.ThinkingLevel
+				if canonical, err := reasoning.ParseEffort(effort); err == nil {
+					effort = string(canonical)
+				}
 				if effort == "" && config.ThinkingBudget != nil {
 					effort = string(reasoning.EffortFromBudget(*config.ThinkingBudget))
 				}
@@ -118,6 +146,11 @@ func ApplyThinkingConfig(geminiRequest *dto.GeminiChatRequest, info convmeta.Met
 		}
 		return nil
 	}
+	nativeEffort, diagnostics, err := reasoning.NormalizeGeminiThinkingConfig(baseModel, &geminiRequest.GenerationConfig)
+	if err != nil {
+		return err
+	}
+	convdiag.Add(ctx, diagnostics...)
 	native, err := reasoning.FromGemini(geminiRequest)
 	if err != nil {
 		return err
@@ -170,6 +203,9 @@ func ApplyThinkingConfig(geminiRequest *dto.GeminiChatRequest, info convmeta.Met
 		effort, err := reasoning.ValidateGeminiThinkingConfig(baseModel, geminiRequest.GenerationConfig.ThinkingConfig)
 		if err != nil {
 			return err
+		}
+		if effort == "" {
+			effort = nativeEffort
 		}
 		if info != nil && effort != "" {
 			info.SetReasoningEffort(string(effort))
@@ -242,9 +278,5 @@ func HasFunctionCallContent(call *dto.FunctionCall) bool {
 }
 
 func SupportedMimeTypesList() []string {
-	keys := make([]string, 0, len(SupportedMimeTypes))
-	for key := range SupportedMimeTypes {
-		keys = append(keys, key)
-	}
-	return keys
+	return append(slices.Sorted(maps.Keys(supportedMimeTypes)), "audio/*", "video/*")
 }

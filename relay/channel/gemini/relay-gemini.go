@@ -218,18 +218,27 @@ func geminiResponseUsageText(response *dto.GeminiChatResponse, includeThoughts b
 			if part.Text != "" && (includeThoughts || !part.Thought) {
 				text.WriteString(part.Text)
 			}
+			// Function calls are most of an agent turn's output.
+			if part.FunctionCall != nil {
+				text.WriteString(part.FunctionCall.FunctionName)
+				args, _ := common.Marshal(part.FunctionCall.Arguments)
+				text.Write(args)
+			}
 		}
 	}
 	return text.String()
 }
 
-func markGeminiGoogleSearchCall(c *gin.Context, response *dto.GeminiChatResponse) {
-	if c == nil || response == nil {
+// markGeminiGoogleSearchCall bills one google_search call when any candidate
+// was grounded. Google bills per grounded prompt and reports no call count, so
+// repeated grounded frames stay at one.
+func markGeminiGoogleSearchCall(info *relaycommon.RelayInfo, response *dto.GeminiChatResponse) {
+	if info == nil || response == nil {
 		return
 	}
 	for _, candidate := range response.Candidates {
 		if candidate.GroundingMetadata != nil && len(candidate.GroundingMetadata.WebSearchQueries) > 0 {
-			c.Set("gemini_google_search_call", true)
+			info.SetBillableToolCount(dto.BuildInToolGoogleSearch, 1)
 			return
 		}
 	}
@@ -383,21 +392,11 @@ func geminiStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http
 		imageCount += currentImageCount
 		imageOutputTokens = addGeminiTokenCount(imageOutputTokens, currentImageOutputTokens)
 
-		markGeminiGoogleSearchCall(c, &geminiResponse)
+		markGeminiGoogleSearchCall(info, &geminiResponse)
 		countGeminiBillableFunctionCalls(info, &geminiResponse)
 
-		// 统计图片数量
-		for _, candidate := range geminiResponse.Candidates {
-			for _, part := range candidate.Content.Parts {
-				if part.Text != "" {
-					responseText.WriteString(part.Text)
-					if !part.Thought {
-						candidateText.WriteString(part.Text)
-					}
-				}
-			}
-		}
-
+		responseText.WriteString(geminiResponseUsageText(&geminiResponse, true))
+		candidateText.WriteString(geminiResponseUsageText(&geminiResponse, false))
 		// 更新使用量统计
 		if metadata := geminiResponse.GetUsageMetadata(); dto.HasGeminiUsageMetadataTokens(metadata) {
 			accumulatedUsageMetadata = dto.MergeGeminiUsageMetadataNonZero(accumulatedUsageMetadata, metadata)
@@ -567,7 +566,7 @@ func GeminiChatHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.R
 	if err != nil {
 		return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
-	markGeminiGoogleSearchCall(c, &geminiResponse)
+	markGeminiGoogleSearchCall(info, &geminiResponse)
 	countGeminiBillableFunctionCalls(info, &geminiResponse)
 	if len(geminiResponse.Candidates) == 0 {
 		usage := buildUsageFromGeminiResponse(c, info, &geminiResponse)

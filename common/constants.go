@@ -220,6 +220,10 @@ var (
 	GlobalWebRateLimitNum      int
 	GlobalWebRateLimitDuration int64
 
+	GlobalStaticRateLimitEnable   bool
+	GlobalStaticRateLimitNum      int
+	GlobalStaticRateLimitDuration int64
+
 	CriticalRateLimitEnable   bool
 	CriticalRateLimitNum            = 120
 	CriticalRateLimitDuration int64 = 60
