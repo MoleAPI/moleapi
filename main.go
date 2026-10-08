@@ -202,6 +202,12 @@ func main() {
 	middleware.SetUpLogger(server)
 	InjectUmamiAnalytics()
 	InjectGoogleAnalytics()
+	invoiceLogo, err := buildFS.ReadFile("web/dist/logo.png")
+	if err != nil {
+		common.FatalLog("failed to load invoice logo: " + err.Error())
+		return
+	}
+	controller.TopUpInvoiceLogo = invoiceLogo
 
 	// 设置路由
 	router.SetRouter(server, router.WebAssets{

@@ -44,6 +44,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	// Local dashboard routes retain the same resource boundaries.
 	"GET /api/user/aff/history":                  accessTokenScopeRule("wallet:read"),
 	"GET /api/user/topup/:id/invoice":            accessTokenScopeRule("wallet:read"),
+	"PUT /api/user/topup/:id/invoice":            accessTokenSessionRule,
 	"POST /api/user/lantu/pay":                   accessTokenScopeRule("wallet:write"),
 	"GET /api/user/lantu/status":                 accessTokenScopeRule("wallet:read"),
 	"POST /api/user/nowpayments/pay":             accessTokenScopeRule("wallet:write"),

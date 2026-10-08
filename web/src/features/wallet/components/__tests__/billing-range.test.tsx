@@ -151,7 +151,7 @@ test('shows provider-specific receipt and invoice guidance', async () => {
   const waffoRow = (await screen.findByText('waffo-order')).closest('tr')
   expect(waffoRow).not.toBeNull()
   expect(
-    within(waffoRow as HTMLTableRowElement).queryByText('View receipt')
+    within(waffoRow as HTMLTableRowElement).queryByText('View invoice')
   ).not.toBeInTheDocument()
   fireEvent.click(waffoRow as HTMLTableRowElement)
   expect(
@@ -169,9 +169,21 @@ test('shows provider-specific receipt and invoice guidance', async () => {
 
   const cryptoRow = screen.getByText('crypto-order').closest('tr')
   expect(cryptoRow).not.toBeNull()
-  expect(
-    within(cryptoRow as HTMLTableRowElement).getByText('View receipt')
-  ).toBeVisible()
+  const viewInvoice = within(cryptoRow as HTMLTableRowElement).getByText(
+    'View invoice'
+  )
+  expect(viewInvoice).toBeVisible()
+  expect(viewInvoice.closest('a')).toHaveAttribute(
+    'href',
+    '/api/user/topup/2/invoice'
+  )
+  const downloadInvoice = within(cryptoRow as HTMLTableRowElement).getByText(
+    'Download invoice'
+  )
+  expect(downloadInvoice.closest('a')).toHaveAttribute(
+    'href',
+    '/api/user/topup/2/invoice?download=1'
+  )
   fireEvent.click(cryptoRow as HTMLTableRowElement)
   expect(
     screen.getByText(

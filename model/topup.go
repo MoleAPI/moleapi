@@ -32,6 +32,7 @@ type TopUp struct {
 	InviteRebateQuota     int     `json:"invite_rebate_quota" gorm:"type:bigint;default:0;column:invite_rebate_quota"`
 	PaymentCurrency       string  `json:"payment_currency" gorm:"type:varchar(8);default:''"`
 	InvoiceURL            string  `json:"invoice_url,omitempty" gorm:"type:varchar(2048);default:''"`
+	InvoiceDetails        string  `json:"-" gorm:"type:text"`
 	PaymentMethod         string  `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider       string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
 	CreateTime            int64   `json:"create_time"`
@@ -163,6 +164,10 @@ func (topUp *TopUp) Insert() error {
 		}
 	}
 	return DB.Create(topUp).Error
+}
+
+func (topUp *TopUp) UpdateInvoiceDetails(details string) error {
+	return DB.Model(topUp).Update("invoice_details", details).Error
 }
 
 func topUpQuotaMaxCurrent(creditedQuota int) (int, error) {

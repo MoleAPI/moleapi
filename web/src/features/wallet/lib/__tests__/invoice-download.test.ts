@@ -22,8 +22,6 @@ import { describe, test } from 'vitest'
 
 import {
   canRequestTopUpInvoice,
-  getInvoiceFilename,
-  getTopUpInvoiceDownloadUrl,
   getTopUpInvoiceUrl,
   getWaffoPancakeInvoiceUrl,
 } from '../billing'
@@ -58,19 +56,6 @@ describe('top-up invoice download', () => {
       ),
       '/api/user/topup/42/invoice?download=1'
     )
-    assert.equal(
-      getTopUpInvoiceDownloadUrl(
-        {
-          id: 42,
-          user_id: 7,
-          status: 'success',
-          payment_method: 'alipay',
-          payment_provider: 'epay',
-        },
-        7
-      ),
-      '/api/user/topup/42/invoice?download=1'
-    )
   })
 
   test('allows an admin to view another users completed invoice', () => {
@@ -88,17 +73,6 @@ describe('top-up invoice download', () => {
       ),
       '/api/user/topup/42/invoice'
     )
-  })
-
-  test('parses invoice filenames from content disposition headers', () => {
-    assert.equal(
-      getInvoiceFilename(
-        'attachment; filename="receipt-USR20260722010101.pdf"',
-        'fallback.pdf'
-      ),
-      'receipt-USR20260722010101.pdf'
-    )
-    assert.equal(getInvoiceFilename(undefined, 'fallback.pdf'), 'fallback.pdf')
   })
 
   test('does not expose invoice links for incomplete or another users records', () => {

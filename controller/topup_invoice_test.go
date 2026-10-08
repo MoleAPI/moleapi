@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -27,8 +29,12 @@ func setupTopUpInvoiceTestDB(t *testing.T) *gorm.DB {
 	originalMainDatabaseType := common.MainDatabaseType()
 	originalLogDatabaseType := common.LogDatabaseType()
 	originalRedisEnabled := common.RedisEnabled
+	originalInvoiceLogo := TopUpInvoiceLogo
 	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
 	common.RedisEnabled = false
+	logo, err := os.ReadFile(filepath.Join("..", "web", "public", "logo.png"))
+	require.NoError(t, err)
+	TopUpInvoiceLogo = logo
 
 	dsn := "file:" + url.QueryEscape(t.Name()) + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
@@ -42,6 +48,7 @@ func setupTopUpInvoiceTestDB(t *testing.T) *gorm.DB {
 		model.LOG_DB = originalLogDB
 		common.SetDatabaseTypes(originalMainDatabaseType, originalLogDatabaseType)
 		common.RedisEnabled = originalRedisEnabled
+		TopUpInvoiceLogo = originalInvoiceLogo
 		sqlDB, dbErr := db.DB()
 		if dbErr == nil {
 			_ = sqlDB.Close()
@@ -104,6 +111,24 @@ func performTopUpInvoiceRequest(topUpID int, requester *model.User, download boo
 	return recorder
 }
 
+func performTopUpInvoiceUpdate(t *testing.T, topUpID int, requester *model.User, details topUpInvoiceDetails) *httptest.ResponseRecorder {
+	t.Helper()
+
+	body, err := common.Marshal(details)
+	require.NoError(t, err)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	target := "/api/user/topup/" + strconv.Itoa(topUpID) + "/invoice"
+	ctx.Request = httptest.NewRequest(http.MethodPut, target, strings.NewReader(string(body)))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Params = gin.Params{{Key: "id", Value: strconv.Itoa(topUpID)}}
+	ctx.Set("id", requester.Id)
+	ctx.Set("username", requester.Username)
+	ctx.Set("role", requester.Role)
+	UpdateTopUpInvoice(ctx)
+	return recorder
+}
+
 func requireTopUpInvoiceAPIError(t *testing.T, recorder *httptest.ResponseRecorder, message string) {
 	t.Helper()
 
@@ -127,10 +152,15 @@ func TestGetTopUpInvoiceShowsCompletedOrderInlineForOwner(t *testing.T) {
 	assert.Contains(t, recorder.Header().Get("Content-Type"), "text/html")
 	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "inline")
 	assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
+	assert.Contains(t, recorder.Header().Get("Content-Security-Policy"), "allow-downloads")
 	body := recorder.Body.String()
-	assert.Contains(t, body, "Payment Receipt")
-	assert.Contains(t, body, "Receipt No.")
-	assert.Contains(t, body, "Print / Save PDF")
+	assert.Contains(t, body, "<h1>Invoice</h1>")
+	assert.Contains(t, body, "Invoice No.")
+	assert.Contains(t, body, "Edit information")
+	assert.Contains(t, body, "Download PDF")
+	assert.Contains(t, body, `class="brand-icon"`)
+	assert.Contains(t, body, "data:image/png;base64,")
+	assert.Contains(t, body, user.DisplayName)
 	assert.Contains(t, body, topUp.TradeNo)
 	assert.Contains(t, body, topUp.GatewayTradeNo)
 	assert.Contains(t, body, "Top-up Amount")
@@ -151,6 +181,7 @@ func TestGetTopUpInvoiceDownloadsCompletedOrderWhenRequested(t *testing.T) {
 	assert.Contains(t, recorder.Header().Get("Content-Disposition"), ".pdf")
 	assert.Contains(t, recorder.Header().Get("Content-Type"), "application/pdf")
 	assert.True(t, strings.HasPrefix(recorder.Body.String(), "%PDF-"))
+	assert.Contains(t, recorder.Body.String(), "/Subtype /Image")
 }
 
 func TestGetTopUpInvoiceAllowsAuditedAdminViewOfAnotherUsersOrder(t *testing.T) {
@@ -190,7 +221,7 @@ func TestGetTopUpInvoiceRejectsIncompleteOrder(t *testing.T) {
 	recorder := performTopUpInvoiceRequest(topUp.Id, user, false)
 
 	requireTopUpInvoiceAPIError(t, recorder, "仅成功订单支持下载凭证")
-	assert.NotContains(t, recorder.Body.String(), "Payment Receipt")
+	assert.NotContains(t, recorder.Body.String(), "<h1>Invoice</h1>")
 }
 
 func TestGetTopUpInvoiceRejectsWaffoPancakeOrder(t *testing.T) {
@@ -204,6 +235,68 @@ func TestGetTopUpInvoiceRejectsWaffoPancakeOrder(t *testing.T) {
 	recorder := performTopUpInvoiceRequest(topUp.Id, user, false)
 
 	requireTopUpInvoiceAPIError(t, recorder, "Waffo Pancake 订单仅支持官方发票")
+	updateRecorder := performTopUpInvoiceUpdate(t, topUp.Id, user, topUpInvoiceDetails{Name: "Customer"})
+	requireTopUpInvoiceAPIError(t, updateRecorder, "Waffo Pancake orders use the official provider invoice")
+}
+
+func TestUpdateTopUpInvoicePersistsEditableCustomerInformation(t *testing.T) {
+	db := setupTopUpInvoiceTestDB(t)
+	user := insertTopUpInvoiceUser(t, db, "invoice_edit", common.RoleCommonUser)
+	topUp := insertTopUpInvoiceOrder(t, db, user.Id, common.TopUpStatusSuccess)
+	details := topUpInvoiceDetails{
+		Name:       "  Billing Contact  ",
+		Email:      "billing@example.com",
+		Company:    "Example & Partners",
+		TaxID:      "VAT-123",
+		Address:    "1 Main Street",
+		City:       "Taipei",
+		State:      "Taiwan",
+		PostalCode: "100",
+		Country:    "Taiwan",
+	}
+
+	recorder := performTopUpInvoiceUpdate(t, topUp.Id, user, details)
+
+	require.Equal(t, http.StatusOK, recorder.Code)
+	var response struct {
+		Success bool `json:"success"`
+	}
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+	assert.True(t, response.Success)
+	var stored model.TopUp
+	require.NoError(t, db.First(&stored, topUp.Id).Error)
+	var storedDetails topUpInvoiceDetails
+	require.NoError(t, common.UnmarshalJsonStr(stored.InvoiceDetails, &storedDetails))
+	assert.Equal(t, "Billing Contact", storedDetails.Name)
+	assert.Equal(t, details.Company, storedDetails.Company)
+
+	invoiceRecorder := performTopUpInvoiceRequest(topUp.Id, user, false)
+	require.Equal(t, http.StatusOK, invoiceRecorder.Code)
+	html := invoiceRecorder.Body.String()
+	assert.Contains(t, html, "Billing Contact")
+	assert.Contains(t, html, "Example &amp; Partners")
+	assert.Contains(t, html, "1 Main Street, Taipei, Taiwan, 100, Taiwan")
+}
+
+func TestUpdateTopUpInvoiceRejectsForeignAndInvalidChanges(t *testing.T) {
+	db := setupTopUpInvoiceTestDB(t)
+	owner := insertTopUpInvoiceUser(t, db, "invoice_update_owner", common.RoleCommonUser)
+	other := insertTopUpInvoiceUser(t, db, "invoice_update_other", common.RoleCommonUser)
+	topUp := insertTopUpInvoiceOrder(t, db, owner.Id, common.TopUpStatusSuccess)
+
+	foreignRecorder := performTopUpInvoiceUpdate(t, topUp.Id, other, topUpInvoiceDetails{Name: "Other"})
+	requireTopUpInvoiceAPIError(t, foreignRecorder, "Top-up order not found")
+	invalidRecorder := performTopUpInvoiceUpdate(t, topUp.Id, owner, topUpInvoiceDetails{Email: "not-an-email"})
+	requireTopUpInvoiceAPIError(t, invalidRecorder, "Email is invalid")
+	controlRecorder := performTopUpInvoiceUpdate(t, topUp.Id, owner, topUpInvoiceDetails{Company: "Example\nLtd"})
+	requireTopUpInvoiceAPIError(t, controlRecorder, "Company name contains unsupported characters")
+	longRecorder := performTopUpInvoiceUpdate(t, topUp.Id, owner, topUpInvoiceDetails{Name: strings.Repeat("x", 121)})
+	requireTopUpInvoiceAPIError(t, longRecorder, "Name is too long")
+	longAddressRecorder := performTopUpInvoiceUpdate(t, topUp.Id, owner, topUpInvoiceDetails{
+		Address: strings.Repeat("a", 240),
+		City:    strings.Repeat("b", 60),
+	})
+	requireTopUpInvoiceAPIError(t, longAddressRecorder, "Billing address is too long")
 }
 
 func TestRenderTopUpInvoiceEscapesStoredCustomerContent(t *testing.T) {
@@ -214,7 +307,7 @@ func TestRenderTopUpInvoiceEscapesStoredCustomerContent(t *testing.T) {
 
 	require.NoError(t, err)
 	html := string(htmlBytes)
-	assert.NotContains(t, html, "<script>")
+	assert.NotContains(t, html, `<script>alert("x")</script>`)
 	assert.True(t, strings.Contains(html, "&lt;script&gt;") || strings.Contains(html, "&lt;script"))
 }
 

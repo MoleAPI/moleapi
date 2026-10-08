@@ -62,14 +62,14 @@ func TestTopUpAutoMigrationExpandsExistingTableIdempotently(t *testing.T) {
 		Status:          common.TopUpStatusSuccess,
 	}).Error)
 
-	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "InviteRebateInviterId", "InviteRebateRatio", "InviteRebateQuota", "PaymentCurrency", "InvoiceURL"} {
+	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "InviteRebateInviterId", "InviteRebateRatio", "InviteRebateQuota", "PaymentCurrency", "InvoiceURL", "InvoiceDetails"} {
 		assert.False(t, db.Migrator().HasColumn(&TopUp{}, field))
 	}
 
 	require.NoError(t, db.AutoMigrate(&TopUp{}))
 	require.NoError(t, db.AutoMigrate(&TopUp{}))
 
-	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "InviteRebateInviterId", "InviteRebateRatio", "InviteRebateQuota", "PaymentCurrency", "InvoiceURL"} {
+	for _, field := range []string{"GatewayTradeNo", "PaymentProductId", "PaymentMode", "PromisedQuota", "CreditedQuota", "InviteRebateInviterId", "InviteRebateRatio", "InviteRebateQuota", "PaymentCurrency", "InvoiceURL", "InvoiceDetails"} {
 		assert.True(t, db.Migrator().HasColumn(&TopUp{}, field))
 	}
 	assert.True(t, db.Migrator().HasIndex(&TopUp{}, "GatewayTradeNo"))
@@ -86,6 +86,7 @@ func TestTopUpAutoMigrationExpandsExistingTableIdempotently(t *testing.T) {
 	assert.Zero(t, legacy.InviteRebateQuota)
 	assert.Empty(t, legacy.PaymentCurrency)
 	assert.Empty(t, legacy.InvoiceURL)
+	assert.Empty(t, legacy.InvoiceDetails)
 
 	newRecord := &TopUp{
 		UserId:                8,
@@ -102,6 +103,7 @@ func TestTopUpAutoMigrationExpandsExistingTableIdempotently(t *testing.T) {
 		InviteRebateQuota:     100_000,
 		PaymentCurrency:       "USD",
 		InvoiceURL:            "https://pancake.waffo.ai/invoice/PAY_test?token=test-token",
+		InvoiceDetails:        `{"name":"Invoice Customer","company":"Example Ltd"}`,
 		PaymentMethod:         PaymentMethodStripe,
 		PaymentProvider:       PaymentProviderStripe,
 		CreateTime:            200,
@@ -122,9 +124,10 @@ func TestTopUpAutoMigrationExpandsExistingTableIdempotently(t *testing.T) {
 	assert.Equal(t, newRecord.InviteRebateQuota, stored.InviteRebateQuota)
 	assert.Equal(t, newRecord.PaymentCurrency, stored.PaymentCurrency)
 	assert.Equal(t, newRecord.InvoiceURL, stored.InvoiceURL)
+	assert.Equal(t, newRecord.InvoiceDetails, stored.InvoiceDetails)
 }
 
-func TestTopUpInvoiceURLDatabaseMatrix(t *testing.T) {
+func TestTopUpInvoiceFieldsDatabaseMatrix(t *testing.T) {
 	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
 			var db *gorm.DB
@@ -154,27 +157,33 @@ func TestTopUpInvoiceURLDatabaseMatrix(t *testing.T) {
 			t.Cleanup(func() { _ = db.Migrator().DropTable(freshTable, upgradeTable) })
 
 			invoiceURL := "https://pancake.waffo.ai/invoice/PAY_test?token=test-token"
+			invoiceDetails := `{"name":"Invoice Customer","company":"Example Ltd"}`
 			require.NoError(t, db.Table(freshTable).AutoMigrate(&TopUp{}))
 			require.NoError(t, db.Table(freshTable).AutoMigrate(&TopUp{}))
 			assert.True(t, db.Table(freshTable).Migrator().HasColumn(&TopUp{}, "InvoiceURL"))
-			require.NoError(t, db.Table(freshTable).Create(&TopUp{TradeNo: "fresh-order", InvoiceURL: invoiceURL}).Error)
+			assert.True(t, db.Table(freshTable).Migrator().HasColumn(&TopUp{}, "InvoiceDetails"))
+			require.NoError(t, db.Table(freshTable).Create(&TopUp{TradeNo: "fresh-order", InvoiceURL: invoiceURL, InvoiceDetails: invoiceDetails}).Error)
 			var fresh TopUp
 			require.NoError(t, db.Table(freshTable).Where("trade_no = ?", "fresh-order").First(&fresh).Error)
 			assert.Equal(t, invoiceURL, fresh.InvoiceURL)
+			assert.Equal(t, invoiceDetails, fresh.InvoiceDetails)
 
 			require.NoError(t, db.Table(upgradeTable).AutoMigrate(&topUpWithoutInvoiceURL{}))
 			legacy := &topUpWithoutInvoiceURL{UserId: 7, TradeNo: "upgrade-order", GatewayTradeNo: "gateway-order", PaymentProvider: PaymentProviderWaffoPancake, Status: common.TopUpStatusSuccess}
 			require.NoError(t, db.Table(upgradeTable).Create(legacy).Error)
 			assert.False(t, db.Table(upgradeTable).Migrator().HasColumn(&TopUp{}, "InvoiceURL"))
+			assert.False(t, db.Table(upgradeTable).Migrator().HasColumn(&TopUp{}, "InvoiceDetails"))
 			require.NoError(t, db.Table(upgradeTable).AutoMigrate(&TopUp{}))
 			require.NoError(t, db.Table(upgradeTable).AutoMigrate(&TopUp{}))
 			assert.True(t, db.Table(upgradeTable).Migrator().HasColumn(&TopUp{}, "InvoiceURL"))
+			assert.True(t, db.Table(upgradeTable).Migrator().HasColumn(&TopUp{}, "InvoiceDetails"))
 			assert.True(t, db.Table(upgradeTable).Migrator().HasIndex(&TopUp{}, "GatewayTradeNo"))
 			var upgraded TopUp
 			require.NoError(t, db.Table(upgradeTable).Where("trade_no = ?", legacy.TradeNo).First(&upgraded).Error)
 			assert.Equal(t, legacy.GatewayTradeNo, upgraded.GatewayTradeNo)
 			assert.Equal(t, legacy.PaymentProvider, upgraded.PaymentProvider)
 			assert.Empty(t, upgraded.InvoiceURL)
+			assert.Empty(t, upgraded.InvoiceDetails)
 			assert.Error(t, db.Table(upgradeTable).Create(&topUpWithoutInvoiceURL{TradeNo: legacy.TradeNo}).Error)
 		})
 	}
