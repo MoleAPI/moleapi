@@ -2,6 +2,8 @@ package controller
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/base32"
 	"encoding/base64"
 	"fmt"
 	"html/template"
@@ -64,7 +66,7 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.SystemName}} Invoice {{.InvoiceNo}}</title>
+  <title>{{.SystemName}} Top-up receipt {{.InvoiceNo}}</title>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; background: #f5f7fa; color: #1f2933; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
@@ -117,14 +119,14 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
         {{if .LogoDataURI}}<img class="brand-icon" src="{{.LogoDataURI}}" alt="{{.SystemName}}">{{end}}
         <div>
           <div class="brand">{{.SystemName}}</div>
-          <h1>Invoice</h1>
+          <h1>Top-up receipt</h1>
         </div>
       </div>
       <div class="status">Paid</div>
     </header>
 
-    <section class="grid" aria-label="Invoice summary">
-      <div><div class="label">Invoice No.</div><div class="value">{{.InvoiceNo}}</div></div>
+    <section class="grid" aria-label="Receipt summary">
+      <div><div class="label">Receipt No.</div><div class="value">{{.InvoiceNo}}</div></div>
       <div><div class="label">Issued At</div><div class="value">{{.IssuedAt}}</div></div>
       <div><div class="label">Customer</div><div class="value" id="customer-name">{{.CustomerName}}</div></div>
       <div><div class="label">Email</div><div class="value" id="customer-email">{{.CustomerEmail}}</div></div>
@@ -155,12 +157,12 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
       </tr></tbody>
     </table>
 
-    <footer>This invoice was generated from the completed top-up record stored by {{.SystemName}}.</footer>
+    <footer>This receipt was generated from the completed top-up record stored by {{.SystemName}}.</footer>
   </main>
 
   <dialog id="details-dialog" aria-labelledby="details-title">
     <form id="details-form">
-      <h2 id="details-title">Edit invoice information</h2>
+      <h2 id="details-title">Edit receipt information</h2>
       <div class="form-grid">
         <label>Name<input name="name" maxlength="120" value="{{.InvoiceDetails.Name}}"></label>
         <label>Email<input name="email" type="email" maxlength="254" value="{{.InvoiceDetails.Email}}"></label>
@@ -215,7 +217,7 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
           body: JSON.stringify(details)
         })
         const payload = await response.json()
-        if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to save invoice information.')
+        if (!response.ok || !payload.success) throw new Error(payload.message || 'Unable to save receipt information.')
         text('customer-name', details.name.trim())
         text('customer-email', details.email.trim())
         text('customer-company', details.company.trim())
@@ -223,7 +225,7 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
         text('customer-address', address())
         dialog.close()
       } catch (cause) {
-        error.textContent = cause instanceof Error ? cause.message : 'Unable to save invoice information.'
+        error.textContent = cause instanceof Error ? cause.message : 'Unable to save receipt information.'
         error.hidden = false
       } finally {
         save.disabled = false
@@ -270,13 +272,13 @@ func GetTopUpInvoice(c *gin.Context) {
 		return
 	}
 	isDownload := c.Query("download") == "1"
-	filename := fmt.Sprintf("invoice-%s.html", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
+	filename := fmt.Sprintf("receipt-%s.html", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
 	contentType := "text/html; charset=utf-8"
 	var invoiceBytes []byte
 	if isDownload {
 		invoiceBytes, err = renderTopUpInvoicePDF(topUp, user)
 		contentType = "application/pdf"
-		filename = fmt.Sprintf("invoice-%s.pdf", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
+		filename = fmt.Sprintf("receipt-%s.pdf", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
 	} else {
 		invoiceBytes, err = renderTopUpInvoiceView(view)
 	}
@@ -318,7 +320,7 @@ func UpdateTopUpInvoice(c *gin.Context) {
 		return
 	}
 	if topUp.Status != common.TopUpStatusSuccess {
-		common.ApiErrorMsg(c, "Only completed orders can update invoice information")
+		common.ApiErrorMsg(c, "Only completed orders can update receipt information")
 		return
 	}
 	if topUp.PaymentProvider == model.PaymentProviderWaffoPancake || topUp.PaymentMethod == model.PaymentProviderWaffoPancake {
@@ -328,7 +330,7 @@ func UpdateTopUpInvoice(c *gin.Context) {
 
 	var details topUpInvoiceDetails
 	if err := common.DecodeJson(c.Request.Body, &details); err != nil {
-		common.ApiErrorMsg(c, "Invalid invoice information")
+		common.ApiErrorMsg(c, "Invalid receipt information")
 		return
 	}
 	if err := normalizeTopUpInvoiceDetails(&details); err != nil {
@@ -337,11 +339,11 @@ func UpdateTopUpInvoice(c *gin.Context) {
 	}
 	encoded, err := common.Marshal(details)
 	if err != nil {
-		common.ApiErrorMsg(c, "Unable to save invoice information")
+		common.ApiErrorMsg(c, "Unable to save receipt information")
 		return
 	}
 	if err := topUp.UpdateInvoiceDetails(string(encoded)); err != nil {
-		common.ApiErrorMsg(c, "Unable to save invoice information")
+		common.ApiErrorMsg(c, "Unable to save receipt information")
 		return
 	}
 	if isAdminUpdate {
@@ -414,7 +416,7 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 	pdf := fpdf.New("P", "mm", "A4", "")
 	// ponytail: one embedded face covers every stored value; add another face only if dynamic text needs distinct styling.
 	pdf.AddUTF8FontFromBytes("NotoSansSC", "", notosanssc.TTF)
-	pdf.SetTitle(view.SystemName+" Invoice "+view.InvoiceNo, true)
+	pdf.SetTitle(view.SystemName+" Top-up receipt "+view.InvoiceNo, true)
 	pdf.SetAuthor(view.SystemName, true)
 	pdf.SetMargins(18, 18, 18)
 	pdf.SetAutoPageBreak(true, 18)
@@ -436,7 +438,7 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 	pdf.SetX(42)
 	pdf.SetTextColor(16, 24, 40)
 	pdf.SetFont("Helvetica", "B", 24)
-	pdf.CellFormat(0, 12, "Invoice", "", 0, "L", false, 0, "")
+	pdf.CellFormat(0, 12, "Top-up receipt", "", 0, "L", false, 0, "")
 	pdf.SetXY(170, 22)
 	pdf.SetFillColor(236, 253, 243)
 	pdf.SetTextColor(6, 118, 71)
@@ -445,7 +447,7 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 	pdf.Line(18, 42, 192, 42)
 
 	rows := [][2][2]string{
-		{{"Invoice No.", view.InvoiceNo}, {"Issued At", view.IssuedAt}},
+		{{"Receipt No.", view.InvoiceNo}, {"Issued At", view.IssuedAt}},
 		{{"Customer", view.CustomerName}, {"Email", view.CustomerEmail}},
 		{{"Company", view.CustomerCompany}, {"Tax / VAT ID", view.CustomerTaxID}},
 	}
@@ -494,7 +496,7 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 	pdf.SetXY(18, rowY+54)
 	pdf.SetTextColor(102, 112, 133)
 	pdf.SetFont("NotoSansSC", "", 9)
-	pdf.MultiCell(0, 5, pdfSafeText("This invoice was generated from the completed top-up record stored by "+view.SystemName+"."), "", "L", false)
+	pdf.MultiCell(0, 5, pdfSafeText("This receipt was generated from the completed top-up record stored by "+view.SystemName+"."), "", "L", false)
 
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
@@ -532,7 +534,7 @@ func newTopUpInvoiceView(topUp *model.TopUp, user *model.User) topUpInvoiceView 
 	return topUpInvoiceView{
 		LogoDataURI:     topUpInvoiceLogoDataURI(),
 		SystemName:      common.SystemName,
-		InvoiceNo:       fmt.Sprintf("INV-%d", topUp.Id),
+		InvoiceNo:       formatTopUpReceiptNumber(topUp),
 		InvoiceDetails:  details,
 		CustomerName:    valueOrDash(details.Name),
 		CustomerEmail:   valueOrDash(details.Email),
@@ -551,6 +553,21 @@ func newTopUpInvoiceView(topUp *model.TopUp, user *model.User) topUpInvoiceView 
 		IssuedAt:        time.Now().Format("2006-01-02 15:04:05 MST"),
 		CanEdit:         true,
 	}
+}
+
+func formatTopUpReceiptNumber(topUp *model.TopUp) string {
+	timestamp := topUp.CompleteTime
+	if timestamp <= 0 {
+		timestamp = topUp.CreateTime
+	}
+	month := "000000"
+	if timestamp > 0 {
+		month = time.Unix(timestamp, 0).UTC().Format("200601")
+	}
+	digest := sha256.Sum256([]byte(strconv.Itoa(topUp.Id) + "\x00" + topUp.TradeNo))
+	// ponytail: eight display characters keep collisions negligible without storing another database field.
+	suffix := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(digest[:5])
+	return "INV-" + month + "-" + suffix
 }
 
 func loadTopUpInvoiceDetails(topUp *model.TopUp, user *model.User) topUpInvoiceDetails {

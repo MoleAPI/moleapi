@@ -64,6 +64,7 @@ func SetApiRouter(router *gin.Engine) {
 		supportRoute.Use(middleware.UserAuth())
 		{
 			supportRoute.GET("/config", controller.GetSupportConfig)
+			supportRoute.GET("/invoice-tickets", middleware.SearchRateLimit(), controller.GetSupportInvoiceTickets)
 			supportRoute.GET("/tickets", middleware.SearchRateLimit(), controller.ListSupportTickets)
 			supportRoute.POST("/tickets", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.CreateSupportTicket)
 			supportRoute.GET("/tickets/:id", middleware.SearchRateLimit(), controller.GetSupportTicket)

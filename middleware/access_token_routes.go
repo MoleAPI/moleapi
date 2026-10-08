@@ -61,6 +61,7 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/models/descriptions/import":       accessTokenScopeRule("model:write"),
 	// Support and mixed self/admin exports have no matching token scope.
 	"GET /api/support/config":                                 accessTokenSessionRule,
+	"GET /api/support/invoice-tickets":                        accessTokenSessionRule,
 	"GET /api/support/tickets":                                accessTokenSessionRule,
 	"POST /api/support/tickets":                               accessTokenSessionRule,
 	"GET /api/support/tickets/:id":                            accessTokenSessionRule,

@@ -91,7 +91,7 @@ export function formatTimestamp(timestamp: number): string {
 }
 
 /**
- * Owners and admins can view a completed top-up invoice.
+ * Owners and admins can view a completed top-up receipt.
  */
 export function getTopUpInvoiceUrl(
   record: Pick<
@@ -99,8 +99,7 @@ export function getTopUpInvoiceUrl(
     'id' | 'status' | 'user_id' | 'payment_method' | 'payment_provider'
   >,
   currentUserId?: number,
-  isAdmin = false,
-  download = false
+  isAdmin = false
 ): string | null {
   if (
     (!isAdmin && record.user_id !== currentUserId) ||
@@ -112,9 +111,7 @@ export function getTopUpInvoiceUrl(
   ) {
     return null
   }
-  return download
-    ? `/api/user/topup/${record.id}/invoice?download=1`
-    : `/invoice/${record.id}`
+  return `/invoice/${record.id}`
 }
 
 export function canRequestTopUpInvoice(

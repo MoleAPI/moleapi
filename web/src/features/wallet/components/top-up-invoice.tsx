@@ -126,10 +126,10 @@ export function TopUpInvoicePage(props: TopUpInvoicePageProps) {
             : invoice
       )
       setEditing(false)
-      toast.success(t('Invoice information updated'))
+      toast.success(t('Receipt information updated'))
     },
     onError: (error) =>
-      handleServerError(error, t('Unable to save invoice information.')),
+      handleServerError(error, t('Unable to save receipt information.')),
   })
 
   useEffect(() => {
@@ -142,7 +142,7 @@ export function TopUpInvoicePage(props: TopUpInvoicePageProps) {
     try {
       await downloadTopUpInvoice(invoiceId, invoiceQuery.data.trade_no)
     } catch (error) {
-      handleServerError(error, t('Unable to download invoice.'))
+      handleServerError(error, t('Unable to download receipt.'))
     } finally {
       setDownloading(false)
     }
@@ -152,8 +152,8 @@ export function TopUpInvoicePage(props: TopUpInvoicePageProps) {
     return (
       <ErrorState
         className='min-h-screen'
-        title={t('Invoice not found')}
-        description={t('The invoice could not be opened.')}
+        title={t('Receipt not found')}
+        description={t('The receipt could not be opened.')}
         onRetry={validInvoiceId ? () => void invoiceQuery.refetch() : undefined}
       />
     )
@@ -164,7 +164,7 @@ export function TopUpInvoicePage(props: TopUpInvoicePageProps) {
       <LoadingState
         className='min-h-screen'
         size='lg'
-        message={t('Loading invoice...')}
+        message={t('Loading receipt...')}
       />
     )
   }
@@ -211,7 +211,7 @@ export function TopUpInvoicePage(props: TopUpInvoicePageProps) {
                 {invoice.system_name}
               </p>
               <h1 className='text-3xl font-semibold tracking-tight'>
-                {t('Invoice')}
+                {t('Top-up receipt')}
               </h1>
             </div>
           </div>
@@ -221,7 +221,7 @@ export function TopUpInvoicePage(props: TopUpInvoicePageProps) {
         </header>
 
         <div className='my-7 grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-2'>
-          <InvoiceValue label={t('Invoice No.')} value={invoice.invoice_no} />
+          <InvoiceValue label={t('Receipt No.')} value={invoice.invoice_no} />
           <InvoiceValue label={t('Issued At')} value={invoice.issued_at} />
           <InvoiceValue label={t('Customer')} value={invoice.customer_name} />
           <InvoiceValue label={t('Email')} value={invoice.customer_email} />
@@ -308,7 +308,7 @@ export function TopUpInvoicePage(props: TopUpInvoicePageProps) {
 
         <footer className='text-muted-foreground mt-7 text-xs'>
           {t(
-            'This invoice was generated from the completed top-up record stored by {{systemName}}.',
+            'This receipt was generated from the completed top-up record stored by {{systemName}}.',
             { systemName: invoice.system_name }
           )}
         </footer>
@@ -317,7 +317,7 @@ export function TopUpInvoicePage(props: TopUpInvoicePageProps) {
       <Dialog
         open={editing}
         onOpenChange={(open) => !updateMutation.isPending && setEditing(open)}
-        title={t('Edit invoice information')}
+        title={t('Edit receipt information')}
         contentClassName='sm:max-w-xl'
         contentHeight='auto'
         footer={

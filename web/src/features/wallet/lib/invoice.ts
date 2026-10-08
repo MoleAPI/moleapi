@@ -114,7 +114,7 @@ export async function getTopUpInvoice(id: number): Promise<TopUpInvoice> {
   const payload = requireServerSuccess(response.data) as {
     data?: TopUpInvoice
   }
-  if (!payload.data) throw createServerError(payload, 'Invoice not found')
+  if (!payload.data) throw createServerError(payload, 'Receipt not found')
   return payload.data
 }
 
@@ -147,7 +147,7 @@ export async function downloadTopUpInvoice(
         // Keep the original response as the error source.
       }
     }
-    throw createServerError(payload, 'Unable to download invoice.')
+    throw createServerError(payload, 'Unable to download receipt.')
   }
   const disposition = response.headers['content-disposition']
   const match =
@@ -157,7 +157,7 @@ export async function downloadTopUpInvoice(
   const url = URL.createObjectURL(response.data)
   const link = document.createElement('a')
   link.href = url
-  link.download = match?.[1] || `invoice-${tradeNo}.pdf`
+  link.download = match?.[1] || `receipt-${tradeNo}.pdf`
   document.body.append(link)
   link.click()
   link.remove()
