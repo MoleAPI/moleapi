@@ -39,7 +39,7 @@ describe('top-up invoice download', () => {
         },
         7
       ),
-      '/api/user/topup/42/invoice'
+      '/invoice/42'
     )
     assert.equal(
       getTopUpInvoiceUrl(
@@ -71,7 +71,7 @@ describe('top-up invoice download', () => {
         99,
         true
       ),
-      '/api/user/topup/42/invoice'
+      '/invoice/42'
     )
   })
 

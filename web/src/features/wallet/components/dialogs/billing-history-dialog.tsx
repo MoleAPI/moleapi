@@ -64,6 +64,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { toIntlLocale } from '@/i18n/languages'
+import { handleServerError } from '@/lib/handle-server-error'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { useBillingHistory } from '../../hooks/use-billing-history'
@@ -80,6 +81,7 @@ import {
   formatHistoricalPaymentAmount,
   formatHistoricalTopUpAmount,
 } from '../../lib/format'
+import { downloadTopUpInvoice } from '../../lib/invoice'
 import type { TopupRecord } from '../../types'
 
 interface BillingHistoryDialogProps {
@@ -207,6 +209,14 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
       if (success) {
         setConfirmTradeNo(null)
       }
+    }
+  }
+
+  const handleInvoiceDownload = async (record: TopupRecord) => {
+    try {
+      await downloadTopUpInvoice(record.id, record.trade_no)
+    } catch (error) {
+      handleServerError(error, t('Unable to download invoice.'))
     }
   }
 
@@ -461,15 +471,10 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                 size='sm'
                                 variant='ghost'
                                 className='h-7 px-2'
-                                render={
-                                  <a
-                                    href={invoiceDownloadUrl}
-                                    target='_blank'
-                                    rel='noreferrer'
-                                    onClick={(event) => event.stopPropagation()}
-                                  />
-                                }
-                                nativeButton={false}
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  void handleInvoiceDownload(record)
+                                }}
                               >
                                 <Download className='size-3.5' />
                                 {t('Download invoice')}
@@ -596,14 +601,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                 <Button
                   size='sm'
                   variant='outline'
-                  render={
-                    <a
-                      href={detailInvoiceDownloadUrl}
-                      target='_blank'
-                      rel='noreferrer'
-                    />
-                  }
-                  nativeButton={false}
+                  onClick={() => void handleInvoiceDownload(detailRecord)}
                 >
                   <Download className='size-3.5' />
                   {t('Download invoice')}

@@ -112,7 +112,9 @@ export function getTopUpInvoiceUrl(
   ) {
     return null
   }
-  return `/api/user/topup/${record.id}/invoice${download ? '?download=1' : ''}`
+  return download
+    ? `/api/user/topup/${record.id}/invoice?download=1`
+    : `/invoice/${record.id}`
 }
 
 export function canRequestTopUpInvoice(

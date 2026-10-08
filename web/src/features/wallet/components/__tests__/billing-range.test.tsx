@@ -175,15 +175,12 @@ test('shows provider-specific receipt and invoice guidance', async () => {
   expect(viewInvoice).toBeVisible()
   expect(viewInvoice.closest('a')).toHaveAttribute(
     'href',
-    '/api/user/topup/2/invoice'
+    '/invoice/2'
   )
   const downloadInvoice = within(cryptoRow as HTMLTableRowElement).getByText(
     'Download invoice'
   )
-  expect(downloadInvoice.closest('a')).toHaveAttribute(
-    'href',
-    '/api/user/topup/2/invoice?download=1'
-  )
+  expect(downloadInvoice.closest('button')).toBeVisible()
   fireEvent.click(cryptoRow as HTMLTableRowElement)
   expect(
     screen.getByText(
