@@ -2123,7 +2123,6 @@
     "Downgrade to this group after the subscription expires": "Downgrade to this group after the subscription expires",
     "Download": "Download",
     "Download CSV": "Download CSV",
-    "Download invoice": "Download invoice",
     "Drag {{group}} to reorder": "Drag {{group}} to reorder",
     "Drag to move": "Drag to move",
     "Drag to resize": "Drag to resize",
@@ -7361,7 +7360,6 @@
     "View document": "View document",
     "View groups and prefill groups.": "View groups and prefill groups.",
     "View installed task plugins and their settings.": "View installed task plugins and their settings.",
-    "View invoice": "View invoice",
     "View issued reset credits, grant dates, and expiration.": "View issued reset credits, grant dates, and expiration.",
     "View key for API token “{{name}}”": "View key for API token “{{name}}”",
     "View logs": "View logs",
@@ -7619,6 +7617,11 @@
     "Qwen Coding Plan": "Qwen Coding Plan",
     "Qwen Token Plan": "Qwen Token Plan",
     "Volcengine Agent Plan": "Volcengine Agent Plan",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "View receipt": "View receipt",
+    "Download receipt": "Download receipt",
+    "Request invoice": "Request invoice",
+    "Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.": "Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.",
+    "Cryptocurrency payments can provide a payment receipt, but cannot be invoiced.": "Cryptocurrency payments can provide a payment receipt, but cannot be invoiced."
   }
 }

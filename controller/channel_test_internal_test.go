@@ -160,6 +160,26 @@ func TestValidateChannelRequiresNewAPIBaseURL(t *testing.T) {
 	}
 }
 
+func TestValidateChannelFillsCodingPlanPresetWithoutOverwritingEdits(t *testing.T) {
+	channel := &model.Channel{Type: constant.ChannelTypeAdvancedCustom}
+	channel.SetOtherSettings(dto.ChannelOtherSettings{CodingPlanProvider: dto.CodingPlanProviderKimi})
+	require.NoError(t, validateChannel(channel, false))
+
+	settings := channel.GetOtherSettings()
+	require.NotNil(t, settings.AdvancedCustom)
+	route, ok := settings.AdvancedCustom.MatchPath("/v1/chat/completions")
+	require.True(t, ok)
+	assert.Equal(t, "https://api.kimi.com/coding/v1/chat/completions", route.UpstreamPath)
+
+	settings.AdvancedCustom.Routes[0].UpstreamPath = "https://custom.example/chat"
+	settings.CodingPlanProvider = "https://api.kimi.com/coding/v1/"
+	channel.SetOtherSettings(settings)
+	require.NoError(t, validateChannel(channel, false))
+	settings = channel.GetOtherSettings()
+	assert.Equal(t, dto.CodingPlanProviderKimi, settings.CodingPlanProvider)
+	assert.Equal(t, "https://custom.example/chat", settings.AdvancedCustom.Routes[0].UpstreamPath)
+}
+
 func TestNewAPIChannelRegistration(t *testing.T) {
 	apiType, ok := common.ChannelType2APIType(constant.ChannelTypeNewAPI)
 

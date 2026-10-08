@@ -22,6 +22,7 @@ import {
   screen,
   waitFor,
   cleanup,
+  within,
 } from '@testing-library/react'
 import i18next from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
@@ -97,4 +98,76 @@ test('ordinary users can filter billing by date, paginate with the range, and re
   })
   fireEvent.click(screen.getByRole('button', { name: 'Reset filters' }))
   await waitFor(() => expect(calls.at(-1)).not.toContain('timestamp'))
+})
+
+test('shows provider-specific receipt and invoice guidance', async () => {
+  useAuthStore
+    .getState()
+    .auth.setUser({ id: 7, username: 'provider-user', role: 1 })
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
+      data: {
+        items: [
+          {
+            id: 1,
+            user_id: 7,
+            trade_no: 'waffo-order',
+            money: 12,
+            amount: 12,
+            status: 'success',
+            create_time: 100,
+            complete_time: 101,
+            payment_method: 'waffo_pancake',
+            payment_provider: 'waffo_pancake',
+          },
+          {
+            id: 2,
+            user_id: 7,
+            trade_no: 'crypto-order',
+            money: 12,
+            amount: 12,
+            status: 'success',
+            create_time: 100,
+            complete_time: 101,
+            payment_method: 'nowpayments',
+            payment_provider: 'nowpayments',
+          },
+        ],
+        total: 2,
+      },
+    },
+  })
+  const i18n = i18next.createInstance()
+  await i18n.use(initReactI18next).init({ lng: 'en', resources: {} })
+  render(
+    <I18nextProvider i18n={i18n}>
+      <BillingHistoryDialog open onOpenChange={() => {}} />
+    </I18nextProvider>
+  )
+
+  const waffoRow = (await screen.findByText('waffo-order')).closest('tr')
+  expect(waffoRow).not.toBeNull()
+  expect(
+    within(waffoRow as HTMLTableRowElement).queryByText('View receipt')
+  ).not.toBeInTheDocument()
+  fireEvent.click(waffoRow as HTMLTableRowElement)
+  expect(
+    screen.getByText(
+      'Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.'
+    )
+  ).toBeVisible()
+  fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0])
+
+  const cryptoRow = screen.getByText('crypto-order').closest('tr')
+  expect(cryptoRow).not.toBeNull()
+  expect(
+    within(cryptoRow as HTMLTableRowElement).getByText('View receipt')
+  ).toBeVisible()
+  fireEvent.click(cryptoRow as HTMLTableRowElement)
+  expect(
+    screen.getByText(
+      'Cryptocurrency payments can provide a payment receipt, but cannot be invoiced.'
+    )
+  ).toBeVisible()
 })

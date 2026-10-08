@@ -149,6 +149,7 @@ export interface AdvancedCustomRouteAuth {
 
 export type AdvancedCustomConverter =
   | 'none'
+  | 'openai_completions_to_openai_chat_completions'
   | 'anthropic_messages_to_openai_chat_completions'
   | 'openai_chat_completions_to_anthropic_messages'
   | 'openai_chat_completions_to_openai_responses'

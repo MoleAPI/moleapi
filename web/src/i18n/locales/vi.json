@@ -2123,7 +2123,6 @@
     "Downgrade to this group after the subscription expires": "Hạ xuống nhóm này sau khi đăng ký hết hạn",
     "Download": "Tải xuống",
     "Download CSV": "Tải CSV",
-    "Download invoice": "Tải hóa đơn",
     "Drag {{group}} to reorder": "Kéo {{group}} để sắp xếp lại",
     "Drag to move": "Kéo để di chuyển",
     "Drag to resize": "Kéo để thay đổi kích cỡ",
@@ -4468,7 +4467,7 @@
     "OpenAI Chat to OpenAI Responses": "OpenAI Chat sang OpenAI Responses",
     "OpenAI Compatible": "Tương thích OpenAI",
     "OpenAI Compatible Upstream": "Thượng nguồn tương thích OpenAI",
-    "OpenAI Completions to OpenAI Chat": "OpenAI Completions to OpenAI Chat",
+    "OpenAI Completions to OpenAI Chat": "OpenAI Completions sang OpenAI Chat",
     "OpenAI Models route does not support client model rules": "Tuyến Mô hình OpenAI không hỗ trợ quy tắc mô hình phía máy khách",
     "OpenAI Models route does not support pass-through": "Tuyến Mô hình OpenAI không hỗ trợ truyền thẳng",
     "OpenAI Models route is required to enable upstream model checks": "Cần có tuyến Mô hình OpenAI để bật kiểm tra mô hình thượng nguồn",
@@ -7361,7 +7360,6 @@
     "View document": "Xem tài liệu",
     "View groups and prefill groups.": "Xem nhóm và nhóm điền sẵn.",
     "View installed task plugins and their settings.": "Xem các plugin tác vụ đã cài đặt và cài đặt của chúng.",
-    "View invoice": "Xem hóa đơn",
     "View issued reset credits, grant dates, and expiration.": "Xem các lượt đặt lại đã cấp, ngày cấp và thời điểm hết hạn.",
     "View key for API token “{{name}}”": "Xem khóa mã thông báo API “{{name}}”",
     "View logs": "Xem nhật ký",
@@ -7619,6 +7617,11 @@
     "Qwen Coding Plan": "Gói lập trình Qwen",
     "Qwen Token Plan": "Gói token Qwen",
     "Volcengine Agent Plan": "Gói Volcengine Agent",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "View receipt": "Xem biên nhận thanh toán",
+    "Download receipt": "Tải biên nhận thanh toán",
+    "Request invoice": "Yêu cầu hóa đơn",
+    "Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.": "Waffo Pancake phát hành hóa đơn chính thức. Hãy dùng liên kết trong email biên nhận để mở cổng khách hàng và tải hóa đơn.",
+    "Cryptocurrency payments can provide a payment receipt, but cannot be invoiced.": "Thanh toán bằng tiền mã hóa có thể cung cấp biên nhận thanh toán nhưng không thể xuất hóa đơn."
   }
 }

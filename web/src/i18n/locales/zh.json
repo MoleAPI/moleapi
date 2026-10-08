@@ -2123,7 +2123,6 @@
     "Downgrade to this group after the subscription expires": "订阅过期后降级到该分组",
     "Download": "下载",
     "Download CSV": "下载 CSV",
-    "Download invoice": "下载充值凭证",
     "Drag {{group}} to reorder": "拖动 {{group}} 以重新排序",
     "Drag to move": "拖动以移动",
     "Drag to resize": "拖动以调整大小",
@@ -7361,7 +7360,6 @@
     "View document": "查看文档",
     "View groups and prefill groups.": "查看分组和预填充分组。",
     "View installed task plugins and their settings.": "查看已安装的任务插件及其设置。",
-    "View invoice": "查看发票",
     "View issued reset credits, grant dates, and expiration.": "查看已发放的重置次数、发放日期和到期时间。",
     "View key for API token “{{name}}”": "查看 API 令牌「{{name}}」的密钥",
     "View logs": "查看日志",
@@ -7619,6 +7617,11 @@
     "Qwen Coding Plan": "通义千问编程套餐",
     "Qwen Token Plan": "通义千问 Token 套餐",
     "Volcengine Agent Plan": "火山方舟 Agent Plan",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "View receipt": "查看支付凭据",
+    "Download receipt": "下载支付凭据",
+    "Request invoice": "申请发票",
+    "Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.": "Waffo Pancake 会开具官方发票。请通过其收据邮件中的链接进入客户门户下载。",
+    "Cryptocurrency payments can provide a payment receipt, but cannot be invoiced.": "加密货币付款可提供支付凭据，但无法开具发票。"
   }
 }

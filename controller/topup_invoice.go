@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
+	"github.com/go-opentype/fonts/notosanssc"
 	"github.com/go-pdf/fpdf"
 )
 
@@ -39,7 +40,7 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{.SystemName}} Invoice {{.InvoiceNo}}</title>
+  <title>{{.SystemName}} Payment Receipt {{.InvoiceNo}}</title>
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; background: #f5f7fa; color: #1f2933; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
@@ -73,13 +74,13 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
     <header>
       <div>
         <div class="brand">{{.SystemName}}</div>
-        <h1>Top-up Invoice</h1>
+        <h1>Payment Receipt</h1>
       </div>
       <div class="status">Paid</div>
     </header>
 
-    <section class="grid" aria-label="Invoice summary">
-      <div><div class="label">Invoice No.</div><div class="value">{{.InvoiceNo}}</div></div>
+    <section class="grid" aria-label="Payment receipt summary">
+      <div><div class="label">Receipt No.</div><div class="value">{{.InvoiceNo}}</div></div>
       <div><div class="label">Issued At</div><div class="value">{{.IssuedAt}}</div></div>
       <div><div class="label">Customer</div><div class="value">{{.CustomerName}}</div></div>
       <div><div class="label">Email</div><div class="value">{{.CustomerEmail}}</div></div>
@@ -106,7 +107,7 @@ var topUpInvoiceTemplate = template.Must(template.New("topup-invoice").Parse(`<!
       </tr></tbody>
     </table>
 
-    <footer>This invoice was generated from the completed top-up record stored by {{.SystemName}}.</footer>
+    <footer>This payment receipt was generated from the completed top-up record stored by {{.SystemName}}.</footer>
   </main>
 </body>
 </html>`))
@@ -129,16 +130,20 @@ func GetTopUpInvoice(c *gin.Context) {
 		common.ApiErrorMsg(c, "仅成功订单支持下载凭证")
 		return
 	}
+	if topUp.PaymentProvider == model.PaymentProviderWaffoPancake || topUp.PaymentMethod == model.PaymentProviderWaffoPancake {
+		common.ApiErrorMsg(c, "Waffo Pancake 订单仅支持官方发票")
+		return
+	}
 
 	user, _ := model.GetUserById(topUp.UserId, false)
 	isDownload := c.Query("download") == "1"
-	filename := fmt.Sprintf("invoice-%s.html", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
+	filename := fmt.Sprintf("receipt-%s.html", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
 	contentType := "text/html; charset=utf-8"
 	var invoiceBytes []byte
 	if isDownload {
 		invoiceBytes, err = renderTopUpInvoicePDF(topUp, user)
 		contentType = "application/pdf"
-		filename = fmt.Sprintf("invoice-%s.pdf", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
+		filename = fmt.Sprintf("receipt-%s.pdf", sanitizeTopUpInvoiceFilename(topUp.TradeNo))
 	} else {
 		invoiceBytes, err = renderTopUpInvoice(topUp, user)
 	}
@@ -184,7 +189,9 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 
 	view := newTopUpInvoiceView(topUp, user)
 	pdf := fpdf.New("P", "mm", "A4", "")
-	pdf.SetTitle(view.SystemName+" Invoice "+view.InvoiceNo, true)
+	// ponytail: one embedded face covers every stored value; add another face only if dynamic text needs distinct styling.
+	pdf.AddUTF8FontFromBytes("NotoSansSC", "", notosanssc.TTF)
+	pdf.SetTitle(view.SystemName+" Payment Receipt "+view.InvoiceNo, true)
 	pdf.SetAuthor(view.SystemName, true)
 	pdf.SetMargins(18, 18, 18)
 	pdf.SetAutoPageBreak(true, 18)
@@ -193,11 +200,11 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 	pdf.SetLineWidth(0.2)
 
 	pdf.SetTextColor(102, 112, 133)
-	pdf.SetFont("Helvetica", "B", 9)
+	pdf.SetFont("NotoSansSC", "", 9)
 	pdf.CellFormat(0, 6, pdfSafeText(view.SystemName), "", 1, "L", false, 0, "")
 	pdf.SetTextColor(16, 24, 40)
 	pdf.SetFont("Helvetica", "B", 24)
-	pdf.CellFormat(0, 12, "Top-up Invoice", "", 0, "L", false, 0, "")
+	pdf.CellFormat(0, 12, "Payment Receipt", "", 0, "L", false, 0, "")
 	pdf.SetXY(170, 22)
 	pdf.SetFillColor(236, 253, 243)
 	pdf.SetTextColor(6, 118, 71)
@@ -206,7 +213,7 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 	pdf.Line(18, 42, 192, 42)
 
 	fields := [][2]string{
-		{"Invoice No.", view.InvoiceNo},
+		{"Receipt No.", view.InvoiceNo},
 		{"Issued At", view.IssuedAt},
 		{"Customer", view.CustomerName},
 		{"Email", view.CustomerEmail},
@@ -253,8 +260,8 @@ func renderTopUpInvoicePDF(topUp *model.TopUp, user *model.User) ([]byte, error)
 
 	pdf.SetXY(18, rowY+48)
 	pdf.SetTextColor(102, 112, 133)
-	pdf.SetFont("Helvetica", "", 9)
-	pdf.MultiCell(0, 5, pdfSafeText("This invoice was generated from the completed top-up record stored by "+view.SystemName+"."), "", "L", false)
+	pdf.SetFont("NotoSansSC", "", 9)
+	pdf.MultiCell(0, 5, pdfSafeText("This payment receipt was generated from the completed top-up record stored by "+view.SystemName+"."), "", "L", false)
 
 	var buf bytes.Buffer
 	if err := pdf.Output(&buf); err != nil {
@@ -270,7 +277,7 @@ func drawTopUpInvoicePDFField(pdf *fpdf.Fpdf, x, y, w float64, label string, val
 	pdf.CellFormat(w, 4, pdfSafeText(label), "", 1, "L", false, 0, "")
 	pdf.SetXY(x, y+5)
 	pdf.SetTextColor(16, 24, 40)
-	pdf.SetFont("Helvetica", "", 10)
+	pdf.SetFont("NotoSansSC", "", 10)
 	pdf.MultiCell(w, 5, pdfSafeText(value), "", "L", false)
 }
 
@@ -284,7 +291,7 @@ func drawTopUpInvoicePDFStack(pdf *fpdf.Fpdf, x, y, w float64, fields [][2]strin
 func newTopUpInvoiceView(topUp *model.TopUp, user *model.User) topUpInvoiceView {
 	return topUpInvoiceView{
 		SystemName:      common.SystemName,
-		InvoiceNo:       fmt.Sprintf("INV-%d", topUp.Id),
+		InvoiceNo:       fmt.Sprintf("REC-%d", topUp.Id),
 		CustomerName:    formatTopUpInvoiceCustomer(user, topUp.UserId),
 		CustomerEmail:   formatTopUpInvoiceEmail(user),
 		TradeNo:         valueOrDash(topUp.TradeNo),
@@ -311,10 +318,10 @@ func pdfSafeText(value string) string {
 		switch {
 		case r == '\n', r == '\r', r == '\t':
 			builder.WriteByte(' ')
-		case r >= 32 && r <= 126:
-			builder.WriteRune(r)
+		case r < 32 || r == 127:
+			continue
 		default:
-			builder.WriteByte('?')
+			builder.WriteRune(r)
 		}
 	}
 	if builder.Len() == 0 {

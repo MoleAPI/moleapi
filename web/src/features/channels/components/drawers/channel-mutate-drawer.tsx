@@ -171,7 +171,10 @@ import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   channelFormSchema,
   channelsQueryKeys,
+  getCodingPlanPresetConfig,
   getAdvancedCustomStats,
+  parseAdvancedCustomConfig,
+  stringifyAdvancedCustomConfig,
   transformChannelToFormDefaults,
   type ChannelFormValues,
   deduplicateKeys,
@@ -4241,9 +4244,36 @@ export function ChannelMutateDrawer({
                       <FormLabel>{t('Coding plan provider')}</FormLabel>
                       <Select
                         value={field.value || '__none__'}
-                        onValueChange={(value) =>
-                          field.onChange(value === '__none__' ? '' : value)
-                        }
+                        onValueChange={(value) => {
+                          const provider =
+                            !value || value === '__none__' ? '' : value
+                          const currentConfig = parseAdvancedCustomConfig(
+                            form.getValues('advanced_custom')
+                          )
+                          const previousPreset = getCodingPlanPresetConfig(
+                            field.value || ''
+                          )
+                          field.onChange(provider)
+                          const nextPreset = getCodingPlanPresetConfig(provider)
+                          if (
+                            nextPreset &&
+                            (!currentConfig ||
+                              (previousPreset &&
+                                stringifyAdvancedCustomConfig(currentConfig) ===
+                                  stringifyAdvancedCustomConfig(
+                                    previousPreset
+                                  )))
+                          ) {
+                            form.setValue(
+                              'advanced_custom',
+                              stringifyAdvancedCustomConfig(nextPreset),
+                              {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              }
+                            )
+                          }
+                        }}
                         disabled={sensitiveLocked}
                       >
                         <FormControl>

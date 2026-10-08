@@ -430,7 +430,7 @@ func parseVolcengineAgentQuota(body []byte) (string, []codingPlanProviderWindow,
 	for _, item := range []struct {
 		key  string
 		name string
-	}{{"AFPFiveHour", "5 hours"}, {"AFPWeekly", "7 days"}, {"AFPMonthly", "Month"}} {
+	}{{"AFPFiveHour", "5 hours"}, {"AFPDaily", "1 day"}, {"AFPWeekly", "7 days"}, {"AFPMonthly", "Month"}} {
 		window := mapValue(result, item.key)
 		quota, ok := quotaNumber(window["Quota"])
 		if !ok || quota <= 0 {

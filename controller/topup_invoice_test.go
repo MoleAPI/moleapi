@@ -128,7 +128,8 @@ func TestGetTopUpInvoiceShowsCompletedOrderInlineForOwner(t *testing.T) {
 	assert.Contains(t, recorder.Header().Get("Content-Disposition"), "inline")
 	assert.Equal(t, "private, no-store", recorder.Header().Get("Cache-Control"))
 	body := recorder.Body.String()
-	assert.Contains(t, body, "Top-up Invoice")
+	assert.Contains(t, body, "Payment Receipt")
+	assert.Contains(t, body, "Receipt No.")
 	assert.Contains(t, body, "Print / Save PDF")
 	assert.Contains(t, body, topUp.TradeNo)
 	assert.Contains(t, body, topUp.GatewayTradeNo)
@@ -189,7 +190,20 @@ func TestGetTopUpInvoiceRejectsIncompleteOrder(t *testing.T) {
 	recorder := performTopUpInvoiceRequest(topUp.Id, user, false)
 
 	requireTopUpInvoiceAPIError(t, recorder, "仅成功订单支持下载凭证")
-	assert.NotContains(t, recorder.Body.String(), "Top-up Invoice")
+	assert.NotContains(t, recorder.Body.String(), "Payment Receipt")
+}
+
+func TestGetTopUpInvoiceRejectsWaffoPancakeOrder(t *testing.T) {
+	db := setupTopUpInvoiceTestDB(t)
+	user := insertTopUpInvoiceUser(t, db, "invoice_waffo_pancake", common.RoleCommonUser)
+	topUp := insertTopUpInvoiceOrder(t, db, user.Id, common.TopUpStatusSuccess)
+	topUp.PaymentMethod = model.PaymentProviderWaffoPancake
+	topUp.PaymentProvider = model.PaymentProviderWaffoPancake
+	require.NoError(t, db.Save(topUp).Error)
+
+	recorder := performTopUpInvoiceRequest(topUp.Id, user, false)
+
+	requireTopUpInvoiceAPIError(t, recorder, "Waffo Pancake 订单仅支持官方发票")
 }
 
 func TestRenderTopUpInvoiceEscapesStoredCustomerContent(t *testing.T) {
@@ -202,4 +216,15 @@ func TestRenderTopUpInvoiceEscapesStoredCustomerContent(t *testing.T) {
 	html := string(htmlBytes)
 	assert.NotContains(t, html, "<script>")
 	assert.True(t, strings.Contains(html, "&lt;script&gt;") || strings.Contains(html, "&lt;script"))
+}
+
+func TestRenderTopUpInvoicePDFPreservesChineseCustomerName(t *testing.T) {
+	topUp := &model.TopUp{Id: 1, UserId: 2, Status: common.TopUpStatusSuccess, TradeNo: "chinese-name"}
+	user := &model.User{DisplayName: "张三", Email: "zhangsan@example.com"}
+
+	pdfBytes, err := renderTopUpInvoicePDF(topUp, user)
+
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(string(pdfBytes), "%PDF-"))
+	assert.Equal(t, "张三", pdfSafeText(user.DisplayName))
 }

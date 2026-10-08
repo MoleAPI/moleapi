@@ -178,6 +178,66 @@ func TestCalculateStripeTopUpQuoteMatchesDisplayedAndCheckoutAmount(t *testing.T
 	}
 }
 
+func TestStripeTopUpQuoteAcceptsTokenDisplayAmountAboveLegacyFixedLimit(t *testing.T) {
+	db := setupTopUpInvoiceTestDB(t)
+	user := insertTopUpInvoiceUser(t, db, "stripe_token_quote", common.RoleCommonUser)
+
+	paymentSetting := operation_setting.GetPaymentSetting()
+	originalComplianceConfirmed := paymentSetting.ComplianceConfirmed
+	originalComplianceVersion := paymentSetting.ComplianceTermsVersion
+	originalAPISecret := setting.StripeApiSecret
+	originalWebhookSecret := setting.StripeWebhookSecret
+	originalPriceID := setting.StripePriceId
+	originalUnitPrice := setting.StripeUnitPrice
+	originalMinTopUp := setting.StripeMinTopUp
+	originalDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType
+	originalQuotaPerUnit := common.QuotaPerUnit
+	stripeTopUpPriceCache.Lock()
+	originalCachedAPISecret := stripeTopUpPriceCache.apiSecret
+	originalCachedConfig := stripeTopUpPriceCache.config
+	stripeTopUpPriceCache.Unlock()
+	t.Cleanup(func() {
+		paymentSetting.ComplianceConfirmed = originalComplianceConfirmed
+		paymentSetting.ComplianceTermsVersion = originalComplianceVersion
+		setting.StripeApiSecret = originalAPISecret
+		setting.StripeWebhookSecret = originalWebhookSecret
+		setting.StripePriceId = originalPriceID
+		setting.StripeUnitPrice = originalUnitPrice
+		setting.StripeMinTopUp = originalMinTopUp
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalDisplayType
+		common.QuotaPerUnit = originalQuotaPerUnit
+		stripeTopUpPriceCache.Lock()
+		stripeTopUpPriceCache.apiSecret = originalCachedAPISecret
+		stripeTopUpPriceCache.config = originalCachedConfig
+		stripeTopUpPriceCache.Unlock()
+	})
+
+	paymentSetting.ComplianceConfirmed = true
+	paymentSetting.ComplianceTermsVersion = operation_setting.CurrentComplianceTermsVersion
+	setting.StripeApiSecret = "sk_test_token_quote"
+	setting.StripeWebhookSecret = "whsec_test_token_quote"
+	setting.StripePriceId = "price_test_token_quote"
+	setting.StripeUnitPrice = 1
+	setting.StripeMinTopUp = 1
+	common.QuotaPerUnit = 500_000
+	operation_setting.GetGeneralSetting().QuotaDisplayType = operation_setting.QuotaDisplayTypeTokens
+	stripeTopUpPriceCache.Lock()
+	stripeTopUpPriceCache.apiSecret = setting.StripeApiSecret
+	stripeTopUpPriceCache.config = stripeTopUpPriceConfig{
+		priceID:   setting.StripePriceId,
+		productID: "prod_test_token_quote",
+		currency:  stripe.CurrencyUSD,
+	}
+	stripeTopUpPriceCache.Unlock()
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Set("id", user.Id)
+	stripeAdaptor.RequestAmount(context, &StripePayRequest{Amount: 3 * int64(common.QuotaPerUnit)})
+
+	assert.JSONEq(t, `{"message":"success","data":"3.00"}`, recorder.Body.String())
+}
+
 func TestCalculateStripeTopUpQuoteRejectsUnsafeAmounts(t *testing.T) {
 	originalUnitPrice := setting.StripeUnitPrice
 	originalMinTopUp := setting.StripeMinTopUp

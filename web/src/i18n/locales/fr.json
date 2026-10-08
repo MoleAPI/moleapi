@@ -2123,7 +2123,6 @@
     "Downgrade to this group after the subscription expires": "Rétrograder vers ce groupe après l'expiration de l'abonnement",
     "Download": "Télécharger",
     "Download CSV": "Télécharger le CSV",
-    "Download invoice": "Télécharger la facture",
     "Drag {{group}} to reorder": "Faites glisser {{group}} pour réorganiser",
     "Drag to move": "Glisser pour déplacer",
     "Drag to resize": "Glisser pour redimensionner",
@@ -7361,7 +7360,6 @@
     "View document": "Afficher le document",
     "View groups and prefill groups.": "Afficher les groupes et les groupes de préremplissage.",
     "View installed task plugins and their settings.": "Afficher les plugins de tâche installés et leurs paramètres.",
-    "View invoice": "Voir la facture",
     "View issued reset credits, grant dates, and expiration.": "Voir les crédits de réinitialisation émis, les dates d'attribution et d'expiration.",
     "View key for API token “{{name}}”": "Consulter la clé du jeton API « {{name}} »",
     "View logs": "Voir les logs",
@@ -7619,6 +7617,11 @@
     "Qwen Coding Plan": "Forfait de codage Qwen",
     "Qwen Token Plan": "Forfait de jetons Qwen",
     "Volcengine Agent Plan": "Forfait Agent Volcengine",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "View receipt": "Voir le reçu de paiement",
+    "Download receipt": "Télécharger le reçu de paiement",
+    "Request invoice": "Demander une facture",
+    "Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.": "Waffo Pancake émet la facture officielle. Utilisez le lien dans son e-mail de reçu pour ouvrir le portail client et la télécharger.",
+    "Cryptocurrency payments can provide a payment receipt, but cannot be invoiced.": "Les paiements en cryptomonnaie peuvent fournir un reçu de paiement, mais ne peuvent pas être facturés."
   }
 }

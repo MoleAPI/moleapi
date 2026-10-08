@@ -24,10 +24,15 @@ import {
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_OPTIONS,
+  CODING_PLAN_PROVIDER_OPTIONS,
   MODEL_FETCHABLE_TYPES,
 } from '../../constants'
-import { CHANNEL_TYPE_ADVANCED_CUSTOM } from '../advanced-custom'
 import { channelSchema } from '../../types'
+import {
+  CHANNEL_TYPE_ADVANCED_CUSTOM,
+  getCodingPlanPresetConfig,
+  validateAdvancedCustomConfig,
+} from '../advanced-custom'
 import {
   CHANNEL_FORM_DEFAULT_VALUES,
   channelFormSchema,
@@ -106,6 +111,32 @@ describe('New API channel', () => {
 })
 
 describe('Coding plan channel settings', () => {
+  test('builds editable provider route defaults', () => {
+    for (const provider of CODING_PLAN_PROVIDER_OPTIONS) {
+      expect(
+        validateAdvancedCustomConfig(getCodingPlanPresetConfig(provider.value)),
+        provider.value
+      ).toBeNull()
+    }
+
+    const config = getCodingPlanPresetConfig('kimi-coding-plan')
+
+    expect(config).not.toBeNull()
+    expect(validateAdvancedCustomConfig(config)).toBeNull()
+    expect(config?.advanced_routes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          incoming_path: '/v1/chat/completions',
+          upstream_path: 'https://api.kimi.com/coding/v1/chat/completions',
+        }),
+        expect.objectContaining({
+          incoming_path: '/v1/models',
+          upstream_path: 'https://api.kimi.com/coding/v1/models',
+        }),
+      ])
+    )
+  })
+
   test('round-trips provider metadata and local quota windows', () => {
     const form = channelFormSchema.parse({
       ...CHANNEL_FORM_DEFAULT_VALUES,
