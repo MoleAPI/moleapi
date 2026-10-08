@@ -73,7 +73,49 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 
 	lowerMessage := strings.ToLower(err.Error())
 	search, _ := AcSearch(lowerMessage, operation_setting.AutomaticDisableKeywords, true)
-	return search
+	return search || isQuotaExhaustedMessage(lowerMessage)
+}
+
+func isQuotaExhaustedMessage(message string) bool {
+	for _, marker := range []string{
+		"quota exceeded",
+		"quota_exceeded",
+		"quotaexceeded",
+		"quota exhausted",
+		"quota_exhausted",
+		"quotaexhausted",
+		"quota depleted",
+		"quota_depleted",
+		"call count exceeded quota",
+		"insufficient quota",
+		"insufficient_quota",
+		"insufficientquota",
+		"insufficient balance",
+		"credit balance is too low",
+		"no credits remaining",
+		"usage quota exceeded",
+		"usage quota exhausted",
+		"usage limit exceeded",
+		"usage limit reached",
+		"daily usage limit reached",
+		"weekly usage limit reached",
+		"monthly usage limit reached",
+		"reached your daily usage limit",
+		"reached your weekly usage limit",
+		"reached your monthly usage limit",
+		"subscription expired",
+		"not subscribed",
+		"调用次数超出配额",
+		"配额耗尽",
+		"额度耗尽",
+		"套餐额度用尽",
+		"套餐额度已用尽",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func ShouldConfirmModelFailure(err *types.NewAPIError) bool {

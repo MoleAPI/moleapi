@@ -62,6 +62,7 @@ import type {
   PlaygroundConfig,
 } from '@/features/playground/types'
 import { getUserBillingHistory } from '@/features/wallet/api'
+import { canRequestTopUpInvoice } from '@/features/wallet/lib/billing'
 import { toIntlLocale } from '@/i18n/languages'
 import { formatNumber } from '@/lib/format'
 import { handleServerError } from '@/lib/handle-server-error'
@@ -91,6 +92,8 @@ export function TicketCreateForm(props: {
     subject: string
     content: string
   }
+  initialType?: TicketType
+  initialBillingRecordId?: number
   initialFiles?: File[]
 }) {
   const { t, i18n } = useTranslation()
@@ -114,11 +117,13 @@ export function TicketCreateForm(props: {
     updateConfig: (key, value) =>
       setPolishConfig((current) => ({ ...current, [key]: value })),
   })
-  const [selectedBillingIds, setSelectedBillingIds] = useState<number[]>([])
+  const [selectedBillingIds, setSelectedBillingIds] = useState<number[]>(
+    props.initialBillingRecordId ? [props.initialBillingRecordId] : []
+  )
   const form = useForm<TicketForm>({
     resolver: zodResolver(ticketSchema),
     defaultValues: {
-      type: props.initialValues?.type ?? 'API Integration',
+      type: props.initialValues?.type ?? props.initialType ?? 'API Integration',
       subject: props.initialValues?.subject ?? '',
       content: props.initialValues?.content ?? '',
       invoiceTitle: '',
@@ -148,11 +153,7 @@ export function TicketCreateForm(props: {
   })
 
   const billingRecords = (billing.data ?? []).filter(
-    (record) =>
-      type !== INVOICE_TYPE ||
-      (['alipay', 'wxpay', 'lantu'].includes(record.payment_method) &&
-        record.money > 0 &&
-        Number.isFinite(record.money))
+    (record) => type !== INVOICE_TYPE || canRequestTopUpInvoice(record)
   )
   const selectedRecords = billingRecords.filter((record) =>
     selectedBillingIds.includes(record.id)

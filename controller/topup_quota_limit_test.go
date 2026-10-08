@@ -84,9 +84,7 @@ func TestValidateTopUpQuotaReturnsMaximumAmount(t *testing.T) {
 		operation_setting.GetGeneralSetting().QuotaDisplayType = oldDisplayType
 	})
 
-	maxAmount := decimal.NewFromInt(common.MaxWalletQuota).
-		Div(decimal.NewFromFloat(common.QuotaPerUnit)).
-		Floor().IntPart()
+	maxAmount := maxTopUpUSD
 
 	_, err := validateTopUpQuota(maxAmount)
 	require.NoError(t, err)
@@ -107,9 +105,7 @@ func TestRequestAmountRejectsTopUpThatCannotBeSettled(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
-	maxAmount := decimal.NewFromInt(common.MaxWalletQuota).
-		Div(decimal.NewFromFloat(common.QuotaPerUnit)).
-		Floor().IntPart()
+	maxAmount := maxTopUpUSD
 	ctx.Request = httptest.NewRequest(
 		http.MethodPost,
 		"/api/user/amount",
@@ -121,6 +117,36 @@ func TestRequestAmountRejectsTopUpThatCannotBeSettled(t *testing.T) {
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
 	assert.JSONEq(t, fmt.Sprintf(`{"message":"error","data":"单笔充值数量不能大于 %d"}`, maxAmount), recorder.Body.String())
+}
+
+func TestNormalizeTopUpAmountEnforcesUSDValueCeilingAcrossDisplayUnits(t *testing.T) {
+	originalDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType
+	originalQuotaPerUnit := common.QuotaPerUnit
+	t.Cleanup(func() {
+		operation_setting.GetGeneralSetting().QuotaDisplayType = originalDisplayType
+		common.QuotaPerUnit = originalQuotaPerUnit
+	})
+
+	common.QuotaPerUnit = 500_000
+	for _, tc := range []struct {
+		name    string
+		display string
+		amount  int64
+		wantMax int64
+	}{
+		{name: "USD", display: operation_setting.QuotaDisplayTypeUSD, amount: 10_001, wantMax: 10_000},
+		{name: "CNY", display: operation_setting.QuotaDisplayTypeCNY, amount: 10_001, wantMax: 10_000},
+		{name: "custom currency", display: operation_setting.QuotaDisplayTypeCustom, amount: 10_001, wantMax: 10_000},
+		{name: "tokens", display: operation_setting.QuotaDisplayTypeTokens, amount: 5_000_500_000, wantMax: 5_000_000_000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			operation_setting.GetGeneralSetting().QuotaDisplayType = tc.display
+			_, err := normalizeTopUpAmount(tc.amount)
+			require.EqualError(t, err, fmt.Sprintf("单笔充值数量不能大于 %d", tc.wantMax))
+			_, err = normalizeTopUpAmount(tc.wantMax)
+			require.NoError(t, err)
+		})
+	}
 }
 
 func TestRequestAmountRejectsTopUpThatWouldOverflowWallet(t *testing.T) {

@@ -2123,7 +2123,6 @@
     "Downgrade to this group after the subscription expires": "Понизить до этой группы после истечения подписки",
     "Download": "Скачать",
     "Download CSV": "Скачать CSV",
-    "Download invoice": "Скачать счёт",
     "Drag {{group}} to reorder": "Перетащите {{group}}, чтобы изменить порядок",
     "Drag to move": "Перетащите, чтобы переместить",
     "Drag to resize": "Перетащите, чтобы изменить размер",
@@ -7361,7 +7360,6 @@
     "View document": "Просмотреть документ",
     "View groups and prefill groups.": "Просмотр групп и групп автозаполнения.",
     "View installed task plugins and their settings.": "Просмотр установленных плагинов задач и их настроек.",
-    "View invoice": "Открыть счёт",
     "View issued reset credits, grant dates, and expiration.": "Показать выданные сбросы лимита, даты выдачи и истечения.",
     "View key for API token “{{name}}”": "Просмотр ключа токена API «{{name}}»",
     "View logs": "Просмотреть логи",
@@ -7619,6 +7617,11 @@
     "Qwen Coding Plan": "План программирования Qwen",
     "Qwen Token Plan": "Токен-план Qwen",
     "Volcengine Agent Plan": "План Volcengine Agent",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "View receipt": "Открыть платёжную квитанцию",
+    "Download receipt": "Скачать платёжную квитанцию",
+    "Request invoice": "Запросить счёт-фактуру",
+    "Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.": "Официальный счёт выставляет Waffo Pancake. Перейдите по ссылке из письма с квитанцией в личный кабинет и скачайте его.",
+    "Cryptocurrency payments can provide a payment receipt, but cannot be invoiced.": "Для платежей в криптовалюте доступна платёжная квитанция, но выставить счёт-фактуру нельзя."
   }
 }

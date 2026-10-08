@@ -116,12 +116,14 @@ func TestParseOfficialCodingPlanQuotaResponses(t *testing.T) {
 	})
 
 	t.Run("volcengine agent plan", func(t *testing.T) {
-		plan, windows, err := parseVolcengineAgentQuota([]byte(`{"Result":{"PlanType":"pro","AFPFiveHour":{"Quota":100,"Used":25,"ResetTime":1790000000},"AFPWeekly":{"Quota":200,"Used":40}}}`))
+		plan, windows, err := parseVolcengineAgentQuota([]byte(`{"Result":{"PlanType":"Large","AFPFiveHour":{"Quota":"100.0","Used":"25.0","ResetTime":1790000000000},"AFPDaily":{"Quota":"150.0","Used":"30.0"},"AFPWeekly":{"Quota":"200.0","Used":"40.0"}}}`))
 		require.NoError(t, err)
-		assert.Equal(t, "pro", plan)
-		require.Len(t, windows, 2)
+		assert.Equal(t, "Large", plan)
+		require.Len(t, windows, 3)
 		assert.Equal(t, "5 hours", windows[0].Name)
 		assert.Equal(t, float64(25), windows[0].Used)
+		assert.Equal(t, "1 day", windows[1].Name)
+		assert.Equal(t, float64(20), windows[1].Used)
 	})
 
 	t.Run("command code", func(t *testing.T) {

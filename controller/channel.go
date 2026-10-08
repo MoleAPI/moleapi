@@ -591,6 +591,24 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 	if channel == nil {
 		return fmt.Errorf("channel cannot be empty")
 	}
+	if channel.Type == constant.ChannelTypeAdvancedCustom {
+		settings := channel.GetOtherSettings()
+		provider := strings.TrimSpace(settings.CodingPlanProvider)
+		if provider != "" {
+			preset, ok := dto.ResolveCodingPlanPreset(provider)
+			if !ok {
+				return fmt.Errorf("invalid coding plan provider: %s", provider)
+			}
+			if settings.AdvancedCustom == nil {
+				if err := settings.ApplyCodingPlanPreset(provider); err != nil {
+					return err
+				}
+			} else {
+				settings.CodingPlanProvider = preset.ID
+			}
+			channel.SetOtherSettings(settings)
+		}
+	}
 
 	// 校验 channel settings
 	if err := channel.ValidateSettings(); err != nil {

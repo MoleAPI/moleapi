@@ -191,6 +191,9 @@ type AmountRequest struct {
 	Amount int64 `json:"amount"`
 }
 
+// ponytail: one shared USD ceiling covers every custom-amount gateway; provider-specific limits remain in their adapters.
+const maxTopUpUSD int64 = 10_000
+
 func GetEpayClient() *epay.Client {
 	if operation_setting.EpayId == "" || operation_setting.EpayKey == "" {
 		return nil
@@ -270,6 +273,10 @@ func normalizeTopUpAmount(amount int64) (int64, error) {
 			return 0, errors.New("Token 充值数量必须对应完整的美元额度")
 		}
 	}
+	maxAmount := getMaxTopUpAmount()
+	if maxAmount <= 0 || amount > maxAmount {
+		return 0, fmt.Errorf("单笔充值数量不能大于 %d", maxAmount)
+	}
 
 	if normalized.LessThanOrEqual(decimal.Zero) || normalized.GreaterThan(decimal.NewFromInt(common.MaxWalletQuota)) {
 		return 0, errors.New("充值数量无效")
@@ -319,17 +326,22 @@ func getMaxTopUpAmount() int64 {
 		return 0
 	}
 	quotaPerUnit := decimal.NewFromFloat(common.QuotaPerUnit)
-	maxStoredAmount := decimal.NewFromInt(common.MaxWalletQuota).
-		Div(quotaPerUnit).
-		Floor()
+	maxAmount := decimal.NewFromInt(common.MaxWalletQuota).Div(quotaPerUnit).Floor()
 	if operation_setting.GetQuotaDisplayType() == operation_setting.QuotaDisplayTypeTokens {
-		return maxStoredAmount.Add(decimal.NewFromInt(1)).
-			Mul(quotaPerUnit).
-			Ceil().
-			Sub(decimal.NewFromInt(1)).
-			IntPart()
+		maxAmount = maxAmount.Add(decimal.NewFromInt(1)).Mul(quotaPerUnit).Ceil().Sub(decimal.NewFromInt(1))
 	}
-	return maxStoredAmount.IntPart()
+
+	// The request amount is always the system's USD credit amount. Only token
+	// display mode changes the wire unit; currency display is presentation-only.
+	maxCustomAmount := decimal.NewFromInt(maxTopUpUSD)
+	switch operation_setting.GetQuotaDisplayType() {
+	case operation_setting.QuotaDisplayTypeTokens:
+		maxCustomAmount = maxCustomAmount.Mul(quotaPerUnit)
+	}
+	if maxCustomAmount.LessThan(maxAmount) {
+		maxAmount = maxCustomAmount.Floor()
+	}
+	return maxAmount.IntPart()
 }
 
 func validateCreditedQuota(quota decimal.Decimal) (int, error) {

@@ -95,7 +95,10 @@ export function formatTimestamp(timestamp: number): string {
  * Owners and admins can view a completed top-up invoice.
  */
 export function getTopUpInvoiceUrl(
-  record: Pick<TopupRecord, 'id' | 'status' | 'user_id'>,
+  record: Pick<
+    TopupRecord,
+    'id' | 'status' | 'user_id' | 'payment_method' | 'payment_provider'
+  >,
   currentUserId?: number,
   isAdmin = false,
   download = false
@@ -103,6 +106,8 @@ export function getTopUpInvoiceUrl(
   if (
     (!isAdmin && record.user_id !== currentUserId) ||
     record.status !== 'success' ||
+    record.payment_method === 'waffo_pancake' ||
+    record.payment_provider === 'waffo_pancake' ||
     !Number.isSafeInteger(record.id) ||
     record.id <= 0
   ) {
@@ -112,11 +117,27 @@ export function getTopUpInvoiceUrl(
 }
 
 export function getTopUpInvoiceDownloadUrl(
-  record: Pick<TopupRecord, 'id' | 'status' | 'user_id'>,
+  record: Pick<
+    TopupRecord,
+    'id' | 'status' | 'user_id' | 'payment_method' | 'payment_provider'
+  >,
   currentUserId?: number,
   isAdmin = false
 ): string | null {
   return getTopUpInvoiceUrl(record, currentUserId, isAdmin, true)
+}
+
+export function canRequestTopUpInvoice(
+  record: Pick<TopupRecord, 'id' | 'status' | 'payment_method' | 'money'>
+): boolean {
+  return (
+    Number.isSafeInteger(record.id) &&
+    record.id > 0 &&
+    record.status === 'success' &&
+    ['alipay', 'wxpay', 'lantu'].includes(record.payment_method) &&
+    Number.isFinite(record.money) &&
+    record.money > 0
+  )
 }
 
 export function getInvoiceFilename(
@@ -128,7 +149,15 @@ export function getInvoiceFilename(
 }
 
 export async function fetchTopUpInvoiceFile(
-  record: Pick<TopupRecord, 'id' | 'status' | 'user_id' | 'trade_no'>,
+  record: Pick<
+    TopupRecord,
+    | 'id'
+    | 'status'
+    | 'user_id'
+    | 'trade_no'
+    | 'payment_method'
+    | 'payment_provider'
+  >,
   currentUserId: number | undefined,
   isAdmin: boolean,
   download = false
@@ -159,7 +188,7 @@ export async function fetchTopUpInvoiceFile(
   return {
     filename: getInvoiceFilename(
       contentDisposition,
-      `invoice-${record.trade_no}.pdf`
+      `receipt-${record.trade_no}.pdf`
     ),
     url: URL.createObjectURL(blob),
   }

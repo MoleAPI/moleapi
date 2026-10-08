@@ -18,6 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { InvoiceIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
+import { Link } from '@tanstack/react-router'
 import { Search, ChevronLeft, ChevronRight, Eye, Download } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -25,6 +26,7 @@ import { useTranslation } from 'react-i18next'
 import { CopyButton } from '@/components/copy-button'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -59,6 +61,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import { useBillingHistory } from '../../hooks/use-billing-history'
 import {
+  canRequestTopUpInvoice,
   getStatusConfig,
   getPaymentMethodName,
   formatTimestamp,
@@ -174,6 +177,17 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
   const detailInvoiceDownloadUrl = detailRecord
     ? getTopUpInvoiceUrl(detailRecord, currentUserId, isAdmin, true)
     : null
+
+  const detailCanRequestInvoice =
+    detailRecord && !isAdmin && canRequestTopUpInvoice(detailRecord)
+
+  const detailIsWaffoPancake =
+    detailRecord?.payment_method === 'waffo_pancake' ||
+    detailRecord?.payment_provider === 'waffo_pancake'
+
+  const detailIsCrypto =
+    detailRecord?.payment_method === 'nowpayments' ||
+    detailRecord?.payment_provider === 'nowpayments'
 
   const handleConfirmComplete = async () => {
     if (confirmTradeNo) {
@@ -471,7 +485,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                   strokeWidth={2}
                                   data-icon='inline-start'
                                 />
-                                {t('View invoice')}
+                                {t('View receipt')}
                               </Button>
                             )}
                             {invoiceDownloadUrl && (
@@ -486,7 +500,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                 }}
                               >
                                 <Download className='size-3.5' />
-                                {t('Download')}
+                                {t('Download receipt')}
                               </Button>
                             )}
                             {isAdmin && record.status === 'pending' && (
@@ -577,7 +591,7 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                     strokeWidth={2}
                     data-icon='inline-start'
                   />
-                  {t('View invoice')}
+                  {t('View receipt')}
                 </Button>
               )}
               {detailInvoiceDownloadUrl && (
@@ -587,7 +601,26 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                   onClick={() => void handleInvoice(detailRecord, true)}
                 >
                   <Download className='size-3.5' />
-                  {t('Download invoice')}
+                  {t('Download receipt')}
+                </Button>
+              )}
+              {detailCanRequestInvoice && (
+                <Button
+                  size='sm'
+                  render={
+                    <Link
+                      to='/support'
+                      search={{ invoice_record: detailRecord.id }}
+                    />
+                  }
+                  nativeButton={false}
+                >
+                  <HugeiconsIcon
+                    icon={InvoiceIcon}
+                    strokeWidth={2}
+                    data-icon='inline-start'
+                  />
+                  {t('Request invoice')}
                 </Button>
               )}
               <Button
@@ -654,6 +687,24 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                 label={t('Payment Channel')}
                 value={getPaymentMethodName(detailRecord.payment_provider, t)}
               />
+            )}
+            {detailIsWaffoPancake && (
+              <Alert>
+                <AlertDescription>
+                  {t(
+                    'Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.'
+                  )}
+                </AlertDescription>
+              </Alert>
+            )}
+            {detailIsCrypto && (
+              <Alert>
+                <AlertDescription>
+                  {t(
+                    'Cryptocurrency payments can provide a payment receipt, but cannot be invoiced.'
+                  )}
+                </AlertDescription>
+              </Alert>
             )}
             <BillingDetailRow
               label={t('Amount')}

@@ -130,6 +130,7 @@ describe('support page layout', () => {
           <TicketCreateForm
             accountEmail='user@example.com'
             onCreated={onCreated}
+            initialBillingRecordId={1}
             initialValues={{
               type: 'Invoice Request',
               subject: 'Combined invoice',
@@ -140,9 +141,9 @@ describe('support page layout', () => {
       </I18nextProvider>
     )
     expect(screen.getByRole('button', { name: 'Submit ticket' })).toBeDisabled()
-    await user.click(
+    expect(
       await screen.findByRole('checkbox', { name: /paid-order-1/ })
-    )
+    ).toBeChecked()
     await user.click(screen.getByRole('checkbox', { name: /paid-order-2/ }))
     expect(screen.queryByText(/stripe-order/)).not.toBeInTheDocument()
     expect(screen.getByText(/Invoice total \(actual paid\)/)).toHaveTextContent(
