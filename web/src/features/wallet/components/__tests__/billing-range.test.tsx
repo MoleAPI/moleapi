@@ -143,9 +143,12 @@ test('ordinary users can filter billing by date, paginate with the range, and re
 })
 
 test('shows provider-specific receipt and invoice guidance', async () => {
-  useAuthStore
-    .getState()
-    .auth.setUser({ id: 7, username: 'provider-user', role: 1 })
+  useAuthStore.getState().auth.setUser({
+    id: 7,
+    username: 'provider-user',
+    role: 1,
+    email: 'provider@example.com',
+  })
   vi.spyOn(api, 'get').mockImplementation(async (url) => ({
     data: {
       success: true,
@@ -272,4 +275,48 @@ test('shows provider-specific receipt and invoice guidance', async () => {
       'Cryptocurrency payments are not eligible for tax invoices.'
     )
   ).toBeVisible()
+})
+
+test('users without an email can request an invoice without ticket lookup retries', async () => {
+  useAuthStore
+    .getState()
+    .auth.setUser({ id: 7, username: 'no-email-user', role: 1 })
+  const get = vi.spyOn(api, 'get').mockImplementation(async (url) => ({
+    data: {
+      success: true,
+      data: url.startsWith('/api/user/topup/self?')
+        ? {
+            items: [
+              {
+                id: 8,
+                user_id: 7,
+                trade_no: 'invoiceable-order',
+                money: 12,
+                amount: 12,
+                status: 'success',
+                create_time: 100,
+                complete_time: 101,
+                payment_method: 'alipay',
+                payment_provider: 'epay',
+              },
+            ],
+            total: 1,
+          }
+        : {},
+    },
+  }))
+  const i18n = i18next.createInstance()
+  await i18n.use(initReactI18next).init({ lng: 'en', resources: {} })
+  renderBillingDialog(i18n)
+
+  const row = (await screen.findByText('invoiceable-order')).closest('tr')
+  expect(row).not.toBeNull()
+  expect(
+    within(row as HTMLTableRowElement)
+      .getByText('Request tax invoice')
+      .closest('a')
+  ).toHaveAttribute('href', '/support?invoice_record=8')
+  expect(
+    get.mock.calls.filter(([url]) => url === '/api/support/invoice-tickets')
+  ).toHaveLength(0)
 })

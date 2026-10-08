@@ -93,22 +93,26 @@ func GetChannelSuccessMetrics(c *gin.Context) {
 		})
 		return
 	}
-	var usage24h map[int]int64
+	var usage map[int]int64
 	if c.Query("include_usage") == "true" {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
 		defer cancel()
-		now := time.Now().Unix()
-		usage24h, err = model.ChannelQuotaUsage(ctx, now-86400, now)
+		start, end := channelUsageRange(c.Query("usage_period"), time.Now())
+		usage, err = model.ChannelQuotaUsage(ctx, start, end)
 		if err != nil {
 			common.SysError("channel usage query failed: " + err.Error())
 		}
 	}
+	data := gin.H{
+		"usage":    usage,
+		"channels": result.Channels,
+	}
+	if period := c.Query("usage_period"); period == "" || period == "24h" {
+		data["usage_24h"] = usage
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"data": gin.H{
-			"usage_24h": usage24h,
-			"channels":  result.Channels,
-		},
+		"data":    data,
 	})
 }
 

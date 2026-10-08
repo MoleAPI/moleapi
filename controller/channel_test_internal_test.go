@@ -53,7 +53,31 @@ func TestGetChannelDefaultBaseURLsUsesBuiltInDefaults(t *testing.T) {
 	assert.NotContains(t, response.Data, constant.ChannelTypeTaskPlugin)
 }
 
-func TestGetAllChannelsSortsStatusUsedAnd24HourUsage(t *testing.T) {
+func TestChannelUsageRange(t *testing.T) {
+	location := time.FixedZone("UTC+8", 8*60*60)
+	now := time.Date(2026, time.October, 8, 15, 30, 0, 0, location)
+	tests := []struct {
+		period string
+		start  time.Time
+		end    time.Time
+	}{
+		{period: "24h", start: now.Add(-24 * time.Hour), end: now},
+		{period: "yesterday", start: time.Date(2026, time.October, 7, 0, 0, 0, 0, location), end: time.Date(2026, time.October, 8, 0, 0, 0, 0, location)},
+		{period: "7d", start: now.Add(-7 * 24 * time.Hour), end: now},
+		{period: "30d", start: now.Add(-30 * 24 * time.Hour), end: now},
+		{period: "invalid", start: now.Add(-24 * time.Hour), end: now},
+	}
+
+	for _, test := range tests {
+		t.Run(test.period, func(t *testing.T) {
+			start, end := channelUsageRange(test.period, now)
+			assert.Equal(t, test.start.Unix(), start)
+			assert.Equal(t, test.end.Unix(), end)
+		})
+	}
+}
+
+func TestGetAllChannelsSortsStatusUsedAndUsagePeriod(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Log{}))
 	channels := []model.Channel{
@@ -65,15 +89,16 @@ func TestGetAllChannelsSortsStatusUsedAnd24HourUsage(t *testing.T) {
 	now := time.Now().Unix()
 	require.NoError(t, db.Create(&[]model.Log{
 		{ChannelId: channels[0].Id, Type: model.LogTypeConsume, CreatedAt: now - 10, Quota: 200},
+		{ChannelId: channels[0].Id, Type: model.LogTypeConsume, CreatedAt: now - 2*24*60*60, Quota: 2000},
 		{ChannelId: channels[1].Id, Type: model.LogTypeConsume, CreatedAt: now - 10, Quota: 900},
 		{ChannelId: channels[2].Id, Type: model.LogTypeConsume, CreatedAt: now - 10, Quota: 500},
 	}).Error)
 
-	getNames := func(sortBy, sortOrder string, pageSize int) []string {
+	getNames := func(sortBy, sortOrder, usagePeriod string, pageSize int) []string {
 		t.Helper()
 		recorder := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(recorder)
-		ctx.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/channel/?sort_by=%s&sort_order=%s&page_size=%d", sortBy, sortOrder, pageSize), nil)
+		ctx.Request = httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/channel/?sort_by=%s&sort_order=%s&usage_period=%s&page_size=%d", sortBy, sortOrder, usagePeriod, pageSize), nil)
 		GetAllChannels(ctx)
 		require.Equal(t, http.StatusOK, recorder.Code)
 		var response struct {
@@ -91,9 +116,10 @@ func TestGetAllChannelsSortsStatusUsedAnd24HourUsage(t *testing.T) {
 		return names
 	}
 
-	assert.Equal(t, []string{"low", "middle", "high"}, getNames("status", "asc", 20))
-	assert.Equal(t, []string{"high", "middle", "low"}, getNames("used_quota", "desc", 20))
-	assert.Equal(t, []string{"high", "middle"}, getNames("usage_24h", "desc", 2))
+	assert.Equal(t, []string{"low", "middle", "high"}, getNames("status", "asc", "", 20))
+	assert.Equal(t, []string{"high", "middle", "low"}, getNames("used_quota", "desc", "", 20))
+	assert.Equal(t, []string{"high", "middle"}, getNames("usage_24h", "desc", "24h", 2))
+	assert.Equal(t, []string{"low", "high"}, getNames("usage_24h", "desc", "7d", 2))
 }
 
 func TestValidateChannelProxy(t *testing.T) {

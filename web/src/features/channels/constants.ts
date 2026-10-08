@@ -33,6 +33,13 @@ export const CHANNEL_TYPE_VLLM = 62
 
 export const CHANNEL_TYPE_SGLANG = 63
 
+export const CHANNEL_USAGE_PERIOD_OPTIONS = [
+  { value: '24h', label: '24 Hours' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: '7d', label: '7 Days' },
+  { value: '30d', label: '30 Days' },
+] as const
+
 export const CODING_PLAN_PROVIDER_OPTIONS = [
   { value: 'glm-coding-plan', label: 'GLM Coding Plan (China)' },
   {

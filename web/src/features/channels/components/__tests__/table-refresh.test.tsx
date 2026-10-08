@@ -175,3 +175,30 @@ it('refetches the channel list with the current filters and marks Refresh busy w
   releaseMetrics()
   await waitFor(() => expect(refresh).toHaveAttribute('aria-busy', 'false'))
 })
+
+it('loads the selected usage period and keeps the all-time Used column', async () => {
+  const get = await renderChannelsPage(
+    () => Promise.resolve(),
+    () => Promise.resolve()
+  )
+
+  await userEvent.click(
+    screen.getByRole('button', { name: /^Usage period.*24 Hours/ })
+  )
+  await userEvent.click(screen.getByText('Yesterday'))
+
+  await waitFor(() => {
+    const metricsCalls = get.mock.calls.filter(
+      ([url]) => url === '/api/data/channel-success'
+    )
+    expect(metricsCalls.at(-1)?.[1]?.params.usage_period).toBe('yesterday')
+    const channelCalls = get.mock.calls.filter(
+      ([url]) => url === '/api/channel/search'
+    )
+    expect(channelCalls.at(-1)?.[1]?.params.usage_period).toBe('yesterday')
+  })
+  await userEvent.keyboard('{Escape}')
+  await userEvent.click(screen.getByRole('button', { name: 'Table view' }))
+  expect(screen.getByRole('columnheader', { name: /^Used/ })).toBeVisible()
+  expect(screen.getByRole('columnheader', { name: /^Yesterday/ })).toBeVisible()
+})

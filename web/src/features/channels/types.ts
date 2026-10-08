@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+import type { ChannelUsagePeriod } from '@/features/dashboard/types'
+
 // ============================================================================
 // Channel Schema & Types
 // ============================================================================
@@ -343,6 +345,7 @@ export interface GetChannelsParams {
   tag_mode?: boolean
   sort_by?: ChannelSortBy
   sort_order?: ChannelSortOrder
+  usage_period?: ChannelUsagePeriod
 }
 
 export interface SearchChannelsParams {
@@ -355,6 +358,7 @@ export interface SearchChannelsParams {
   tag_mode?: boolean
   sort_by?: ChannelSortBy
   sort_order?: ChannelSortOrder
+  usage_period?: ChannelUsagePeriod
   p?: number
   page_size?: number
 }
