@@ -211,7 +211,7 @@ func TestGetTopUpInvoiceDownloadsCompletedOrderWhenRequested(t *testing.T) {
 	assert.Contains(t, recorder.Body.String(), "/Subtype /Image")
 }
 
-func TestGetTopUpInvoiceAllowsAuditedAdminViewOfAnotherUsersOrder(t *testing.T) {
+func TestTopUpInvoiceAllowsAuditedAdminViewAndUpdateOfAnotherUsersOrder(t *testing.T) {
 	db := setupTopUpInvoiceTestDB(t)
 	owner := insertTopUpInvoiceUser(t, db, "invoice_owner_private", common.RoleCommonUser)
 	admin := insertTopUpInvoiceUser(t, db, "invoice_admin", common.RoleAdminUser)
@@ -221,11 +221,22 @@ func TestGetTopUpInvoiceAllowsAuditedAdminViewOfAnotherUsersOrder(t *testing.T) 
 
 	require.Equal(t, http.StatusOK, recorder.Code)
 	assert.Contains(t, recorder.Body.String(), topUp.TradeNo)
+	assert.Contains(t, recorder.Body.String(), "Edit information")
 	var auditLog model.AuditLog
 	require.NoError(t, db.Where("user_id = ? AND action = ?", admin.Id, "topup.invoice_view").First(&auditLog).Error)
 	assert.Contains(t, auditLog.Content, topUp.TradeNo)
 	require.NotNil(t, auditLog.Other.Op)
 	assert.Equal(t, "topup.invoice_view", auditLog.Other.Op.Action)
+
+	updateRecorder := performTopUpInvoiceUpdate(t, topUp.Id, admin, topUpInvoiceDetails{Company: "Admin Updated"})
+	require.Equal(t, http.StatusOK, updateRecorder.Code)
+	var stored model.TopUp
+	require.NoError(t, db.First(&stored, topUp.Id).Error)
+	assert.Contains(t, stored.InvoiceDetails, "Admin Updated")
+	var updateAuditLog model.AuditLog
+	require.NoError(t, db.Where("user_id = ? AND action = ?", admin.Id, "topup.invoice_update").First(&updateAuditLog).Error)
+	require.NotNil(t, updateAuditLog.Other.Op)
+	assert.Equal(t, "topup.invoice_update", updateAuditLog.Other.Op.Action)
 }
 
 func TestGetTopUpInvoiceDoesNotAllowAnotherUserToViewOrder(t *testing.T) {
