@@ -21,58 +21,143 @@ import assert from 'node:assert/strict'
 import { describe, test } from 'vitest'
 
 import {
-  getInvoiceFilename,
-  getTopUpInvoiceDownloadUrl,
+  canRequestTopUpInvoice,
   getTopUpInvoiceUrl,
+  getWaffoPancakeInvoiceUrl,
 } from '../billing'
 
 describe('top-up invoice download', () => {
   test('links the owner to a completed top-up invoice', () => {
     assert.equal(
-      getTopUpInvoiceUrl({ id: 42, user_id: 7, status: 'success' }, 7),
-      '/api/user/topup/42/invoice'
-    )
-    assert.equal(
       getTopUpInvoiceUrl(
-        { id: 42, user_id: 7, status: 'success' },
-        7,
-        false,
-        true
+        {
+          id: 42,
+          user_id: 7,
+          status: 'success',
+          payment_method: 'alipay',
+          payment_provider: 'epay',
+        },
+        7
       ),
-      '/api/user/topup/42/invoice?download=1'
-    )
-    assert.equal(
-      getTopUpInvoiceDownloadUrl({ id: 42, user_id: 7, status: 'success' }, 7),
-      '/api/user/topup/42/invoice?download=1'
+      '/invoice/42'
     )
   })
 
   test('allows an admin to view another users completed invoice', () => {
     assert.equal(
-      getTopUpInvoiceUrl({ id: 42, user_id: 7, status: 'success' }, 99, true),
-      '/api/user/topup/42/invoice'
-    )
-  })
-
-  test('parses invoice filenames from content disposition headers', () => {
-    assert.equal(
-      getInvoiceFilename(
-        'attachment; filename="invoice-USR20260722010101.pdf"',
-        'fallback.pdf'
+      getTopUpInvoiceUrl(
+        {
+          id: 42,
+          user_id: 7,
+          status: 'success',
+          payment_method: 'nowpayments',
+          payment_provider: 'nowpayments',
+        },
+        99,
+        true
       ),
-      'invoice-USR20260722010101.pdf'
+      '/invoice/42'
     )
-    assert.equal(getInvoiceFilename(undefined, 'fallback.pdf'), 'fallback.pdf')
   })
 
   test('does not expose invoice links for incomplete or another users records', () => {
     assert.equal(
-      getTopUpInvoiceUrl({ id: 42, user_id: 7, status: 'pending' }, 7),
+      getTopUpInvoiceUrl(
+        {
+          id: 42,
+          user_id: 7,
+          status: 'pending',
+          payment_method: 'alipay',
+        },
+        7
+      ),
       null
     )
     assert.equal(
-      getTopUpInvoiceUrl({ id: 42, user_id: 8, status: 'success' }, 7),
+      getTopUpInvoiceUrl(
+        {
+          id: 42,
+          user_id: 8,
+          status: 'success',
+          payment_method: 'alipay',
+        },
+        7
+      ),
       null
+    )
+  })
+
+  test('uses Waffo Pancake official invoices instead of local receipts', () => {
+    assert.equal(
+      getTopUpInvoiceUrl(
+        {
+          id: 42,
+          user_id: 7,
+          status: 'success',
+          payment_method: 'waffo_pancake',
+          payment_provider: 'waffo_pancake',
+        },
+        7
+      ),
+      null
+    )
+    const invoiceUrl =
+      'https://pancake.waffo.ai/invoice/PAY_test?token=test-token'
+    assert.equal(
+      getWaffoPancakeInvoiceUrl({
+        status: 'success',
+        payment_method: 'waffo_pancake',
+        payment_provider: 'waffo_pancake',
+        invoice_url: invoiceUrl,
+      }),
+      invoiceUrl
+    )
+    assert.equal(
+      getWaffoPancakeInvoiceUrl({
+        status: 'success',
+        payment_method: 'waffo_pancake',
+        payment_provider: 'waffo_pancake',
+        invoice_url:
+          'https://pancake.waffo.ai.evil.example/invoice/PAY_test?token=test-token',
+      }),
+      null
+    )
+  })
+
+  test('only allows supported fiat records to request an invoice', () => {
+    for (const payment_method of ['alipay', 'wxpay', 'lantu']) {
+      assert.equal(
+        canRequestTopUpInvoice({
+          id: 42,
+          status: 'success',
+          payment_method,
+          payment_provider: payment_method === 'lantu' ? 'lantu' : 'epay',
+          money: 12.34,
+        }),
+        true
+      )
+    }
+    for (const payment_method of ['nowpayments', 'waffo_pancake', 'stripe']) {
+      assert.equal(
+        canRequestTopUpInvoice({
+          id: 42,
+          status: 'success',
+          payment_method,
+          payment_provider: payment_method,
+          money: 12.34,
+        }),
+        false
+      )
+    }
+    assert.equal(
+      canRequestTopUpInvoice({
+        id: 42,
+        status: 'success',
+        payment_method: 'custom_epay_method',
+        payment_provider: 'epay',
+        money: 12.34,
+      }),
+      true
     )
   })
 })

@@ -8,7 +8,9 @@ import (
 	"testing"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,6 +49,9 @@ func TestAPIRequestInheritsClientCancellation(t *testing.T) {
 	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
 	_, err := DoApiRequest(requestContextAdaptor{url: server.URL}, c, info, strings.NewReader("{}"))
 	require.Error(t, err)
+	var apiErr *types.NewAPIError
+	require.ErrorAs(t, err, &apiErr)
+	assert.True(t, types.IsSkipRetryError(apiErr))
 }
 
 func TestAPIRequestForwardsOpenCodeSessionHeaders(t *testing.T) {

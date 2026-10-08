@@ -43,6 +43,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { getChannelSuccessMetrics } from '@/features/dashboard/api'
+import type { ChannelUsagePeriod } from '@/features/dashboard/types'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { requireServerSuccess } from '@/lib/server-error-message'
@@ -53,6 +54,7 @@ import {
   DEFAULT_PAGE_SIZE,
   CHANNEL_STATUS,
   CHANNEL_STATUS_OPTIONS,
+  CHANNEL_USAGE_PERIOD_OPTIONS,
 } from '../constants'
 import {
   channelsQueryKeys,
@@ -141,6 +143,13 @@ export function ChannelsTable() {
       },
       { columnId: 'type', searchKey: 'type', type: 'array' },
       { columnId: 'group', searchKey: 'group', type: 'array' },
+      {
+        columnId: 'usage_24h',
+        searchKey: 'usagePeriod',
+        type: 'array',
+        deserialize: (value) =>
+          Array.isArray(value) && value.length > 0 ? value : ['24h'],
+      },
       { columnId: 'model', searchKey: 'model', type: 'string' },
     ],
   })
@@ -170,6 +179,14 @@ export function ChannelsTable() {
   )
   const groupFilter =
     (columnFilters.find((f) => f.id === 'group')?.value as string[]) || []
+  const usagePeriodFilter =
+    (columnFilters.find((f) => f.id === 'usage_24h')?.value as
+      | ChannelUsagePeriod[]
+      | undefined) ?? []
+  const usagePeriod = usagePeriodFilter[0] ?? '24h'
+  const usagePeriodLabel =
+    CHANNEL_USAGE_PERIOD_OPTIONS.find((option) => option.value === usagePeriod)
+      ?.label ?? '24 Hours'
   const {
     value: modelFilter,
     inputValue: modelFilterInput,
@@ -222,8 +239,8 @@ export function ChannelsTable() {
     isFetching: isFetchingMetrics,
     refetch: refetchMetrics,
   } = useQuery({
-    queryKey: ['channel-success-metrics', 24, 'with-usage'],
-    queryFn: () => getChannelSuccessMetrics(24, undefined, true),
+    queryKey: ['channel-success-metrics', 24, 'with-usage', usagePeriod],
+    queryFn: () => getChannelSuccessMetrics(24, undefined, true, usagePeriod),
     staleTime: 60 * 1000,
     retry: false,
   })
@@ -257,6 +274,7 @@ export function ChannelsTable() {
           : undefined,
       tag_mode: enableTagMode,
       id_sort: idSort,
+      usage_period: usagePeriod,
       ...sortParams,
       p: pagination.pageIndex + 1,
       page_size: pagination.pageSize,
@@ -281,6 +299,7 @@ export function ChannelsTable() {
                 : undefined,
             tag_mode: enableTagMode,
             id_sort: idSort,
+            usage_period: usagePeriod,
             ...sortParams,
             p: pagination.pageIndex + 1,
             page_size: pagination.pageSize,
@@ -303,6 +322,7 @@ export function ChannelsTable() {
                 : undefined,
             tag_mode: enableTagMode,
             id_sort: idSort,
+            usage_period: usagePeriod,
             ...sortParams,
             p: pagination.pageIndex + 1,
             page_size: pagination.pageSize,
@@ -340,7 +360,8 @@ export function ChannelsTable() {
   const columns = useChannelsColumns({
     enableSelection: batchMode,
     channelSuccessById,
-    usage24h: channelSuccessData?.data.usage_24h,
+    usage: channelSuccessData?.data.usage,
+    usagePeriodLabel,
   })
 
   // React Table instance
@@ -456,7 +477,11 @@ export function ChannelsTable() {
       enableCardView
       viewModeStorageKey={CHANNELS_VIEW_MODE_STORAGE_KEY}
       renderCard={(row, { isSelected }) => (
-        <ChannelCard row={row} isSelected={isSelected} />
+        <ChannelCard
+          row={row}
+          isSelected={isSelected}
+          usagePeriodLabel={usagePeriodLabel}
+        />
       )}
       cardGridClassName='grid grid-cols-1 gap-3 sm:gap-4 lg:grid-cols-3'
       applyHeaderSize
@@ -494,6 +519,12 @@ export function ChannelsTable() {
             columnId: 'group',
             title: t('Group'),
             options: groupFilterOptions,
+            singleSelect: true,
+          },
+          {
+            columnId: 'usage_24h',
+            title: t('Usage period'),
+            options: [...CHANNEL_USAGE_PERIOD_OPTIONS],
             singleSelect: true,
           },
         ],

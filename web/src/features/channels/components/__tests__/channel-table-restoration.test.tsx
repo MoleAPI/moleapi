@@ -110,7 +110,7 @@ describe('channel table restored controls', () => {
 
   test('places the compact 24 hour column after used quota and enables the requested sorts', () => {
     const { result } = renderHook(
-      () => useChannelsColumns({ enableSelection: false, usage24h: {} }),
+      () => useChannelsColumns({ enableSelection: false, usage: {} }),
       { wrapper: TestProviders }
     )
     const ids = result.current.map(columnId)

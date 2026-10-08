@@ -749,6 +749,96 @@ func ListSupportTickets(c *gin.Context) {
 	common.ApiSuccess(c, gin.H{"tickets": tickets, "next_from": from + len(result.Data), "has_more": len(result.Data) == 20 && !archivedView})
 }
 
+func GetSupportInvoiceTickets(c *gin.Context) {
+	cfg := getZohoDeskConfig()
+	if !cfg.ready() {
+		common.ApiErrorMsg(c, "Support tickets are not configured yet.")
+		return
+	}
+
+	wanted := make(map[int]struct{})
+	for _, value := range strings.Split(c.Query("record_ids"), ",") {
+		id, err := strconv.Atoi(value)
+		if err != nil || id <= 0 || len(wanted) >= 100 {
+			common.ApiErrorMsg(c, "Invalid billing records.")
+			return
+		}
+		wanted[id] = struct{}{}
+	}
+	if len(wanted) == 0 {
+		common.ApiErrorMsg(c, "Invalid billing records.")
+		return
+	}
+	user, err := model.GetUserById(c.GetInt("id"), false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if strings.TrimSpace(user.Email) == "" {
+		common.ApiSuccess(c, gin.H{"tickets": map[int]string{}})
+		return
+	}
+
+	tickets := make(map[int]string)
+	for from := 0; from <= 100000 && len(tickets) < len(wanted); from += 100 {
+		query := "?limit=100&from=" + strconv.Itoa(from) + "&sortBy=-modifiedTime&departmentId=" + url.QueryEscape(cfg.DepartmentID) + "&email=" + url.QueryEscape(user.Email)
+		var result struct {
+			Data []zohoDeskTicket `json:"data"`
+		}
+		if err := zohoDeskRequest(cfg, http.MethodGet, "/tickets/search"+query, nil, &result); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		for _, ticket := range result.Data {
+			if ticket.DepartmentID != cfg.DepartmentID || !strings.EqualFold(ticket.Email, user.Email) || ticket.Category != "Invoice Request" {
+				continue
+			}
+			for _, id := range supportInvoiceRecordIDs(ticket.Description) {
+				if _, found := wanted[id]; found {
+					if _, alreadyFound := tickets[id]; !alreadyFound {
+						tickets[id] = ticket.ID
+					}
+				}
+			}
+		}
+		if len(result.Data) < 100 {
+			break
+		}
+	}
+	common.ApiSuccess(c, gin.H{"tickets": tickets})
+}
+
+func supportInvoiceRecordIDs(description string) []int {
+	const marker = "Verified billing records (actual paid amounts)"
+	section := description
+	if index := strings.LastIndex(section, marker); index >= 0 {
+		section = section[index+len(marker):]
+	} else {
+		return nil
+	}
+
+	ids := make([]int, 0)
+	for _, line := range strings.Split(section, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if !strings.HasPrefix(line, "#") {
+			break
+		}
+		separator := strings.Index(line, " |")
+		if separator < 2 {
+			break
+		}
+		id, err := strconv.Atoi(line[1:separator])
+		if err != nil || id <= 0 {
+			break
+		}
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 func supportInvoiceSummary(userID int, ids []int) (string, error) {
 	if len(ids) == 0 || len(ids) > 50 {
 		return "", errors.New("Select between 1 and 50 paid orders for invoicing.")
@@ -770,8 +860,10 @@ func supportInvoiceSummary(userID int, ids []int) (string, error) {
 	lines := []string{"Verified billing records (actual paid amounts)"}
 	totals := make(map[string]decimal.Decimal)
 	for _, order := range orders {
-		if order.Status != "success" || (order.PaymentMethod != "alipay" && order.PaymentMethod != "wxpay" && order.PaymentMethod != model.PaymentMethodLanTu) || order.Money <= 0 || math.IsNaN(order.Money) || math.IsInf(order.Money, 0) {
-			return "", errors.New("Only completed WeChat Pay or Alipay orders can be invoiced.")
+		provider := strings.ToLower(order.PaymentProvider)
+		supported := provider == model.PaymentProviderEpay || provider == model.PaymentProviderLanTu || order.PaymentMethod == "alipay" || order.PaymentMethod == "wxpay" || order.PaymentMethod == model.PaymentMethodLanTu
+		if order.Status != "success" || !supported || order.Money <= 0 || math.IsNaN(order.Money) || math.IsInf(order.Money, 0) {
+			return "", errors.New("Only completed LanTu and Epay orders can be invoiced.")
 		}
 		currency := strings.ToUpper(strings.TrimSpace(order.PaymentCurrency))
 		if currency == "" {

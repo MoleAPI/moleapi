@@ -68,16 +68,15 @@ var (
 
 const (
 	requestConverterClaudeToGemini    = "claude_messages_to_gemini_generate_content"
-	requestConverterClaudeToResponses = "claude_messages_to_openai_responses"
+	requestConverterClaudeToResponses = ConverterClaudeMessagesToOpenAIResponses
 	requestConverterGeminiToClaude    = "gemini_generate_content_to_claude_messages"
-	requestConverterGeminiToResponses = "gemini_generate_content_to_openai_responses"
+	requestConverterGeminiToResponses = ConverterGeminiContentToOpenAIResponses
 	requestConverterResponsesToClaude = ConverterOpenAIResponsesToClaudeMessages
 )
 
 const (
 	ConverterNone                            = "none"
 	ConverterClaudeMessagesToOpenAIChat      = "anthropic_messages_to_openai_chat_completions"
-	ConverterClaudeMessagesToOpenAIResponses = requestConverterClaudeToResponses
 	ConverterGeminiContentToClaudeMessages   = requestConverterGeminiToClaude
 	ConverterOpenAICompletionsToOpenAIChat   = "openai_completions_to_openai_chat_completions"
 	ConverterOpenAIChatToClaudeMessages      = "openai_chat_completions_to_anthropic_messages"
@@ -87,6 +86,8 @@ const (
 	ConverterOpenAIResponsesToGemini         = "openai_responses_to_gemini_generate_content"
 	ConverterGeminiContentToOpenAIChat       = "gemini_generate_content_to_openai_chat_completions"
 	ConverterOpenAIChatToGeminiContent       = "openai_chat_completions_to_gemini_generate_content"
+	ConverterClaudeMessagesToOpenAIResponses = "claude_messages_to_openai_responses"
+	ConverterGeminiContentToOpenAIResponses  = "gemini_generate_content_to_openai_responses"
 )
 
 func registerBuiltinRequestConverter(spec RequestConverterSpec) {
@@ -306,14 +307,16 @@ func executeRequestSteps(c context.Context, info convmeta.Meta, from types.Relay
 }
 
 // responsesToolState records which Responses custom tools were sent upstream
-// as functions, so the response side can restore their calls. It returns nil
-// when none were sent so a retry never reuses another attempt's record.
+// as functions and which tool names were flattened from namespaces, so the
+// response side can restore their calls. It returns nil when there is nothing
+// to restore so a retry never reuses another attempt's record.
 func responsesToolState(tools toolconv.Set) *convmeta.ResponsesToolState {
 	names := toolconv.ResponsesCustomToolNames(tools)
-	if len(names) == 0 {
+	namespaces := toolconv.ResponsesToolNamespaces(tools)
+	if len(names) == 0 && len(namespaces) == 0 {
 		return nil
 	}
-	return &convmeta.ResponsesToolState{CustomToolNames: names}
+	return &convmeta.ResponsesToolState{CustomToolNames: names, Namespaces: namespaces}
 }
 
 func expandRequestConverterSteps(spec RequestConverterSpec) ([]RequestConverterSpec, error) {
@@ -433,7 +436,7 @@ func convertChatRequestToResponses(_ context.Context, _ convmeta.Meta, request a
 	return oaichat.ChatCompletionsRequestToResponsesRequest(chatRequest)
 }
 
-func convertClaudeRequestToOpenAI(_ context.Context, info convmeta.Meta, request any) (any, error) {
+func convertClaudeRequestToOpenAI(c context.Context, info convmeta.Meta, request any) (any, error) {
 	claudeRequest, ok := request.(*dto.ClaudeRequest)
 	if !ok {
 		if value, ok := request.(dto.ClaudeRequest); ok {
@@ -443,7 +446,7 @@ func convertClaudeRequestToOpenAI(_ context.Context, info convmeta.Meta, request
 	if claudeRequest == nil {
 		return nil, fmt.Errorf("expected Anthropic Messages request, got %T", request)
 	}
-	return claudemessages.ClaudeMessagesRequestToOpenAIChat(*claudeRequest, info)
+	return claudemessages.ClaudeMessagesRequestToOpenAIChatContext(c, *claudeRequest, info)
 }
 
 func convertClaudeRequestToOpenAIResponses(_ context.Context, info convmeta.Meta, request any) (any, error) {
@@ -472,7 +475,7 @@ func convertOpenAIRequestToClaude(c context.Context, info convmeta.Meta, request
 	return oaichat.OpenAIChatRequestToClaudeMessages(c, info, *openAIRequest)
 }
 
-func convertGeminiRequestToOpenAI(_ context.Context, info convmeta.Meta, request any) (any, error) {
+func convertGeminiRequestToOpenAI(c context.Context, info convmeta.Meta, request any) (any, error) {
 	geminiRequest, ok := request.(*dto.GeminiChatRequest)
 	if !ok {
 		if value, ok := request.(dto.GeminiChatRequest); ok {
@@ -482,7 +485,7 @@ func convertGeminiRequestToOpenAI(_ context.Context, info convmeta.Meta, request
 	if geminiRequest == nil {
 		return nil, fmt.Errorf("expected Gemini generateContent request, got %T", request)
 	}
-	return geminichat.GeminiGenerateContentRequestToOpenAIChat(geminiRequest, info)
+	return geminichat.GeminiGenerateContentRequestToOpenAIChatContext(c, geminiRequest, info)
 }
 
 func convertOpenAIRequestToGemini(c context.Context, info convmeta.Meta, request any) (any, error) {
@@ -514,7 +517,7 @@ func convertOpenAIResponsesRequestToGeminiChat(c context.Context, info convmeta.
 	return oairesponses.OpenAIResponsesRequestToGeminiChat(c, responsesRequest, info)
 }
 
-func convertResponsesRequestToChat(_ context.Context, _ convmeta.Meta, request any) (any, error) {
+func convertResponsesRequestToChat(c context.Context, _ convmeta.Meta, request any) (any, error) {
 	responsesRequest, ok := request.(*dto.OpenAIResponsesRequest)
 	if !ok {
 		if value, ok := request.(dto.OpenAIResponsesRequest); ok {
@@ -524,5 +527,5 @@ func convertResponsesRequestToChat(_ context.Context, _ convmeta.Meta, request a
 	if responsesRequest == nil {
 		return nil, fmt.Errorf("expected OpenAI responses request, got %T", request)
 	}
-	return oairesponses.ResponsesRequestToChatCompletionsRequest(responsesRequest)
+	return oairesponses.ResponsesRequestToChatCompletionsRequestContext(c, responsesRequest)
 }

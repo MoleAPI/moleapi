@@ -31,6 +31,8 @@ type TopUp struct {
 	InviteRebateRatio     int     `json:"invite_rebate_ratio" gorm:"type:int;default:0;column:invite_rebate_ratio"`
 	InviteRebateQuota     int     `json:"invite_rebate_quota" gorm:"type:bigint;default:0;column:invite_rebate_quota"`
 	PaymentCurrency       string  `json:"payment_currency" gorm:"type:varchar(8);default:''"`
+	InvoiceURL            string  `json:"invoice_url,omitempty" gorm:"type:varchar(2048);default:''"`
+	InvoiceDetails        string  `json:"-" gorm:"type:text"`
 	PaymentMethod         string  `json:"payment_method" gorm:"type:varchar(50)"`
 	PaymentProvider       string  `json:"payment_provider" gorm:"type:varchar(50);default:''"`
 	CreateTime            int64   `json:"create_time"`
@@ -162,6 +164,10 @@ func (topUp *TopUp) Insert() error {
 		}
 	}
 	return DB.Create(topUp).Error
+}
+
+func (topUp *TopUp) UpdateInvoiceDetails(details string) error {
+	return DB.Model(topUp).Update("invoice_details", details).Error
 }
 
 func topUpQuotaMaxCurrent(creditedQuota int) (int, error) {
@@ -1355,10 +1361,10 @@ func RechargeWaffoWithPaymentDetails(tradeNo string, gatewayTradeNo string, paym
 }
 
 func RechargeWaffoPancake(tradeNo string) (err error) {
-	return RechargeWaffoPancakeWithPaymentDetails(tradeNo, "", "", "")
+	return RechargeWaffoPancakeWithPaymentDetails(tradeNo, "", "", "", "")
 }
 
-func RechargeWaffoPancakeWithPaymentDetails(tradeNo string, gatewayTradeNo string, paymentCurrency string, callerIp string) (err error) {
+func RechargeWaffoPancakeWithPaymentDetails(tradeNo string, gatewayTradeNo string, paymentCurrency string, invoiceURL string, callerIp string) (err error) {
 	if tradeNo == "" {
 		return errors.New("未提供支付单号")
 	}
@@ -1370,11 +1376,20 @@ func RechargeWaffoPancakeWithPaymentDetails(tradeNo string, gatewayTradeNo strin
 		if paymentCurrency != "" {
 			topUp.PaymentCurrency = paymentCurrency
 		}
+		if invoiceURL != "" {
+			topUp.InvoiceURL = invoiceURL
+		}
 		return nil
 	})
 	if err != nil {
 		common.SysError("waffo pancake topup failed: " + err.Error())
 		return errors.New("充值失败，请稍后重试")
+	}
+	if invoiceURL != "" && topUp.InvoiceURL == "" {
+		if err := DB.Model(&TopUp{}).Where("id = ? AND invoice_url = ?", topUp.Id, "").Update("invoice_url", invoiceURL).Error; err != nil {
+			return errors.New("充值失败，请稍后重试")
+		}
+		topUp.InvoiceURL = invoiceURL
 	}
 	syncCreditUserQuotaCache(topUp.UserId, quotaToAdd, "waffo pancake topup")
 

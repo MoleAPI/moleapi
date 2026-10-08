@@ -84,14 +84,14 @@ func testLegacyCodingPlanChannelMigration(t *testing.T, db *gorm.DB) {
 	assert.Equal(t, constant.ChannelTypeAdvancedCustom, byName["legacy-generated"].Type)
 	generatedChannel := byName["legacy-generated"]
 	generated := generatedChannel.GetOtherSettings()
-	assert.Empty(t, generated.CodingPlanProvider)
+	assert.Equal(t, dto.CodingPlanProviderGLMChina, generated.CodingPlanProvider)
 	require.NotNil(t, generated.AdvancedCustom)
 	assert.True(t, generated.AdvancedCustom.SupportsPathForModel("/v1/messages", "glm-5"))
 
 	assert.Equal(t, constant.ChannelTypeAdvancedCustom, byName["legacy-edited"].Type)
 	editedChannel := byName["legacy-edited"]
 	edited := editedChannel.GetOtherSettings()
-	assert.Empty(t, edited.CodingPlanProvider)
+	assert.Equal(t, dto.CodingPlanProviderKimi, edited.CodingPlanProvider)
 	route, ok := edited.AdvancedCustom.MatchPath("/v1/chat/completions")
 	require.True(t, ok)
 	assert.Equal(t, "https://edited.example/v1/chat/completions", route.UpstreamPath)

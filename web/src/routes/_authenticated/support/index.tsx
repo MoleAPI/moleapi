@@ -28,6 +28,12 @@ export const Route = createFileRoute('/_authenticated/support/')({
       .regex(/^\d{1,64}$/)
       .optional()
       .catch(undefined),
+    invoice_record: z.coerce
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .catch(undefined),
   }),
   component: Support,
 })

@@ -3,19 +3,71 @@ package dto
 import (
 	"fmt"
 	"strings"
+	"time"
 )
 
 const (
-	CodingPlanProviderGLMChina      = "glm-coding-plan"
-	CodingPlanProviderGLMGlobal     = "glm-coding-plan-international"
-	CodingPlanProviderKimi          = "kimi-coding-plan"
-	CodingPlanProviderDoubao        = "doubao-coding-plan"
-	CodingPlanProviderQwenCoding    = "qwen-coding-plan"
-	CodingPlanProviderQwenTokenPlan = "qwen-token-plan"
-	CodingPlanProviderMiniMax       = "minimax-token-plan"
-	CodingPlanProviderOpenCodeGo    = "opencode-go"
-	CodingPlanProviderCustom        = "custom-coding-plan"
+	CodingPlanProviderGLMChina        = "glm-coding-plan"
+	CodingPlanProviderGLMGlobal       = "glm-coding-plan-international"
+	CodingPlanProviderKimi            = "kimi-coding-plan"
+	CodingPlanProviderDoubao          = "doubao-coding-plan"
+	CodingPlanProviderVolcengineAgent = "volcengine-agent-plan"
+	CodingPlanProviderQwenCoding      = "qwen-coding-plan"
+	CodingPlanProviderQwenTokenPlan   = "qwen-token-plan"
+	CodingPlanProviderMiniMax         = "minimax-token-plan"
+	CodingPlanProviderOpenCodeGo      = "opencode-go"
+	CodingPlanProviderCommandCode     = "command-code"
+	CodingPlanProviderCustom          = "custom-coding-plan"
 )
+
+const (
+	CodingPlanQuotaUnitRequests = "requests"
+	CodingPlanQuotaUnitTokens   = "tokens"
+	CodingPlanQuotaMaxWindows   = 8
+	CodingPlanQuotaMinWindow    = int64(time.Minute / time.Second)
+	CodingPlanQuotaMaxWindow    = int64((365 * 24 * time.Hour) / time.Second)
+)
+
+// CodingPlanQuotaWindow is a rolling local quota window. It is deliberately
+// independent from a provider's subscription API: it protects a channel even
+// when the upstream does not expose a usable quota endpoint.
+type CodingPlanQuotaWindow struct {
+	DurationSeconds int64 `json:"duration_seconds"`
+	Limit           int64 `json:"limit"`
+}
+
+type CodingPlanQuotaConfig struct {
+	Unit    string                  `json:"unit"`
+	Windows []CodingPlanQuotaWindow `json:"windows"`
+}
+
+func (c *CodingPlanQuotaConfig) Validate() error {
+	if c == nil {
+		return nil
+	}
+	switch strings.TrimSpace(c.Unit) {
+	case CodingPlanQuotaUnitRequests, CodingPlanQuotaUnitTokens:
+	default:
+		return fmt.Errorf("invalid coding plan quota unit: %s", c.Unit)
+	}
+	if len(c.Windows) == 0 || len(c.Windows) > CodingPlanQuotaMaxWindows {
+		return fmt.Errorf("coding plan quota windows must contain 1-%d items", CodingPlanQuotaMaxWindows)
+	}
+	seen := make(map[int64]struct{}, len(c.Windows))
+	for _, window := range c.Windows {
+		if window.DurationSeconds < CodingPlanQuotaMinWindow || window.DurationSeconds > CodingPlanQuotaMaxWindow {
+			return fmt.Errorf("invalid coding plan quota window duration: %d", window.DurationSeconds)
+		}
+		if window.Limit <= 0 {
+			return fmt.Errorf("coding plan quota window limit must be positive")
+		}
+		if _, ok := seen[window.DurationSeconds]; ok {
+			return fmt.Errorf("duplicate coding plan quota window duration: %d", window.DurationSeconds)
+		}
+		seen[window.DurationSeconds] = struct{}{}
+	}
+	return nil
+}
 
 type CodingPlanPreset struct {
 	ID               string
@@ -30,10 +82,12 @@ var codingPlanPresets = []CodingPlanPreset{
 	{ID: CodingPlanProviderGLMGlobal, OpenAIBaseURL: "https://api.z.ai/api/coding/paas/v4", AnthropicBaseURL: "https://api.z.ai/api/anthropic", ModelListBaseURL: "https://api.z.ai/api/coding/paas/v4"},
 	{ID: CodingPlanProviderKimi, OpenAIBaseURL: "https://api.kimi.com/coding/v1", AnthropicBaseURL: "https://api.kimi.com/coding", ResponsesBaseURL: "https://api.kimi.com/coding/v1", ModelListBaseURL: "https://api.kimi.com/coding/v1"},
 	{ID: CodingPlanProviderDoubao, OpenAIBaseURL: "https://ark.cn-beijing.volces.com/api/coding/v3", AnthropicBaseURL: "https://ark.cn-beijing.volces.com/api/coding", ResponsesBaseURL: "https://ark.cn-beijing.volces.com/api/coding/v3", ModelListBaseURL: "https://ark.cn-beijing.volces.com/api/coding/v3"},
+	{ID: CodingPlanProviderVolcengineAgent, OpenAIBaseURL: "https://ark.cn-beijing.volces.com/api/plan", AnthropicBaseURL: "https://ark.cn-beijing.volces.com/api/plan", ResponsesBaseURL: "https://ark.cn-beijing.volces.com/api/plan", ModelListBaseURL: "https://ark.cn-beijing.volces.com/api/plan"},
 	{ID: CodingPlanProviderQwenCoding, OpenAIBaseURL: "https://coding-intl.dashscope.aliyuncs.com/v1", AnthropicBaseURL: "https://coding-intl.dashscope.aliyuncs.com/apps/anthropic", ModelListBaseURL: "https://coding-intl.dashscope.aliyuncs.com/v1"},
 	{ID: CodingPlanProviderQwenTokenPlan, OpenAIBaseURL: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", AnthropicBaseURL: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic", ResponsesBaseURL: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1", ModelListBaseURL: "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1"},
 	{ID: CodingPlanProviderMiniMax, OpenAIBaseURL: "https://api.minimax.io/v1", AnthropicBaseURL: "https://api.minimax.io/anthropic", ResponsesBaseURL: "https://api.minimax.io/v1", ModelListBaseURL: "https://api.minimax.io/v1"},
 	{ID: CodingPlanProviderOpenCodeGo, OpenAIBaseURL: "https://opencode.ai/zen/go/v1", AnthropicBaseURL: "https://opencode.ai/zen/go", ModelListBaseURL: "https://opencode.ai/zen/go/v1"},
+	{ID: CodingPlanProviderCommandCode, OpenAIBaseURL: "https://api.commandcode.ai/provider/v1", AnthropicBaseURL: "https://api.commandcode.ai/provider", ResponsesBaseURL: "https://api.commandcode.ai/provider/v1", ModelListBaseURL: "https://api.commandcode.ai/provider/v1"},
 	{ID: CodingPlanProviderCustom, OpenAIBaseURL: "https://your-openai-compatible-base-url.example/v1", AnthropicBaseURL: "https://your-anthropic-compatible-base-url.example", ResponsesBaseURL: "https://your-openai-compatible-base-url.example/v1", ModelListBaseURL: "https://your-openai-compatible-base-url.example/v1"},
 }
 

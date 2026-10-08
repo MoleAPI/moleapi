@@ -180,7 +180,7 @@ func migrateLegacyCodingPlanChannelTypes(db *gorm.DB) error {
 					return fmt.Errorf("convert legacy coding plan channel %d: %w", channel.Id, err)
 				}
 			}
-			settings.CodingPlanProvider = ""
+			settings.CodingPlanProvider = preset.ID
 			encoded, err := common.Marshal(settings)
 			if err != nil {
 				return err
@@ -1116,6 +1116,19 @@ func (channel *Channel) ValidateSettings() error {
 	}
 	if err := channelOtherSettings.ValidateToolLossPolicy(); err != nil {
 		return err
+	}
+	if channelOtherSettings.CodingPlanProvider != "" {
+		if _, ok := dto.ResolveCodingPlanPreset(channelOtherSettings.CodingPlanProvider); !ok {
+			return fmt.Errorf("invalid coding plan provider: %s", channelOtherSettings.CodingPlanProvider)
+		}
+	}
+	if channelOtherSettings.CodingPlanQuota != nil {
+		if channel.Type != constant.ChannelTypeAdvancedCustom {
+			return fmt.Errorf("coding plan quota requires an advanced custom channel")
+		}
+		if err := channelOtherSettings.CodingPlanQuota.Validate(); err != nil {
+			return err
+		}
 	}
 	if channel.Type == constant.ChannelTypeAdvancedCustom {
 		if channelOtherSettings.AdvancedCustom == nil {

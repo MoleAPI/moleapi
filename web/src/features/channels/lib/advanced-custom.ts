@@ -37,6 +37,11 @@ export const ADVANCED_CUSTOM_CONVERTER_OPTIONS: Array<{
   triggerLabel: string
 }> = [
   {
+    value: 'openai_completions_to_openai_chat_completions',
+    label: 'OpenAI Completions to OpenAI Chat',
+    triggerLabel: 'To OpenAI Chat',
+  },
+  {
     value: 'none',
     label: 'Native forwarding',
     triggerLabel: 'Native forwarding',
@@ -45,6 +50,11 @@ export const ADVANCED_CUSTOM_CONVERTER_OPTIONS: Array<{
     value: 'anthropic_messages_to_openai_chat_completions',
     label: 'Anthropic Messages to OpenAI Chat',
     triggerLabel: 'To OpenAI Chat',
+  },
+  {
+    value: 'claude_messages_to_openai_responses',
+    label: 'Anthropic Messages to OpenAI Responses',
+    triggerLabel: 'To OpenAI Responses',
   },
   {
     value: 'openai_chat_completions_to_anthropic_messages',
@@ -70,6 +80,11 @@ export const ADVANCED_CUSTOM_CONVERTER_OPTIONS: Array<{
     value: 'gemini_generate_content_to_openai_chat_completions',
     label: 'Gemini Generate Content to OpenAI Chat',
     triggerLabel: 'To OpenAI Chat',
+  },
+  {
+    value: 'gemini_generate_content_to_openai_responses',
+    label: 'Gemini Generate Content to OpenAI Responses',
+    triggerLabel: 'To OpenAI Responses',
   },
   {
     value: 'openai_chat_completions_to_gemini_generate_content',
@@ -199,6 +214,95 @@ const openAIResponsesPath = '/v1/responses'
 const claudeMessagesPath = '/v1/messages'
 const geminiGenerateContentPath = '/v1beta/models/{model}:generateContent'
 
+type CodingPlanPreset = {
+  id: string
+  openaiBaseURL?: string
+  anthropicBaseURL?: string
+  responsesBaseURL?: string
+  modelListBaseURL?: string
+}
+
+const CODING_PLAN_PRESETS: CodingPlanPreset[] = [
+  {
+    id: 'glm-coding-plan',
+    openaiBaseURL: 'https://open.bigmodel.cn/api/coding/paas/v4',
+    anthropicBaseURL: 'https://open.bigmodel.cn/api/anthropic',
+    modelListBaseURL: 'https://open.bigmodel.cn/api/coding/paas/v4',
+  },
+  {
+    id: 'glm-coding-plan-international',
+    openaiBaseURL: 'https://api.z.ai/api/coding/paas/v4',
+    anthropicBaseURL: 'https://api.z.ai/api/anthropic',
+    modelListBaseURL: 'https://api.z.ai/api/coding/paas/v4',
+  },
+  {
+    id: 'kimi-coding-plan',
+    openaiBaseURL: 'https://api.kimi.com/coding/v1',
+    anthropicBaseURL: 'https://api.kimi.com/coding',
+    responsesBaseURL: 'https://api.kimi.com/coding/v1',
+    modelListBaseURL: 'https://api.kimi.com/coding/v1',
+  },
+  {
+    id: 'doubao-coding-plan',
+    openaiBaseURL: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    anthropicBaseURL: 'https://ark.cn-beijing.volces.com/api/coding',
+    responsesBaseURL: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+    modelListBaseURL: 'https://ark.cn-beijing.volces.com/api/coding/v3',
+  },
+  {
+    id: 'volcengine-agent-plan',
+    openaiBaseURL: 'https://ark.cn-beijing.volces.com/api/plan',
+    anthropicBaseURL: 'https://ark.cn-beijing.volces.com/api/plan',
+    responsesBaseURL: 'https://ark.cn-beijing.volces.com/api/plan',
+    modelListBaseURL: 'https://ark.cn-beijing.volces.com/api/plan',
+  },
+  {
+    id: 'qwen-coding-plan',
+    openaiBaseURL: 'https://coding-intl.dashscope.aliyuncs.com/v1',
+    anthropicBaseURL:
+      'https://coding-intl.dashscope.aliyuncs.com/apps/anthropic',
+    modelListBaseURL: 'https://coding-intl.dashscope.aliyuncs.com/v1',
+  },
+  {
+    id: 'qwen-token-plan',
+    openaiBaseURL:
+      'https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    anthropicBaseURL:
+      'https://token-plan.ap-southeast-1.maas.aliyuncs.com/apps/anthropic',
+    responsesBaseURL:
+      'https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+    modelListBaseURL:
+      'https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1',
+  },
+  {
+    id: 'minimax-token-plan',
+    openaiBaseURL: 'https://api.minimax.io/v1',
+    anthropicBaseURL: 'https://api.minimax.io/anthropic',
+    responsesBaseURL: 'https://api.minimax.io/v1',
+    modelListBaseURL: 'https://api.minimax.io/v1',
+  },
+  {
+    id: 'opencode-go',
+    openaiBaseURL: 'https://opencode.ai/zen/go/v1',
+    anthropicBaseURL: 'https://opencode.ai/zen/go',
+    modelListBaseURL: 'https://opencode.ai/zen/go/v1',
+  },
+  {
+    id: 'command-code',
+    openaiBaseURL: 'https://api.commandcode.ai/provider/v1',
+    anthropicBaseURL: 'https://api.commandcode.ai/provider',
+    responsesBaseURL: 'https://api.commandcode.ai/provider/v1',
+    modelListBaseURL: 'https://api.commandcode.ai/provider/v1',
+  },
+  {
+    id: 'custom-coding-plan',
+    openaiBaseURL: 'https://your-openai-compatible-base-url.example/v1',
+    anthropicBaseURL: 'https://your-anthropic-compatible-base-url.example',
+    responsesBaseURL: 'https://your-openai-compatible-base-url.example/v1',
+    modelListBaseURL: 'https://your-openai-compatible-base-url.example/v1',
+  },
+]
+
 const bearerHeaderAuth = (): AdvancedCustomRouteAuth => ({
   type: 'header',
   name: 'Authorization',
@@ -216,6 +320,98 @@ const geminiQueryAuth = (): AdvancedCustomRouteAuth => ({
   name: 'key',
   value: '{api_key}',
 })
+
+function codingPlanJoinPath(baseURL: string, path: string): string {
+  return `${baseURL.replace(/\/+$/, '')}/${path.replace(/^\/+/, '')}`
+}
+
+function codingPlanRoute(
+  incomingPath: string,
+  upstreamPath: string,
+  converter: AdvancedCustomConverter = 'none',
+  models?: string[]
+): AdvancedCustomRoute {
+  return {
+    incoming_path: incomingPath,
+    upstream_path: upstreamPath,
+    converter,
+    ...(models ? { models } : {}),
+    auth: bearerHeaderAuth(),
+  }
+}
+
+export function getCodingPlanPresetConfig(
+  provider: string
+): AdvancedCustomConfig | null {
+  const preset = CODING_PLAN_PRESETS.find((item) => item.id === provider)
+  if (!preset) return null
+
+  const routes: AdvancedCustomRoute[] = []
+  if (preset.openaiBaseURL) {
+    const chatURL = codingPlanJoinPath(preset.openaiBaseURL, 'chat/completions')
+    routes.push(
+      codingPlanRoute(openAIChatPath, chatURL),
+      codingPlanRoute(
+        '/v1/completions',
+        chatURL,
+        'openai_completions_to_openai_chat_completions'
+      ),
+      codingPlanRoute(
+        geminiGenerateContentPath,
+        chatURL,
+        'gemini_generate_content_to_openai_chat_completions'
+      ),
+      codingPlanRoute(
+        '/v1/images/generations',
+        codingPlanJoinPath(preset.openaiBaseURL, 'images/generations')
+      )
+    )
+    if (preset.id === 'opencode-go') {
+      routes.push(
+        codingPlanRoute(
+          openAIResponsesPath,
+          codingPlanJoinPath(preset.openaiBaseURL, 'responses'),
+          'none',
+          ['deepseek-v4-flash']
+        )
+      )
+    }
+    if (!preset.responsesBaseURL) {
+      routes.push(
+        codingPlanRoute(
+          openAIResponsesPath,
+          chatURL,
+          'openai_responses_to_openai_chat_completions'
+        )
+      )
+    }
+  }
+  if (preset.responsesBaseURL) {
+    routes.push(
+      codingPlanRoute(
+        openAIResponsesPath,
+        codingPlanJoinPath(preset.responsesBaseURL, 'responses')
+      )
+    )
+  }
+  if (preset.anthropicBaseURL) {
+    routes.push(
+      codingPlanRoute(
+        '/v1/messages',
+        codingPlanJoinPath(preset.anthropicBaseURL, 'v1/messages')
+      )
+    )
+  }
+  if (preset.modelListBaseURL) {
+    routes.push(
+      codingPlanRoute(
+        ADVANCED_CUSTOM_MODEL_LIST_PATH,
+        codingPlanJoinPath(preset.modelListBaseURL, 'models')
+      )
+    )
+  }
+  return { advanced_routes: routes }
+}
 
 function createOpenAINativeRoutes(): AdvancedCustomRoute[] {
   return [
@@ -443,13 +639,18 @@ export function getAdvancedCustomConverterDefaults(
     }
   }
   if (
+    converter === 'openai_completions_to_openai_chat_completions' ||
     converter === 'anthropic_messages_to_openai_chat_completions' ||
     converter === 'gemini_generate_content_to_openai_chat_completions' ||
     converter === 'openai_responses_to_openai_chat_completions'
   ) {
     return { upstream_path: openAIChatPath, auth: bearerHeaderAuth() }
   }
-  if (converter === 'openai_chat_completions_to_openai_responses') {
+  if (
+    converter === 'openai_chat_completions_to_openai_responses' ||
+    converter === 'claude_messages_to_openai_responses' ||
+    converter === 'gemini_generate_content_to_openai_responses'
+  ) {
     return { upstream_path: openAIResponsesPath, auth: bearerHeaderAuth() }
   }
   if (converter === 'openai_chat_completions_to_anthropic_messages') {
@@ -924,8 +1125,14 @@ function isConverterPathAllowed(
 ): boolean {
   if (converter === 'none') return true
   if (incomingPath === '/v1/alpha/search') return false
-  if (converter === 'anthropic_messages_to_openai_chat_completions') {
+  if (
+    converter === 'anthropic_messages_to_openai_chat_completions' ||
+    converter === 'claude_messages_to_openai_responses'
+  ) {
     return incomingPath === '/v1/messages'
+  }
+  if (converter === 'openai_completions_to_openai_chat_completions') {
+    return incomingPath === '/v1/completions'
   }
   if (
     converter === 'openai_chat_completions_to_anthropic_messages' ||

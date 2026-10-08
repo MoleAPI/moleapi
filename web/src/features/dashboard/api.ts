@@ -21,6 +21,7 @@ import { api } from '@/lib/api'
 import type {
   AdminBusinessMetrics,
   ChannelSuccessData,
+  ChannelUsagePeriod,
   FlowQuotaDataItem,
   QuotaDataItem,
   UptimeGroupResult,
@@ -89,7 +90,8 @@ export async function getFlowQuotaDates(
 export async function getChannelSuccessMetrics(
   hours: number,
   channelTestMode?: string,
-  includeUsage = false
+  includeUsage = false,
+  usagePeriod?: ChannelUsagePeriod
 ) {
   const res = await api.get<{ success: boolean; data: ChannelSuccessData }>(
     '/api/data/channel-success',
@@ -97,6 +99,7 @@ export async function getChannelSuccessMetrics(
       params: {
         hours,
         ...(includeUsage ? { include_usage: true } : {}),
+        ...(includeUsage && usagePeriod ? { usage_period: usagePeriod } : {}),
         ...(channelTestMode ? { channel_test_mode: channelTestMode } : {}),
       },
     }

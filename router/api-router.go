@@ -64,6 +64,7 @@ func SetApiRouter(router *gin.Engine) {
 		supportRoute.Use(middleware.UserAuth())
 		{
 			supportRoute.GET("/config", controller.GetSupportConfig)
+			supportRoute.GET("/invoice-tickets", middleware.SearchRateLimit(), controller.GetSupportInvoiceTickets)
 			supportRoute.GET("/tickets", middleware.SearchRateLimit(), controller.ListSupportTickets)
 			supportRoute.POST("/tickets", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.CreateSupportTicket)
 			supportRoute.GET("/tickets/:id", middleware.SearchRateLimit(), controller.GetSupportTicket)
@@ -137,6 +138,7 @@ func SetApiRouter(router *gin.Engine) {
 				selfRoute.GET("/topup/info", controller.GetTopUpInfo)
 				selfRoute.GET("/topup/self", middleware.SearchRateLimit(), controller.GetUserTopUps)
 				selfRoute.GET("/topup/:id/invoice", controller.GetTopUpInvoice)
+				selfRoute.PUT("/topup/:id/invoice", middleware.SessionCookieOriginGuard(), middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.UpdateTopUpInvoice)
 				selfRoute.POST("/topup", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.TopUp)
 				selfRoute.POST("/pay", middleware.CriticalRateLimit(), anonymousRequestBodyLimit, controller.RequestEpay)
 				selfRoute.POST("/amount", anonymousRequestBodyLimit, controller.RequestAmount)

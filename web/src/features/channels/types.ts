@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+import type { ChannelUsagePeriod } from '@/features/dashboard/types'
+
 // ============================================================================
 // Channel Schema & Types
 // ============================================================================
@@ -113,7 +115,19 @@ export interface ChannelOtherSettings {
   upstream_model_update_last_check_time?: number
   upstream_model_update_last_detected_models?: string[]
   channel_probe_enabled?: boolean
+  coding_plan_provider?: string
+  coding_plan_quota?: CodingPlanQuotaConfig
   advanced_custom?: AdvancedCustomConfig
+}
+
+export interface CodingPlanQuotaWindow {
+  duration_seconds: number
+  limit: number
+}
+
+export interface CodingPlanQuotaConfig {
+  unit: 'requests' | 'tokens'
+  windows: CodingPlanQuotaWindow[]
 }
 
 export interface AdvancedCustomConfig {
@@ -137,6 +151,7 @@ export interface AdvancedCustomRouteAuth {
 
 export type AdvancedCustomConverter =
   | 'none'
+  | 'openai_completions_to_openai_chat_completions'
   | 'anthropic_messages_to_openai_chat_completions'
   | 'openai_chat_completions_to_anthropic_messages'
   | 'openai_chat_completions_to_openai_responses'
@@ -144,6 +159,8 @@ export type AdvancedCustomConverter =
   | 'openai_responses_to_gemini_generate_content'
   | 'gemini_generate_content_to_openai_chat_completions'
   | 'openai_chat_completions_to_gemini_generate_content'
+  | 'claude_messages_to_openai_responses'
+  | 'gemini_generate_content_to_openai_responses'
 
 export type AdvancedCustomAuthType = 'none' | 'header' | 'query'
 
@@ -328,6 +345,7 @@ export interface GetChannelsParams {
   tag_mode?: boolean
   sort_by?: ChannelSortBy
   sort_order?: ChannelSortOrder
+  usage_period?: ChannelUsagePeriod
 }
 
 export interface SearchChannelsParams {
@@ -340,6 +358,7 @@ export interface SearchChannelsParams {
   tag_mode?: boolean
   sort_by?: ChannelSortBy
   sort_order?: ChannelSortOrder
+  usage_period?: ChannelUsagePeriod
   p?: number
   page_size?: number
 }

@@ -128,7 +128,7 @@ export function Support() {
     (state) => state.markSupportTicketRead
   )
   const [userPanel, setUserPanel] = useState<'overview' | 'ai' | 'create'>(
-    'overview'
+    search.invoice_record ? 'create' : 'overview'
   )
   const [ticketDraft, setTicketDraft] = useState<AssistantTicketDraft | null>(
     null
@@ -338,6 +338,7 @@ export function Support() {
             <div className='min-h-0 flex-1 overflow-hidden border-y'>
               <UserSupportWorkspace
                 accountEmail={accountEmail}
+                initialInvoiceRecordId={search.invoice_record}
                 loading={tickets.isLoading}
                 tickets={ticketList}
                 selectedTicket={selectedTicket}
@@ -395,6 +396,7 @@ export function Support() {
 
 function UserSupportWorkspace(props: {
   accountEmail?: string
+  initialInvoiceRecordId?: number
   loading: boolean
   tickets: SupportTicket[]
   selectedTicket: string | null
@@ -596,10 +598,14 @@ function UserSupportWorkspace(props: {
                 key={
                   props.draft
                     ? `${props.draft.type}-${props.draft.subject}`
-                    : 'blank'
+                    : `invoice-${props.initialInvoiceRecordId ?? 'blank'}`
                 }
                 accountEmail={props.accountEmail}
                 initialValues={props.draft ?? undefined}
+                initialType={
+                  props.initialInvoiceRecordId ? 'Invoice Request' : undefined
+                }
+                initialBillingRecordId={props.initialInvoiceRecordId}
                 initialFiles={props.draft?.files}
                 onCreated={(id) => props.onSelectTicket(id)}
               />

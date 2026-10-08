@@ -241,6 +241,19 @@ func TestLogExportDatabaseMatrix(t *testing.T) {
 			require.NoError(t, db.First(&allowance, "user_id = ?", 77).Error)
 			assert.Equal(t, 1, allowance.Attempts)
 			t.Log(fmt.Sprintf("range, privacy, CSV, migration, concurrency and UTC reset verified on %s", kind))
+			if kind == "sqlite" {
+				require.NoError(t, logDB.Create([]model.Log{
+					{UserId: 88, CreatedAt: 700, RequestId: "request-z", Content: "request-z"},
+					{UserId: 88, CreatedAt: 700, RequestId: "request-a", Content: "request-a"},
+				}).Error)
+				common.SetLogDatabaseType(common.DatabaseTypeClickHouse)
+				ordered := request(88, common.RoleCommonUser, `{"start_timestamp":700,"end_timestamp":700}`)
+				require.NoError(t, common.UnmarshalJsonStr(strings.TrimSpace(ordered.Body.String()), &event))
+				require.Contains(t, event.CSV, "request-a")
+				require.Contains(t, event.CSV, "request-z")
+				assert.Less(t, strings.Index(event.CSV, "request-a"), strings.Index(event.CSV, "request-z"))
+				common.SetLogDatabaseType(common.DatabaseTypeSQLite)
+			}
 		})
 	}
 }

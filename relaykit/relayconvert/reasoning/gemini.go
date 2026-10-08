@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/types"
 )
 
 type GeminiRender struct {
@@ -219,6 +220,119 @@ func ValidateGeminiThinkingConfig(model string, config *dto.GeminiThinkingConfig
 		return Effort(level), nil
 	}
 	return "", nil
+}
+
+// NormalizeGeminiThinkingConfig rewrites provider-native thinking controls
+// into the dialect accepted by the target Gemini model.
+func NormalizeGeminiThinkingConfig(model string, generation *dto.GeminiChatGenerationConfig) (Effort, []types.ConversionDiagnostic, error) {
+	if generation == nil || generation.ThinkingConfig == nil {
+		return "", nil, nil
+	}
+	config := generation.ThinkingConfig
+	capabilities := geminiCapabilitiesFor(model)
+	var diagnostics []types.ConversionDiagnostic
+	if config.ThinkingBudget != nil && config.ThinkingLevel != "" {
+		switch capabilities.kind {
+		case geminiThinkingBudget:
+			diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_budget_level_conflict", fmt.Sprintf("model %q uses thinkingBudget; thinkingLevel %q was dropped because both were set", model, config.ThinkingLevel)))
+			config.ThinkingLevel = ""
+		case geminiThinkingLevel:
+			diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_budget_level_conflict", fmt.Sprintf("model %q uses thinkingLevel; thinkingBudget %d was dropped because both were set", model, *config.ThinkingBudget)))
+			config.ThinkingBudget = nil
+		}
+	}
+	if capabilities.kind == geminiThinkingNotConfigurable {
+		dropped := config.ThinkingBudget != nil || config.ThinkingLevel != "" || (config.IncludeThoughts != nil && !capabilities.supportsIncludeThoughts)
+		if dropped {
+			diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_thinking_unsupported", fmt.Sprintf("model %q does not support configurable thinking; the thinking configuration was dropped", model)))
+		}
+		if !capabilities.supportsIncludeThoughts || config.IncludeThoughts == nil {
+			generation.ThinkingConfig = nil
+			return "", diagnostics, nil
+		}
+		config.ThinkingBudget = nil
+		config.ThinkingLevel = ""
+		return EffortHigh, diagnostics, nil
+	}
+
+	intent, err := FromGemini(&dto.GeminiChatRequest{GenerationConfig: *generation})
+	if err != nil {
+		return "", diagnostics, err
+	}
+	if capabilities.kind == geminiThinkingUnknown {
+		return EffectiveEffort(intent), diagnostics, nil
+	}
+	if capabilities.kind == geminiThinkingBudget {
+		if config.ThinkingLevel != "" {
+			budget := gemini25BudgetForEffort(intent.Effort)
+			diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_level_to_budget", fmt.Sprintf("model %q uses thinkingBudget; thinkingLevel %q was converted to budget %d", model, config.ThinkingLevel, budget)))
+			config.ThinkingLevel = ""
+			config.ThinkingBudget = &budget
+		}
+		if config.ThinkingBudget == nil {
+			return EffectiveEffort(intent), diagnostics, nil
+		}
+		budget := *config.ThinkingBudget
+		switch {
+		case budget < -1:
+			budget = -1
+		case budget == 0 && !capabilities.supportsDisable:
+			diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_thinking_disable_unsupported", fmt.Sprintf("model %q cannot disable thinking; using its minimum thinking budget %d", model, capabilities.minBudget)))
+			budget = capabilities.minBudget
+		case budget != 0 && budget != -1:
+			clamped := clampGeminiBudget(budget, capabilities)
+			if clamped != budget {
+				diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_budget_clamped", fmt.Sprintf("thinking budget %d is outside the supported range [%d,%d] for model %q; using %d", budget, capabilities.minBudget, capabilities.maxBudget, model, clamped)))
+				budget = clamped
+			}
+		}
+		config.ThinkingBudget = &budget
+		return EffortFromBudget(budget), diagnostics, nil
+	}
+
+	if config.ThinkingBudget != nil {
+		budget := *config.ThinkingBudget
+		config.ThinkingBudget = nil
+		effort := EffortFromBudget(budget)
+		if budget == 0 {
+			effort = EffortMinimal
+			diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_thinking_disable_unsupported", fmt.Sprintf("model %q cannot disable thinking; using its lowest thinking level", model)))
+		}
+		level, err := geminiLevelForEffort(model, effort)
+		if err != nil {
+			return "", diagnostics, err
+		}
+		if budget != 0 {
+			diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_budget_to_level", fmt.Sprintf("model %q uses thinkingLevel; thinkingBudget %d was converted to thinkingLevel %q", model, budget, level)))
+		}
+		config.ThinkingLevel = level
+		return Effort(level), diagnostics, nil
+	}
+	if config.ThinkingLevel == "" {
+		return "", diagnostics, nil
+	}
+	if intent.Effort == EffortNone {
+		intent.Effort = EffortMinimal
+		diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_thinking_disable_unsupported", fmt.Sprintf("model %q cannot disable thinking; using its lowest thinking level", model)))
+	}
+	level, err := geminiLevelForEffort(model, intent.Effort)
+	if err != nil {
+		return "", diagnostics, err
+	}
+	if level != string(intent.Effort) {
+		diagnostics = append(diagnostics, geminiReasoningDiagnostic("gemini_level_adjusted", fmt.Sprintf("model %q does not support thinkingLevel %q; using %q", model, config.ThinkingLevel, level)))
+	}
+	config.ThinkingLevel = level
+	return Effort(level), diagnostics, nil
+}
+
+func geminiReasoningDiagnostic(code string, message string) types.ConversionDiagnostic {
+	return types.ConversionDiagnostic{
+		Code:     code,
+		Path:     "generationConfig.thinkingConfig",
+		Message:  message,
+		Severity: types.ConversionDiagnosticWarning,
+	}
 }
 
 // ResolveGeminiDefault materializes documented family defaults when a

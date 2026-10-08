@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, render, screen } from '@testing-library/react'
 import { createInstance } from 'i18next'
 import { I18nextProvider, initReactI18next } from 'react-i18next'
@@ -59,9 +60,11 @@ it('translates billing history statuses and updates them when the language chang
     },
   })
   render(
-    <I18nextProvider i18n={i18n}>
-      <BillingHistoryDialog open onOpenChange={vi.fn()} />
-    </I18nextProvider>
+    <QueryClientProvider client={new QueryClient()}>
+      <I18nextProvider i18n={i18n}>
+        <BillingHistoryDialog open onOpenChange={vi.fn()} />
+      </I18nextProvider>
+    </QueryClientProvider>
   )
   await screen.findByText('order-0')
   for (const label of ['成功', '待确认', '已过期']) {

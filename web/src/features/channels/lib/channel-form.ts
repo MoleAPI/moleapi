@@ -128,6 +128,40 @@ function isOptionalJsonObject(value: string | undefined): boolean {
   }
 }
 
+function isOptionalCodingPlanQuota(value: string | undefined): boolean {
+  try {
+    const parsed = parseOptionalJson(value)
+    if (parsed === undefined) return true
+    if (!isJsonObjectValue(parsed)) return false
+    if (parsed.unit !== 'requests' && parsed.unit !== 'tokens') return false
+    if (
+      !Array.isArray(parsed.windows) ||
+      parsed.windows.length === 0 ||
+      parsed.windows.length > 8
+    ) {
+      return false
+    }
+    const durations = new Set<number>()
+    return parsed.windows.every((window) => {
+      if (!isJsonObjectValue(window)) return false
+      const duration = window.duration_seconds
+      const limit = window.limit
+      if (typeof duration !== 'number') return false
+      durations.add(duration)
+      return (
+        Number.isInteger(duration) &&
+        duration >= 60 &&
+        duration <= 365 * 24 * 60 * 60 &&
+        typeof limit === 'number' &&
+        Number.isInteger(limit) &&
+        limit > 0
+      )
+    }) && durations.size === parsed.windows.length
+  } catch {
+    return false
+  }
+}
+
 function isOptionalModelMapping(value: string | undefined): boolean {
   try {
     const parsed = parseOptionalJson(value)
@@ -255,6 +289,14 @@ export const channelFormSchema = z
       .optional()
       .refine(isOptionalJsonObject, ERROR_MESSAGES.INVALID_JSON),
     advanced_custom: z.string().optional(),
+    coding_plan_provider: z.string().optional(),
+    coding_plan_quota: z
+      .string()
+      .optional()
+      .refine(
+        isOptionalCodingPlanQuota,
+        'Coding plan quota must contain a unit and valid windows'
+      ),
     other: z.string().optional(),
     // Multi-key options (not sent to backend directly)
     multi_key_mode: z.enum(['single', 'batch', 'multi_to_single']).optional(),
@@ -485,6 +527,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   upstream_model_update_auto_sync_enabled: false,
   upstream_model_update_ignored_models: '',
   advanced_custom: '',
+  coding_plan_provider: '',
+  coding_plan_quota: '',
 }
 
 // ============================================================================
@@ -557,6 +601,8 @@ export function transformChannelToFormDefaults(
   let upstreamModelUpdateAutoSyncEnabled = false
   let upstreamModelUpdateIgnoredModels = ''
   let advancedCustom = ''
+  let codingPlanProvider = ''
+  let codingPlanQuota = ''
   let channelProbeEnabled = true
 
   if (channel.settings) {
@@ -587,6 +633,10 @@ export function transformChannelToFormDefaults(
         : ''
       if (parsed.advanced_custom) {
         advancedCustom = stringifyAdvancedCustomConfig(parsed.advanced_custom)
+      }
+      codingPlanProvider = parsed.coding_plan_provider || ''
+      if (parsed.coding_plan_quota) {
+        codingPlanQuota = JSON.stringify(parsed.coding_plan_quota, null, 2)
       }
     } catch (error) {
       // eslint-disable-next-line no-console
@@ -641,6 +691,8 @@ export function transformChannelToFormDefaults(
     upstream_model_update_auto_sync_enabled: upstreamModelUpdateAutoSyncEnabled,
     upstream_model_update_ignored_models: upstreamModelUpdateIgnoredModels,
     advanced_custom: advancedCustom,
+    coding_plan_provider: codingPlanProvider,
+    coding_plan_quota: codingPlanQuota,
   }
 }
 
@@ -828,6 +880,24 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     }
   } else if ('advanced_custom' in settingsObj) {
     delete settingsObj.advanced_custom
+  }
+
+  if (formData.type === CHANNEL_TYPE_ADVANCED_CUSTOM) {
+    const codingPlanProvider = formData.coding_plan_provider?.trim()
+    if (codingPlanProvider) {
+      settingsObj.coding_plan_provider = codingPlanProvider
+    } else {
+      delete settingsObj.coding_plan_provider
+    }
+    const codingPlanQuota = parseOptionalJson(formData.coding_plan_quota)
+    if (isJsonObjectValue(codingPlanQuota)) {
+      settingsObj.coding_plan_quota = codingPlanQuota
+    } else {
+      delete settingsObj.coding_plan_quota
+    }
+  } else {
+    delete settingsObj.coding_plan_provider
+    delete settingsObj.coding_plan_quota
   }
 
   return JSON.stringify(settingsObj)

@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import type { StatusBadgeProps } from '@/components/status-badge'
-import { api } from '@/lib/api'
 import { formatTimestampToDate } from '@/lib/format'
 
 import type { TopupRecord, TopupStatus } from '../types'
@@ -92,75 +91,72 @@ export function formatTimestamp(timestamp: number): string {
 }
 
 /**
- * Owners and admins can view a completed top-up invoice.
+ * Owners and admins can view a completed top-up receipt.
  */
 export function getTopUpInvoiceUrl(
-  record: Pick<TopupRecord, 'id' | 'status' | 'user_id'>,
+  record: Pick<
+    TopupRecord,
+    'id' | 'status' | 'user_id' | 'payment_method' | 'payment_provider'
+  >,
   currentUserId?: number,
-  isAdmin = false,
-  download = false
+  isAdmin = false
 ): string | null {
   if (
     (!isAdmin && record.user_id !== currentUserId) ||
     record.status !== 'success' ||
+    record.payment_method === 'waffo_pancake' ||
+    record.payment_provider === 'waffo_pancake' ||
     !Number.isSafeInteger(record.id) ||
     record.id <= 0
   ) {
     return null
   }
-  return `/api/user/topup/${record.id}/invoice${download ? '?download=1' : ''}`
+  return `/invoice/${record.id}`
 }
 
-export function getTopUpInvoiceDownloadUrl(
-  record: Pick<TopupRecord, 'id' | 'status' | 'user_id'>,
-  currentUserId?: number,
-  isAdmin = false
-): string | null {
-  return getTopUpInvoiceUrl(record, currentUserId, isAdmin, true)
-}
-
-export function getInvoiceFilename(
-  contentDisposition: string | undefined,
-  fallback: string
-): string {
-  const match = contentDisposition?.match(/filename="?([^";]+)"?/i)
-  return match?.[1] || fallback
-}
-
-export async function fetchTopUpInvoiceFile(
-  record: Pick<TopupRecord, 'id' | 'status' | 'user_id' | 'trade_no'>,
-  currentUserId: number | undefined,
-  isAdmin: boolean,
-  download = false
-): Promise<{ filename: string; url: string } | null> {
-  const path = getTopUpInvoiceUrl(
-    record,
-    isAdmin ? undefined : currentUserId,
-    isAdmin,
-    download
+export function canRequestTopUpInvoice(
+  record: Pick<
+    TopupRecord,
+    'id' | 'status' | 'payment_method' | 'payment_provider' | 'money'
+  >
+): boolean {
+  const provider = record.payment_provider?.toLowerCase()
+  return (
+    Number.isSafeInteger(record.id) &&
+    record.id > 0 &&
+    record.status === 'success' &&
+    (provider === 'epay' ||
+      provider === 'lantu' ||
+      ['alipay', 'wxpay', 'lantu'].includes(record.payment_method)) &&
+    Number.isFinite(record.money) &&
+    record.money > 0
   )
-  if (!path) return null
+}
 
-  const response = await api.get(path, { responseType: 'blob' })
-  const contentTypeHeader = response.headers['content-type']
-  const contentDispositionHeader = response.headers['content-disposition']
-  const contentType =
-    typeof contentTypeHeader === 'string'
-      ? contentTypeHeader
-      : 'text/html; charset=utf-8'
-  const contentDisposition =
-    typeof contentDispositionHeader === 'string'
-      ? contentDispositionHeader
-      : undefined
-  const blob =
-    response.data instanceof Blob
-      ? response.data
-      : new Blob([response.data], { type: contentType })
-  return {
-    filename: getInvoiceFilename(
-      contentDisposition,
-      `invoice-${record.trade_no}.pdf`
-    ),
-    url: URL.createObjectURL(blob),
+export function getWaffoPancakeInvoiceUrl(
+  record: Pick<
+    TopupRecord,
+    'status' | 'payment_method' | 'payment_provider' | 'invoice_url'
+  >
+): string | null {
+  const value = record.invoice_url?.trim()
+  if (
+    !value ||
+    record.status !== 'success' ||
+    (record.payment_method !== 'waffo_pancake' &&
+      record.payment_provider !== 'waffo_pancake')
+  ) {
+    return null
+  }
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' &&
+      url.host === 'pancake.waffo.ai' &&
+      !url.username &&
+      !url.password
+      ? value
+      : null
+  } catch {
+    return null
   }
 }

@@ -30,6 +30,10 @@ const channelsSearchSchema = z.object({
   status: z.array(z.string()).optional().catch([]),
   type: z.array(z.string()).optional().catch([]),
   group: z.array(z.string()).optional().catch([]),
+  usagePeriod: z
+    .array(z.enum(['24h', 'yesterday', '7d', '30d']))
+    .optional()
+    .catch([]),
   model: z.string().optional().catch(''),
 })
 

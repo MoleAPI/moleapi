@@ -148,6 +148,7 @@ import {
   CHANNEL_TYPE_VLLM,
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_WARNINGS,
+  CODING_PLAN_PROVIDER_OPTIONS,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
   FIELD_DESCRIPTIONS,
@@ -170,7 +171,10 @@ import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   channelFormSchema,
   channelsQueryKeys,
+  getCodingPlanPresetConfig,
   getAdvancedCustomStats,
+  parseAdvancedCustomConfig,
+  stringifyAdvancedCustomConfig,
   transformChannelToFormDefaults,
   type ChannelFormValues,
   deduplicateKeys,
@@ -4228,6 +4232,107 @@ export function ChannelMutateDrawer({
                   </FormItem>
                 )}
               />
+            )}
+
+            {currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && (
+              <>
+                <FormField
+                  control={form.control}
+                  name='coding_plan_provider'
+                  render={({ field }) => (
+                    <FormItem className='space-y-2 border-y py-4'>
+                      <FormLabel>{t('Coding plan provider')}</FormLabel>
+                      <Select
+                        value={field.value || '__none__'}
+                        onValueChange={(value) => {
+                          const provider =
+                            !value || value === '__none__' ? '' : value
+                          const currentConfig = parseAdvancedCustomConfig(
+                            form.getValues('advanced_custom')
+                          )
+                          const previousPreset = getCodingPlanPresetConfig(
+                            field.value || ''
+                          )
+                          field.onChange(provider)
+                          const nextPreset = getCodingPlanPresetConfig(provider)
+                          if (
+                            nextPreset &&
+                            (!currentConfig ||
+                              (previousPreset &&
+                                stringifyAdvancedCustomConfig(currentConfig) ===
+                                  stringifyAdvancedCustomConfig(
+                                    previousPreset
+                                  )))
+                          ) {
+                            form.setValue(
+                              'advanced_custom',
+                              stringifyAdvancedCustomConfig(nextPreset),
+                              {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              }
+                            )
+                          }
+                        }}
+                        disabled={sensitiveLocked}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue
+                              placeholder={t('No coding plan preset')}
+                            />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value='__none__'>
+                              {t('No coding plan preset')}
+                            </SelectItem>
+                            {CODING_PLAN_PROVIDER_OPTIONS.map((option) => (
+                              <SelectItem
+                                key={option.value}
+                                value={option.value}
+                              >
+                                {t(option.label)}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <FormDescription>
+                        {t(
+                          'Optional preset metadata for coding-plan channels. Leave empty for a generic custom upstream.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name='coding_plan_quota'
+                  render={({ field }) => (
+                    <FormItem className='space-y-2 border-b pb-4'>
+                      <FormLabel>{t('Local coding plan quota')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          {...field}
+                          value={field.value || ''}
+                          disabled={sensitiveLocked}
+                          placeholder='{"unit":"requests","windows":[{"duration_seconds":86400,"limit":100}]}'
+                          className='min-h-24 font-mono text-xs'
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t(
+                          'Optional rolling windows. The channel is paused when any configured window reaches its limit.'
+                        )}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </>
             )}
 
             {currentType === CHANNEL_TYPE_ADVANCED_CUSTOM && (

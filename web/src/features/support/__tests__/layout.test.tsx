@@ -130,6 +130,7 @@ describe('support page layout', () => {
           <TicketCreateForm
             accountEmail='user@example.com'
             onCreated={onCreated}
+            initialBillingRecordId={1}
             initialValues={{
               type: 'Invoice Request',
               subject: 'Combined invoice',
@@ -140,9 +141,9 @@ describe('support page layout', () => {
       </I18nextProvider>
     )
     expect(screen.getByRole('button', { name: 'Submit ticket' })).toBeDisabled()
-    await user.click(
+    expect(
       await screen.findByRole('checkbox', { name: /paid-order-1/ })
-    )
+    ).toBeChecked()
     await user.click(screen.getByRole('checkbox', { name: /paid-order-2/ }))
     expect(screen.queryByText(/stripe-order/)).not.toBeInTheDocument()
     expect(screen.getByText(/Invoice total \(actual paid\)/)).toHaveTextContent(
@@ -460,7 +461,7 @@ describe('support page layout', () => {
 
     expect(
       screen.getByText(
-        '仅通过微信或支付宝支付的账单支持开票。发票将由合作机构开出，支持普通发票和增值税专用发票。'
+        '已完成的蓝兔和易支付订单可申请发票。发票由我们的合作伙伴开具，可提供增值税普通发票或专用发票。'
       )
     ).toBeVisible()
   })

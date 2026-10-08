@@ -33,6 +33,30 @@ export const CHANNEL_TYPE_VLLM = 62
 
 export const CHANNEL_TYPE_SGLANG = 63
 
+export const CHANNEL_USAGE_PERIOD_OPTIONS = [
+  { value: '24h', label: '24 Hours' },
+  { value: 'yesterday', label: 'Yesterday' },
+  { value: '7d', label: '7 Days' },
+  { value: '30d', label: '30 Days' },
+] as const
+
+export const CODING_PLAN_PROVIDER_OPTIONS = [
+  { value: 'glm-coding-plan', label: 'GLM Coding Plan (China)' },
+  {
+    value: 'glm-coding-plan-international',
+    label: 'GLM Coding Plan (International)',
+  },
+  { value: 'kimi-coding-plan', label: 'Kimi Coding Plan' },
+  { value: 'doubao-coding-plan', label: 'Doubao Coding Plan' },
+  { value: 'volcengine-agent-plan', label: 'Volcengine Agent Plan' },
+  { value: 'qwen-coding-plan', label: 'Qwen Coding Plan' },
+  { value: 'qwen-token-plan', label: 'Qwen Token Plan' },
+  { value: 'minimax-token-plan', label: 'MiniMax Token Plan' },
+  { value: 'opencode-go', label: 'OpenCode Go' },
+  { value: 'command-code', label: 'Command Code' },
+  { value: 'custom-coding-plan', label: 'Custom Coding Plan' },
+] as const
+
 export const CHANNEL_TYPES = {
   0: 'Unknown',
   1: 'OpenAI',

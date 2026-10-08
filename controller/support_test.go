@@ -478,6 +478,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}))
 			require.NoError(t, db.Create(&model.User{Id: 11, Username: "alice", Email: "Alice@example.com", AffCode: "alice"}).Error)
 			require.NoError(t, db.Create(&model.User{Id: 12, Username: "bob", Email: "bob@example.com", AffCode: "bob"}).Error)
+			require.NoError(t, db.Create(&model.User{Id: 14, Username: "no-email", AffCode: "no-email"}).Error)
 			var version string
 			query := "SELECT VERSION()"
 			if kind == "sqlite" {
@@ -492,6 +493,8 @@ func TestSupportTicketWorkflow(t *testing.T) {
 				{Id: 4, UserId: 11, TradeNo: "pending", Money: 99, PaymentMethod: "alipay", Status: "pending"},
 				{Id: 5, UserId: 11, TradeNo: "stripe", Money: 99, PaymentMethod: "stripe", Status: "success"},
 				{Id: 6, UserId: 11, TradeNo: "usd", Money: 2.50, PaymentMethod: "alipay", PaymentCurrency: "USD", Status: "success"},
+				{Id: 7, UserId: 11, TradeNo: "epay-custom", Money: 3.25, PaymentMethod: "custom", PaymentProvider: model.PaymentProviderEpay, Status: "success"},
+				{Id: 8, UserId: 11, TradeNo: "lantu", Money: 4.75, PaymentMethod: model.PaymentMethodLanTu, PaymentProvider: model.PaymentProviderLanTu, Status: "success"},
 			}
 			require.NoError(t, db.Create(&orders).Error)
 			summary, err := supportInvoiceSummary(11, []int{1, 2, 6})
@@ -500,6 +503,9 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			assert.Contains(t, summary, "Invoice total: USD 2.50")
 			assert.Contains(t, summary, "paid-1 | CNY 12.34")
 			assert.NotContains(t, summary, "500")
+			providerSummary, err := supportInvoiceSummary(11, []int{7, 8})
+			require.NoError(t, err)
+			assert.Contains(t, providerSummary, "Invoice total: CNY 8.00")
 			for _, ids := range [][]int{nil, {1, 1}, {3}, {4}, {5}, {999}, make([]int, 51)} {
 				_, err := supportInvoiceSummary(11, ids)
 				require.Error(t, err, "invalid selection: %v", ids)
@@ -509,6 +515,7 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			status, department := "Open", "7"
 			patches := 0
 			var conversationReads atomic.Int32
+			var invoiceSearches atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
@@ -533,6 +540,12 @@ func TestSupportTicketWorkflow(t *testing.T) {
 						assert.Contains(t, input.Description, "Verified billing records (actual paid amounts)")
 						assert.Contains(t, input.Description, "Invoice total: CNY 13.00")
 						_, _ = w.Write([]byte(`{"id":"new-invoice","ticketNumber":"113"}`))
+						return
+					}
+					if r.URL.Query().Get("limit") == "100" {
+						invoiceSearches.Add(1)
+						assert.Equal(t, "Alice@example.com", r.URL.Query().Get("email"))
+						_, _ = w.Write([]byte(`{"data":[{"id":"newest-invoice","departmentId":"7","email":"Alice@example.com","category":"Invoice Request","description":"Please invoice these orders.\n\nVerified billing records (actual paid amounts)\n#1 | paid-1 | CNY 12.34 | alipay\n#2 | paid-2 | CNY 0.66 | wxpay\nInvoice total: CNY 13.00"},{"id":"other-user","departmentId":"7","email":"bob@example.com","category":"Invoice Request","description":"Verified billing records (actual paid amounts)\n#3 | foreign | CNY 99.00 | alipay"}]}`))
 						return
 					}
 					assert.Equal(t, "20", r.URL.Query().Get("limit"))
@@ -573,7 +586,11 @@ func TestSupportTicketWorkflow(t *testing.T) {
 				c, _ := gin.CreateTestContext(w)
 				c.Request = httptest.NewRequest(http.MethodGet, "/", strings.NewReader(body))
 				if len(view) > 0 {
-					c.Request.URL.RawQuery = "view=" + view[0]
+					if strings.Contains(view[0], "=") {
+						c.Request.URL.RawQuery = view[0]
+					} else {
+						c.Request.URL.RawQuery = "view=" + view[0]
+					}
 				}
 				c.Params = gin.Params{{Key: "id", Value: "42"}, {Key: "attachment_id", Value: "2"}}
 				c.Set("id", id)
@@ -637,6 +654,23 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			assert.Contains(t, notificationBody, "Alice@example.com")
 			assert.Contains(t, notificationBody, "Please invoice these orders.")
 			assert.Contains(t, request(CreateSupportTicket, common.RoleCommonUser, 11, `{"subject":"Combined invoice","content":"Please invoice these orders.","type":"Invoice Request"}`).Body.String(), `"success":false`)
+			var invoiceTickets struct {
+				Success bool `json:"success"`
+				Data    struct {
+					Tickets map[int]string `json:"tickets"`
+				} `json:"data"`
+			}
+			recorder := request(GetSupportInvoiceTickets, common.RoleCommonUser, 11, "", "record_ids=1,2,3")
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &invoiceTickets))
+			require.True(t, invoiceTickets.Success)
+			assert.Equal(t, map[int]string{1: "newest-invoice", 2: "newest-invoice"}, invoiceTickets.Data.Tickets)
+			searchesBefore := invoiceSearches.Load()
+			invoiceTickets.Data.Tickets = nil
+			recorder = request(GetSupportInvoiceTickets, common.RoleCommonUser, 14, "", "record_ids=1")
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &invoiceTickets))
+			require.True(t, invoiceTickets.Success)
+			assert.Empty(t, invoiceTickets.Data.Tickets)
+			assert.Equal(t, searchesBefore, invoiceSearches.Load(), "users without email must not query Zoho")
 			status = "Closed"
 			assert.Contains(t, request(ReplySupportTicket, common.RoleCommonUser, 11, `{"content":"hello"}`).Body.String(), "Reopen the ticket")
 			department = "8"

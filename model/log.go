@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
+	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/gin-gonic/gin"
 
 	"gorm.io/gorm"
@@ -170,6 +171,15 @@ func clickHouseLogOrder(prefix string) string {
 	return prefix + "created_at desc, " + prefix + "request_id desc"
 }
 
+func optimizeClickHouseLogPagination(tx *gorm.DB) *gorm.DB {
+	if !common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		return tx
+	}
+	return tx.WithContext(clickhouse.Context(tx.Statement.Context, clickhouse.WithSettings(clickhouse.Settings{
+		"query_plan_max_limit_for_lazy_materialization": 0,
+	})))
+}
+
 func assignDisplayLogIds(logs []*Log, startIdx int) {
 	for i := range logs {
 		logs[i].Id = startIdx + i + 1
@@ -209,8 +219,12 @@ func GetLogByTokenId(tokenId int) (logs []*Log, err error) {
 		order = clickHouseLogOrder("")
 	}
 	err = LOG_DB.Model(&Log{}).Where("token_id = ?", tokenId).Order(order).Limit(common.MaxRecentItems).Find(&logs).Error
+	if err != nil {
+		common.SysError("failed to search token logs: " + err.Error())
+		return nil, errors.New("查询日志失败")
+	}
 	formatUserLogs(logs, 0)
-	return logs, err
+	return logs, nil
 }
 
 func RecordLog(userId int, logType int, content string) {
@@ -407,7 +421,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 		Username:         username,
 		CreatedAt:        common.GetTimestamp(),
 		Type:             LogTypeError,
-		Content:          content,
+		Content:          common.LogDetailPreview(content),
 		PromptTokens:     0,
 		CompletionTokens: 0,
 		TokenName:        tokenName,
@@ -626,15 +640,17 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 	}
 	err = tx.Model(&Log{}).Count(&total).Error
 	if err != nil {
-		return nil, 0, err
+		common.SysError("failed to count admin logs: " + err.Error())
+		return nil, 0, errors.New("查询日志失败")
 	}
 	order := "logs.created_at desc, logs.id desc"
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("logs.")
 	}
-	err = tx.Order(order).Limit(num).Offset(startIdx).Find(&logs).Error
+	err = optimizeClickHouseLogPagination(tx).Order(order).Limit(num).Offset(startIdx).Find(&logs).Error
 	if err != nil {
-		return nil, 0, err
+		common.SysError("failed to search admin logs: " + err.Error())
+		return nil, 0, errors.New("查询日志失败")
 	}
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		assignDisplayLogIds(logs, startIdx)
@@ -668,7 +684,8 @@ func GetAllLogs(logType int, startTimestamp int64, endTimestamp int64, modelName
 		} else {
 			// Bulk query channels from DB
 			if err = DB.Table("channels").Select("id, name").Where("id IN ?", channelIds.Items()).Find(&channels).Error; err != nil {
-				return logs, total, err
+				common.SysError("failed to load channel names for admin logs: " + err.Error())
+				return nil, 0, errors.New("查询日志失败")
 			}
 		}
 		channelMap := make(map[int]string, len(channels))
@@ -700,7 +717,7 @@ func GetUserLogs(userId int, logType int, startTimestamp int64, endTimestamp int
 	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
 		order = clickHouseLogOrder("logs.")
 	}
-	err = tx.Order(order).Limit(num).Offset(startIdx).Find(&logs).Error
+	err = optimizeClickHouseLogPagination(tx).Order(order).Limit(num).Offset(startIdx).Find(&logs).Error
 	if err != nil {
 		common.SysError("failed to search user logs: " + err.Error())
 		return nil, 0, errors.New("查询日志失败")

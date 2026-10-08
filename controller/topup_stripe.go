@@ -29,7 +29,7 @@ import (
 var stripeAdaptor = &StripeAdaptor{}
 
 const (
-	maxStripeTopUpUSD      int64 = 10_000
+	maxStripeTopUpUSD      int64 = maxTopUpUSD
 	maxStripeUnitAmount    int64 = 99_999_999
 	stripePaymentMode            = "payment"
 	stripePaymentPromoMode       = "payment+promo"
@@ -78,10 +78,6 @@ func (*StripeAdaptor) RequestAmount(c *gin.Context, req *StripePayRequest) {
 	}
 	if err := validateStripeTopUpAmount(req.Amount); err != nil {
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": err.Error()})
-		return
-	}
-	if req.Amount > 10000 {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "充值数量不能大于 10000"})
 		return
 	}
 	id := c.GetInt("id")

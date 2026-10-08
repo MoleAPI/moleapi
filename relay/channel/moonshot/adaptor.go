@@ -70,6 +70,8 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 			return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
 		} else if info.RelayMode == constant.RelayModeCompletions {
 			return fmt.Sprintf("%s/v1/completions", info.ChannelBaseUrl), nil
+		} else if info.RelayMode == constant.RelayModeResponses && info.GetFinalRequestRelayFormat() == types.RelayFormatOpenAIResponses {
+			return fmt.Sprintf("%s/v1/responses", info.ChannelBaseUrl), nil
 		}
 		return fmt.Sprintf("%s/v1/chat/completions", info.ChannelBaseUrl), nil
 	}
@@ -99,8 +101,11 @@ func isTemperatureOneOnlyModel(model string) bool {
 	return strings.EqualFold(model, "kimi-k2.6")
 }
 
+// ConvertOpenAIResponsesRequest forwards kimi-k3 and coding-plan Responses
+// requests natively, while keeping older Moonshot models on Chat Completions.
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	if info != nil && info.ChannelMeta != nil && channel.CodingPlanSupportsResponses(info.ChannelBaseUrl) {
+	if strings.EqualFold(getUpstreamModelName(info, request.Model), "kimi-k3") ||
+		(info != nil && info.ChannelMeta != nil && channel.CodingPlanSupportsResponses(info.ChannelBaseUrl)) {
 		return request, nil
 	}
 	result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAI, &request)

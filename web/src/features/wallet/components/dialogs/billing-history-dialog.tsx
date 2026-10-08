@@ -18,13 +18,22 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { InvoiceIcon } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
-import { Search, ChevronLeft, ChevronRight, Eye, Download } from 'lucide-react'
-import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import {
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Eye,
+  ExternalLink,
+} from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
 import { Dialog } from '@/components/dialog'
 import { StatusBadge } from '@/components/status-badge'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -57,13 +66,15 @@ import {
 import { toIntlLocale } from '@/i18n/languages'
 import { useAuthStore } from '@/stores/auth-store'
 
+import { getInvoiceTicketIds } from '../../api'
 import { useBillingHistory } from '../../hooks/use-billing-history'
 import {
+  canRequestTopUpInvoice,
   getStatusConfig,
   getPaymentMethodName,
   formatTimestamp,
   getTopUpInvoiceUrl,
-  fetchTopUpInvoiceFile,
+  getWaffoPancakeInvoiceUrl,
 } from '../../lib/billing'
 import {
   formatHistoricalCreditedAmount,
@@ -146,6 +157,30 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
   } = useBillingHistory({ initialUserKeyword: props.initialUserKeyword })
 
   const currentUserId = useAuthStore((state) => state.auth.user?.id)
+  const currentUserEmail = useAuthStore((state) => state.auth.user?.email)
+
+  const invoiceRecordIds = useMemo(
+    () =>
+      isAdmin
+        ? []
+        : records
+            .filter((record) => canRequestTopUpInvoice(record))
+            .map((record) => record.id),
+    [isAdmin, records]
+  )
+
+  const invoiceTicketsQuery = useQuery({
+    queryKey: ['top-up-invoice-tickets', currentUserId, invoiceRecordIds],
+    queryFn: () => getInvoiceTicketIds(invoiceRecordIds),
+    enabled:
+      props.open &&
+      Boolean(currentUserEmail?.trim()) &&
+      invoiceRecordIds.length > 0,
+    staleTime: 30_000,
+    retry: false,
+  })
+
+  const invoiceTickets = invoiceTicketsQuery.data ?? {}
 
   const [confirmTradeNo, setConfirmTradeNo] = useState<string | null>(null)
 
@@ -171,9 +206,24 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
     ? getTopUpInvoiceUrl(detailRecord, currentUserId, isAdmin)
     : null
 
-  const detailInvoiceDownloadUrl = detailRecord
-    ? getTopUpInvoiceUrl(detailRecord, currentUserId, isAdmin, true)
+  const detailCanRequestInvoice =
+    detailRecord && !isAdmin && canRequestTopUpInvoice(detailRecord)
+
+  const detailInvoiceTicketId = detailRecord
+    ? invoiceTickets[detailRecord.id]
+    : undefined
+
+  const detailOfficialInvoiceUrl = detailRecord
+    ? getWaffoPancakeInvoiceUrl(detailRecord)
     : null
+
+  const detailIsWaffoPancake =
+    detailRecord?.payment_method === 'waffo_pancake' ||
+    detailRecord?.payment_provider === 'waffo_pancake'
+
+  const detailIsCrypto =
+    detailRecord?.payment_method === 'nowpayments' ||
+    detailRecord?.payment_provider === 'nowpayments'
 
   const handleConfirmComplete = async () => {
     if (confirmTradeNo) {
@@ -182,55 +232,6 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
       if (success) {
         setConfirmTradeNo(null)
       }
-    }
-  }
-
-  const handleInvoice = async (record: TopupRecord, download = false) => {
-    const popup = download ? null : window.open('about:blank', '_blank')
-
-    if (popup) popup.opener = null
-
-    try {
-      const invoice = await fetchTopUpInvoiceFile(
-        record,
-        currentUserId,
-        isAdmin,
-        download
-      )
-
-      if (!invoice) {
-        popup?.close()
-
-        return
-      }
-
-      if (download) {
-        const link = document.createElement('a')
-
-        link.href = invoice.url
-
-        link.download = invoice.filename
-
-        document.body.append(link)
-
-        link.click()
-
-        link.remove()
-
-        URL.revokeObjectURL(invoice.url)
-
-        return
-      }
-
-      if (popup) {
-        popup.location.href = invoice.url
-      } else {
-        window.open(invoice.url, '_blank', 'noopener,noreferrer')
-      }
-
-      window.setTimeout(() => URL.revokeObjectURL(invoice.url), 60_000)
-    } catch {
-      popup?.close()
     }
   }
 
@@ -374,12 +375,12 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                       isAdmin
                     )
 
-                    const invoiceDownloadUrl = getTopUpInvoiceUrl(
-                      record,
-                      currentUserId,
-                      isAdmin,
-                      true
-                    )
+                    const officialInvoiceUrl = getWaffoPancakeInvoiceUrl(record)
+
+                    const canRequestInvoice =
+                      !isAdmin && canRequestTopUpInvoice(record)
+
+                    const invoiceTicketId = invoiceTickets[record.id]
 
                     return (
                       <TableRow
@@ -460,33 +461,69 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                                 size='sm'
                                 variant='ghost'
                                 className='h-7 px-2'
-                                onClick={(event) => {
-                                  event.stopPropagation()
-
-                                  void handleInvoice(record)
-                                }}
+                                render={
+                                  <a
+                                    href={invoiceViewUrl}
+                                    target='_blank'
+                                    rel='noreferrer'
+                                    onClick={(event) => event.stopPropagation()}
+                                  />
+                                }
+                                nativeButton={false}
                               >
                                 <HugeiconsIcon
                                   icon={InvoiceIcon}
                                   strokeWidth={2}
                                   data-icon='inline-start'
                                 />
-                                {t('View invoice')}
+                                {t('View receipt')}
                               </Button>
                             )}
-                            {invoiceDownloadUrl && (
+                            {canRequestInvoice && (
                               <Button
                                 size='sm'
                                 variant='ghost'
                                 className='h-7 px-2'
-                                onClick={(event) => {
-                                  event.stopPropagation()
-
-                                  void handleInvoice(record, true)
-                                }}
+                                render={
+                                  <Link
+                                    to='/support'
+                                    search={
+                                      invoiceTicketId
+                                        ? { ticket: invoiceTicketId }
+                                        : { invoice_record: record.id }
+                                    }
+                                    onClick={(event) => event.stopPropagation()}
+                                  />
+                                }
+                                nativeButton={false}
                               >
-                                <Download className='size-3.5' />
-                                {t('Download')}
+                                <HugeiconsIcon
+                                  icon={InvoiceIcon}
+                                  strokeWidth={2}
+                                  data-icon='inline-start'
+                                />
+                                {invoiceTicketId
+                                  ? t('View invoice request')
+                                  : t('Request tax invoice')}
+                              </Button>
+                            )}
+                            {officialInvoiceUrl && (
+                              <Button
+                                size='sm'
+                                variant='ghost'
+                                className='h-7 px-2'
+                                render={
+                                  <a
+                                    href={officialInvoiceUrl}
+                                    target='_blank'
+                                    rel='noreferrer'
+                                    onClick={(event) => event.stopPropagation()}
+                                  />
+                                }
+                                nativeButton={false}
+                              >
+                                <ExternalLink className='size-3.5' />
+                                {t('Download invoice')}
                               </Button>
                             )}
                             {isAdmin && record.status === 'pending' && (
@@ -570,23 +607,61 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                 <Button
                   size='sm'
                   variant='outline'
-                  onClick={() => void handleInvoice(detailRecord)}
+                  render={
+                    <a
+                      href={detailInvoiceViewUrl}
+                      target='_blank'
+                      rel='noreferrer'
+                    />
+                  }
+                  nativeButton={false}
                 >
                   <HugeiconsIcon
                     icon={InvoiceIcon}
                     strokeWidth={2}
                     data-icon='inline-start'
                   />
-                  {t('View invoice')}
+                  {t('View receipt')}
                 </Button>
               )}
-              {detailInvoiceDownloadUrl && (
+              {detailCanRequestInvoice && (
                 <Button
                   size='sm'
-                  variant='outline'
-                  onClick={() => void handleInvoice(detailRecord, true)}
+                  render={
+                    <Link
+                      to='/support'
+                      search={
+                        detailInvoiceTicketId
+                          ? { ticket: detailInvoiceTicketId }
+                          : { invoice_record: detailRecord.id }
+                      }
+                    />
+                  }
+                  nativeButton={false}
                 >
-                  <Download className='size-3.5' />
+                  <HugeiconsIcon
+                    icon={InvoiceIcon}
+                    strokeWidth={2}
+                    data-icon='inline-start'
+                  />
+                  {detailInvoiceTicketId
+                    ? t('View invoice request')
+                    : t('Request tax invoice')}
+                </Button>
+              )}
+              {detailOfficialInvoiceUrl && (
+                <Button
+                  size='sm'
+                  render={
+                    <a
+                      href={detailOfficialInvoiceUrl}
+                      target='_blank'
+                      rel='noreferrer'
+                    />
+                  }
+                  nativeButton={false}
+                >
+                  <ExternalLink className='size-3.5' />
                   {t('Download invoice')}
                 </Button>
               )}
@@ -654,6 +729,28 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                 label={t('Payment Channel')}
                 value={getPaymentMethodName(detailRecord.payment_provider, t)}
               />
+            )}
+            {detailIsWaffoPancake && (
+              <Alert>
+                <AlertDescription>
+                  {detailOfficialInvoiceUrl
+                    ? t(
+                        'Waffo Pancake issued this invoice. Open it to update the billing details or download it.'
+                      )
+                    : t(
+                        'Waffo Pancake issues the official invoice. Use the link in its receipt email to open the customer portal and download it.'
+                      )}
+                </AlertDescription>
+              </Alert>
+            )}
+            {detailIsCrypto && (
+              <Alert>
+                <AlertDescription>
+                  {t(
+                    'Cryptocurrency payments are not eligible for tax invoices.'
+                  )}
+                </AlertDescription>
+              </Alert>
             )}
             <BillingDetailRow
               label={t('Amount')}
