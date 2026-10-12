@@ -16,7 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { Wrench01Icon } from '@hugeicons/core-free-icons'
+import {
+  CrownIcon,
+  Wallet01Icon,
+  Wrench01Icon,
+} from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import { useTranslation } from 'react-i18next'
 
@@ -36,6 +40,7 @@ import type { LogOtherData } from '../types'
 interface LogCostDisplayProps {
   quota: number
   other: LogOtherData | null
+  showBillingSource?: boolean
 }
 
 function ToolSurchargeMarker() {
@@ -73,61 +78,58 @@ function ToolSurchargeMarker() {
   )
 }
 
-function QuotaBadge(props: { quota: number }) {
-  return (
-    <span className='text-foreground font-medium tabular-nums'>
-      {formatLogQuota(props.quota)}
-    </span>
-  )
-}
-
-function SubscriptionBadge(props: { quota: number }) {
-  const { t } = useTranslation()
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <StatusBadge
-            label={t('Subscription')}
-            variant='success'
-            size='sm'
-            copyable={false}
-            className='cursor-help'
-          />
-        }
-      />
-      <TooltipContent>
-        <span>
-          {t('Deducted by subscription')}: {formatLogQuota(props.quota)}
-        </span>
-      </TooltipContent>
-    </Tooltip>
-  )
-}
-
 export function LogCostDisplay(props: LogCostDisplayProps) {
+  const { t } = useTranslation()
   const isSubscription = props.other?.billing_source === 'subscription'
   const showToolSurcharge = hasToolSurcharge(props.other)
+  const quota = isSubscription
+    ? (props.other?.subscription_consumed ?? props.quota)
+    : props.quota
+  let source: string | undefined
 
-  if (!isSubscription && !showToolSurcharge) {
-    return (
-      <div className='flex flex-col gap-0.5'>
-        <QuotaBadge quota={props.quota} />
-      </div>
-    )
+  if (isSubscription) {
+    source = t('Subscription')
+  } else if (
+    props.showBillingSource &&
+    props.other?.billing_source === 'wallet'
+  ) {
+    source = t('Wallet')
   }
 
   return (
     <TooltipProvider>
-      <div className='inline-flex items-center gap-1'>
-        {isSubscription ? (
-          <SubscriptionBadge
-            quota={props.other?.subscription_consumed ?? props.quota}
-          />
-        ) : (
-          <QuotaBadge quota={props.quota} />
-        )}
+      <div className='inline-flex w-fit items-center gap-1.5'>
+        <StatusBadge
+          type='badge'
+          variant='neutral'
+          size='lg'
+          copyable={false}
+          className='border-border/80 bg-muted/60 text-foreground rounded-md border font-semibold tabular-nums'
+        >
+          {source ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <span
+                    className='inline-flex shrink-0 cursor-help items-center'
+                    role='img'
+                    aria-label={source}
+                    tabIndex={0}
+                  >
+                    <HugeiconsIcon
+                      icon={isSubscription ? CrownIcon : Wallet01Icon}
+                      className='size-3.5'
+                      strokeWidth={2}
+                      aria-hidden='true'
+                    />
+                  </span>
+                }
+              />
+              <TooltipContent>{source}</TooltipContent>
+            </Tooltip>
+          ) : null}
+          <span className='whitespace-nowrap'>{formatLogQuota(quota)}</span>
+        </StatusBadge>
         {showToolSurcharge ? <ToolSurchargeMarker /> : null}
       </div>
     </TooltipProvider>

@@ -319,7 +319,7 @@ func imageResponsesOutputItemID(c *gin.Context, index int64) string {
 
 func OpenaiImageStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.Response) (*dto.Usage, *types.NewAPIError) {
 	if resp == nil || resp.Body == nil {
-		logger.LogError(c, "invalid image stream response")
+		logger.LogError(c, common.LogText("invalid image stream response"))
 		return nil, types.NewOpenAIError(fmt.Errorf("invalid response"), types.ErrorCodeBadResponse, http.StatusInternalServerError)
 	}
 	if shouldWrapImageAsChatCompletion(c, info) {

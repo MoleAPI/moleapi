@@ -25,6 +25,7 @@ import {
   type ParsedTier,
 } from '@/features/pricing/lib/billing-expr'
 import { formatLogQuota } from '@/lib/format'
+import { translateServerText } from '@/lib/server-error-message'
 
 import type { UsageLog } from '../data/schema'
 import type { LogOtherData } from '../types'
@@ -708,6 +709,8 @@ const AUDIT_TEMPLATES: Record<string, string> = {
     'Purchased subscription {{plan}} for {{money}} via {{payment_method}}',
   'subscription.balance_purchase':
     'Purchased subscription {{plan}} with balance: paid {{money}}, deducted {{quota}}',
+  'subscription.user_quota_reset':
+    'Administrator reset the quota of subscription plan {{plan_title}} (ID: {{plan_id}})',
   // Logs
   'log.clear': 'Cleared historical logs',
   'log.cleanup_start': 'Log cleanup task started.',
@@ -721,7 +724,20 @@ const AUDIT_TEMPLATES: Record<string, string> = {
 }
 
 /**
- * Render localized content from a log's structured
+ * The token name to show for a log. A log written without a token, such as a
+ * channel test, carries a name the gateway stored as an English source key.
+ */
+export function logTokenName(
+  log: Pick<UsageLog, 'token_id' | 'token_name'>,
+  t: (key: string, opts?: Record<string, unknown>) => string
+): string {
+  return log.token_id === 0
+    ? translateServerText(t, log.token_name)
+    : log.token_name
+}
+
+/**
+ * Render the localized content of an operation log from its structured
  * `other.op` descriptor. Returns null when the log has no recognized action,
  * letting callers fall back to the raw `content` field.
  */
@@ -799,6 +815,11 @@ export function renderLogContent(
   other: LogOtherData | null | undefined,
   t: (key: string, opts?: Record<string, unknown>) => string
 ): string | null {
+  const parts = other?.content_parts
+  if (Array.isArray(parts) && parts.length > 0) {
+    return parts.map((part) => t(part.key, part.params)).join(', ')
+  }
+
   const structured = renderAuditContent(other, t)
   if (structured) return structured
 

@@ -8,11 +8,14 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/config"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"gorm.io/gorm"
 )
 
 // RequestPolicySnapshot validates the request policy settings API.
@@ -28,6 +31,8 @@ type RequestPolicySnapshot struct {
 	Options         map[string]string
 }
 
+var requestPolicySnapshot atomic.Pointer[RequestPolicySnapshot]
+var requestPolicyOptionMutex sync.Mutex
 var requestPolicyDefaults = requestPolicyDefaultOptions()
 
 func requestPolicyDefaultOptions() map[string]string {
@@ -68,19 +73,14 @@ func IsRequestPolicyOption(key string) bool {
 }
 
 func CurrentRequestPolicy() *RequestPolicySnapshot {
-	common.OptionMapRWMutex.RLock()
-	options := make(map[string]string)
-	for key, value := range common.OptionMap {
-		if IsRequestPolicyOption(key) {
-			options[key] = value
-		}
+	if snapshot := requestPolicySnapshot.Load(); snapshot != nil {
+		return snapshot
 	}
-	common.OptionMapRWMutex.RUnlock()
-	// Existing installations may contain legacy values. Expose them unchanged
-	// so administrators can correct them; validate the complete policy on save.
-	raw := maps.Clone(requestPolicyDefaults)
-	maps.Copy(raw, options)
-	return &RequestPolicySnapshot{Options: raw}
+	snapshot, err := BuildRequestPolicy(nil)
+	if err != nil {
+		return &RequestPolicySnapshot{Options: map[string]string{}}
+	}
+	return snapshot
 }
 
 func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, error) {
@@ -196,9 +196,25 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 	return snapshot, nil
 }
 
-// UpdateRequestPolicyOptions validates the whole patch before using the existing
-// atomic options writer. No new table or configuration store is needed.
+func refreshRequestPolicySnapshot() error {
+	common.OptionMapRWMutex.RLock()
+	options := make(map[string]string)
+	for key, value := range common.OptionMap {
+		if IsRequestPolicyOption(key) {
+			options[key] = value
+		}
+	}
+	common.OptionMapRWMutex.RUnlock()
+	snapshot, err := BuildRequestPolicy(options)
+	if err == nil {
+		requestPolicySnapshot.Store(snapshot)
+	}
+	return err
+}
+
 func UpdateRequestPolicyOptions(values map[string]string) error {
+	requestPolicyOptionMutex.Lock()
+	defer requestPolicyOptionMutex.Unlock()
 	options := maps.Clone(CurrentRequestPolicy().Options)
 	for key, value := range values {
 		if !IsRequestPolicyOption(key) {
@@ -206,8 +222,29 @@ func UpdateRequestPolicyOptions(values map[string]string) error {
 		}
 		options[key] = value
 	}
-	if _, err := BuildRequestPolicy(options); err != nil {
+	snapshot, err := BuildRequestPolicy(options)
+	if err != nil {
 		return err
 	}
-	return UpdateOptionsBulk(values)
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		for key, value := range values {
+			option := Option{Key: key}
+			if err := tx.FirstOrCreate(&option, Option{Key: key}).Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&option).Update("value", value).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for key, value := range values {
+		if err := updateOptionMap(key, value); err != nil {
+			return err
+		}
+	}
+	requestPolicySnapshot.Store(snapshot)
+	return nil
 }

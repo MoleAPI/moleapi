@@ -46,6 +46,7 @@ import { pluginUsageSchema } from '@/features/pricing/lib/plugin-pricing'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { formatBillingCurrencyFromUSD } from '@/lib/currency'
 import { formatLogQuota, formatTokens, formatUseTime } from '@/lib/format'
+import { translateServerText } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
 import type { UsageLog } from '../../data/schema'
@@ -63,6 +64,7 @@ import {
   getResponseTimeColor,
   getImageTokenBreakdown,
   getReasoningEffortVariant,
+  logTokenName,
   renderAuditContent,
   renderLogContent,
   sanitizeLogDetail,
@@ -1171,7 +1173,11 @@ export function DetailsDialog(props: DetailsDialogProps) {
           )}
 
           {props.log.token_name && (
-            <DetailRow label={t('Token')} value={props.log.token_name} mono />
+            <DetailRow
+              label={t('Token')}
+              value={logTokenName(props.log, t)}
+              mono
+            />
           )}
 
           {(props.log.group || other?.group) && (
@@ -1406,7 +1412,10 @@ export function DetailsDialog(props: DetailsDialogProps) {
               <DetailRow label={t('Task ID')} value={other.task_id} mono />
             )}
             {other.reason && (
-              <DetailRow label={t('Reason')} value={other.reason} />
+              <DetailRow
+                label={t('Reason')}
+                value={translateServerText(t, other.reason)}
+              />
             )}
           </DetailSection>
         )}

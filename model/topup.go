@@ -138,13 +138,13 @@ const (
 )
 
 var (
-	ErrPaymentMethodMismatch    = errors.New("payment method mismatch")
-	ErrTopUpNotFound            = errors.New("topup not found")
-	ErrTopUpStatusInvalid       = errors.New("topup status invalid")
-	ErrInvalidTopUpQuota        = errors.New("invalid top-up quota")
-	ErrTopUpQuotaLimitExceeded  = errors.New("top-up quota limit exceeded")
-	ErrWalletQuotaLimitExceeded = errors.New("wallet quota limit exceeded")
-	ErrTopUpQuotaInvalid        = errors.New("topup quota invalid")
+	ErrPaymentMethodMismatch          = errors.New("payment method mismatch")
+	ErrTopUpNotFound                  = errors.New("topup not found")
+	ErrTopUpStatusInvalid             = errors.New("topup status invalid")
+	ErrInvalidTopUpQuota        error = common.NewMessage("Invalid top-up quota")
+	ErrTopUpQuotaLimitExceeded  error = common.NewMessage("Top-up quota limit exceeded")
+	ErrWalletQuotaLimitExceeded error = common.NewMessage("Wallet quota limit exceeded")
+	ErrTopUpQuotaInvalid              = errors.New("topup quota invalid")
 )
 
 func (topUp *TopUp) Insert() error {
@@ -268,7 +268,7 @@ func FindTopUpByTradeNo(tradeNo string) (*TopUp, error) {
 
 func UpdatePendingTopUpStatus(tradeNo string, expectedPaymentProvider string, targetStatus string) error {
 	if tradeNo == "" {
-		return errors.New("未提供支付单号")
+		return errors.New("payment order number not provided")
 	}
 
 	refCol := "`trade_no`"
@@ -608,7 +608,7 @@ func Recharge(referenceId string, customerId string, callerIp string) (err error
 
 func RechargeStripeWithPaymentDetails(referenceId string, customerId string, gatewayTradeNo string, paymentCurrency string, callerIp string) (err error) {
 	if referenceId == "" {
-		return errors.New("未提供支付单号")
+		return errors.New("payment order number not provided")
 	}
 
 	topUp, quotaToAdd, settled, err := settleTopUp(referenceId, PaymentProviderStripe, stripeTopUpQuota, func(topUp *TopUp, _ *User) map[string]interface{} {
@@ -625,8 +625,8 @@ func RechargeStripeWithPaymentDetails(referenceId string, customerId string, gat
 		return userUpdates
 	})
 	if err != nil {
-		common.SysError("topup failed: " + err.Error())
-		return errors.New("充值失败，请稍后重试")
+		common.SysError(common.LogText("topup failed: %s", err.Error()))
+		return errors.New("top-up failed")
 	}
 	syncCreditUserQuotaCache(topUp.UserId, quotaToAdd, "stripe topup")
 
@@ -1077,14 +1077,14 @@ func SearchUserTopUpsWithParams(userId int, params TopUpSearchParams, pageInfo *
 
 	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {
 		tx.Rollback()
-		common.SysError("failed to count search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
+		common.SysError(common.LogText("failed to count search topups: %s", err.Error()))
+		return nil, 0, common.NewMessage("Failed to search top-up records")
 	}
 
 	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
 		tx.Rollback()
-		common.SysError("failed to search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
+		common.SysError(common.LogText("failed to search topups: %s", err.Error()))
+		return nil, 0, common.NewMessage("Failed to search top-up records")
 	}
 
 	if err = tx.Commit().Error; err != nil {
@@ -1145,14 +1145,14 @@ func SearchAllTopUpsWithParams(params TopUpSearchParams, pageInfo *common.PageIn
 
 	if err = query.Limit(searchTopUpCountHardLimit).Count(&total).Error; err != nil {
 		tx.Rollback()
-		common.SysError("failed to count search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
+		common.SysError(common.LogText("failed to count search topups: %s", err.Error()))
+		return nil, 0, common.NewMessage("Failed to search top-up records")
 	}
 
 	if err = query.Order("id desc").Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Find(&topups).Error; err != nil {
 		tx.Rollback()
-		common.SysError("failed to search topups: " + err.Error())
-		return nil, 0, errors.New("搜索充值记录失败")
+		common.SysError(common.LogText("failed to search topups: %s", err.Error()))
+		return nil, 0, common.NewMessage("Failed to search top-up records")
 	}
 
 	if err = tx.Commit().Error; err != nil {
@@ -1164,7 +1164,7 @@ func SearchAllTopUpsWithParams(params TopUpSearchParams, pageInfo *common.PageIn
 // ManualCompleteTopUp 管理员手动完成订单并给用户充值
 func ManualCompleteTopUp(tradeNo string, callerIp string) error {
 	if tradeNo == "" {
-		return errors.New("未提供订单号")
+		return common.NewMessage("Order number not provided")
 	}
 
 	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, "", func(topUp *TopUp) decimal.Decimal {
@@ -1203,7 +1203,7 @@ func RechargeCreem(referenceId string, customerEmail string, customerName string
 
 func RechargeCreemWithPaymentDetails(referenceId string, customerEmail string, customerName string, gatewayTradeNo string, paymentCurrency string, callerIp string) (err error) {
 	if referenceId == "" {
-		return errors.New("未提供支付单号")
+		return errors.New("payment order number not provided")
 	}
 
 	topUp, quotaToAdd, settled, err := settleTopUp(referenceId, PaymentProviderCreem, func(topUp *TopUp) decimal.Decimal {
@@ -1222,8 +1222,8 @@ func RechargeCreemWithPaymentDetails(referenceId string, customerEmail string, c
 		return userUpdates
 	})
 	if err != nil {
-		common.SysError("creem topup failed: " + err.Error())
-		return errors.New("充值失败，请稍后重试")
+		common.SysError(common.LogText("creem topup failed: %s", err.Error()))
+		return errors.New("top-up failed")
 	}
 	syncCreditUserQuotaCache(topUp.UserId, quotaToAdd, "creem topup")
 
@@ -1240,7 +1240,7 @@ func RechargeCreemWithPaymentDetails(referenceId string, customerEmail string, c
 
 func RechargeEpay(tradeNo string, paymentMethod string, gatewayTradeNo string, callerIp string) (err error) {
 	if tradeNo == "" {
-		return errors.New("未提供支付单号")
+		return errors.New("payment order number not provided")
 	}
 
 	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, PaymentProviderEpay, topUpQuotaFromAmount, func(topUp *TopUp, _ *User) map[string]interface{} {
@@ -1344,10 +1344,10 @@ func RechargeWaffoWithPaymentDetails(tradeNo string, gatewayTradeNo string, paym
 		return nil
 	})
 	if err != nil {
-		common.SysError("waffo topup failed: " + err.Error())
-		return errors.New("充值失败，请稍后重试")
+		common.SysError(common.LogText("waffo topup failed: %s", err.Error()))
+		return errors.New("top-up failed")
 	}
-	syncCreditUserQuotaCache(topUp.UserId, quotaToAdd, "waffo topup")
+	syncCreditUserQuotaCache(topUp.UserId, quotaToAdd, common.LogText("waffo topup"))
 
 	if settled {
 		RecordTopupLogWithOperation(topUp.UserId, fmt.Sprintf("Waffo充值成功，充值额度: %v，支付金额: %.2f", logger.FormatQuota(quotaToAdd), topUp.Money), callerIp, topUp.PaymentMethod, PaymentMethodWaffo, "topup.completed", map[string]interface{}{
@@ -1366,7 +1366,7 @@ func RechargeWaffoPancake(tradeNo string) (err error) {
 
 func RechargeWaffoPancakeWithPaymentDetails(tradeNo string, gatewayTradeNo string, paymentCurrency string, invoiceURL string, callerIp string) (err error) {
 	if tradeNo == "" {
-		return errors.New("未提供支付单号")
+		return errors.New("payment order number not provided")
 	}
 
 	topUp, quotaToAdd, settled, err := settleTopUp(tradeNo, PaymentProviderWaffoPancake, topUpQuotaFromAmount, func(topUp *TopUp, _ *User) map[string]interface{} {
@@ -1382,8 +1382,8 @@ func RechargeWaffoPancakeWithPaymentDetails(tradeNo string, gatewayTradeNo strin
 		return nil
 	})
 	if err != nil {
-		common.SysError("waffo pancake topup failed: " + err.Error())
-		return errors.New("充值失败，请稍后重试")
+		common.SysError(common.LogText("waffo pancake topup failed: %s", err.Error()))
+		return errors.New("top-up failed")
 	}
 	if invoiceURL != "" && topUp.InvoiceURL == "" {
 		if err := DB.Model(&TopUp{}).Where("id = ? AND invoice_url = ?", topUp.Id, "").Update("invoice_url", invoiceURL).Error; err != nil {

@@ -20,6 +20,8 @@ import assert from 'node:assert/strict'
 
 import { afterEach, beforeEach, describe, test } from 'vitest'
 
+import { useAuthStore } from '@/stores/auth-store'
+
 import { STORAGE_KEYS } from '../../constants'
 import type { Message, PlaygroundConversationSession } from '../../types'
 import {
@@ -52,6 +54,10 @@ function installLocalStorageMock() {
     configurable: true,
     value: storage,
   })
+}
+
+function userStorageKey(key: string): string {
+  return `${key}:1`
 }
 
 function createUserMessage(content: string): Message {
@@ -95,9 +101,11 @@ function createLargeSession(
 
 beforeEach(() => {
   installLocalStorageMock()
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'test', role: 1 })
 })
 
 afterEach(() => {
+  useAuthStore.getState().auth.reset()
   if (originalLocalStorageDescriptor) {
     Object.defineProperty(
       globalThis,
@@ -149,7 +157,7 @@ describe('playground conversation storage', () => {
     assert.deepEqual(nextState.sessions[0]?.messages, [])
   })
 
-  test('loads legacy single-message storage as the default conversation', () => {
+  test('does not assign unowned legacy messages to the signed-in user', () => {
     localStorage.setItem(
       STORAGE_KEYS.MESSAGES,
       JSON.stringify({
@@ -162,11 +170,9 @@ describe('playground conversation storage', () => {
 
     assert.equal(state.activeSessionId, 'default')
     assert.equal(state.sessions.length, 1)
-    assert.equal(state.sessions[0]?.title, 'hello from old storage')
-    assert.equal(
-      state.sessions[0]?.messages[0]?.versions[0]?.content,
-      'hello from old storage'
-    )
+    assert.equal(state.sessions[0]?.title, '')
+    assert.deepEqual(state.sessions[0]?.messages, [])
+    assert.equal(localStorage.getItem(STORAGE_KEYS.MESSAGES), null)
   })
 
   test('keeps support conversations separate from regular playground history', () => {
@@ -184,8 +190,10 @@ describe('playground conversation storage', () => {
       loadConversationState('support').sessions[0]?.id,
       'support-chat'
     )
-    assert.ok(localStorage.getItem(STORAGE_KEYS.CONVERSATIONS))
-    assert.ok(localStorage.getItem(STORAGE_KEYS.SUPPORT_CONVERSATIONS))
+    assert.ok(localStorage.getItem(userStorageKey(STORAGE_KEYS.CONVERSATIONS)))
+    assert.ok(
+      localStorage.getItem(userStorageKey(STORAGE_KEYS.SUPPORT_CONVERSATIONS))
+    )
   })
 
   test('keeps the active conversation when saved history exceeds the local cap', () => {
@@ -206,7 +214,7 @@ describe('playground conversation storage', () => {
   test('keeps stored base64 image markdown intact when reloading', () => {
     const imageMarkdown = `![generated image](data:image/png;base64,${'A'.repeat(45_000)})`
     localStorage.setItem(
-      STORAGE_KEYS.CONVERSATIONS,
+      userStorageKey(STORAGE_KEYS.CONVERSATIONS),
       JSON.stringify({
         version: 1,
         data: [
@@ -237,7 +245,7 @@ describe('playground conversation storage', () => {
   test('does not delete oversized saved conversations on load', () => {
     const largeContent = `![generated image](data:image/png;base64,${'A'.repeat(MAX_STORED_CONVERSATIONS_BYTES)})`
     localStorage.setItem(
-      STORAGE_KEYS.CONVERSATIONS,
+      userStorageKey(STORAGE_KEYS.CONVERSATIONS),
       JSON.stringify({
         version: 1,
         data: [
@@ -260,7 +268,7 @@ describe('playground conversation storage', () => {
     const state = loadConversationState()
 
     assert.equal(state.sessions[0]?.id, 'large-image-session')
-    assert.ok(localStorage.getItem(STORAGE_KEYS.CONVERSATIONS))
+    assert.ok(localStorage.getItem(userStorageKey(STORAGE_KEYS.CONVERSATIONS)))
   })
 
   test('trims old conversations before saving oversized history', () => {
@@ -277,7 +285,9 @@ describe('playground conversation storage', () => {
       [activeSession, ...oldSessions],
       activeSession.id
     )
-    const raw = localStorage.getItem(STORAGE_KEYS.CONVERSATIONS)
+    const raw = localStorage.getItem(
+      userStorageKey(STORAGE_KEYS.CONVERSATIONS)
+    )
 
     assert.ok(raw)
     assert.ok(raw.length <= MAX_STORED_CONVERSATIONS_BYTES)

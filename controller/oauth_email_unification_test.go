@@ -20,7 +20,7 @@ func setupOAuthEmailUnificationTest(t *testing.T) *gorm.DB {
 	previousRedisEnabled := common.RedisEnabled
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserOAuthBinding{}))
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.UserOAuthBinding{}, &model.TwoFA{}, &model.PasskeyCredential{}))
 	model.DB = db
 	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
 	common.RegisterEnabled = false
@@ -191,4 +191,48 @@ func TestOAuthLoginDoesNotOverwriteExistingEmailForGitHubUser(t *testing.T) {
 	var updated model.User
 	require.NoError(t, db.First(&updated, existing.Id).Error)
 	assert.Equal(t, "manual@example.com", updated.Email)
+}
+
+func TestOAuthLegacyGitHubBindingRequiresTrustedEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		withTwoFA   bool
+		wantPending bool
+	}{
+		{name: "rejects mutable login without another factor"},
+		{name: "defers migration until second-factor verification", withTwoFA: true, wantPending: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupOAuthEmailUnificationTest(t)
+			existing := model.User{
+				Username: "existing", Password: "password", GitHubId: "legacy-login",
+				Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default",
+			}
+			require.NoError(t, db.Create(&existing).Error)
+			if tc.withTwoFA {
+				require.NoError(t, db.Create(&model.TwoFA{UserId: existing.Id, Secret: "secret", IsEnabled: true}).Error)
+			}
+
+			user, migration, err := findOrCreateOAuthUserWithToken(nil, &oauth.GitHubProvider{}, &oauth.OAuthUser{
+				ProviderUserID: "12345",
+				Extra:          map[string]any{"legacy_id": "legacy-login"},
+			}, nil, "")
+			if tc.wantPending {
+				require.NoError(t, err)
+				require.NotNil(t, migration)
+				assert.Equal(t, existing.Id, user.Id)
+				assert.Equal(t, "12345", migration.GitHubID)
+				assert.Equal(t, "legacy-login", migration.LegacyID)
+			} else {
+				var confirmationErr *OAuthLegacyBindingNotConfirmedError
+				require.ErrorAs(t, err, &confirmationErr)
+				assert.Nil(t, user)
+				assert.Nil(t, migration)
+			}
+
+			var stored model.User
+			require.NoError(t, db.First(&stored, existing.Id).Error)
+			assert.Equal(t, "legacy-login", stored.GitHubId)
+		})
+	}
 }

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/gin-gonic/gin"
@@ -53,7 +52,7 @@ func (p *GitHubProvider) IsEnabled() bool {
 
 func (p *GitHubProvider) ExchangeToken(ctx context.Context, code string, c *gin.Context) (*OAuthToken, error) {
 	if code == "" {
-		return nil, NewOAuthError(i18n.MsgOAuthInvalidCode, nil)
+		return nil, NewOAuthError(common.NewMessage(msgInvalidCode))
 	}
 
 	values := map[string]string{
@@ -78,8 +77,8 @@ func (p *GitHubProvider) ExchangeToken(ctx context.Context, code string, c *gin.
 	}
 	res, err := client.Do(req)
 	if err != nil {
-		logger.LogError(ctx, fmt.Sprintf("[OAuth-GitHub] ExchangeToken error: %s", err.Error()))
-		return nil, NewOAuthErrorWithRaw(i18n.MsgOAuthConnectFailed, map[string]any{"Provider": "GitHub"}, err.Error())
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] ExchangeToken error: %s", err.Error()))
+		return nil, NewOAuthErrorWithRaw(common.NewMessage(msgConnectFailed, map[string]any{"provider": "GitHub"}), err.Error())
 	}
 	defer res.Body.Close()
 
@@ -87,13 +86,13 @@ func (p *GitHubProvider) ExchangeToken(ctx context.Context, code string, c *gin.
 
 	var oAuthResponse gitHubOAuthResponse
 	if err := common.DecodeJson(res.Body, &oAuthResponse); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("[OAuth-GitHub] ExchangeToken decode error: %s", err.Error()))
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] ExchangeToken decode error: %s", err.Error()))
 		return nil, err
 	}
 
 	if oAuthResponse.AccessToken == "" {
-		logger.LogError(ctx, "[OAuth-GitHub] ExchangeToken failed: empty access token")
-		return nil, NewOAuthError(i18n.MsgOAuthTokenFailed, map[string]any{"Provider": "GitHub"})
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] ExchangeToken failed: empty access token"))
+		return nil, NewOAuthError(common.NewMessage(msgTokenFailed, map[string]any{"provider": "GitHub"}))
 	}
 
 	logger.LogDebug(ctx, "[OAuth-GitHub] ExchangeToken success: scope=%s", oAuthResponse.Scope)
@@ -119,8 +118,8 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*O
 	}
 	res, err := client.Do(req)
 	if err != nil {
-		logger.LogError(ctx, fmt.Sprintf("[OAuth-GitHub] GetUserInfo error: %s", err.Error()))
-		return nil, NewOAuthErrorWithRaw(i18n.MsgOAuthConnectFailed, map[string]any{"Provider": "GitHub"}, err.Error())
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] GetUserInfo error: %s", err.Error()))
+		return nil, NewOAuthErrorWithRaw(common.NewMessage(msgConnectFailed, map[string]any{"provider": "GitHub"}), err.Error())
 	}
 	defer res.Body.Close()
 
@@ -133,19 +132,19 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*O
 		if len(bodyStr) > 500 {
 			bodyStr = bodyStr[:500] + "..."
 		}
-		logger.LogError(ctx, fmt.Sprintf("[OAuth-GitHub] GetUserInfo failed: status=%d, body=%s", res.StatusCode, bodyStr))
-		return nil, NewOAuthErrorWithRaw(i18n.MsgOAuthGetUserErr, map[string]any{"Provider": "GitHub"}, fmt.Sprintf("status %d", res.StatusCode))
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] GetUserInfo failed: status=%d, body=%s", res.StatusCode, bodyStr))
+		return nil, NewOAuthErrorWithRaw(common.NewMessage(msgGetUserFailed), fmt.Sprintf("status %d", res.StatusCode))
 	}
 
 	var githubUser gitHubUser
 	if err := common.DecodeJson(res.Body, &githubUser); err != nil {
-		logger.LogError(ctx, fmt.Sprintf("[OAuth-GitHub] GetUserInfo decode error: %s", err.Error()))
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] GetUserInfo decode error: %s", err.Error()))
 		return nil, err
 	}
 
 	if githubUser.Id == 0 || githubUser.Login == "" {
-		logger.LogError(ctx, "[OAuth-GitHub] GetUserInfo failed: empty id or login field")
-		return nil, NewOAuthError(i18n.MsgOAuthUserInfoEmpty, map[string]any{"Provider": "GitHub"})
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] GetUserInfo failed: empty id or login field"))
+		return nil, NewOAuthError(common.NewMessage(msgUserInfoEmpty, map[string]any{"provider": "GitHub"}))
 	}
 
 	logger.LogDebug(ctx, "[OAuth-GitHub] GetUserInfo success: id=%d, login=%s, name=%s, email=%s",
@@ -169,10 +168,10 @@ func (p *GitHubProvider) GetUserInfo(ctx context.Context, token *OAuthToken) (*O
 	}, nil
 }
 
-func (p *GitHubProvider) getPrimaryVerifiedEmail(ctx context.Context, accessToken string) (string, error) {
+func (p *GitHubProvider) getVerifiedEmailRecords(ctx context.Context, accessToken string) ([]gitHubEmail, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/user/emails", nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -180,15 +179,26 @@ func (p *GitHubProvider) getPrimaryVerifiedEmail(ctx context.Context, accessToke
 	client := http.Client{Timeout: 20 * time.Second}
 	res, err := client.Do(req)
 	if err != nil {
-		return "", err
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] GetVerifiedEmails error: %s", err.Error()))
+		return nil, NewOAuthErrorWithRaw(common.NewMessage(msgConnectFailed, map[string]any{"provider": "GitHub"}), err.Error())
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("status %d", res.StatusCode)
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] GetVerifiedEmails failed: status=%d", res.StatusCode))
+		return nil, NewOAuthErrorWithRaw(common.NewMessage(msgGetUserFailed), fmt.Sprintf("status %d", res.StatusCode))
 	}
 
 	var emails []gitHubEmail
 	if err := common.DecodeJson(res.Body, &emails); err != nil {
+		logger.LogError(ctx, common.LogText("[OAuth-GitHub] GetVerifiedEmails decode error: %s", err.Error()))
+		return nil, err
+	}
+	return emails, nil
+}
+
+func (p *GitHubProvider) getPrimaryVerifiedEmail(ctx context.Context, accessToken string) (string, error) {
+	emails, err := p.getVerifiedEmailRecords(ctx, accessToken)
+	if err != nil {
 		return "", err
 	}
 	email := primaryVerifiedGitHubEmail(emails)
@@ -196,6 +206,20 @@ func (p *GitHubProvider) getPrimaryVerifiedEmail(ctx context.Context, accessToke
 		return "", errors.New("missing primary verified email")
 	}
 	return email, nil
+}
+
+func (p *GitHubProvider) GetVerifiedEmails(ctx context.Context, token *OAuthToken) ([]string, error) {
+	emails, err := p.getVerifiedEmailRecords(ctx, token.AccessToken)
+	if err != nil {
+		return nil, err
+	}
+	verified := make([]string, 0, len(emails))
+	for _, email := range emails {
+		if email.Verified && email.Email != "" {
+			verified = append(verified, email.Email)
+		}
+	}
+	return verified, nil
 }
 
 func primaryVerifiedGitHubEmail(emails []gitHubEmail) string {

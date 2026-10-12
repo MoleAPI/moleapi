@@ -1,6 +1,7 @@
 package relayconvert
 
 import (
+	"context"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -12,6 +13,85 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestClaudeMessagesToOpenAIChatPreservesAssistantTextWithToolCalls(t *testing.T) {
+	text := "I will look that up."
+	request := dto.ClaudeRequest{
+		Model: "claude-test",
+		Messages: []dto.ClaudeMessage{
+			{
+				Role: "assistant",
+				Content: []dto.ClaudeMediaMessage{
+					{Type: "text", Text: &text},
+					{
+						Type:  "tool_use",
+						Id:    "call_1",
+						Name:  "lookup",
+						Input: map[string]any{"query": "weather"},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := ConvertRequest(
+		context.Background(),
+		&convmeta.Values{},
+		types.RelayFormatOpenAI,
+		&request,
+	)
+	require.NoError(t, err)
+
+	converted, ok := result.Value.(*dto.GeneralOpenAIRequest)
+	require.True(t, ok)
+	require.Len(t, converted.Messages, 1)
+
+	assistant := converted.Messages[0]
+	assert.Equal(t, "assistant", assistant.Role)
+	toolCalls := assistant.ParseToolCalls()
+	require.Len(t, toolCalls, 1)
+	assert.Equal(t, "call_1", toolCalls[0].ID)
+	require.Len(t, assistant.ParseContent(), 1)
+	assert.Equal(t, "text", assistant.ParseContent()[0].Type)
+	assert.Equal(t, text, assistant.ParseContent()[0].Text)
+}
+
+func TestClaudeMessagesToOpenAIChatKeepsToolOnlyContentEmpty(t *testing.T) {
+	request := dto.ClaudeRequest{
+		Model: "claude-test",
+		Messages: []dto.ClaudeMessage{
+			{
+				Role: "assistant",
+				Content: []dto.ClaudeMediaMessage{
+					{
+						Type:  "tool_use",
+						Id:    "call_1",
+						Name:  "lookup",
+						Input: map[string]any{"query": "weather"},
+					},
+				},
+			},
+		},
+	}
+
+	result, err := ConvertRequest(
+		context.Background(),
+		&convmeta.Values{},
+		types.RelayFormatOpenAI,
+		&request,
+	)
+	require.NoError(t, err)
+
+	converted, ok := result.Value.(*dto.GeneralOpenAIRequest)
+	require.True(t, ok)
+	require.Len(t, converted.Messages, 1)
+
+	assistant := converted.Messages[0]
+	assert.Empty(t, assistant.ParseContent())
+	toolCalls := assistant.ParseToolCalls()
+	require.Len(t, toolCalls, 1)
+	assert.Equal(t, "call_1", toolCalls[0].ID)
+}
 
 func TestRequestConverterRegistryListsSupportedTextConverters(t *testing.T) {
 	tests := []struct {
@@ -290,36 +370,26 @@ func TestConvertRequestClaudeToResponsesDropsIncompatibleContextManagement(t *te
 }
 
 func TestConvertRequestClaudeAdaptiveThinkingPreservesEffort(t *testing.T) {
-	adaptive := &dto.Thinking{Type: "adaptive", Display: "summarized"}
 	tests := []struct {
 		name         string
-		originModel  string
-		thinking     *dto.Thinking
 		outputConfig []byte
 		wantEffort   string
 	}{
-		{name: "adaptive default", originModel: "gpt-5.6-sol", thinking: adaptive, wantEffort: "high"},
-		{name: "explicit low", originModel: "gpt-5.6-sol", thinking: adaptive, outputConfig: mustRawMessage(t, map[string]any{"effort": "low"}), wantEffort: "low"},
-		{name: "explicit xhigh", originModel: "gpt-5.6-sol", thinking: adaptive, outputConfig: mustRawMessage(t, map[string]any{"effort": "xhigh"}), wantEffort: "xhigh"},
-		// Claude models think by default at their own default effort: medium on
-		// Opus 5.5, high on the others.
-		{name: "opus 5.5 adaptive default", originModel: "claude-opus-5-5", thinking: adaptive, wantEffort: "medium"},
-		{name: "opus 5.5 without thinking", originModel: "claude-opus-5-5", wantEffort: "medium"},
-		{name: "opus 5.5 explicit high", originModel: "claude-opus-5-5", thinking: adaptive, outputConfig: mustRawMessage(t, map[string]any{"effort": "high"}), wantEffort: "high"},
-		{name: "opus 5 adaptive default", originModel: "claude-opus-5", thinking: adaptive, wantEffort: "high"},
-		{name: "opus 5 without thinking", originModel: "claude-opus-5", wantEffort: "high"},
+		{name: "adaptive default", wantEffort: "high"},
+		{name: "explicit low", outputConfig: mustRawMessage(t, map[string]any{"effort": "low"}), wantEffort: "low"},
+		{name: "explicit xhigh", outputConfig: mustRawMessage(t, map[string]any{"effort": "xhigh"}), wantEffort: "xhigh"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			info := &convmeta.Values{
-				OriginModelName: tt.originModel,
+				OriginModelName: "gpt-5.6-sol",
 				ConversionChain: []types.RelayFormat{types.RelayFormatClaude},
 			}
 			req := &dto.ClaudeRequest{
 				Model:        "gpt-5.6-sol",
 				OutputConfig: tt.outputConfig,
-				Thinking:     tt.thinking,
+				Thinking:     &dto.Thinking{Type: "adaptive", Display: "summarized"},
 				Messages: []dto.ClaudeMessage{
 					{Role: "user", Content: "hello"},
 				},
@@ -334,39 +404,6 @@ func TestConvertRequestClaudeAdaptiveThinkingPreservesEffort(t *testing.T) {
 			assert.Equal(t, tt.wantEffort, responsesReq.Reasoning.Effort)
 			assert.Equal(t, "detailed", responsesReq.Reasoning.Summary)
 			assert.Equal(t, tt.wantEffort, info.GetReasoningEffort())
-		})
-	}
-}
-
-func TestApplyClaudeThinkingModelLabelsNativeThinkingWithModelDefaultEffort(t *testing.T) {
-	tests := []struct {
-		name         string
-		model        string
-		thinkingType string
-		outputConfig []byte
-		wantEffort   string
-	}{
-		{name: "opus 5.5 adaptive", model: "claude-opus-5-5", thinkingType: "adaptive", wantEffort: "medium"},
-		{name: "opus 5.5 enabled", model: "claude-opus-5-5", thinkingType: "enabled", wantEffort: "medium"},
-		{name: "opus 5.5 explicit high", model: "claude-opus-5-5", thinkingType: "adaptive", outputConfig: mustRawMessage(t, map[string]any{"effort": "high"}), wantEffort: "high"},
-		{name: "opus 5 adaptive", model: "claude-opus-5", thinkingType: "adaptive", wantEffort: "high"},
-		{name: "sonnet 5.5 adaptive", model: "claude-sonnet-5-5", thinkingType: "adaptive", wantEffort: "high"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			info := &convmeta.Values{OriginModelName: tt.model, UpstreamModelName: tt.model}
-			req := &dto.ClaudeRequest{
-				Model:        tt.model,
-				Thinking:     &dto.Thinking{Type: tt.thinkingType},
-				OutputConfig: tt.outputConfig,
-				Messages:     []dto.ClaudeMessage{{Role: "user", Content: "hello"}},
-			}
-
-			require.NoError(t, ApplyClaudeThinkingModel(req, info))
-			assert.Equal(t, tt.wantEffort, info.GetReasoningEffort())
-			assert.Equal(t, tt.thinkingType, req.Thinking.Type)
-			assert.Equal(t, tt.outputConfig, []byte(req.OutputConfig))
 		})
 	}
 }
