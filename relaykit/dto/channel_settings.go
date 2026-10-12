@@ -34,6 +34,9 @@ type ChannelSettings struct {
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
 	// ReasoningContentField selects the Chat Completions field expected by the upstream.
 	ReasoningContentField string `json:"reasoning_content_field,omitempty"`
+	// TLSInsecureSkipVerify accepts upstream certificates that fail
+	// verification, such as self-signed ones, for this channel only.
+	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify,omitempty"`
 }
 
 // BindsTaskPlugin reports whether the channel is bound to the task plugin,

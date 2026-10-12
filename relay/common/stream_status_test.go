@@ -180,3 +180,36 @@ func TestStreamStatus_Summary_NilSafe(t *testing.T) {
 	var s *StreamStatus
 	assert.Equal(t, "StreamStatus<nil>", s.Summary())
 }
+
+func TestStreamStatus_ResponseOutcome(t *testing.T) {
+	t.Parallel()
+	s := NewStreamStatus()
+	s.RequireTerminal()
+	s.MarkCompleted()
+	s.MarkIncomplete("max_output_tokens")
+	s.MarkFailed("server_error", "upstream_error", 503)
+	s.MarkFailed("", "", 0)
+
+	assert.Equal(t, "failed", s.ResponseOutcome())
+	assert.True(t, s.ResponseFailed())
+	assert.Equal(t, StreamOutcome{
+		ExpectsTerminal: true,
+		Response:        ResponseOutcomeFailed,
+		ErrorCode:       "server_error",
+		ErrorType:       "upstream_error",
+		ErrorStatus:     503,
+	}, s.OutcomeSnapshot())
+}
+
+func TestStreamStatus_FirstNonFailureTerminalWins(t *testing.T) {
+	t.Parallel()
+	s := NewStreamStatus()
+	s.MarkIncomplete("max_output_tokens")
+	s.MarkCancelled()
+	s.MarkCompleted()
+
+	assert.Equal(t, StreamOutcome{
+		Response:         ResponseOutcomeIncomplete,
+		IncompleteReason: "max_output_tokens",
+	}, s.OutcomeSnapshot())
+}

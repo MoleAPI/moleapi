@@ -130,6 +130,29 @@ func TestSecurityLoginCodeCompletesOnce(t *testing.T) {
 	}
 }
 
+func TestSecurityLoginVerificationMigratesLegacyGitHubBinding(t *testing.T) {
+	user, _ := setupSecurityEnrollmentTest(t)
+	require.NoError(t, model.DB.Model(user).Update("github_id", "legacy-login").Error)
+	factor := &model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}
+	require.NoError(t, model.DB.Create(factor).Error)
+	challenge, err := service.StartLoginVerificationWithMigration(user, "oauth:github", &service.LegacyGitHubMigration{
+		GitHubID: "12345", LegacyID: "legacy-login",
+	})
+	require.NoError(t, err)
+	code, err := totp.GenerateCode(factor.Secret, time.Now())
+	require.NoError(t, err)
+
+	bundle, migration, err := service.VerifyLoginCodeWithMigration(challenge.FlowToken, code, "127.0.0.1", "test")
+	require.NoError(t, err)
+	require.NotNil(t, bundle)
+	require.NotNil(t, migration)
+	assert.Equal(t, "12345", migration.GitHubID)
+
+	var stored model.User
+	require.NoError(t, model.DB.First(&stored, user.Id).Error)
+	assert.Equal(t, "12345", stored.GitHubId)
+}
+
 func TestSecurityLoginRejectsChangedOrExpiredAuthorization(t *testing.T) {
 	for _, change := range []string{"expired", "disabled user", "auth version", "factor removed", "factor locked", "legacy flow", "wrong method", "other purpose"} {
 		t.Run(change, func(t *testing.T) {

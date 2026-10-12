@@ -1,8 +1,10 @@
 package service
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -14,14 +16,46 @@ import (
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/driver/clickhouse"
+	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
 
 func TestEvaluateCodingPlanQuotaUsesRollingConsumeLogs(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.Log{}))
+	dialects := []struct {
+		name string
+		env  string
+		open func(string) gorm.Dialector
+	}{
+		{name: "sqlite", open: func(string) gorm.Dialector { return sqlite.Open(":memory:") }},
+		{name: "mysql", env: "TEST_MYSQL_DSN", open: mysql.Open},
+		{name: "postgres", env: "TEST_POSTGRES_DSN", open: func(dsn string) gorm.Dialector {
+			return postgres.New(postgres.Config{DSN: dsn, PreferSimpleProtocol: true})
+		}},
+		{name: "clickhouse", env: "TEST_CLICKHOUSE_DSN", open: clickhouse.Open},
+	}
+	for _, dialect := range dialects {
+		t.Run(dialect.name, func(t *testing.T) {
+			dsn := os.Getenv(dialect.env)
+			if dialect.env != "" && dsn == "" {
+				t.Skip(dialect.env + " is not configured")
+			}
+			db, err := gorm.Open(dialect.open(dsn), &gorm.Config{})
+			require.NoError(t, err)
+			require.NoError(t, db.AutoMigrate(&model.Log{}))
+			t.Cleanup(func() {
+				sqlDB, sqlErr := db.DB()
+				if sqlErr == nil {
+					require.NoError(t, sqlDB.Close())
+				}
+			})
+			testEvaluateCodingPlanQuotaUsesRollingConsumeLogs(t, db)
+		})
+	}
+}
 
+func testEvaluateCodingPlanQuotaUsesRollingConsumeLogs(t *testing.T, db *gorm.DB) {
 	previousLogDB := model.LOG_DB
 	model.LOG_DB = db
 	t.Cleanup(func() { model.LOG_DB = previousLogDB })
@@ -62,6 +96,48 @@ func TestEvaluateCodingPlanQuotaUsesRollingConsumeLogs(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, status.Blocked)
 	assert.Contains(t, status.Reason, CodingPlanQuotaReasonPrefix)
+	require.NotNil(t, status.ResetAt)
+	assert.Equal(t, now.Add(50*time.Minute), *status.ResetAt)
+	assert.Contains(t, status.Reason, "reset_at=")
+}
+
+func TestCheckCodingPlanQuotaAfterConsumeDisablesAtLimit(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	sqlDB.SetMaxOpenConns(1)
+	t.Cleanup(func() { require.NoError(t, sqlDB.Close()) })
+	require.NoError(t, db.AutoMigrate(&model.Channel{}, &model.Ability{}, &model.Log{}, &model.User{}))
+
+	previousDB, previousLogDB := model.DB, model.LOG_DB
+	previousDatabaseType := common.MainDatabaseType()
+	previousMemoryCache := common.MemoryCacheEnabled
+	previousAutoDisable := common.AutomaticDisableChannelEnabled
+	model.DB, model.LOG_DB = db, db
+	common.SetMainDatabaseType(common.DatabaseTypeSQLite)
+	common.MemoryCacheEnabled = false
+	common.AutomaticDisableChannelEnabled = true
+	t.Cleanup(func() {
+		model.DB, model.LOG_DB = previousDB, previousLogDB
+		common.SetMainDatabaseType(previousDatabaseType)
+		common.MemoryCacheEnabled = previousMemoryCache
+		common.AutomaticDisableChannelEnabled = previousAutoDisable
+	})
+
+	config := &dto.CodingPlanQuotaConfig{Unit: dto.CodingPlanQuotaUnitRequests, Windows: []dto.CodingPlanQuotaWindow{{DurationSeconds: 3600, Limit: 1}}}
+	settings, err := common.Marshal(dto.ChannelOtherSettings{CodingPlanQuota: config})
+	require.NoError(t, err)
+	autoBan := 1
+	channel := &model.Channel{Name: "plan", Key: "key", Type: constant.ChannelTypeAdvancedCustom, Status: common.ChannelStatusEnabled, AutoBan: &autoBan, OtherSettings: string(settings)}
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&model.Log{ChannelId: channel.Id, CreatedAt: time.Now().Unix(), Type: model.LogTypeConsume}).Error)
+
+	CheckCodingPlanQuotaAfterConsume(channel.Id, channel.Type, config)
+	assert.Eventually(t, func() bool {
+		loaded, loadErr := model.GetChannelById(channel.Id, true)
+		return loadErr == nil && loaded.Status == common.ChannelStatusAutoDisabled
+	}, 3*time.Second, 20*time.Millisecond)
 }
 
 func TestParseOfficialCodingPlanQuotaResponses(t *testing.T) {
@@ -180,6 +256,24 @@ func TestOfficialCodingPlanQuotaStatusIgnoresExpiredWindows(t *testing.T) {
 	assert.False(t, status.Blocked)
 }
 
+func TestOfficialCodingPlanQuotaStatusUsesLatestBlockedReset(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	firstReset := now.Add(time.Hour)
+	lastReset := now.Add(7 * 24 * time.Hour)
+	status := quotaStatus(codingPlanProviderQuota{
+		Provider: dto.CodingPlanProviderKimi,
+		Windows: []codingPlanProviderWindow{
+			{Name: "5 hours", Used: 100, ResetsAt: &firstReset},
+			{Name: "7 days", Used: 100, ResetsAt: &lastReset},
+		},
+	}, now)
+
+	assert.True(t, status.Blocked)
+	require.NotNil(t, status.ResetAt)
+	assert.Equal(t, lastReset, *status.ResetAt)
+	assert.Contains(t, status.Reason, fmt.Sprintf("reset_at=%d", lastReset.Unix()))
+}
+
 func TestEvaluateOfficialCodexQuotaUsesWhamEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/backend-api/wham/usage", r.URL.Path)
@@ -204,4 +298,21 @@ func TestEvaluateOfficialCodexQuotaUsesWhamEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, status.Available)
 	assert.True(t, status.Blocked)
+}
+
+func TestOfficialQuotaAvailabilityRequiresProbeAfterResponseDisable(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"plan_type":"pro","rate_limit":{"primary_window":{"used_percent":50,"reset_at":4102444800}}}`))
+	}))
+	defer server.Close()
+
+	key, err := common.Marshal(map[string]string{"access_token": "access", "account_id": "account"})
+	require.NoError(t, err)
+	baseURL := server.URL
+	channel := &model.Channel{Id: 1002, Name: "codex", Type: constant.ChannelTypeCodex, Key: string(key), BaseURL: &baseURL, Status: common.ChannelStatusAutoDisabled}
+	channel.SetOtherInfo(map[string]any{"status_reason": CodingPlanResponseReasonPrefix + "quota exhausted"})
+
+	recoverable := UpdateOfficialCodingPlanQuotaChannels([]*model.Channel{channel}, time.Unix(1_700_000_000, 0))
+	require.Len(t, recoverable, 1)
+	assert.Equal(t, channel.Id, recoverable[0].Id)
 }

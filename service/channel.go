@@ -1,10 +1,14 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -18,19 +22,29 @@ func formatNotifyType(channelId int, status int) string {
 func shouldCloseActiveWebSocketsAfterDisable(channelId int) bool {
 	channel, err := model.GetChannelById(channelId, true)
 	if err != nil {
-		common.SysLog(fmt.Sprintf("failed to check channel status before closing active websockets: channel_id=%d, error=%v", channelId, err))
+		common.SysLog(common.LogText("failed to check channel status before closing active websockets: channel_id=%d, error=%v", channelId, err))
 		return true
 	}
 	return channel.Status != common.ChannelStatusEnabled
 }
 
+// RootUserLanguage returns the saved language of the root user, who receives
+// channel notices; it is empty when the root user saved none.
+func RootUserLanguage() string {
+	root := model.GetRootUser()
+	if root == nil {
+		return ""
+	}
+	return root.GetSetting().Language
+}
+
 // disable & notify
 func DisableChannel(channelError types.ChannelError, reason string) {
-	common.SysLog(fmt.Sprintf("通道「%s」（#%d）发生错误，准备禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, common.LocalLogPreview(reason)))
+	common.SysLog(common.LogText("channel %q (#%d) failed, disabling it, reason: %s", channelError.ChannelName, channelError.ChannelId, common.LocalLogPreview(reason)))
 
 	// 检查是否启用自动禁用功能
 	if !channelError.AutoBan {
-		common.SysLog(fmt.Sprintf("通道「%s」（#%d）未启用自动禁用功能，跳过禁用操作", channelError.ChannelName, channelError.ChannelId))
+		common.SysLog(common.LogText("channel %q (#%d) has automatic disabling turned off, skipping", channelError.ChannelName, channelError.ChannelId))
 		return
 	}
 
@@ -39,8 +53,10 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 		if shouldCloseActiveWebSocketsAfterDisable(channelError.ChannelId) {
 			CloseActiveWebSocketsForChannel(channelError.ChannelId, ChannelDisabledCloseReason)
 		}
-		subject := fmt.Sprintf("通道「%s」（#%d）已被禁用", channelError.ChannelName, channelError.ChannelId)
-		content := fmt.Sprintf("通道「%s」（#%d）已被禁用，原因：%s", channelError.ChannelName, channelError.ChannelId, reason)
+		lang := RootUserLanguage()
+		params := map[string]any{"Name": channelError.ChannelName, "Id": channelError.ChannelId, "Reason": reason}
+		subject := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledSubject, params)
+		content := i18n.Translate(lang, i18n.MsgChannelNotifyDisabledContent, params)
 		NotifyRootUser(formatNotifyType(channelError.ChannelId, common.ChannelStatusAutoDisabled), subject, content)
 	}
 }
@@ -48,8 +64,10 @@ func DisableChannel(channelError types.ChannelError, reason string) {
 func EnableChannel(channelId int, usingKey string, channelName string) {
 	success := model.UpdateChannelStatus(channelId, usingKey, common.ChannelStatusEnabled, "")
 	if success {
-		subject := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
-		content := fmt.Sprintf("通道「%s」（#%d）已被启用", channelName, channelId)
+		lang := RootUserLanguage()
+		params := map[string]any{"Name": channelName, "Id": channelId}
+		subject := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledSubject, params)
+		content := i18n.Translate(lang, i18n.MsgChannelNotifyEnabledContent, params)
 		NotifyRootUser(formatNotifyType(channelId, common.ChannelStatusEnabled), subject, content)
 	}
 }
@@ -67,13 +85,27 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	if types.IsSkipRetryError(err) {
 		return false
 	}
+	// A plain 429 is traffic throttling, not proof that a plan quota is spent.
+	if err.StatusCode == 429 {
+		return isQuotaExhaustedError(err)
+	}
 	if operation_setting.ShouldDisableByStatusCode(err.StatusCode) {
 		return true
 	}
 
 	lowerMessage := strings.ToLower(err.Error())
 	search, _ := AcSearch(lowerMessage, operation_setting.AutomaticDisableKeywords, true)
-	return search || isQuotaExhaustedMessage(lowerMessage)
+	return search || isQuotaExhaustedError(err)
+}
+
+func isQuotaExhaustedError(err *types.NewAPIError) bool {
+	if err == nil {
+		return false
+	}
+	if isQuotaExhaustedMessage(strings.ToLower(err.Error())) || isQuotaExhaustedMessage(strings.ToLower(string(err.GetErrorCode()))) {
+		return true
+	}
+	return len(err.Metadata) > 0 && isQuotaExhaustedMessage(strings.ToLower(string(err.Metadata)))
 }
 
 func isQuotaExhaustedMessage(message string) bool {
@@ -116,6 +148,81 @@ func isQuotaExhaustedMessage(message string) bool {
 		}
 	}
 	return false
+}
+
+func quotaResetAtFromError(err *types.NewAPIError, now time.Time) *time.Time {
+	if err == nil || len(err.Metadata) == 0 {
+		return nil
+	}
+	var metadata any
+	if common.UnmarshalUseNumber(err.Metadata, &metadata) != nil {
+		return nil
+	}
+	var walk func(any) *time.Time
+	walk = func(value any) *time.Time {
+		switch value := value.(type) {
+		case map[string]any:
+			for key, item := range value {
+				normalized := strings.NewReplacer("_", "", "-", "", ".", "").Replace(strings.ToLower(key))
+				if normalized == "resetat" || normalized == "resettime" || normalized == "resetsat" || normalized == "retryafter" {
+					if parsed := parseQuotaResetTime(item, normalized == "retryafter", now); parsed != nil {
+						return parsed
+					}
+				}
+			}
+			for _, item := range value {
+				if parsed := walk(item); parsed != nil {
+					return parsed
+				}
+			}
+		case []any:
+			for _, item := range value {
+				if parsed := walk(item); parsed != nil {
+					return parsed
+				}
+			}
+		}
+		return nil
+	}
+	return walk(metadata)
+}
+
+func parseQuotaResetTime(value any, retryAfter bool, now time.Time) *time.Time {
+	var number float64
+	switch value := value.(type) {
+	case json.Number:
+		parsed, err := value.Float64()
+		if err != nil {
+			return nil
+		}
+		number = parsed
+	case float64:
+		number = value
+	case string:
+		if parsed, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(value)); err == nil && parsed.After(now) {
+			return &parsed
+		}
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+		if err != nil {
+			return nil
+		}
+		number = parsed
+	default:
+		return nil
+	}
+
+	var parsed time.Time
+	if retryAfter && number < 1e9 {
+		parsed = now.Add(time.Duration(number * float64(time.Second)))
+	} else if number >= 1e12 {
+		parsed = time.UnixMilli(int64(number))
+	} else {
+		parsed = time.Unix(int64(number), 0)
+	}
+	if !parsed.After(now) {
+		return nil
+	}
+	return &parsed
 }
 
 func ShouldConfirmModelFailure(err *types.NewAPIError) bool {

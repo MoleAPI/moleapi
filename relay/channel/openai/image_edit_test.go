@@ -9,10 +9,12 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -95,4 +97,42 @@ func TestConvertImageEditRequestMultipart(t *testing.T) {
 
 		convertAndReplay(t, c, prompt)
 	})
+}
+
+func TestConvertImageRequestOmitsRetiredOpenAIBase64Format(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", nil)
+
+	for _, tc := range []struct {
+		name, baseURL, requestFormat, wantFormat string
+	}{
+		{name: "official GPT Image", baseURL: "https://api.openai.com", requestFormat: "b64_json", wantFormat: ""},
+		{name: "official GPT Image trailing slash", baseURL: "https://api.openai.com/", requestFormat: "b64_json", wantFormat: ""},
+		{name: "official URL request", baseURL: "https://api.openai.com", requestFormat: "url", wantFormat: "url"},
+		{name: "compatible provider", baseURL: "https://images.example.com", requestFormat: "b64_json", wantFormat: "b64_json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			request := dto.ImageRequest{
+				Model:          "gpt-image-2.5-sunburst-2026-09-08",
+				Prompt:         "draw a cat",
+				ResponseFormat: tc.requestFormat,
+			}
+			info := &relaycommon.RelayInfo{
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelType:    constant.ChannelTypeOpenAI,
+					ChannelBaseUrl: tc.baseURL,
+				},
+				RelayMode: relayconstant.RelayModeImagesGenerations,
+			}
+
+			converted, err := (&Adaptor{}).ConvertImageRequest(c, info, request)
+
+			require.NoError(t, err)
+			convertedRequest, ok := converted.(dto.ImageRequest)
+			require.True(t, ok)
+			assert.Equal(t, tc.wantFormat, convertedRequest.ResponseFormat)
+			assert.Equal(t, tc.requestFormat, request.ResponseFormat)
+		})
+	}
 }

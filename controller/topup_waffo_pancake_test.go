@@ -142,7 +142,7 @@ func TestListWaffoPancakeCatalogNeverReadsCredentialsFromURL(t *testing.T) {
 	ListWaffoPancakeCatalog(context)
 
 	assert.Equal(t, http.StatusOK, recorder.Code)
-	assert.Contains(t, recorder.Body.String(), "凭证未配置")
+	assert.Contains(t, recorder.Body.String(), "Waffo Pancake credentials are not configured")
 }
 
 func TestListWaffoPancakeCatalogLimitsCredentialBody(t *testing.T) {

@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -157,7 +158,8 @@ func GetResponseBody(method, url string, channel *model.Channel, headers http.He
 	for k := range headers {
 		req.Header.Add(k, headers.Get(k))
 	}
-	client, err := service.GetHttpClientWithProxy(channel.GetSetting().Proxy)
+	setting := channel.GetSetting()
+	client, err := service.GetHttpClientWithProxySettings(setting.Proxy, setting)
 	if err != nil {
 		return nil, err
 	}
@@ -402,7 +404,8 @@ func fetchAdvancedCustomBalance(channel *model.Channel) (channelBalanceResult, e
 			request.Host = headers.Get(name)
 		}
 	}
-	client, err := service.GetHttpClientWithProxy(channel.GetSetting().Proxy)
+	setting := channel.GetSetting()
+	client, err := service.GetHttpClientWithProxySettings(setting.Proxy, setting)
 	if err != nil {
 		return channelBalanceResult{}, sanitizeFetchModelsError(err, key)
 	}
@@ -473,7 +476,7 @@ func updateStandardChannelBalance(channel *model.Channel) (float64, error) {
 			baseURL = channel.GetBaseURL()
 		}
 	case constant.ChannelTypeAzure:
-		return 0, errors.New("尚未实现")
+		return 0, common.NewMessage("Not implemented yet")
 	case constant.ChannelTypeCustom:
 		baseURL = channel.GetBaseURL()
 	//case common.ChannelTypeOpenAISB:
@@ -493,7 +496,7 @@ func updateStandardChannelBalance(channel *model.Channel) (float64, error) {
 	case constant.ChannelTypeMoonshot:
 		return updateChannelMoonshotBalance(channel)
 	default:
-		return 0, errors.New("尚未实现")
+		return 0, common.NewMessage("Not implemented yet")
 	}
 	url := fmt.Sprintf("%s/v1/dashboard/billing/subscription", baseURL)
 
@@ -543,10 +546,7 @@ func UpdateChannelBalance(c *gin.Context) {
 		return
 	}
 	if channel.ChannelInfo.IsMultiKey {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": "多密钥渠道不支持余额查询",
-		})
+		common.ApiErrorT(c, "Multi-key channels do not support balance queries")
 		return
 	}
 	result, err := updateChannelBalance(channel)
@@ -572,8 +572,7 @@ func updateAllChannelsBalance() error {
 		return err
 	}
 	now := time.Now()
-	service.UpdateCodingPlanQuotaChannels(channels, now)
-	service.UpdateOfficialCodingPlanQuotaChannels(channels, now)
+	updateCodingPlanChannels(channels, now)
 	for _, channel := range channels {
 		if channel.Status != common.ChannelStatusEnabled {
 			continue
@@ -591,12 +590,62 @@ func updateAllChannelsBalance() error {
 		} else if result.RawResponse == "" {
 			// err is nil & balance <= 0 means quota is used up
 			if result.Balance <= 0 {
-				service.DisableChannel(*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, "", channel.GetAutoBan()), "余额不足")
+				service.DisableChannel(*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, "", channel.GetAutoBan()), "Insufficient balance")
 			}
 		}
 		time.Sleep(common.RequestInterval)
 	}
 	return nil
+}
+
+func updateCodingPlanChannels(channels []*model.Channel, now time.Time) {
+	service.UpdateCodingPlanQuotaChannels(channels, now)
+	recoverable := service.UpdateOfficialCodingPlanQuotaChannels(channels, now)
+	recoveryIDs := make(map[int]struct{}, len(recoverable))
+	for _, channel := range recoverable {
+		recoveryIDs[channel.Id] = struct{}{}
+	}
+	for _, channel := range channels {
+		resetAt := service.CodingPlanResponseRetryAt(channel)
+		if resetAt != nil && !now.Before(*resetAt) {
+			recoveryIDs[channel.Id] = struct{}{}
+		}
+	}
+
+	testUserID := 0
+	for _, channel := range channels {
+		if _, ok := recoveryIDs[channel.Id]; !ok {
+			continue
+		}
+		if testUserID == 0 {
+			resolved, err := resolveChannelTestUserID(nil)
+			if err != nil {
+				common.SysLog(fmt.Sprintf("coding plan recovery test skipped: %v", err))
+				return
+			}
+			testUserID = resolved
+		}
+		testChannelForHealthCheck(context.Background(), channel, testUserID, false)
+	}
+}
+
+func AutomaticallyUpdateCodingPlanChannels() {
+	// ponytail: one-minute recovery granularity survives restarts without a new
+	// timer store; add persisted per-reset jobs only if sub-minute recovery matters.
+	firstSuccessfulRun := true
+	for {
+		channels, err := model.GetAllChannels(0, 0, true, false)
+		if err != nil {
+			common.SysLog(fmt.Sprintf("coding plan quota update failed: %v", err))
+		} else {
+			updateCodingPlanChannels(channels, time.Now())
+			if firstSuccessfulRun {
+				common.SysLog("coding plan quota monitor active: interval=1m")
+				firstSuccessfulRun = false
+			}
+		}
+		time.Sleep(time.Minute)
+	}
 }
 
 func UpdateAllChannelsBalance(c *gin.Context) {
@@ -616,8 +665,8 @@ func UpdateAllChannelsBalance(c *gin.Context) {
 func AutomaticallyUpdateChannels(frequency int) {
 	for {
 		time.Sleep(time.Duration(frequency) * time.Minute)
-		common.SysLog("updating all channels")
+		common.SysLog(common.LogText("updating all channels"))
 		_ = updateAllChannelsBalance()
-		common.SysLog("channels update done")
+		common.SysLog(common.LogText("channels update done"))
 	}
 }

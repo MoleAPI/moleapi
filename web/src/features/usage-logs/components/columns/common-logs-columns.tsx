@@ -64,6 +64,7 @@ import {
   getImageTokenBreakdown,
   parseLogOther,
   isViolationFeeLog,
+  logTokenName,
   renderLogContent,
   sanitizeLogDetail,
 } from '../../lib/format'
@@ -307,8 +308,7 @@ function buildTypeDetailSegments(
       })
     } else {
       segments.push({
-        text: `${t('Dynamic Pricing')} · ${t('No matching results')}`,
-
+        text: `${t('Dynamic Pricing')} · ${other.matched_tier || t('Special billing expression')}`,
         muted: true,
       })
     }
@@ -344,8 +344,7 @@ function buildTypeDetailSegments(
       }
     } else {
       segments.push({
-        text: `${t('Dynamic Pricing')} · ${t('No matching results')}`,
-
+        text: `${t('Dynamic Pricing')} · ${other.matched_tier || t('Special billing expression')}`,
         muted: true,
       })
     }
@@ -823,8 +822,7 @@ export function useCommonLogsColumns(
 
         if (!isDisplayableLogType(log.type)) return null
 
-        const tokenName = log.token_name
-
+        const tokenName = logTokenName(log, t)
         if (!tokenName) return null
 
         const displayName = sensitiveVisible ? tokenName : '••••'
@@ -837,9 +835,10 @@ export function useCommonLogsColumns(
                   <StatusBadge
                     icon={KeyRound}
                     copyable={sensitiveVisible}
-                    copyText={sensitiveVisible ? tokenName : undefined}
+                    copyText={sensitiveVisible ? log.token_name : undefined}
                     onClick={() =>
-                      sensitiveVisible && onQuickFilter?.('token', tokenName)
+                      sensitiveVisible &&
+                      onQuickFilter?.('token', log.token_name)
                     }
                     title={sensitiveVisible ? t('Copy and filter') : undefined}
                     size='sm'
@@ -1085,7 +1084,13 @@ export function useCommonLogsColumns(
 
           const other = parseLogOther(log.other)
 
-          return <LogCostDisplay quota={quota} other={other} />
+          return (
+            <LogCostDisplay
+              quota={quota}
+              other={other}
+              showBillingSource
+            />
+          )
         },
 
         size: 90,
@@ -1144,7 +1149,8 @@ export function useCommonLogsColumns(
           } else if (log.content) {
             detailPreview = (
               <span className='text-muted-foreground break-all whitespace-normal sm:wrap-break-word'>
-                {sanitizeLogDetail(log.content)}
+                  {renderLogContent(log, other, t) ??
+                    sanitizeLogDetail(log.content)}
               </span>
             )
           }

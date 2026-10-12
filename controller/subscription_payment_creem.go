@@ -2,7 +2,6 @@ package controller
 
 import (
 	"bytes"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -31,14 +30,14 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 	// Keep body for debugging consistency (like RequestCreemPay)
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 订阅支付请求读取失败 error=%q", err.Error()))
+		logger.LogError(c.Request.Context(), common.LogText("Creem failed to read subscription payment request error=%q", err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "read query error"})
 		return
 	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "参数错误"})
+		paymentError(c, common.NewMessage("Invalid parameters"))
 		return
 	}
 
@@ -48,19 +47,19 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		return
 	}
 	if !plan.Enabled {
-		common.ApiErrorMsg(c, "套餐未启用")
+		common.ApiErrorT(c, "Subscription plan is not enabled")
 		return
 	}
 	if plan.CreemProductId == "" {
-		common.ApiErrorMsg(c, "该套餐未配置 CreemProductId")
+		common.ApiErrorT(c, "CreemProductId is not configured for this plan")
 		return
 	}
 	if plan.PriceAmount <= 0 || math.IsNaN(plan.PriceAmount) || math.IsInf(plan.PriceAmount, 0) || strings.TrimSpace(plan.Currency) == "" {
-		common.ApiErrorMsg(c, "套餐支付信息无效")
+		common.ApiErrorT(c, "Invalid plan payment information")
 		return
 	}
-	if setting.CreemWebhookSecret == "" {
-		common.ApiErrorMsg(c, "Creem Webhook 未配置")
+	if setting.CreemWebhookSecret == "" && !setting.CreemTestMode {
+		common.ApiErrorT(c, "Creem webhook is not configured")
 		return
 	}
 
@@ -71,7 +70,7 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		return
 	}
 	if user == nil {
-		common.ApiErrorMsg(c, "用户不存在")
+		common.ApiErrorT(c, "User does not exist")
 		return
 	}
 
@@ -82,14 +81,14 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 			return
 		}
 		if count >= int64(plan.MaxPurchasePerUser) {
-			common.ApiErrorMsg(c, "已达到该套餐购买上限")
+			common.ApiErrorT(c, "Purchase limit for this plan has been reached")
 			return
 		}
 	}
 
 	referenceId, err := model.NewSubscriptionTradeNo(model.PaymentProviderCreem, userId)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 生成订阅订单号失败 user_id=%d plan_id=%d error=%q", userId, plan.Id, err.Error()))
+		logger.LogError(c.Request.Context(), common.LogText("Creem failed to create subscription order number user_id=%d plan_id=%d error=%q", userId, plan.Id, err.Error()))
 		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
 		return
 	}
@@ -113,7 +112,7 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 		return
 	}
 	if err := order.Insert(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
+		paymentError(c, common.NewMessage("Failed to create order"))
 		return
 	}
 
@@ -128,15 +127,15 @@ func SubscriptionRequestCreemPay(c *gin.Context) {
 
 	checkout, err := genCreemLink(c.Request.Context(), referenceId, product, user.Email)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 订阅支付链接创建失败 trade_no=%s product_id=%s error=%q", referenceId, product.ProductId, err.Error()))
+		logger.LogError(c.Request.Context(), common.LogText("Creem failed to create subscription payment link trade_no=%s product_id=%s error=%q", referenceId, product.ProductId, err.Error()))
 		_ = model.UpdatePendingSubscriptionOrderStatus(referenceId, model.PaymentProviderCreem, common.TopUpStatusFailed)
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
+		paymentError(c, common.NewMessage("Failed to start payment"))
 		return
 	}
 	if err := model.BindPendingSubscriptionOrderPaymentFacts(referenceId, model.PaymentProviderCreem, checkout.Id, order.PaymentCurrency, order.PaymentProductId, order.PaymentMode, order.Money); err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Creem 固化订阅订单响应失败 trade_no=%s checkout_id=%s error=%q", referenceId, checkout.Id, err.Error()))
+		logger.LogError(c.Request.Context(), common.LogText("Creem failed to save subscription checkout details trade_no=%s checkout_id=%s error=%q", referenceId, checkout.Id, err.Error()))
 		_ = model.UpdatePendingSubscriptionOrderStatus(referenceId, model.PaymentProviderCreem, common.TopUpStatusFailed)
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "拉起支付失败"})
+		paymentError(c, common.NewMessage("Failed to start payment"))
 		return
 	}
 
