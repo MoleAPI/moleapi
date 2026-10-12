@@ -505,6 +505,15 @@ func (a *Adaptor) ConvertAudioRequest(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.ImageRequest) (any, error) {
+	omitLegacyResponseFormat := info.ChannelMeta != nil && info.ChannelType == constant.ChannelTypeOpenAI &&
+		strings.EqualFold(strings.TrimRight(info.ChannelBaseUrl, "/"), constant.GetChannelBaseURL(constant.ChannelTypeOpenAI)) &&
+		(strings.HasPrefix(strings.ToLower(request.Model), "gpt-image-") || strings.EqualFold(request.Model, "chatgpt-image-latest")) &&
+		strings.EqualFold(strings.TrimSpace(request.ResponseFormat), "b64_json")
+	if omitLegacyResponseFormat {
+		// ponytail: OpenAI GPT Image always returns base64; keep the client preference locally but do not forward its retired parameter.
+		request.ResponseFormat = ""
+	}
+
 	switch info.RelayMode {
 	case relayconstant.RelayModeImagesEdits:
 		if isJSONRequest(c) {
@@ -530,7 +539,7 @@ func (a *Adaptor) ConvertImageRequest(c *gin.Context, info *relaycommon.RelayInf
 		// 写入所有非文件字段
 		if mf != nil {
 			for key, values := range mf.Value {
-				if key == "model" {
+				if key == "model" || omitLegacyResponseFormat && key == "response_format" {
 					continue
 				}
 				for _, value := range values {
