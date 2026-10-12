@@ -190,6 +190,7 @@ func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, mod
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	CheckCodingPlanQuotaAfterConsume(relayInfo.ChannelId, relayInfo.ChannelType, relayInfo.ChannelOtherSettings.CodingPlanQuota)
 }
 
 func CalcOpenRouterCacheCreateTokens(usage dto.Usage, priceData types.PriceData) int {
@@ -324,6 +325,7 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	CheckCodingPlanQuotaAfterConsume(relayInfo.ChannelId, relayInfo.ChannelType, relayInfo.ChannelOtherSettings.CodingPlanQuota)
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens))
 	})

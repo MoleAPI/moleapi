@@ -60,8 +60,9 @@ var codingPlanOfficialCache = struct {
 	entries map[int]codingPlanOfficialCacheEntry
 }{entries: make(map[int]codingPlanOfficialCacheEntry)}
 
-func UpdateOfficialCodingPlanQuotaChannels(channels []*model.Channel, now time.Time) {
+func UpdateOfficialCodingPlanQuotaChannels(channels []*model.Channel, now time.Time) []*model.Channel {
 	var wait sync.WaitGroup
+	recoverable := make(chan *model.Channel, len(channels))
 	for _, channel := range channels {
 		if channel == nil || channel.ChannelInfo.IsMultiKey {
 			continue
@@ -72,6 +73,9 @@ func UpdateOfficialCodingPlanQuotaChannels(channels []*model.Channel, now time.T
 		wait.Add(1)
 		go func(channel *model.Channel) {
 			defer wait.Done()
+			if retryAt := CodingPlanResponseRetryAt(channel); retryAt != nil && now.Before(*retryAt) {
+				return
+			}
 			status, err := EvaluateOfficialCodingPlanQuota(channel, now)
 			if err != nil {
 				common.SysLog(fmt.Sprintf("official coding plan quota check failed: channel_id=%d, error=%v", channel.Id, err))
@@ -92,16 +96,25 @@ func UpdateOfficialCodingPlanQuotaChannels(channels []*model.Channel, now time.T
 			}
 			if status.Available && IsOfficialCodingPlanQuotaAutoDisabled(channel) {
 				EnableChannel(channel.Id, "", channel.Name)
+			} else if status.Available && IsCodingPlanResponseAutoDisabled(channel) {
+				recoverable <- channel
 			}
 		}(channel)
 	}
 	wait.Wait()
+	close(recoverable)
+	result := make([]*model.Channel, 0, len(recoverable))
+	for channel := range recoverable {
+		result = append(result, channel)
+	}
+	return result
 }
 
 type officialCodingPlanQuotaStatus struct {
 	Available bool
 	Blocked   bool
 	Reason    string
+	ResetAt   *time.Time
 }
 
 func EvaluateOfficialCodingPlanQuota(channel *model.Channel, now time.Time) (officialCodingPlanQuotaStatus, error) {
@@ -711,24 +724,30 @@ func evaluateCodexQuota(channel *model.Channel, now time.Time) (officialCodingPl
 }
 
 func quotaStatus(quota codingPlanProviderQuota, now time.Time) officialCodingPlanQuotaStatus {
+	status := officialCodingPlanQuotaStatus{Available: true}
 	for _, window := range quota.Windows {
 		if window.ResetsAt != nil && !now.Before(*window.ResetsAt) {
 			continue
 		}
 		if !window.Aside && window.Used >= 100 {
-			return officialCodingPlanQuotaStatus{
-				Available: true,
-				Blocked:   true,
-				Reason: fmt.Sprintf(
+			if !status.Blocked {
+				status.Blocked = true
+				status.Reason = fmt.Sprintf(
 					"%s%s window reached (%.0f%%)",
 					CodingPlanOfficialReasonPrefix,
 					quota.Provider,
 					window.Used,
-				),
+				)
+			}
+			if window.ResetsAt != nil && (status.ResetAt == nil || window.ResetsAt.After(*status.ResetAt)) {
+				status.ResetAt = window.ResetsAt
 			}
 		}
 	}
-	return officialCodingPlanQuotaStatus{Available: true}
+	if status.ResetAt != nil {
+		status.Reason += fmt.Sprintf("; reset_at=%d", status.ResetAt.Unix())
+	}
+	return status
 }
 
 func parseGLMCodingPlanQuota(body []byte) (string, []codingPlanProviderWindow, error) {

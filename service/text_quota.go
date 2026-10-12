@@ -591,6 +591,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
 	})
+	CheckCodingPlanQuotaAfterConsume(relayInfo.ChannelId, relayInfo.ChannelType, relayInfo.ChannelOtherSettings.CodingPlanQuota)
 	gopool.Go(func() {
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
 	})

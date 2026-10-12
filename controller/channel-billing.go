@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -572,8 +573,7 @@ func updateAllChannelsBalance() error {
 		return err
 	}
 	now := time.Now()
-	service.UpdateCodingPlanQuotaChannels(channels, now)
-	service.UpdateOfficialCodingPlanQuotaChannels(channels, now)
+	updateCodingPlanChannels(channels, now)
 	for _, channel := range channels {
 		if channel.Status != common.ChannelStatusEnabled {
 			continue
@@ -597,6 +597,56 @@ func updateAllChannelsBalance() error {
 		time.Sleep(common.RequestInterval)
 	}
 	return nil
+}
+
+func updateCodingPlanChannels(channels []*model.Channel, now time.Time) {
+	service.UpdateCodingPlanQuotaChannels(channels, now)
+	recoverable := service.UpdateOfficialCodingPlanQuotaChannels(channels, now)
+	recoveryIDs := make(map[int]struct{}, len(recoverable))
+	for _, channel := range recoverable {
+		recoveryIDs[channel.Id] = struct{}{}
+	}
+	for _, channel := range channels {
+		resetAt := service.CodingPlanResponseRetryAt(channel)
+		if resetAt != nil && !now.Before(*resetAt) {
+			recoveryIDs[channel.Id] = struct{}{}
+		}
+	}
+
+	testUserID := 0
+	for _, channel := range channels {
+		if _, ok := recoveryIDs[channel.Id]; !ok {
+			continue
+		}
+		if testUserID == 0 {
+			resolved, err := resolveChannelTestUserID(nil)
+			if err != nil {
+				common.SysLog(fmt.Sprintf("coding plan recovery test skipped: %v", err))
+				return
+			}
+			testUserID = resolved
+		}
+		testChannelForHealthCheck(context.Background(), channel, testUserID, false)
+	}
+}
+
+func AutomaticallyUpdateCodingPlanChannels() {
+	// ponytail: one-minute recovery granularity survives restarts without a new
+	// timer store; add persisted per-reset jobs only if sub-minute recovery matters.
+	firstSuccessfulRun := true
+	for {
+		channels, err := model.GetAllChannels(0, 0, true, false)
+		if err != nil {
+			common.SysLog(fmt.Sprintf("coding plan quota update failed: %v", err))
+		} else {
+			updateCodingPlanChannels(channels, time.Now())
+			if firstSuccessfulRun {
+				common.SysLog("coding plan quota monitor active: interval=1m")
+				firstSuccessfulRun = false
+			}
+		}
+		time.Sleep(time.Minute)
+	}
 }
 
 func UpdateAllChannelsBalance(c *gin.Context) {
