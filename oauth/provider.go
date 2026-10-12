@@ -40,3 +40,9 @@ type Provider interface {
 	// (e.g. the user_oauth_bindings table) return an empty string.
 	ProviderUserIDColumn() string
 }
+
+// VerifiedEmailProvider lists addresses the provider has confirmed for the
+// signed-in account. It is used as evidence for legacy-account migration.
+type VerifiedEmailProvider interface {
+	GetVerifiedEmails(ctx context.Context, token *OAuthToken) ([]string, error)
+}

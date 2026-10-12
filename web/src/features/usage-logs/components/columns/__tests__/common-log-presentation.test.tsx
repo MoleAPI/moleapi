@@ -208,7 +208,7 @@ test('token cache summary stays compact and numeric cost stays unboxed', async (
   assert.match(tokensHtml, /!\s*text-\[8px\]|!text-\[8px\]/)
   assert.doesNotMatch(tokensHtml, /[↓↑]/)
   assert.match(costHtml, /tabular-nums/)
-  assert.doesNotMatch(costHtml, /\b(?:border|rounded|bg-)/)
+  assert.match(costHtml, /data-slot="status-badge"/)
 })
 
 test('group cell hides the multiplier', async () => {

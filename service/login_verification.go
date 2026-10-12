@@ -5,6 +5,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"gorm.io/gorm"
 )
 
 const LoginVerificationTTL = 5 * time.Minute
@@ -18,9 +19,18 @@ type LoginChallenge struct {
 	Methods      []VerificationMethodOption `json:"methods"`
 }
 
+// LegacyGitHubMigration is a pending rewrite from a mutable GitHub login name
+// to the provider's permanent numeric account ID.
+type LegacyGitHubMigration struct {
+	GitHubID string
+	LegacyID string
+}
+
 type loginFlowPayload struct {
-	AuthVersion int64  `json:"auth_version"`
-	LoginMethod string `json:"login_method"`
+	AuthVersion           int64  `json:"auth_version"`
+	LoginMethod           string `json:"login_method"`
+	PendingGitHubID       string `json:"pending_github_id,omitempty"`
+	PendingGitHubLegacyID string `json:"pending_github_legacy_id,omitempty"`
 }
 
 // LoginVerification is server-owned state read from a primary-authenticated flow.
@@ -32,6 +42,10 @@ type LoginVerification struct {
 }
 
 func StartLoginVerification(user *model.User, loginMethod string) (*LoginChallenge, error) {
+	return StartLoginVerificationWithMigration(user, loginMethod, nil)
+}
+
+func StartLoginVerificationWithMigration(user *model.User, loginMethod string, migration *LegacyGitHubMigration) (*LoginChallenge, error) {
 	if user == nil || user.Id <= 0 || user.AuthVersion <= 0 || loginMethod == "" {
 		return nil, model.ErrAuthFlowInvalid
 	}
@@ -44,6 +58,9 @@ func StartLoginVerification(user *model.User, loginMethod string) (*LoginChallen
 	}
 	methods, err := securityVerificationPolicy(VerificationScopeLogin, *state)
 	if err != nil || len(methods) == 0 {
+		if err == nil && migration != nil {
+			return nil, ErrVerificationUnavailable
+		}
 		return nil, err
 	}
 	available := false
@@ -55,14 +72,19 @@ func StartLoginVerification(user *model.User, loginMethod string) (*LoginChallen
 	if !available {
 		return nil, ErrVerificationUnavailable
 	}
-	payload, err := common.Marshal(loginFlowPayload{AuthVersion: state.AuthVersion, LoginMethod: loginMethod})
+	payload := loginFlowPayload{AuthVersion: state.AuthVersion, LoginMethod: loginMethod}
+	if migration != nil {
+		payload.PendingGitHubID = migration.GitHubID
+		payload.PendingGitHubLegacyID = migration.LegacyID
+	}
+	encoded, err := common.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
 	expiresAt := time.Now().Add(LoginVerificationTTL)
 	token, _, err := model.CreateAuthFlow(model.AuthFlowCreate{
 		Purpose: model.AuthFlowPurposeLoginVerification, UserId: user.Id,
-		Payload: string(payload), ExpiresAt: expiresAt,
+		Payload: string(encoded), ExpiresAt: expiresAt,
 	})
 	if err != nil {
 		return nil, err
@@ -110,44 +132,68 @@ func requireLoginVerificationMethod(state *model.UserVerificationState, method s
 }
 
 func VerifyLoginCode(token, code, ip, userAgent string) (*AuthBundle, error) {
+	bundle, _, err := VerifyLoginCodeWithMigration(token, code, ip, userAgent)
+	return bundle, err
+}
+
+func VerifyLoginCodeWithMigration(token, code, ip, userAgent string) (*AuthBundle, *LegacyGitHubMigration, error) {
 	verification, err := RequireLoginVerification(token, VerificationMethodTwoFA)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	twoFA, err := model.GetTwoFAByUserId(verification.State.UserID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := VerifyTwoFactorCode(twoFA, code); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return CompleteLoginVerification(token, verification, VerificationMethodTwoFA, ip, userAgent)
+	return CompleteLoginVerificationWithMigration(token, verification, VerificationMethodTwoFA, ip, userAgent)
 }
 
 // CompleteLoginVerification must only run after a concrete factor ceremony.
 // Recheck the bound version and method while consuming the flow and creating the
 // session atomically; a different request cannot reuse this authorization.
 func CompleteLoginVerification(token string, verification *LoginVerification, method, ip, userAgent string) (*AuthBundle, error) {
+	bundle, _, err := CompleteLoginVerificationWithMigration(token, verification, method, ip, userAgent)
+	return bundle, err
+}
+
+func CompleteLoginVerificationWithMigration(token string, verification *LoginVerification, method, ip, userAgent string) (*AuthBundle, *LegacyGitHubMigration, error) {
 	if verification == nil || verification.Flow == nil || verification.State == nil {
-		return nil, model.ErrAuthFlowInvalid
+		return nil, nil, model.ErrAuthFlowInvalid
 	}
 	session, refreshSecret, err := newLoginSession(verification.State.UserID, verification.payload.AuthVersion, verification.payload.LoginMethod, ip, userAgent)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	if err := model.CreateUserSessionFromLoginFlow(token, session, func(flow *model.AuthFlow, state *model.UserVerificationState) error {
+	var migration *LegacyGitHubMigration
+	if err := model.CreateUserSessionFromLoginFlow(token, session, func(tx *gorm.DB, flow *model.AuthFlow, state *model.UserVerificationState) error {
 		var payload loginFlowPayload
 		if flow.Id != verification.Flow.Id || common.UnmarshalJsonStr(flow.Payload, &payload) != nil || payload != verification.payload {
 			return model.ErrAuthFlowInvalid
 		}
-		return requireLoginVerificationMethod(state, method)
+		if err := requireLoginVerificationMethod(state, method); err != nil {
+			return err
+		}
+		if payload.PendingGitHubID == "" {
+			return nil
+		}
+		written, err := model.MigrateLegacyGitHubBindingWithTx(tx, state.UserID, payload.PendingGitHubLegacyID, payload.PendingGitHubID)
+		if err != nil {
+			return err
+		}
+		if written {
+			migration = &LegacyGitHubMigration{GitHubID: payload.PendingGitHubID, LegacyID: payload.PendingGitHubLegacyID}
+		}
+		return nil
 	}); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	bundle, err := issueAuthBundle(session, session.SID+"."+refreshSecret, true)
 	if err != nil {
 		_, _ = model.RevokeUserSession(session.UserID, session.SID, "token_issue_failed")
-		return nil, err
+		return nil, nil, err
 	}
-	return bundle, nil
+	return bundle, migration, nil
 }

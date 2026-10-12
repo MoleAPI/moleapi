@@ -28,7 +28,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 
 	var req SubscriptionStripePayRequest
 	if err := c.ShouldBindJSON(&req); err != nil || req.PlanId <= 0 {
-		common.ApiErrorMsg(c, "参数错误")
+		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
 
@@ -38,19 +38,19 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		return
 	}
 	if !plan.Enabled {
-		common.ApiErrorMsg(c, "套餐未启用")
+		common.ApiErrorT(c, "Subscription plan is not enabled")
 		return
 	}
 	if plan.StripePriceId == "" {
-		common.ApiErrorMsg(c, "该套餐未配置 StripePriceId")
+		common.ApiErrorT(c, "StripePriceId is not configured for this plan")
 		return
 	}
 	if !strings.HasPrefix(setting.StripeApiSecret, "sk_") && !strings.HasPrefix(setting.StripeApiSecret, "rk_") {
-		common.ApiErrorMsg(c, "Stripe 未配置或密钥无效")
+		common.ApiErrorT(c, "Stripe is not configured or key is invalid")
 		return
 	}
 	if setting.StripeWebhookSecret == "" {
-		common.ApiErrorMsg(c, "Stripe Webhook 未配置")
+		common.ApiErrorT(c, "Stripe webhook is not configured")
 		return
 	}
 
@@ -61,7 +61,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		return
 	}
 	if user == nil {
-		common.ApiErrorMsg(c, "用户不存在")
+		common.ApiErrorT(c, "User does not exist")
 		return
 	}
 
@@ -72,15 +72,15 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 			return
 		}
 		if count >= int64(plan.MaxPurchasePerUser) {
-			common.ApiErrorMsg(c, "已达到该套餐购买上限")
+			common.ApiErrorT(c, "Purchase limit for this plan has been reached")
 			return
 		}
 	}
 
 	referenceId, err := model.NewSubscriptionTradeNo(model.PaymentProviderStripe, userId)
 	if err != nil {
-		logger.LogError(c.Request.Context(), fmt.Sprintf("Stripe 生成订阅订单号失败 user_id=%d plan_id=%d error=%q", userId, plan.Id, err.Error()))
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
+		logger.LogError(c.Request.Context(), common.LogText("Stripe failed to create subscription order number user_id=%d plan_id=%d error=%q", userId, plan.Id, err.Error()))
+		paymentError(c, common.NewMessage("Failed to start payment"))
 		return
 	}
 
@@ -101,7 +101,7 @@ func SubscriptionRequestStripePay(c *gin.Context) {
 		return
 	}
 	if err := order.Insert(); err != nil {
-		c.JSON(http.StatusOK, gin.H{"message": "error", "data": "创建订单失败"})
+		paymentError(c, common.NewMessage("Failed to create order"))
 		return
 	}
 

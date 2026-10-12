@@ -285,7 +285,7 @@ func ClaudeMessagesRequestToOpenAIChatContext(ctx context.Context, claudeRequest
 			if len(thinkingBlocks) > 0 {
 				openAIMessage.ReasoningDetails, _ = kitutil.Marshal(thinkingBlocks)
 			}
-			if len(mediaMessages) > 0 && len(toolCalls) == 0 {
+			if len(mediaMessages) > 0 {
 				openAIMessage.SetMediaContent(mediaMessages)
 			}
 		}

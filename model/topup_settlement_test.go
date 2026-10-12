@@ -231,7 +231,7 @@ func TestRechargeStripeRollsBackCustomerOnQuotaOverflow(t *testing.T) {
 	insertTopUpForSettlementTest(t, "stripe-overflow", 522, 1, 1, PaymentProviderStripe)
 
 	err := RechargeStripeWithPaymentDetails("stripe-overflow", "cus_new", "cs_overflow", "USD", "203.0.113.62")
-	require.EqualError(t, err, "充值失败，请稍后重试")
+	require.EqualError(t, err, "top-up failed")
 
 	topUp := GetTopUpByTradeNo("stripe-overflow")
 	require.NotNil(t, topUp)
@@ -363,7 +363,7 @@ func TestRechargeWaffoRejectsInvalidQuotaWithoutPartialSettlement(t *testing.T) 
 			insertTopUpForSettlementTest(t, tradeNo, userID, testCase.amount, 1, PaymentProviderWaffo)
 
 			err := RechargeWaffo(tradeNo, "203.0.113.30")
-			require.EqualError(t, err, "充值失败，请稍后重试")
+			require.EqualError(t, err, "top-up failed")
 
 			topUp := GetTopUpByTradeNo(tradeNo)
 			require.NotNil(t, topUp)
@@ -385,7 +385,7 @@ func TestRechargeWaffoRollsBackWhenUserIsMissing(t *testing.T) {
 	insertTopUpForSettlementTest(t, "missing-user", 9999, 2, 1, PaymentProviderWaffo)
 
 	err := RechargeWaffo("missing-user", "203.0.113.40")
-	require.EqualError(t, err, "充值失败，请稍后重试")
+	require.EqualError(t, err, "top-up failed")
 
 	topUp := GetTopUpByTradeNo("missing-user")
 	require.NotNil(t, topUp)
@@ -401,7 +401,7 @@ func TestRechargeWaffoRejectsUserQuotaOverflow(t *testing.T) {
 	insertTopUpForSettlementTest(t, "user-quota-overflow", 520, 1, 1, PaymentProviderWaffo)
 
 	err := RechargeWaffo("user-quota-overflow", "203.0.113.50")
-	require.EqualError(t, err, "充值失败，请稍后重试")
+	require.EqualError(t, err, "top-up failed")
 
 	topUp := GetTopUpByTradeNo("user-quota-overflow")
 	require.NotNil(t, topUp)

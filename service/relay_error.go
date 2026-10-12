@@ -59,7 +59,7 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		return
 	}
 	perfmetrics.RecordChannelAttempt(channelError.ChannelId, false)
-	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.MaskSensitiveErrorWithStatusCode())))
+	logger.LogError(c, common.LogText("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.MaskSensitiveErrorWithStatusCode())))
 	if ShouldDisableChannel(err) && channelError.AutoBan && !ShouldConfirmModelFailure(err) {
 		reason := err.MaskSensitiveErrorWithStatusCode()
 		if isQuotaExhaustedError(err) && isCodingPlanChannel(channelError, relayInfo) {
