@@ -123,11 +123,15 @@ func main() {
 	// 数据看板
 	go model.UpdateQuotaData()
 
-	if os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
+	if common.IsMasterNode && os.Getenv("CHANNEL_UPDATE_FREQUENCY") != "" {
 		frequency, err := strconv.Atoi(os.Getenv("CHANNEL_UPDATE_FREQUENCY"))
 		if err != nil {
 			common.FatalLog("failed to parse CHANNEL_UPDATE_FREQUENCY: " + err.Error())
 		}
+		if frequency <= 0 {
+			common.FatalLog("CHANNEL_UPDATE_FREQUENCY must be greater than zero")
+		}
+		go controller.AutomaticallyUpdateCodingPlanChannels()
 		go controller.AutomaticallyUpdateChannels(frequency)
 	}
 

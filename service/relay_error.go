@@ -2,6 +2,8 @@ package service
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -60,6 +62,12 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	logger.LogError(c, fmt.Sprintf("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, common.LocalLogPreview(err.MaskSensitiveErrorWithStatusCode())))
 	if ShouldDisableChannel(err) && channelError.AutoBan && !ShouldConfirmModelFailure(err) {
 		reason := err.MaskSensitiveErrorWithStatusCode()
+		if isQuotaExhaustedError(err) && isCodingPlanChannel(channelError, relayInfo) {
+			reason = CodingPlanResponseReasonPrefix + reason
+			if resetAt := quotaResetAtFromError(err, time.Now()); resetAt != nil {
+				reason += fmt.Sprintf("; reset_at=%d", resetAt.Unix())
+			}
+		}
 		gopool.Go(func() {
 			DisableChannel(channelError, reason)
 		})
@@ -88,4 +96,42 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 		useTimeSeconds := int(time.Since(startTime).Seconds())
 		model.RecordErrorLog(c, userId, channelError.ChannelId, modelName, tokenName, err.MaskSensitiveErrorWithStatusCode(), tokenId, useTimeSeconds, common.GetContextKeyBool(c, constant.ContextKeyIsStream), userGroup, other)
 	}
+}
+
+const CodingPlanResponseReasonPrefix = "coding_plan_response:"
+
+func isCodingPlanChannel(channelError types.ChannelError, relayInfo *relaycommon.RelayInfo) bool {
+	if channelError.ChannelType == constant.ChannelTypeCodex {
+		return true
+	}
+	if channelError.ChannelType != constant.ChannelTypeAdvancedCustom || relayInfo == nil {
+		return false
+	}
+	settings := relayInfo.ChannelOtherSettings
+	return settings.CodingPlanQuota != nil || strings.TrimSpace(settings.CodingPlanProvider) != ""
+}
+
+func CodingPlanResponseRetryAt(channel *model.Channel) *time.Time {
+	if !IsCodingPlanResponseAutoDisabled(channel) {
+		return nil
+	}
+	reason, _ := channel.GetOtherInfo()["status_reason"].(string)
+	_, raw, ok := strings.Cut(reason, "; reset_at=")
+	if !ok {
+		return nil
+	}
+	timestamp, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil || timestamp <= 0 {
+		return nil
+	}
+	resetAt := time.Unix(timestamp, 0)
+	return &resetAt
+}
+
+func IsCodingPlanResponseAutoDisabled(channel *model.Channel) bool {
+	if channel == nil || channel.Status != common.ChannelStatusAutoDisabled {
+		return false
+	}
+	reason, _ := channel.GetOtherInfo()["status_reason"].(string)
+	return strings.HasPrefix(reason, CodingPlanResponseReasonPrefix)
 }

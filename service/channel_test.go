@@ -2,12 +2,16 @@ package service
 
 import (
 	"errors"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestShouldDisableChannelUsesStatusOrKeyword(t *testing.T) {
@@ -55,6 +59,32 @@ func TestShouldDisableChannelRecognizesPlanQuotaExhaustion(t *testing.T) {
 		assert.True(t, ShouldDisableChannel(types.NewOpenAIError(errors.New(message), types.ErrorCodeInvalidRequest, 429)), message)
 	}
 	assert.False(t, ShouldDisableChannel(types.NewOpenAIError(errors.New("rate limit exceeded"), types.ErrorCodeInvalidRequest, 429)))
+
+	operation_setting.AutomaticDisableStatusCodeRanges = []operation_setting.StatusCodeRange{{Start: 429, End: 429}}
+	assert.False(t, ShouldDisableChannel(types.NewOpenAIError(errors.New("rate limit exceeded"), types.ErrorCodeInvalidRequest, 429)))
+	operation_setting.AutomaticDisableKeywords = []string{"rate limit exceeded"}
+	assert.False(t, ShouldDisableChannel(types.NewOpenAIError(errors.New("rate limit exceeded"), types.ErrorCodeInvalidRequest, 429)))
+	assert.True(t, ShouldDisableChannel(types.NewOpenAIError(errors.New("try later"), types.ErrorCode("insufficient_quota"), 429)))
+}
+
+func TestQuotaResetAtFromErrorReadsQuotaMetadata(t *testing.T) {
+	now := time.Unix(1_700_000_000, 0)
+	err := types.NewOpenAIError(errors.New("quota exhausted"), types.ErrorCodeInvalidRequest, http.StatusTooManyRequests)
+	err.Metadata = []byte(`{"limit":{"resetsAt":1700000123}}`)
+
+	resetAt := quotaResetAtFromError(err, now)
+	require.NotNil(t, resetAt)
+	assert.Equal(t, time.Unix(1_700_000_123, 0), *resetAt)
+}
+
+func TestCodingPlanResponseRetryAt(t *testing.T) {
+	want := time.Unix(1_700_000_123, 0)
+	channel := &model.Channel{Status: common.ChannelStatusAutoDisabled}
+	channel.SetOtherInfo(map[string]any{"status_reason": CodingPlanResponseReasonPrefix + "quota exhausted; reset_at=1700000123"})
+
+	retryAt := CodingPlanResponseRetryAt(channel)
+	require.NotNil(t, retryAt)
+	assert.Equal(t, want, *retryAt)
 }
 
 func TestShouldConfirmModelFailureKeepsChannelFailuresImmediate(t *testing.T) {

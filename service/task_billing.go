@@ -88,6 +88,7 @@ func LogTaskConsumption(c *gin.Context, info *relaycommon.RelayInfo, task *model
 		Group:     info.UsingGroup,
 		Other:     other,
 	})
+	CheckCodingPlanQuotaAfterConsume(info.ChannelId, info.ChannelType, info.ChannelOtherSettings.CodingPlanQuota)
 	model.UpdateUserUsedQuotaAndRequestCount(info.UserId, info.PriceData.Quota)
 	model.UpdateChannelUsedQuota(info.ChannelId, info.PriceData.Quota)
 }
