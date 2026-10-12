@@ -339,9 +339,8 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 		Other:            other,
 	})
 	CheckCodingPlanQuotaAfterConsume(relayInfo.ChannelId, relayInfo.ChannelType, relayInfo.ChannelOtherSettings.CodingPlanQuota)
-	gopool.Go(func() {
-		perfmetrics.RecordRelaySample(relayInfo, true, int64(usage.CompletionTokens))
-	})
+	relayInfo.PerformanceOutputTokens = int64(usage.CompletionTokens)
+	perfmetrics.RecordChannelAttempt(relayInfo.ChannelId, true)
 }
 
 func PreConsumeTokenQuota(relayInfo *relaycommon.RelayInfo, quota int) error {

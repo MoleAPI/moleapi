@@ -320,11 +320,17 @@ func (fixture *responsesWSBillingTest) closeAndWait(t *testing.T) {
 			t.Error("upstream connection was not closed")
 		}
 	}
-	// Each consume log submits one metrics sample. Its Redis pipeline is the
-	// last operation after reading shared settings, so waiting for this
-	// fixture's pipeline notifications avoids unrelated global pool workers.
-	var expectedMetrics int64
-	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("type = ? AND token_id = ?", model.LogTypeConsume, fixture.token.Id).Count(&expectedMetrics).Error)
+	// Health samples are asynchronous, but client cancellations are deliberately
+	// ignored even though their delivered output still has a consume log.
+	var logs []model.Log
+	require.NoError(t, model.LOG_DB.Where("type = ? AND token_id = ?", model.LogTypeConsume, fixture.token.Id).Find(&logs).Error)
+	expectedMetrics := int64(0)
+	for _, entry := range logs {
+		if strings.Contains(entry.Other, `"end_reason":"client_gone"`) || strings.Contains(entry.Other, `"response_status":"cancelled"`) {
+			continue
+		}
+		expectedMetrics++
+	}
 	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	for fixture.completedMetrics < expectedMetrics {

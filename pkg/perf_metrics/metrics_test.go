@@ -1,6 +1,8 @@
 package perfmetrics
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,11 +12,86 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
+
+func TestClassifyRelayOutcome(t *testing.T) {
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		err  *types.NewAPIError
+		want Outcome
+	}{
+		{"success", context.Background(), nil, OutcomeSuccess},
+		{"upstream bad request", context.Background(), types.InitOpenAIError("unknown", 400), OutcomeIgnored},
+		{"upstream credentials returned as 400", context.Background(), types.InitOpenAIError("invalid_api_key", 400), OutcomeFailure},
+		{"wrapped credentials keep their cause", context.Background(), types.NewErrorWithStatusCode(types.InitOpenAIError("invalid_api_key", 400), types.ErrorCodeInvalidRequest, 400), OutcomeFailure},
+		{"upstream context limit returned as 500", context.Background(), types.InitOpenAIError("context_length_exceeded", 500), OutcomeIgnored},
+		{"local rate limit", context.Background(), types.NewErrorWithStatusCode(errors.New("limited"), types.ErrorCodeInvalidRequest, 429), OutcomeIgnored},
+		{"upstream rate limit", context.Background(), types.InitOpenAIError("rate_limit_exceeded", 429), OutcomeFailure},
+		{"local quota", context.Background(), types.NewError(errors.New("quota"), types.ErrorCodeInsufficientUserQuota), OutcomeIgnored},
+		{"upstream quota", context.Background(), types.InitOpenAIError("insufficient_quota", 429), OutcomeFailure},
+		{"unavailable channel", context.Background(), types.NewErrorWithStatusCode(errors.New("disabled"), types.ErrorCodeGetChannelFailed, 403), OutcomeFailure},
+		{"network failure", context.Background(), types.NewOpenAIError(errors.New("connection refused"), types.ErrorCodeDoRequestFailed, 500), OutcomeFailure},
+		{"client cancellation", canceled, types.NewOpenAIError(errors.New("context canceled"), types.ErrorCodeDoRequestFailed, 500), OutcomeIgnored},
+		{"upstream deadline", context.Background(), types.NewOpenAIError(context.DeadlineExceeded, types.ErrorCodeDoRequestFailed, 504), OutcomeFailure},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, ClassifyRelayOutcome(tc.ctx, &relaycommon.RelayInfo{}, tc.err))
+		})
+	}
+	assert.Equal(t, OutcomeIgnored, ClassifyRelayOutcome(context.Background(), &relaycommon.RelayInfo{PerformanceBusinessRejection: true}, nil))
+}
+
+func TestStreamOutcomeClassification(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		mark func(*relaycommon.StreamStatus)
+		end  relaycommon.StreamEndReason
+		want Outcome
+	}{
+		{"completed", (*relaycommon.StreamStatus).MarkCompleted, relaycommon.StreamEndReasonEOF, OutcomeSuccess},
+		{"business rejection", func(s *relaycommon.StreamStatus) { s.MarkFailed("context_length_exceeded", "", 0) }, relaycommon.StreamEndReasonEOF, OutcomeIgnored},
+		{"service error", func(s *relaycommon.StreamStatus) { s.MarkFailed("server_error", "", 0) }, relaycommon.StreamEndReasonEOF, OutcomeFailure},
+		{"error after completion", func(s *relaycommon.StreamStatus) { s.MarkCompleted(); s.MarkFailed("", "server_error", 0) }, relaycommon.StreamEndReasonEOF, OutcomeFailure},
+		{"output limit", func(s *relaycommon.StreamStatus) { s.MarkIncomplete("max_output_tokens") }, relaycommon.StreamEndReasonEOF, OutcomeSuccess},
+		{"content filter", func(s *relaycommon.StreamStatus) { s.MarkIncomplete("content_filter") }, relaycommon.StreamEndReasonEOF, OutcomeIgnored},
+		{"client cancel", (*relaycommon.StreamStatus).MarkCancelled, relaycommon.StreamEndReasonEOF, OutcomeIgnored},
+		{"client gone", nil, relaycommon.StreamEndReasonClientGone, OutcomeIgnored},
+		{"timeout", nil, relaycommon.StreamEndReasonTimeout, OutcomeFailure},
+		{"missing terminal", nil, relaycommon.StreamEndReasonEOF, OutcomeFailure},
+		{"done marker without terminal", nil, relaycommon.StreamEndReasonDone, OutcomeSuccess},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stream := relaycommon.NewStreamStatus()
+			stream.RequireTerminal()
+			if tc.mark != nil {
+				tc.mark(stream)
+			}
+			stream.SetEndReason(tc.end, nil)
+			assert.Equal(t, tc.want, ClassifyRelayOutcome(context.Background(), &relaycommon.RelayInfo{StreamStatus: stream}, nil))
+		})
+	}
+}
+
+func TestClientCancellationDuringUpstreamRead(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	stream := relaycommon.NewStreamStatus()
+	stream.RequireTerminal()
+	stream.SetEndReason(relaycommon.StreamEndReasonScannerErr, errors.New("reader closed"))
+	assert.Equal(t, OutcomeIgnored, ClassifyRelayOutcome(ctx, &relaycommon.RelayInfo{StreamStatus: stream}, nil))
+
+	deadline := relaycommon.NewStreamStatus()
+	deadline.SetEndReason(relaycommon.StreamEndReasonClientGone, context.DeadlineExceeded)
+	assert.Equal(t, OutcomeFailure, ClassifyRelayOutcome(context.Background(), &relaycommon.RelayInfo{StreamStatus: deadline}, nil))
+}
 
 func TestQuerySummaryAllSuppliesHourlyDisplayWindow(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -162,6 +239,12 @@ func TestPerformanceAggregationAndFlush(t *testing.T) {
 			}
 			groups := []string{"a", "b"}
 
+			RecordRelayResult(context.Background(), &relaycommon.RelayInfo{OriginModelName: "test-model", UsingGroup: "b", StartTime: now}, types.InitOpenAIError("unknown", 400))
+			businessRejected, err := QuerySummaryAll(24, groups)
+			require.NoError(t, err)
+			require.NotNil(t, businessRejected.Summary)
+			assert.Equal(t, 100.0, businessRejected.Summary.SuccessRate)
+
 			failure := &atomicBucket{}
 			failure.add(Sample{LatencyMs: 2000})
 			hotBuckets.Store(bucketKey{model: "test-model", group: "b", bucketTs: hour}, failure)
@@ -192,6 +275,11 @@ func TestPerformanceAggregationAndFlush(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, before.Summary, after.Summary)
 			assert.Equal(t, before.Series, after.Series)
+
+			RecordRelayResult(context.Background(), &relaycommon.RelayInfo{OriginModelName: "test-model", UsingGroup: "a", StartTime: now}, types.InitOpenAIError("context_length_exceeded", 400))
+			after, err = Query(QueryParams{Model: "test-model", Hours: 24, AllowedGroups: groups})
+			require.NoError(t, err)
+			assert.Equal(t, before.Summary, after.Summary)
 
 			onlyA, err := Query(QueryParams{Model: "test-model", Group: "a", Hours: 24, AllowedGroups: groups})
 			require.NoError(t, err)

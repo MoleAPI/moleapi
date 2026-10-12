@@ -12,6 +12,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/perf_metrics_setting"
 	"github.com/bytedance/gopkg/util/gopool"
 )
@@ -31,12 +32,15 @@ func Init() {
 	go flushLoop()
 }
 
-func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens int64) {
+// RecordRelayResult samples one finished relay exactly once, at the request
+// boundary, regardless of how many channel attempts it took.
+func RecordRelayResult(ctx context.Context, info *relaycommon.RelayInfo, apiErr *types.NewAPIError) {
 	if info == nil {
 		return
 	}
-	if success {
-		RecordChannelAttempt(info.ChannelId, true)
+	outcome := ClassifyRelayOutcome(ctx, info, apiErr)
+	if outcome == OutcomeIgnored {
+		return
 	}
 	now := time.Now()
 	hasTtft := info.IsStream && info.HasSendResponse()
@@ -58,8 +62,8 @@ func RecordRelaySample(info *relaycommon.RelayInfo, success bool, outputTokens i
 		LatencyMs:    latencyMs,
 		TtftMs:       ttftMs,
 		HasTtft:      hasTtft,
-		Success:      success,
-		OutputTokens: outputTokens,
+		Success:      outcome == OutcomeSuccess,
+		OutputTokens: info.PerformanceOutputTokens,
 		GenerationMs: generationMs,
 	})
 }

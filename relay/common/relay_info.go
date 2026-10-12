@@ -210,6 +210,10 @@ type RelayInfo struct {
 	// requestInferredToolKey is the tool-price key RecordRequestInferredToolCall
 	// billed for the current channel attempt.
 	requestInferredToolKey string
+	// PerformanceOutputTokens is captured by settlement and sampled once at
+	// the request boundary, independently of billing success or failure.
+	PerformanceOutputTokens      int64
+	PerformanceBusinessRejection bool
 	// convOptions caches the converter settings snapshot (see ConvOptions).
 	convOptions *convmeta.Options
 	// responsesToolState is written by request conversion and read by the

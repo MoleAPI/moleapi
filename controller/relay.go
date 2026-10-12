@@ -27,8 +27,6 @@ import (
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
-	"github.com/bytedance/gopkg/util/gopool"
-
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 )
@@ -126,6 +124,21 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		newAPIError = types.NewError(err, types.ErrorCodeGenRelayInfoFailed)
 		return
 	}
+
+	defer func() {
+		recovered := recover()
+		resultErr := newAPIError
+		if recovered != nil {
+			resultErr = types.NewError(fmt.Errorf("relay panic: %v", recovered), types.ErrorCodeBadResponse)
+		}
+		if relayFormat != types.RelayFormatOpenAIRealtime {
+			perfmetrics.RecordRelayResult(c.Request.Context(), relayInfo, resultErr)
+		}
+		if recovered != nil {
+			panic(recovered)
+		}
+	}()
+
 	if newAPIError = relay.PrepareRequestBilling(c, relayInfo); newAPIError != nil {
 		return
 	}
@@ -150,6 +163,8 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.StreamStatus = nil
+		relayInfo.PerformanceBusinessRejection = false
+		relayInfo.PerformanceOutputTokens = 0
 		relayInfo.RetryIndex = retryParam.GetRetry()
 		channel, channelErr := getChannel(c, relayInfo, retryParam)
 		if channelErr != nil {
@@ -207,11 +222,6 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	if len(useChannel) > 1 {
 		retryLogStr := common.LogText("retry: %s", strings.Trim(strings.Join(strings.Fields(fmt.Sprint(useChannel)), "->"), "[]"))
 		logger.LogInfo(c, retryLogStr)
-	}
-	if newAPIError != nil {
-		gopool.Go(func() {
-			perfmetrics.RecordRelaySample(relayInfo, false, 0)
-		})
 	}
 }
 

@@ -77,6 +77,7 @@ func OaiResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, resp
 		sendResponsesStreamData(c, streamResponse, data)
 		accumulator.Observe(&streamResponse, common.StringToByteSlice(data))
 	})
+	info.StreamStatus.RequireTerminal()
 
 	return accumulator.Finish(), nil
 }
