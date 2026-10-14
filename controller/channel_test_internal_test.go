@@ -558,7 +558,15 @@ func TestGetChannelModelHealthReturnsCurrentStatusAndDailyStats(t *testing.T) {
 }
 
 func TestModelHealthProbeMatchesEndpointFamily(t *testing.T) {
-	channel := &model.Channel{Models: "text-embed-v4,bge-m3,gpt-4o,chat-backup"}
+	db := setupModelListControllerTestDB(t)
+	channel := &model.Channel{Id: 1, Name: "openai", Type: constant.ChannelTypeOpenAI, Key: "test-key", Status: common.ChannelStatusEnabled, Models: "text-embedding-3-small,gpt-4o"}
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&model.Ability{Group: "default", Model: "text-embedding-3-small", ChannelId: channel.Id, Enabled: true}).Error)
+	model.InvalidatePricingCache()
+	model.GetPricing()
+	t.Cleanup(model.InvalidatePricingCache)
+
+	assert.Equal(t, string(constant.EndpointTypeEmbeddings), modelProbeEndpoint(channel, "text-embedding-3-small"))
 	assert.Equal(t, string(constant.EndpointTypeEmbeddings), modelProbeEndpoint(channel, "text-embed-v4"))
 	assert.Equal(t, string(constant.EndpointTypeOpenAI), modelProbeEndpoint(channel, "gpt-4o"))
 }
