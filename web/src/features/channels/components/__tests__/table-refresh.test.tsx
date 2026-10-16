@@ -191,11 +191,15 @@ it('loads the selected usage period and keeps the all-time Used column', async (
     const metricsCalls = get.mock.calls.filter(
       ([url]) => url === '/api/data/channel-success'
     )
-    expect(metricsCalls.at(-1)?.[1]?.params.usage_period).toBe('yesterday')
+    expect(metricsCalls.at(-1)?.[1]).toMatchObject({
+      params: { usage_period: 'yesterday' },
+    })
     const channelCalls = get.mock.calls.filter(
       ([url]) => url === '/api/channel/search'
     )
-    expect(channelCalls.at(-1)?.[1]?.params.usage_period).toBe('yesterday')
+    expect(channelCalls.at(-1)?.[1]).toMatchObject({
+      params: { usage_period: 'yesterday' },
+    })
   })
   await userEvent.keyboard('{Escape}')
   await userEvent.click(screen.getByRole('button', { name: 'Table view' }))

@@ -86,7 +86,8 @@ func structuredModelFailure(log *model.Log) (channelprobe.Failure, bool) {
 		types.ErrorCodeBadResponse,
 		types.ErrorCodeBadResponseBody,
 		types.ErrorCodeEmptyResponse,
-		types.ErrorCodeReadResponseBodyFailed:
+		types.ErrorCodeReadResponseBodyFailed,
+		"upstream_error":
 		return channelprobe.Failure{OccurredAt: log.CreatedAt, StatusCode: statusCode, ErrorCode: errorCode, ErrorType: errorType}, true
 	default:
 		return channelprobe.Failure{}, false

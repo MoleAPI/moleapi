@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -67,28 +68,47 @@ func TestAPIRequestForwardsOpenCodeSessionHeaders(t *testing.T) {
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader("{}"))
 	c.Request.Header.Set("x-opencode-session", "session-123")
 	c.Request.Header.Set("x-opencode-request", "request-456")
+	c.Request.Header.Set("x-opencode-project", "project-789")
+	c.Request.Header.Set("x-opencode-client", "client-test")
 
-	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+	info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelOtherSettings: dto.ChannelOtherSettings{CodingPlanProvider: dto.CodingPlanProviderOpenCodeGo}}}
 	_, err := DoApiRequest(openCodeHeaderAdaptor{requestContextAdaptor{url: server.URL}}, c, info, strings.NewReader("{}"))
 	require.NoError(t, err)
 	headers := <-received
 	require.Equal(t, "session-123", headers.Get("x-opencode-session"))
 	require.Equal(t, "request-456", headers.Get("x-opencode-request"))
+	require.Equal(t, "project-789", headers.Get("x-opencode-project"))
+	require.Equal(t, "client-test", headers.Get("x-opencode-client"))
 }
 
-func TestAPIRequestAddsStableOpenCodeSessionHeader(t *testing.T) {
+func TestAPIRequestAddsOpaqueStableOpenCodeSessionHeader(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
-	info := &relaycommon.RelayInfo{UserId: 7, TokenId: 11, ChannelMeta: &relaycommon.ChannelMeta{}}
+	info := &relaycommon.RelayInfo{UserId: 7, TokenId: 11, ChannelMeta: &relaycommon.ChannelMeta{ChannelOtherSettings: dto.ChannelOtherSettings{CodingPlanProvider: dto.CodingPlanProviderOpenCodeGo}}}
 
 	first := http.Header{}
 	SetupApiRequestHeader(info, c, &first)
 	second := http.Header{}
 	SetupApiRequestHeader(info, c, &second)
 
-	require.NotEmpty(t, first.Get("x-opencode-session"))
+	require.Regexp(t, `^[0-9a-f]{32}$`, first.Get("x-opencode-session"))
 	require.Equal(t, first.Get("x-opencode-session"), second.Get("x-opencode-session"))
+	info.TokenId = 12
+	differentToken := http.Header{}
+	SetupApiRequestHeader(info, c, &differentToken)
+	assert.NotEqual(t, first.Get("x-opencode-session"), differentToken.Get("x-opencode-session"))
+
+	c.Request.Header.Set("x-opencode-session", "client-session")
+	c.Request.Header.Set("x-opencode-request", "client-request")
+	c.Request.Header.Set("x-opencode-project", "client-project")
+	c.Request.Header.Set("x-opencode-client", "client-name")
+	otherProvider := http.Header{}
+	info.ChannelOtherSettings.CodingPlanProvider = dto.CodingPlanProviderKimi
+	SetupApiRequestHeader(info, c, &otherProvider)
+	for _, name := range []string{"x-opencode-session", "x-opencode-request", "x-opencode-project", "x-opencode-client"} {
+		require.Empty(t, otherProvider.Get(name))
+	}
 }
 
 func TestNewTaskAPIRequestInheritsClientCancellation(t *testing.T) {

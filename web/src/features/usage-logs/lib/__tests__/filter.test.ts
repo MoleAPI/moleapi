@@ -83,28 +83,37 @@ describe('usage log filters', () => {
         username: '  user name ',
         request_id: '\t ',
       })
-      assert.equal(get.mock.lastCall?.[1]?.params.username, 'user name')
-      assert.equal(get.mock.lastCall?.[1]?.params.request_id, undefined)
-      assert.equal(get.mock.lastCall?.[1]?.params.page_size, 20)
+      const params = get.mock.lastCall?.[1]?.params as Record<string, unknown>
+      assert.equal(params.username, 'user name')
+      assert.equal(params.request_id, undefined)
+      assert.equal(params.page_size, 20)
     }
     await getChannels({
       group: '  group name ',
       status: '  enabled  ',
       tag_mode: false,
     })
-    assert.equal(get.mock.lastCall?.[1]?.params.group, 'group name')
-    assert.equal(get.mock.lastCall?.[1]?.params.status, 'enabled')
-    assert.equal(get.mock.lastCall?.[1]?.params.tag_mode, false)
+    const channelParams = get.mock.lastCall?.[1]?.params as Record<
+      string,
+      unknown
+    >
+    assert.equal(channelParams.group, 'group name')
+    assert.equal(channelParams.status, 'enabled')
+    assert.equal(channelParams.tag_mode, false)
     await searchChannels({
       keyword: '  channel name ',
       model: ' model ',
       group: ' \t ',
       p: 2,
     })
-    assert.equal(get.mock.lastCall?.[1]?.params.keyword, 'channel name')
-    assert.equal(get.mock.lastCall?.[1]?.params.model, 'model')
-    assert.equal(get.mock.lastCall?.[1]?.params.group, undefined)
-    assert.equal(get.mock.lastCall?.[1]?.params.p, 2)
+    const searchParams = get.mock.lastCall?.[1]?.params as Record<
+      string,
+      unknown
+    >
+    assert.equal(searchParams.keyword, 'channel name')
+    assert.equal(searchParams.model, 'model')
+    assert.equal(searchParams.group, undefined)
+    assert.equal(searchParams.p, 2)
   })
 
   test('trims text filters and merges request id filters', () => {
