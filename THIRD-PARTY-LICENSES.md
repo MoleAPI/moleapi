@@ -70,13 +70,13 @@ Transitive dependencies should be audited before a final external release.
 | backend  | production  | Go        | `github.com/waffo-com/waffo-go`                         | `v1.3.2`                             | MIT                     |
 | backend  | production  | Go        | `github.com/waffo-com/waffo-pancake-sdk-go`             | `v0.3.1`                             | MIT                     |
 | backend  | production  | Go        | `github.com/yapingcat/gomedia`                          | `v0.0.0-20240906162731-17feea57090c` | MIT                     |
-| backend  | production  | Go        | `golang.org/x/crypto`                                   | `v0.52.0`                            | BSD-3-Clause            |
+| backend  | production  | Go        | `golang.org/x/crypto`                                   | `v0.57.0`                            | BSD-3-Clause            |
 | backend  | production  | Go        | `golang.org/x/image`                                    | `v0.41.0`                            | BSD-3-Clause            |
-| backend  | production  | Go        | `golang.org/x/net`                                      | `v0.55.0`                            | BSD-3-Clause            |
+| backend  | production  | Go        | `golang.org/x/net`                                      | `v0.60.0`                            | BSD-3-Clause            |
 | backend  | production  | Go        | `golang.org/x/oauth2`                                   | `v0.36.0`                            | BSD-3-Clause            |
-| backend  | production  | Go        | `golang.org/x/sync`                                     | `v0.20.0`                            | BSD-3-Clause            |
-| backend  | production  | Go        | `golang.org/x/sys`                                      | `v0.45.0`                            | BSD-3-Clause            |
-| backend  | production  | Go        | `golang.org/x/text`                                     | `v0.37.0`                            | BSD-3-Clause            |
+| backend  | production  | Go        | `golang.org/x/sync`                                     | `v0.23.0`                            | BSD-3-Clause            |
+| backend  | production  | Go        | `golang.org/x/sys`                                      | `v0.48.0`                            | BSD-3-Clause            |
+| backend  | production  | Go        | `golang.org/x/text`                                     | `v0.42.0`                            | BSD-3-Clause            |
 | backend  | production  | Go        | `gopkg.in/yaml.v3`                                      | `v3.0.1`                             | Apache-2.0 OR MIT       |
 | backend  | production  | Go        | `gorm.io/driver/clickhouse`                             | `v0.6.0`                             | MIT                     |
 | backend  | production  | Go        | `gorm.io/driver/mysql`                                  | `v1.5.7`                             | MIT                     |
@@ -103,7 +103,7 @@ Transitive dependencies should be audited before a final external release.
 | web      | production  | npm       | `@visactor/vchart`                                      | `2.1.4`                              | MIT                     |
 | web      | production  | npm       | `ai`                                                    | `7.0.136`                            | Apache-2.0              |
 | web      | production  | npm       | `auto-skeleton-react`                                   | `1.0.5`                              | MIT                     |
-| web      | production  | npm       | `axios`                                                 | `1.18.1`                             | MIT                     |
+| web      | production  | npm       | `axios`                                                 | `1.20.0`                             | MIT                     |
 | web      | production  | npm       | `class-variance-authority`                              | `0.7.1`                              | Apache-2.0              |
 | web      | production  | npm       | `clsx`                                                  | `2.1.1`                              | MIT                     |
 | web      | production  | npm       | `cmdk`                                                  | `1.1.1`                              | MIT                     |
