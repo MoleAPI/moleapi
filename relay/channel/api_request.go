@@ -16,6 +16,7 @@ import (
 	"github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
@@ -49,21 +50,23 @@ func ApplyUpstreamBodyMetadata(req *http.Request, body io.Reader) {
 }
 
 func SetupApiRequestHeader(info *common.RelayInfo, c *gin.Context, req *http.Header) {
-	openCodeSession := strings.TrimSpace(c.Request.Header.Get("x-opencode-session"))
-	if openCodeSession == "" && info != nil {
-		project := strings.TrimSpace(c.Request.Header.Get("x-opencode-project"))
-		seed := service.GetChannelAffinitySessionSeed(c, info.ChannelId)
-		if seed == "" {
-			seed = fmt.Sprintf("user:%d|token:%d|project:%s", info.UserId, info.TokenId, project)
+	if info != nil && info.ChannelOtherSettings.CodingPlanProvider == dto.CodingPlanProviderOpenCodeGo {
+		openCodeSession := strings.TrimSpace(c.Request.Header.Get("x-opencode-session"))
+		if openCodeSession == "" {
+			project := strings.TrimSpace(c.Request.Header.Get("x-opencode-project"))
+			seed := service.GetChannelAffinitySessionSeed(c, info.ChannelId)
+			if seed == "" {
+				seed = fmt.Sprintf("user:%d|token:%d|project:%s", info.UserId, info.TokenId, project)
+			}
+			openCodeSession = common2.GenerateHMAC(seed)[:32]
 		}
-		openCodeSession = "new-api-" + common2.GenerateHMAC(seed)[:32]
-	}
-	if openCodeSession != "" {
-		req.Set("x-opencode-session", openCodeSession)
-	}
-	for _, name := range []string{"x-opencode-request", "x-opencode-project", "x-opencode-client"} {
-		if value := strings.TrimSpace(c.Request.Header.Get(name)); value != "" {
-			req.Set(name, value)
+		if openCodeSession != "" {
+			req.Set("x-opencode-session", openCodeSession)
+		}
+		for _, name := range []string{"x-opencode-request", "x-opencode-project", "x-opencode-client"} {
+			if value := strings.TrimSpace(c.Request.Header.Get(name)); value != "" {
+				req.Set(name, value)
+			}
 		}
 	}
 	if info.RelayMode == constant.RelayModeAudioTranscription || info.RelayMode == constant.RelayModeAudioTranslation {

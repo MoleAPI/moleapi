@@ -8064,6 +8064,18 @@
     "{{name}} called {{count}} times, cost {{quota}}": "{{name}} được gọi {{count}} lần, chi phí {{quota}}",
     "{{provider}} login and registration has not been enabled by administrator": "Quản trị viên chưa bật đăng nhập và đăng ký qua {{provider}}",
     "{{provider}} returned empty user info, please check settings": "{{provider}} trả về thông tin người dùng trống, vui lòng kiểm tra cài đặt",
-    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "Nạp tiền qua {{provider}} thành công, số tiền đã nạp: {{quota}}, số tiền thanh toán: {{amount}}"
+    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "Nạp tiền qua {{provider}} thành công, số tiền đã nạp: {{quota}}, số tiền thanh toán: {{amount}}",
+    "Allow querying user quota": "Cho phép tra cứu hạn mức người dùng",
+    "Input Price: High to Low": "Giá đầu vào: Từ cao đến thấp",
+    "Input Price: Low to High": "Giá đầu vào: Thấp đến Cao",
+    "Optional. Without it, Google picks the region; with it, requests go to the deployment region below.": "Không bắt buộc. Nếu để trống, Google sẽ tự chọn khu vực; nếu điền, yêu cầu sẽ được gửi đến khu vực triển khai bên dưới.",
+    "Output Price: High to Low": "Giá đầu ra: Từ cao đến thấp",
+    "Output Price: Low to High": "Giá đầu ra: Thấp đến Cao",
+    "Per-request Price: High to Low": "Giá mỗi yêu cầu: Từ cao đến thấp",
+    "Per-request Price: Low to High": "Giá mỗi yêu cầu: Thấp đến Cao",
+    "The upstream key has unlimited quota. Turn on \"Allow querying user quota\" for this key on the upstream to see the real balance.": "Khóa thượng nguồn có hạn mức không giới hạn. Hãy bật “Cho phép tra cứu hạn mức người dùng” cho khóa này ở thượng nguồn để xem số dư thực tế.",
+    "Vertex AI Project ID": "ID dự án Vertex AI",
+    "e.g., my-project-123": "vd. du-an-cua-toi-123",
+    "When enabled, this API key can be used to check your account's remaining and used quota.": "Khi được bật, bạn có thể dùng khóa API này để xem hạn mức còn lại và hạn mức đã dùng của tài khoản."
   }
 }

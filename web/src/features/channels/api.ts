@@ -163,7 +163,7 @@ export async function getChannel(id: number): Promise<GetChannelResponse> {
 export async function getChannelOps(
   autoBan?: boolean
 ): Promise<ChannelOpsResponse> {
-  const res = await api.get('/api/channel/ops', {
+  const res = await api.get<ChannelOpsResponse>('/api/channel/ops', {
     ...channelActionConfig(),
     params: autoBan === undefined ? undefined : { auto_ban: autoBan },
   })

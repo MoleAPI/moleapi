@@ -448,6 +448,9 @@ func TestStructuredModelFailureUsesOnlyModelScopedProviderErrors(t *testing.T) {
 		{name: "missing model", status: 404, code: "model_not_found", want: true},
 		{name: "wrong path is not a model failure", status: 404, code: "resource_not_found"},
 		{name: "provider response", status: 503, code: "bad_response_status_code", want: true},
+		{name: "provider upstream error", status: 503, code: "upstream_error", want: true},
+		{name: "upstream client error is not model scoped", status: 400, code: "upstream_error"},
+		{name: "upstream rate limit is not model scoped", status: 429, code: "upstream_error"},
 		{name: "network is channel scoped", status: 500, code: "do_request_failed"},
 		{name: "invalid user parameters", status: 400, code: "invalid_request"},
 		{name: "insufficient balance", status: 402, code: "insufficient_user_quota"},
@@ -558,7 +561,15 @@ func TestGetChannelModelHealthReturnsCurrentStatusAndDailyStats(t *testing.T) {
 }
 
 func TestModelHealthProbeMatchesEndpointFamily(t *testing.T) {
-	channel := &model.Channel{Models: "text-embed-v4,bge-m3,gpt-4o,chat-backup"}
+	db := setupModelListControllerTestDB(t)
+	channel := &model.Channel{Id: 1, Name: "openai", Type: constant.ChannelTypeOpenAI, Key: "test-key", Status: common.ChannelStatusEnabled, Models: "text-embedding-3-small,gpt-4o"}
+	require.NoError(t, db.Create(channel).Error)
+	require.NoError(t, db.Create(&model.Ability{Group: "default", Model: "text-embedding-3-small", ChannelId: channel.Id, Enabled: true}).Error)
+	model.InvalidatePricingCache()
+	model.GetPricing()
+	t.Cleanup(model.InvalidatePricingCache)
+
+	assert.Equal(t, string(constant.EndpointTypeEmbeddings), modelProbeEndpoint(channel, "text-embedding-3-small"))
 	assert.Equal(t, string(constant.EndpointTypeEmbeddings), modelProbeEndpoint(channel, "text-embed-v4"))
 	assert.Equal(t, string(constant.EndpointTypeOpenAI), modelProbeEndpoint(channel, "gpt-4o"))
 }

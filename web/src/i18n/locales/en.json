@@ -8064,6 +8064,18 @@
     "{{name}} called {{count}} times, cost {{quota}}": "{{name}} called {{count}} times, cost {{quota}}",
     "{{provider}} login and registration has not been enabled by administrator": "{{provider}} login and registration has not been enabled by administrator",
     "{{provider}} returned empty user info, please check settings": "{{provider}} returned empty user info, please check settings",
-    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}"
+    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}",
+    "Allow querying user quota": "Allow querying user quota",
+    "Input Price: High to Low": "Input Price: High to Low",
+    "Input Price: Low to High": "Input Price: Low to High",
+    "Optional. Without it, Google picks the region; with it, requests go to the deployment region below.": "Optional. Without it, Google picks the region; with it, requests go to the deployment region below.",
+    "Output Price: High to Low": "Output Price: High to Low",
+    "Output Price: Low to High": "Output Price: Low to High",
+    "Per-request Price: High to Low": "Per-request Price: High to Low",
+    "Per-request Price: Low to High": "Per-request Price: Low to High",
+    "The upstream key has unlimited quota. Turn on \"Allow querying user quota\" for this key on the upstream to see the real balance.": "The upstream key has unlimited quota. Turn on \"Allow querying user quota\" for this key on the upstream to see the real balance.",
+    "Vertex AI Project ID": "Vertex AI Project ID",
+    "e.g., my-project-123": "e.g., my-project-123",
+    "When enabled, this API key can be used to check your account's remaining and used quota.": "When enabled, this API key can be used to check your account's remaining and used quota."
   }
 }

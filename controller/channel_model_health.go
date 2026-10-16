@@ -86,7 +86,8 @@ func structuredModelFailure(log *model.Log) (channelprobe.Failure, bool) {
 		types.ErrorCodeBadResponse,
 		types.ErrorCodeBadResponseBody,
 		types.ErrorCodeEmptyResponse,
-		types.ErrorCodeReadResponseBodyFailed:
+		types.ErrorCodeReadResponseBodyFailed,
+		"upstream_error":
 		return channelprobe.Failure{OccurredAt: log.CreatedAt, StatusCode: statusCode, ErrorCode: errorCode, ErrorType: errorType}, true
 	default:
 		return channelprobe.Failure{}, false
@@ -224,12 +225,6 @@ func modelProbeEndpoint(channel *model.Channel, modelName string) string {
 			return string(endpoint)
 		}
 	}
-	for _, endpoint := range endpoints {
-		switch endpoint {
-		case constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic, constant.EndpointTypeGemini:
-			return string(endpoint)
-		}
-	}
 
 	lowerModel := strings.ToLower(modelName)
 	switch {
@@ -241,9 +236,14 @@ func modelProbeEndpoint(channel *model.Channel, modelName string) string {
 		return string(constant.EndpointTypeImageGeneration)
 	case strings.Contains(lowerModel, "codex"), channel != nil && channel.Type == constant.ChannelTypeCodex:
 		return string(constant.EndpointTypeOpenAIResponse)
-	default:
-		return string(constant.EndpointTypeOpenAI)
 	}
+	for _, endpoint := range endpoints {
+		switch endpoint {
+		case constant.EndpointTypeOpenAI, constant.EndpointTypeOpenAIResponse, constant.EndpointTypeAnthropic, constant.EndpointTypeGemini:
+			return string(endpoint)
+		}
+	}
+	return string(constant.EndpointTypeOpenAI)
 }
 
 func testModelAvailability(ctx context.Context, channel *model.Channel, testUserID int, modelName string) testResult {

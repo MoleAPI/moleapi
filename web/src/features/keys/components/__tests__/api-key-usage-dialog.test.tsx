@@ -78,6 +78,7 @@ const apiKey: ApiKey = {
   model_limits_enabled: false,
   model_limits: '',
   allow_ips: '',
+  allow_user_quota_query: false,
 }
 
 test('opens a usage guide from the labeled API key action', async () => {

@@ -8064,6 +8064,18 @@
     "{{name}} called {{count}} times, cost {{quota}}": "{{name}}: вызовов {{count}}, стоимость {{quota}}",
     "{{provider}} login and registration has not been enabled by administrator": "Администратор не включил вход и регистрацию через {{provider}}",
     "{{provider}} returned empty user info, please check settings": "{{provider}} вернул пустые данные пользователя, проверьте настройки",
-    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "Пополнение через {{provider}} выполнено, зачислено: {{quota}}, сумма оплаты: {{amount}}"
+    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "Пополнение через {{provider}} выполнено, зачислено: {{quota}}, сумма оплаты: {{amount}}",
+    "Allow querying user quota": "Разрешить просмотр квоты пользователя",
+    "Input Price: High to Low": "Цена ввода: от высокой к низкой",
+    "Input Price: Low to High": "Цена ввода: от низкой к высокой",
+    "Optional. Without it, Google picks the region; with it, requests go to the deployment region below.": "Необязательно. Без него регион выбирает Google, а с ним запросы отправляются в регион развертывания ниже.",
+    "Output Price: High to Low": "Цена вывода: от высокой к низкой",
+    "Output Price: Low to High": "Цена вывода: от низкой к высокой",
+    "Per-request Price: High to Low": "Цена за запрос: от высокой к низкой",
+    "Per-request Price: Low to High": "Цена за запрос: от низкой к высокой",
+    "The upstream key has unlimited quota. Turn on \"Allow querying user quota\" for this key on the upstream to see the real balance.": "У вышестоящего ключа неограниченная квота. Включите для него «Разрешить просмотр квоты пользователя» на вышестоящем сервере, чтобы увидеть реальный баланс.",
+    "Vertex AI Project ID": "ID проекта Vertex AI",
+    "e.g., my-project-123": "напр. my-project-123",
+    "When enabled, this API key can be used to check your account's remaining and used quota.": "Если включено, через этот API-ключ можно узнать оставшуюся и использованную квоту вашего аккаунта."
   }
 }

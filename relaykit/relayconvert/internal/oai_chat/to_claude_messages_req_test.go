@@ -6,10 +6,53 @@ import (
 
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert/convmeta"
+	relaymedia "github.com/QuantumNous/new-api/relaykit/relayconvert/internal/media"
 	kitutil "github.com/QuantumNous/new-api/relaykit/relayconvert/kitutil"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
+
+func TestOpenAIChatRequestToClaudeMessagesPreservesCacheControl(t *testing.T) {
+	relaymedia.SetMediaResolver(relaymedia.MediaResolver{
+		GetBase64Data: func(context.Context, types.FileSource, ...string) (string, string, error) {
+			return "aW1hZ2U=", "image/png", nil
+		},
+	})
+	t.Cleanup(func() { relaymedia.SetMediaResolver(relaymedia.MediaResolver{}) })
+	for _, tt := range []struct {
+		name string
+		body string
+		path string
+		want string
+	}{
+		{"automatic 5m", `"cache_control":{"type":"ephemeral"},"messages":[{"role":"user","content":"hello"}]`, "cache_control", `{"type":"ephemeral"}`},
+		{"automatic 1h", `"cache_control":{"type":"ephemeral","ttl":"1h"},"messages":[{"role":"user","content":"hello"}]`, "cache_control", `{"type":"ephemeral","ttl":"1h"}`},
+		{"system", `"messages":[{"role":"system","content":[{"type":"text","text":"instructions","cache_control":{"type":"ephemeral"}}]},{"role":"user","content":"hello"}]`, "system.0.cache_control", `{"type":"ephemeral"}`},
+		{"user text", `"messages":[{"role":"user","content":[{"type":"text","text":"hello","cache_control":{"type":"ephemeral","ttl":"1h"}}]}]`, "messages.0.content.0.cache_control", `{"type":"ephemeral","ttl":"1h"}`},
+		{"assistant text", `"messages":[{"role":"user","content":"hello"},{"role":"assistant","content":[{"type":"text","text":"answer","cache_control":{"type":"ephemeral"}}]}]`, "messages.1.content.0.cache_control", `{"type":"ephemeral"}`},
+		{"image", `"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,aW1hZ2U="},"cache_control":{"type":"ephemeral"}}]}]`, "messages.0.content.0.cache_control", `{"type":"ephemeral"}`},
+		{"tool", `"tools":[{"type":"function","function":{"name":"read_file","parameters":{"type":"object","properties":{}}},"cache_control":{"type":"ephemeral","ttl":"1h"}}],"messages":[{"role":"user","content":"hello"}]`, "tools.0.cache_control", `{"type":"ephemeral","ttl":"1h"}`},
+		{"not enabled when omitted", `"messages":[{"role":"user","content":"hello"}]`, "", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var request dto.GeneralOpenAIRequest
+			require.NoError(t, kitutil.Unmarshal([]byte(`{"model":"claude-test","max_tokens":16,`+tt.body+`}`), &request))
+			converted, err := OpenAIChatRequestToClaudeMessages(context.Background(), &convmeta.Values{}, request)
+			require.NoError(t, err)
+			encoded, err := kitutil.Marshal(converted)
+			require.NoError(t, err)
+			if tt.path == "" {
+				assert.NotContains(t, string(encoded), `"cache_control"`)
+				return
+			}
+			actual := gjson.GetBytes(encoded, tt.path)
+			require.True(t, actual.Exists(), "missing cache policy in %s", encoded)
+			assert.JSONEq(t, tt.want, actual.Raw)
+		})
+	}
+}
 
 func TestOpenAIChatRequestToClaudeMessagesPreservesReasoningWithToolCall(t *testing.T) {
 	reasoning := "I need the file contents before answering."
