@@ -8064,6 +8064,18 @@
     "{{name}} called {{count}} times, cost {{quota}}": "{{name}} を {{count}} 回呼び出し、費用 {{quota}}",
     "{{provider}} login and registration has not been enabled by administrator": "管理者が {{provider}} でのログインと登録を有効にしていません",
     "{{provider}} returned empty user info, please check settings": "{{provider}} から返されたユーザー情報が空です。設定を確認してください",
-    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "{{provider}} のチャージが完了しました。追加額：{{quota}}、支払額：{{amount}}"
+    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "{{provider}} のチャージが完了しました。追加額：{{quota}}、支払額：{{amount}}",
+    "Allow querying user quota": "ユーザーのクォータ照会を許可",
+    "Input Price: High to Low": "入力価格：高い順",
+    "Input Price: Low to High": "入力価格：低い順",
+    "Optional. Without it, Google picks the region; with it, requests go to the deployment region below.": "任意。未入力の場合は Google がリージョンを選びます。入力すると、下のデプロイリージョンにリクエストを送信します。",
+    "Output Price: High to Low": "出力価格：高い順",
+    "Output Price: Low to High": "出力価格：低い順",
+    "Per-request Price: High to Low": "リクエスト単価：高い順",
+    "Per-request Price: Low to High": "リクエスト単価：低い順",
+    "The upstream key has unlimited quota. Turn on \"Allow querying user quota\" for this key on the upstream to see the real balance.": "上流のキーはクォータが無制限です。上流でこのキーの「ユーザーのクォータ照会を許可」をオンにすると、実際の残高を確認できます。",
+    "Vertex AI Project ID": "Vertex AI プロジェクト ID",
+    "e.g., my-project-123": "例: my-project-123",
+    "When enabled, this API key can be used to check your account's remaining and used quota.": "有効にすると、このAPIキーでアカウントの残りクォータと使用済みクォータを確認できます。"
   }
 }

@@ -8064,6 +8064,18 @@
     "{{name}} called {{count}} times, cost {{quota}}": "{{name}} appelé {{count}} fois, coût {{quota}}",
     "{{provider}} login and registration has not been enabled by administrator": "L’administrateur n’a pas activé la connexion et l’inscription via {{provider}}",
     "{{provider}} returned empty user info, please check settings": "{{provider}} a renvoyé des informations utilisateur vides, veuillez vérifier les paramètres",
-    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "Recharge {{provider}} réussie, montant ajouté : {{quota}}, montant payé : {{amount}}"
+    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "Recharge {{provider}} réussie, montant ajouté : {{quota}}, montant payé : {{amount}}",
+    "Allow querying user quota": "Autoriser la consultation du quota utilisateur",
+    "Input Price: High to Low": "Prix d’entrée : Du plus élevé au plus bas",
+    "Input Price: Low to High": "Prix d’entrée : Du plus bas au plus élevé",
+    "Optional. Without it, Google picks the region; with it, requests go to the deployment region below.": "Facultatif. Sans ID, Google choisit la région ; avec un ID, les requêtes vont vers la région de déploiement ci-dessous.",
+    "Output Price: High to Low": "Prix de sortie : Du plus élevé au plus bas",
+    "Output Price: Low to High": "Prix de sortie : Du plus bas au plus élevé",
+    "Per-request Price: High to Low": "Prix par requête : Du plus élevé au plus bas",
+    "Per-request Price: Low to High": "Prix par requête : Du plus bas au plus élevé",
+    "The upstream key has unlimited quota. Turn on \"Allow querying user quota\" for this key on the upstream to see the real balance.": "La clé en amont a un quota illimité. Activez « Autoriser la consultation du quota utilisateur » pour cette clé en amont afin de voir le solde réel.",
+    "Vertex AI Project ID": "ID de projet Vertex AI",
+    "e.g., my-project-123": "ex. mon-projet-123",
+    "When enabled, this API key can be used to check your account's remaining and used quota.": "Si l'option est activée, cette clé API permet de consulter le quota restant et le quota utilisé de votre compte."
   }
 }
