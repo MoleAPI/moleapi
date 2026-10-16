@@ -8064,6 +8064,18 @@
     "{{name}} called {{count}} times, cost {{quota}}": "{{name}} 呼叫 {{count}} 次，呼叫花費 {{quota}}",
     "{{provider}} login and registration has not been enabled by administrator": "管理員未開啟透過 {{provider}} 登入及註冊",
     "{{provider}} returned empty user info, please check settings": "{{provider}} 回傳的使用者資訊為空，請檢查設定",
-    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "{{provider}} 儲值成功，儲值額度：{{quota}}，支付金額：{{amount}}"
+    "{{provider}} top-up succeeded, amount added: {{quota}}, payment amount: {{amount}}": "{{provider}} 儲值成功，儲值額度：{{quota}}，支付金額：{{amount}}",
+    "Allow querying user quota": "允許查詢使用者額度",
+    "Input Price: High to Low": "輸入價格：從高到低",
+    "Input Price: Low to High": "輸入價格：從低到高",
+    "Optional. Without it, Google picks the region; with it, requests go to the deployment region below.": "可選。不填時由 Google 決定區域；填寫後，請求會送往下方的部署區域。",
+    "Output Price: High to Low": "輸出價格：從高到低",
+    "Output Price: Low to High": "輸出價格：從低到高",
+    "Per-request Price: High to Low": "按次價格：從高到低",
+    "Per-request Price: Low to High": "按次價格：從低到高",
+    "The upstream key has unlimited quota. Turn on \"Allow querying user quota\" for this key on the upstream to see the real balance.": "上游令牌是無限額度，在上游為這個令牌開啟「允許查詢使用者額度」後才能查到真實餘額。",
+    "Vertex AI Project ID": "Vertex AI 專案 ID",
+    "e.g., my-project-123": "例如 my-project-123",
+    "When enabled, this API key can be used to check your account's remaining and used quota.": "開啟後，可用這個令牌查詢帳戶的剩餘額度和已用額度。"
   }
 }
