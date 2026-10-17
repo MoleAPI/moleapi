@@ -27,6 +27,9 @@ type TopUp struct {
 	PaymentMode           string  `json:"payment_mode" gorm:"type:varchar(16);default:''"`
 	PromisedQuota         int     `json:"promised_quota" gorm:"type:bigint;default:0"`
 	CreditedQuota         int     `json:"credited_quota" gorm:"type:bigint;default:0"`
+	PublicBonusRate       float64 `json:"public_bonus_rate,omitempty" gorm:"default:0"`
+	ExclusiveBonusRatio   int     `json:"exclusive_bonus_ratio,omitempty" gorm:"type:int;default:0"`
+	ExclusiveBonusQuota   int     `json:"exclusive_bonus_quota,omitempty" gorm:"type:bigint;default:0"`
 	InviteRebateInviterId int     `json:"invite_rebate_inviter_id" gorm:"type:int;default:0;column:invite_rebate_inviter_id;index"`
 	InviteRebateRatio     int     `json:"invite_rebate_ratio" gorm:"type:int;default:0;column:invite_rebate_ratio"`
 	InviteRebateQuota     int     `json:"invite_rebate_quota" gorm:"type:bigint;default:0;column:invite_rebate_quota"`
@@ -153,17 +156,60 @@ func (topUp *TopUp) Insert() error {
 			return ErrTopUpQuotaInvalid
 		}
 		if topUp.PromisedQuota == 0 {
-			baseQuota, err := topUpBaseQuota(topUp)
-			if err != nil {
-				return err
-			}
-			topUp.PromisedQuota, err = calculateTopUpPromisedQuota(topUp, baseQuota, true)
-			if err != nil {
+			if err := topUp.PrepareQuota(); err != nil {
 				return err
 			}
 		}
+		if err := ValidateTopUpQuotaCapacity(topUp.UserId, topUp.PromisedQuota); err != nil {
+			return err
+		}
 	}
 	return DB.Create(topUp).Error
+}
+
+const MaxExclusiveBonusRatio = 10000
+
+func GetUserExclusiveBonusRatio(userID int) (int, error) {
+	var user User
+	if err := DB.Select("exclusive_bonus_ratio").Where("id = ?", userID).First(&user).Error; err != nil {
+		return 0, err
+	}
+	if user.ExclusiveBonusRatio < 0 || user.ExclusiveBonusRatio > MaxExclusiveBonusRatio {
+		return 0, ErrTopUpQuotaInvalid
+	}
+	return user.ExclusiveBonusRatio, nil
+}
+
+// PrepareQuota freezes the credit and exclusive bonus before creating a payment.
+func (topUp *TopUp) PrepareQuota() error {
+	baseQuota, err := topUpBaseQuota(topUp)
+	if err != nil {
+		return err
+	}
+	publicQuota, err := calculateTopUpPromisedQuota(topUp, baseQuota, true)
+	if err != nil {
+		return err
+	}
+	ratio, err := GetUserExclusiveBonusRatio(topUp.UserId)
+	if err != nil {
+		return err
+	}
+	topUp.ExclusiveBonusRatio = ratio
+	topUp.ExclusiveBonusQuota = 0
+	if ratio == 0 {
+		topUp.PromisedQuota = publicQuota
+		topUp.PublicBonusRate = 0
+		return nil
+	}
+	rate := decimal.NewFromInt(1).Add(decimal.NewFromFloat(topUp.PublicBonusRate)).Add(decimal.NewFromInt(int64(ratio)).Div(decimal.NewFromInt(MaxExclusiveBonusRatio)))
+	quota, err := common.WalletQuotaFromDecimalStrict(baseQuota.Mul(rate))
+	if err != nil || quota < publicQuota {
+		return ErrTopUpQuotaInvalid
+	}
+	topUp.PromisedQuota = quota
+	// ponytail: assign rounding to the exclusive portion so existing referral credit stays exact.
+	topUp.ExclusiveBonusQuota = quota - publicQuota
+	return nil
 }
 
 func (topUp *TopUp) UpdateInvoiceDetails(details string) error {
@@ -379,7 +425,7 @@ func applyInviteRebateTx(tx *gorm.DB, topUp *TopUp, invitee *User, creditedQuota
 		return false, nil
 	}
 
-	rebateQuota := int64(creditedQuota) * int64(inviter.InviteRebateRatio) / int64(MaxInviteRebateRatio)
+	rebateQuota := int64(creditedQuota/MaxInviteRebateRatio)*int64(inviter.InviteRebateRatio) + int64(creditedQuota%MaxInviteRebateRatio)*int64(inviter.InviteRebateRatio)/int64(MaxInviteRebateRatio)
 	if rebateQuota <= 0 {
 		return false, nil
 	}
@@ -476,7 +522,10 @@ func settleTopUp(tradeNo string, expectedPaymentProvider string, quotaValue func
 				userUpdates = details
 			}
 		}
-		inviteRebateGranted, err = applyInviteRebateTx(tx, topUp, user, creditedQuota)
+		if topUp.ExclusiveBonusQuota < 0 || topUp.ExclusiveBonusQuota > creditedQuota {
+			return ErrTopUpQuotaInvalid
+		}
+		inviteRebateGranted, err = applyInviteRebateTx(tx, topUp, user, creditedQuota-topUp.ExclusiveBonusQuota)
 		if err != nil {
 			return err
 		}
@@ -583,6 +632,7 @@ func calculateTopUpPromisedQuota(topUp *TopUp, baseQuota decimal.Decimal, checke
 		if err != nil {
 			return 0, ErrTopUpQuotaInvalid
 		}
+		topUp.PublicBonusRate = bonusRate
 	}
 	quota, err := common.WalletQuotaFromDecimalStrict(baseQuota.Mul(decimal.NewFromInt(1).Add(decimal.NewFromFloat(bonusRate))))
 	if err != nil || quota <= 0 {

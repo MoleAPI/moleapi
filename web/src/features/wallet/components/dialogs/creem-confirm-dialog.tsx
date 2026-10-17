@@ -25,6 +25,7 @@ import { formatNumber } from '@/lib/format'
 
 import { formatCreemPrice } from '../../lib/format'
 import type { CreemProduct } from '../../types'
+import { ExclusiveTopupBonus } from '../exclusive-topup-bonus'
 
 interface CreemConfirmDialogProps {
   open: boolean
@@ -32,6 +33,9 @@ interface CreemConfirmDialogProps {
   onConfirm: () => void
   product: CreemProduct | null
   processing: boolean
+  publicBonusRate?: number
+  exclusiveBonusRatio?: number
+  quotaPerUnit?: number
 }
 
 export function CreemConfirmDialog({
@@ -40,6 +44,9 @@ export function CreemConfirmDialog({
   onConfirm,
   product,
   processing,
+  publicBonusRate = 0,
+  exclusiveBonusRatio = 0,
+  quotaPerUnit = 500000,
 }: CreemConfirmDialogProps) {
   const { t } = useTranslation()
 
@@ -87,6 +94,11 @@ export function CreemConfirmDialog({
           <span className='font-medium'>{formatNumber(product.quota)}</span>
         </div>
       </div>
+      <ExclusiveTopupBonus
+        amount={product.quota / quotaPerUnit}
+        publicBonusRate={publicBonusRate}
+        exclusiveBonusRatio={exclusiveBonusRatio}
+      />
     </Dialog>
   )
 }

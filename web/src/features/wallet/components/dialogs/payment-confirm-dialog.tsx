@@ -35,6 +35,7 @@ import { formatLocalCurrencyAmount } from '@/lib/currency'
 import { DEFAULT_DISCOUNT_RATE, PAYMENT_TYPES } from '../../constants'
 import { formatCurrency, getPaymentIcon } from '../../lib'
 import type { PaymentMethod } from '../../types'
+import { ExclusiveTopupBonus } from '../exclusive-topup-bonus'
 
 interface PaymentConfirmDialogProps {
   open: boolean
@@ -47,6 +48,7 @@ interface PaymentConfirmDialogProps {
   processing: boolean
   discountRate?: number
   bonusRate?: number
+  exclusiveBonusRatio?: number
   usdExchangeRate?: number
 }
 
@@ -61,6 +63,7 @@ export function PaymentConfirmDialog({
   processing,
   discountRate = DEFAULT_DISCOUNT_RATE,
   bonusRate = 0,
+  exclusiveBonusRatio = 0,
   usdExchangeRate = 1,
 }: PaymentConfirmDialogProps) {
   const { t } = useTranslation()
@@ -132,7 +135,7 @@ export function PaymentConfirmDialog({
             </div>
           )}
 
-          {bonusRate > 0 ? (
+          {bonusRate > 0 && exclusiveBonusRatio === 0 ? (
             <div className='bg-muted/50 rounded-lg p-3'>
               <div className='flex items-center justify-between text-sm'>
                 <span className='text-muted-foreground'>
@@ -146,6 +149,12 @@ export function PaymentConfirmDialog({
               </div>
             </div>
           ) : null}
+
+          <ExclusiveTopupBonus
+            amount={topupAmount}
+            publicBonusRate={bonusRate}
+            exclusiveBonusRatio={exclusiveBonusRatio}
+          />
 
           <div className='border-t pt-4'>
             <div className='flex items-center justify-between'>

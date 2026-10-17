@@ -44,6 +44,9 @@ func TestRegisterRejectsInvalidUsernameBeforeDatabaseLookup(t *testing.T) {
 }
 
 func TestUpdateSelfDoesNotChangeUsername(t *testing.T) {
+	previousRedisEnabled := common.RedisEnabled
+	common.RedisEnabled = false
+	t.Cleanup(func() { common.RedisEnabled = previousRedisEnabled })
 	previousDB := model.DB
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))), &gorm.Config{})
 	require.NoError(t, err)
@@ -57,14 +60,14 @@ func TestUpdateSelfDoesNotChangeUsername(t *testing.T) {
 		}
 	})
 
-	user := model.User{Username: "old-user", DisplayName: "Old", Status: common.UserStatusEnabled}
+	user := model.User{Username: "old-user", DisplayName: "Old", Status: common.UserStatusEnabled, ExclusiveBonusRatio: 1250}
 	require.NoError(t, db.Create(&user).Error)
 
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Set("id", user.Id)
-	c.Request = httptest.NewRequest(http.MethodPut, "/api/user/self", strings.NewReader(`{"username":"new-user","display_name":"New"}`))
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/user/self", strings.NewReader(`{"username":"new-user","display_name":"New","exclusive_bonus_ratio":9999}`))
 
 	UpdateSelf(c)
 
@@ -74,4 +77,5 @@ func TestUpdateSelfDoesNotChangeUsername(t *testing.T) {
 	require.NoError(t, db.First(&updated, user.Id).Error)
 	assert.Equal(t, "old-user", updated.Username)
 	assert.Equal(t, "New", updated.DisplayName)
+	assert.Equal(t, 1250, updated.ExclusiveBonusRatio)
 }

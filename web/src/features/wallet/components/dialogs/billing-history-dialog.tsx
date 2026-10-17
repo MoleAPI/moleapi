@@ -64,6 +64,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { toIntlLocale } from '@/i18n/languages'
+import { formatNumber, formatQuota } from '@/lib/format'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { getInvoiceTicketIds } from '../../api'
@@ -422,6 +423,16 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                         </TableCell>
                         <TableCell className='font-medium'>
                           {topUpAmount}
+                          {(record.exclusive_bonus_ratio ?? 0) > 0 && (
+                            <div className='text-success mt-1'>
+                              {t('Includes exclusive bonus {{percentage}}%', {
+                                percentage: formatNumber(
+                                  (record.exclusive_bonus_ratio ?? 0) / 100,
+                                  locale
+                                ),
+                              })}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className='font-medium text-red-600'>
                           {formatHistoricalPaymentAmount(
@@ -761,6 +772,27 @@ export function BillingHistoryDialog(props: BillingHistoryDialogProps) {
                 label={t('Credited amount')}
                 value={<span className='font-medium'>{detailCredit}</span>}
               />
+            )}
+            {(detailRecord.exclusive_bonus_ratio ?? 0) > 0 && (
+              <>
+                <BillingDetailRow
+                  label={t('Public bonus')}
+                  value={`${formatNumber((detailRecord.public_bonus_rate ?? 0) * 100, locale)}%`}
+                />
+                <BillingDetailRow
+                  label={t('Exclusive extra bonus')}
+                  value={`${formatNumber((detailRecord.exclusive_bonus_ratio ?? 0) / 100, locale)}% · ${formatQuota(detailRecord.exclusive_bonus_quota ?? 0)}`}
+                />
+                {!detailCredit && (
+                  <BillingDetailRow
+                    label={t('Amount received')}
+                    value={formatQuota(detailRecord.promised_quota ?? 0)}
+                  />
+                )}
+                <p className='text-muted-foreground text-xs'>
+                  {t('Exclusive bonus credit does not earn referral rewards.')}
+                </p>
+              </>
             )}
             <BillingDetailRow
               label={t('Payment')}
