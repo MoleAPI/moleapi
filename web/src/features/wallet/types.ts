@@ -153,6 +153,7 @@ export interface TopupInfo {
   discount: Record<number, number>
   /** Bonus quota rates by minimum amount */
   bonus: Record<number, number>
+  exclusive_bonus_ratio?: number
   /** Current user's payment multiplier */
   topup_group_ratio?: number
   /** Quota awarded to an inviter when a referred user signs up */
@@ -336,6 +337,10 @@ export interface TopupRecord {
   money: number
   /** Quota actually credited after settlement */
   credited_quota?: number | null
+  promised_quota?: number | null
+  public_bonus_rate?: number
+  exclusive_bonus_ratio?: number
+  exclusive_bonus_quota?: number
   /** Inviter linked to this top-up rebate */
   invite_rebate_inviter_id?: number | null
   /** Rebate ratio snapshot in basis points */

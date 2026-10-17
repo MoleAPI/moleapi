@@ -674,6 +674,7 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 	_, inviteRebateRatioProvided := requestData["invite_rebate_ratio"]
+	_, exclusiveBonusRatioProvided := requestData["exclusive_bonus_ratio"]
 	updatedUser.Username = strings.TrimSpace(updatedUser.Username)
 	if updatedUser.Username == "" {
 		common.ApiErrorT(c, "Invalid parameters")
@@ -705,6 +706,13 @@ func UpdateUser(c *gin.Context) {
 	if !inviteRebateRatioProvided {
 		updatedUser.InviteRebateRatio = originUser.InviteRebateRatio
 	}
+	if exclusiveBonusRatioProvided && (updatedUser.ExclusiveBonusRatio < 0 || updatedUser.ExclusiveBonusRatio > model.MaxExclusiveBonusRatio) {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if !exclusiveBonusRatioProvided {
+		updatedUser.ExclusiveBonusRatio = originUser.ExclusiveBonusRatio
+	}
 	updatedUser.Role = originUser.Role
 	myRole := c.GetInt("role")
 	if !canManageTargetRole(myRole, originUser.Role) {
@@ -715,6 +723,10 @@ func UpdateUser(c *gin.Context) {
 	auditParams := map[string]any{
 		"username": originUser.Username,
 		"id":       updatedUser.Id,
+	}
+	if updatedUser.ExclusiveBonusRatio != originUser.ExclusiveBonusRatio {
+		auditParams["previous_exclusive_bonus_ratio"] = originUser.ExclusiveBonusRatio
+		auditParams["exclusive_bonus_ratio"] = updatedUser.ExclusiveBonusRatio
 	}
 	// Resetting a password or rewriting the admin permission matrix changes what
 	// the managed account can do or who can sign in to it.

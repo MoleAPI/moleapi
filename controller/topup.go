@@ -27,6 +27,11 @@ import (
 )
 
 func GetTopUpInfo(c *gin.Context) {
+	exclusiveBonusRatio, err := model.GetUserExclusiveBonusRatio(c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	complianceConfirmed := operation_setting.IsPaymentComplianceConfirmed()
 
 	payMethods := []map[string]string{}
@@ -179,6 +184,9 @@ func GetTopUpInfo(c *gin.Context) {
 		"quota_for_inviter":                common.QuotaForInviter,
 		"quota_for_invitee":                common.QuotaForInvitee,
 		"quota_for_inviter_on_first_topup": common.QuotaForInviterOnFirstTopup,
+	}
+	if exclusiveBonusRatio > 0 {
+		data["exclusive_bonus_ratio"] = exclusiveBonusRatio
 	}
 	common.ApiSuccess(c, data)
 }
@@ -393,6 +401,15 @@ func rejectInvalidCreditedQuota(c *gin.Context, userId int, quota decimal.Decima
 
 func rejectInvalidTopUpQuota(c *gin.Context, userId int, amount int64) bool {
 	creditedQuota, err := validateTopUpQuota(amount)
+	if err == nil {
+		normalized, normalizeErr := normalizeTopUpAmount(amount)
+		err = normalizeErr
+		if err == nil {
+			topUp := &model.TopUp{UserId: userId, Amount: normalized}
+			err = topUp.PrepareQuota()
+			creditedQuota = topUp.PromisedQuota
+		}
+	}
 	if err == nil {
 		err = model.ValidateTopUpQuotaCapacity(userId, creditedQuota)
 	}

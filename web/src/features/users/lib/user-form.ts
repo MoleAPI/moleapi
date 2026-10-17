@@ -41,6 +41,7 @@ export const userFormSchema = z.object({
   role: z.number().optional(),
   quota_dollars: z.number().min(0).optional(),
   invite_rebate_percent: z.number().min(0).max(100).optional(),
+  exclusive_bonus_percent: z.number().min(0).max(100).optional(),
   group: z.string().optional(),
   remark: z.string().optional(),
   admin_permissions: z
@@ -61,6 +62,7 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   role: 1, // Default to common user
   quota_dollars: 0,
   invite_rebate_percent: 0,
+  exclusive_bonus_percent: 0,
   group: DEFAULT_GROUP,
   remark: '',
   // Filled against the backend catalog at render time; see UsersMutateDrawer.
@@ -107,6 +109,9 @@ export function transformFormDataToPayload(
     payload.invite_rebate_ratio = Math.round(
       (data.invite_rebate_percent ?? 0) * 100
     )
+    payload.exclusive_bonus_ratio = Math.round(
+      (data.exclusive_bonus_percent ?? 0) * 100
+    )
     payload.id = userId
   }
 
@@ -126,6 +131,7 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     role: user.role,
     quota_dollars: quotaUnitsToDollars(user.quota),
     invite_rebate_percent: (user.invite_rebate_ratio ?? 0) / 100,
+    exclusive_bonus_percent: (user.exclusive_bonus_ratio ?? 0) / 100,
     group: user.group || DEFAULT_GROUP,
     remark: user.remark || '',
     admin_permissions: user.admin_permissions ?? {},

@@ -140,6 +140,7 @@ type User struct {
 	InviterId            int                        `json:"inviter_id" gorm:"type:int;column:inviter_id;index"`
 	InviterTopupRewarded bool                       `json:"inviter_topup_rewarded" gorm:"type:bool;column:inviter_topup_rewarded"`
 	InviteRebateRatio    int                        `json:"invite_rebate_ratio" gorm:"type:int;default:0;column:invite_rebate_ratio"` // basis points, 100 = 1%
+	ExclusiveBonusRatio  int                        `json:"exclusive_bonus_ratio" gorm:"type:int;default:0"`                          // basis points, 100 = 1%
 	DeletedAt            gorm.DeletedAt             `gorm:"index"`
 	LinuxDOId            string                     `json:"linux_do_id" gorm:"column:linux_do_id;index"`
 	Setting              string                     `json:"setting" gorm:"type:text;column:setting"`
@@ -1122,11 +1123,12 @@ func (user *User) EditWithTx(tx *gorm.DB, updatePassword bool) error {
 
 	newUser := *user
 	updates := map[string]interface{}{
-		"username":            newUser.Username,
-		"display_name":        newUser.DisplayName,
-		"group":               newUser.Group,
-		"remark":              newUser.Remark,
-		"invite_rebate_ratio": newUser.InviteRebateRatio,
+		"username":              newUser.Username,
+		"display_name":          newUser.DisplayName,
+		"group":                 newUser.Group,
+		"remark":                newUser.Remark,
+		"invite_rebate_ratio":   newUser.InviteRebateRatio,
+		"exclusive_bonus_ratio": newUser.ExclusiveBonusRatio,
 	}
 	if updatePassword {
 		updates["password"] = newUser.Password
