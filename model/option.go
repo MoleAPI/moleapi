@@ -86,7 +86,7 @@ func InitOptionMap() {
 	common.OptionMap["ZohoDeskApiDomain"] = "https://desk.zoho.com"
 	common.OptionMap["ZohoDeskAccountsDomain"] = "https://accounts.zoho.com"
 	common.OptionMap["ZohoDeskFromEmail"] = "support@moleapi.com"
-	common.OptionMap["SupportTicketNotificationEmail"] = "tangdan0571@gmail.com"
+	common.OptionMap["SupportTicketNotificationEmail"] = ""
 	common.OptionMap["SupportDiscordUrl"] = ""
 	common.OptionMap["SupportTelegramUrl"] = ""
 	common.OptionMap["SupportQQUrl"] = ""
