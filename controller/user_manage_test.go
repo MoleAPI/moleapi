@@ -13,6 +13,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 
@@ -307,4 +308,28 @@ func TestManageUserStopsWhenTargetLookupFails(t *testing.T) {
 
 	assert.Contains(t, recorder.Body.String(), `"success":false`)
 	assert.NotContains(t, recorder.Body.String(), "sensitive database detail")
+}
+
+func TestUpdateNotificationSettingsPreservesOtherPreferences(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	settings := dto.UserSetting{Language: "en", SidebarModules: `{"wallet":false}`, BillingPreference: "wallet_first", UpstreamModelUpdateNotifyEnabled: true, WebhookUrl: "https://example.com/hook", WebhookSecret: "old-secret"}
+	user := model.User{Username: "notification-preferences", Role: common.RoleCommonUser, Status: common.UserStatusEnabled}
+	user.SetSetting(settings)
+	require.NoError(t, db.Create(&user).Error)
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Set("id", user.Id)
+	c.Request = httptest.NewRequest(http.MethodPut, "/api/user/setting", strings.NewReader(`{"notify_type":"email","quota_warning_threshold":100,"notification_email":"notify@example.com","upstream_model_update_notify_enabled":false}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	UpdateUserSetting(c)
+	require.Contains(t, recorder.Body.String(), `"success":true`)
+	require.NoError(t, db.First(&user, user.Id).Error)
+	updated := user.GetSetting()
+	assert.Equal(t, settings.Language, updated.Language)
+	assert.Equal(t, settings.SidebarModules, updated.SidebarModules)
+	assert.Equal(t, settings.BillingPreference, updated.BillingPreference)
+	assert.True(t, updated.UpstreamModelUpdateNotifyEnabled, "ordinary users cannot change the administrator preference")
+	assert.Equal(t, "notify@example.com", updated.NotificationEmail)
+	assert.Empty(t, updated.WebhookUrl)
+	assert.Empty(t, updated.WebhookSecret)
 }

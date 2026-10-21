@@ -641,7 +641,8 @@ func TestSecurityAccountEmailConfirmationAndAudit(t *testing.T) {
 			require.NoError(t, err)
 			assert.Contains(t, string(encoded), "user.binding_bind")
 			assert.NotContains(t, string(encoded), flow.FlowToken)
-			assert.NotContains(t, string(encoded), newCode)
+			// Match the whole code; generated IDs can contain the same digits by chance.
+			assert.NotRegexp(t, `(^|\D)`+newCode+`(\D|$)`, string(encoded))
 		})
 	}
 }
