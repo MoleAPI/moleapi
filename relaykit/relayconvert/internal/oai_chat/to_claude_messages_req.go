@@ -2,6 +2,7 @@ package oaichat
 
 import (
 	"fmt"
+	"strings"
 
 	"context"
 
@@ -165,8 +166,26 @@ func OpenAIChatRequestToClaudeMessages(c context.Context, info convmeta.Meta, te
 			fmtMessage.ReasoningDetails = message.ReasoningDetails
 		}
 		if lastMessage.Role == message.Role && lastMessage.Role != "tool" {
-			if lastMessage.IsStringContent() && message.IsStringContent() {
-				fmtMessage.SetStringContent(fmt.Sprintf("%s %s", lastMessage.StringContent(), message.StringContent()))
+			if (lastMessage.IsStringContent() || lastMessage.Content == nil) && (message.IsStringContent() || message.Content == nil) &&
+				lastMessage.GetReasoningContent() == "" && len(lastMessage.ReasoningDetails) == 0 &&
+				fmtMessage.GetReasoningContent() == "" && len(fmtMessage.ReasoningDetails) == 0 {
+				previousToolCalls := lastMessage.ParseToolCalls()
+				currentToolCalls := fmtMessage.ParseToolCalls()
+				if len(previousToolCalls) > 0 || len(currentToolCalls) > 0 {
+					// Keep both messages' tool calls so later tool results still
+					// match a tool_use block.
+					texts := make([]string, 0, 2)
+					if previousText := lastMessage.StringContent(); previousText != "" {
+						texts = append(texts, previousText)
+					}
+					if currentText := message.StringContent(); currentText != "" {
+						texts = append(texts, currentText)
+					}
+					fmtMessage.SetStringContent(strings.Join(texts, " "))
+					fmtMessage.SetToolCalls(append(previousToolCalls, currentToolCalls...))
+				} else {
+					fmtMessage.SetStringContent(fmt.Sprintf("%s %s", lastMessage.StringContent(), message.StringContent()))
+				}
 				formatMessages = formatMessages[:len(formatMessages)-1]
 			}
 		}

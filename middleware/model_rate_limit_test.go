@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/i18n"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -42,6 +43,27 @@ func TestModelRedisRateLimitUsesUTCRegardlessOfLocalTimezone(t *testing.T) {
 }
 
 var modelRateLimitTestUsers atomic.Int64
+
+func TestModelRedisSuccessLimitExcludesFailedKeepAliveStreams(t *testing.T) {
+	useRateLimitMiniRedis(t)
+	require.NoError(t, i18n.Init())
+	subject := strconv.Itoa(7200000 + int(modelRateLimitTestUsers.Add(1)))
+	router := gin.New()
+	router.GET("/:result", redisRateLimitHandler(subject, 60, 0, 1), func(c *gin.Context) {
+		if c.Param("result") == "failed" {
+			status := relaycommon.NewStreamStatus()
+			status.MarkFailed("server_error", "", http.StatusBadGateway)
+			common.SetContextKey(c, constant.ContextKeyResponseStreamStatus, status)
+		}
+		c.Status(http.StatusOK)
+	})
+	for _, step := range []struct {
+		result string
+		want   int
+	}{{"failed", http.StatusOK}, {"ok", http.StatusOK}, {"ok", http.StatusTooManyRequests}} {
+		assert.Equal(t, step.want, performRateLimitRequest(router, "/"+step.result, "127.0.0.1:1000").Code)
+	}
+}
 
 // The memory limiter answers like the Redis limiter: an OpenAI error body
 // naming the limit that was reached, not an empty 429.
