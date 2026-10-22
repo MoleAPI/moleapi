@@ -157,6 +157,11 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 	if a.ClientMode == ClientModeApiKey {
 		return channel.DoApiRequest(a, c, info, requestBody)
 	} else {
+		requestBody, closer, err := relaycommon.FilterModelSamplingBody(requestBody, info)
+		if err != nil {
+			return nil, err
+		}
+		defer closer.Close()
 		return doAwsClientRequest(c, info, a, requestBody)
 	}
 }
