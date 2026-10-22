@@ -85,6 +85,13 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	if types.IsSkipRetryError(err) {
 		return false
 	}
+	// ponytail: reuse public error classification so request-level safety refusals
+	// cannot trip channel status/keyword rules, even before response masking.
+	relayError := err.ToOpenAIError()
+	_, publicError := publicUpstreamError(err.StatusCode, err.Error()+" "+relayError.Type, string(err.GetErrorCode()))
+	if relayError.Code == "content_policy_violation" || publicError.Code == "content_policy_violation" {
+		return false
+	}
 	// A plain 429 is traffic throttling, not proof that a plan quota is spent.
 	if err.StatusCode == 429 {
 		return isQuotaExhaustedError(err)
