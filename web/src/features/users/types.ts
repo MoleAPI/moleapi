@@ -52,6 +52,7 @@ export const userSchema = z.object({
   aff_history_quota: z.number().optional(),
   inviter_id: z.number().optional(),
   invite_rebate_ratio: z.number().optional(),
+  exclusive_bonus_ratio: z.number().optional(),
   linux_do_id: z.string().optional(),
   status: userStatusSchema,
   role: userRoleSchema,
@@ -127,6 +128,7 @@ export interface UserFormData {
   group?: string // Only used when updating user
   remark?: string // Only used when updating user
   invite_rebate_ratio?: number // Basis points, only used when updating user
+  exclusive_bonus_ratio?: number // Basis points, only used when updating user
   admin_permissions?: AdminPermissionMatrix
 }
 

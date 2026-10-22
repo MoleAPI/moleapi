@@ -599,6 +599,35 @@ export function UsersMutateDrawer({
 
                   <FormField
                     control={form.control}
+                    name='exclusive_bonus_percent'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Exclusive extra bonus (%)')}</FormLabel>
+                        <FormControl>
+                          <Input
+                            type='number'
+                            min={0}
+                            max={100}
+                            step={0.01}
+                            {...field}
+                            value={field.value ?? 0}
+                            onChange={(event) =>
+                              field.onChange(event.currentTarget.valueAsNumber)
+                            }
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'Added to public top-up bonuses. Exclusive bonus credit does not earn referral rewards. Set to 0 to disable.'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
                     name='remark'
                     render={({ field }) => (
                       <FormItem>

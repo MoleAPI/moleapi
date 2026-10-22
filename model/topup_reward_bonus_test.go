@@ -2,6 +2,8 @@ package model
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -9,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm/schema"
 )
 
 func useTopupRewardSettingsForTest(t *testing.T, _ int, discount map[int]float64, bonus map[int]float64) {
@@ -74,6 +77,9 @@ func TestEveryRealTopupPathRebatesInviterExactlyOnce(t *testing.T) {
 		{name: "manual completion", provider: PaymentProviderEpay, settle: func(tradeNo string) error {
 			return ManualCompleteTopUp(tradeNo, "203.0.113.1")
 		}},
+		{name: "nowpayments", provider: PaymentProviderNowPayments, settle: func(tradeNo string) error {
+			return RechargeNowPaymentsWithPaymentDetails(tradeNo, "gateway", "USD", "203.0.113.1")
+		}},
 	}
 
 	for index, testCase := range testCases {
@@ -83,14 +89,22 @@ func TestEveryRealTopupPathRebatesInviterExactlyOnce(t *testing.T) {
 			inviteeID := inviterID + 1
 			insertInviterPairForTopupTest(t, inviterID, inviteeID, MaxInviteRebateRatio)
 			tradeNo := fmt.Sprintf("reward-%d", index)
-			insertTopUpForSettlementTest(t, tradeNo, inviteeID, 1, 1, testCase.provider)
+			require.NoError(t, DB.Model(&User{}).Where("id = ?", inviteeID).Update("exclusive_bonus_ratio", 2000).Error)
+			topUp := &TopUp{UserId: inviteeID, Amount: 100, Money: 1, TradeNo: tradeNo, PaymentCurrency: "USD", PaymentMethod: testCase.provider, PaymentProvider: testCase.provider, Status: common.TopUpStatusPending}
+			if testCase.provider == PaymentProviderCreem {
+				topUp.Amount = 10000
+			}
+			require.NoError(t, topUp.Insert())
 
 			require.NoError(t, testCase.settle(tradeNo))
 			require.NoError(t, testCase.settle(tradeNo))
 
-			topUp := GetTopUpByTradeNo(tradeNo)
+			topUp = GetTopUpByTradeNo(tradeNo)
 			require.NotNil(t, topUp)
-			expectedRebate := topUp.CreditedQuota
+			assert.Equal(t, 12000, topUp.CreditedQuota)
+			assert.Equal(t, 2000, topUp.ExclusiveBonusQuota)
+			assert.Equal(t, 12005, getUserQuotaForPaymentGuardTest(t, inviteeID))
+			expectedRebate := 10000
 
 			var inviter User
 			require.NoError(t, DB.Select("aff_quota", "aff_history").First(&inviter, inviterID).Error)
@@ -111,6 +125,157 @@ func TestEveryRealTopupPathRebatesInviterExactlyOnce(t *testing.T) {
 			var rewardLogs int64
 			require.NoError(t, LOG_DB.Model(&Log{}).Where("user_id = ? AND type = ?", inviterID, LogTypeSystem).Count(&rewardLogs).Error)
 			assert.EqualValues(t, 1, rewardLogs)
+		})
+	}
+}
+
+func TestExclusiveTopupBonusAddsToPublicAndKeepsOrderSnapshot(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 100)
+	useTopupRewardSettingsForTest(t, 0, map[int]float64{}, map[int]float64{100: 0.1})
+	insertInviterPairForTopupTest(t, 1200, 1201, 1000)
+	user, err := GetUserById(1201, true)
+	require.NoError(t, err)
+	user.ExclusiveBonusRatio = 2000
+	require.NoError(t, user.Edit(false))
+
+	order := &TopUp{UserId: 1201, Amount: 100, Money: 100, TradeNo: "exclusive-snapshot", PaymentMethod: PaymentMethodWaffo, PaymentProvider: PaymentProviderWaffo, Status: common.TopUpStatusPending}
+	require.NoError(t, order.Insert())
+	assert.Equal(t, 13000, order.PromisedQuota)
+	assert.Equal(t, 2000, order.ExclusiveBonusQuota)
+	assert.Equal(t, 0.1, order.PublicBonusRate)
+
+	user.ExclusiveBonusRatio = 0
+	require.NoError(t, user.Edit(false))
+	operation_setting.GetPaymentSetting().AmountBonus = map[int]float64{100: 0.5}
+	require.NoError(t, ManualCompleteTopUp(order.TradeNo, "127.0.0.1"))
+	require.NoError(t, RechargeWaffo(order.TradeNo, "127.0.0.1"))
+	stored := GetTopUpByTradeNo(order.TradeNo)
+	require.NotNil(t, stored)
+	assert.Equal(t, 13000, stored.CreditedQuota)
+	assert.Equal(t, 1100, stored.InviteRebateQuota)
+	assert.Equal(t, 2000, stored.ExclusiveBonusRatio)
+	assert.Equal(t, 13005, getUserQuotaForPaymentGuardTest(t, 1201))
+}
+
+func TestExclusiveTopupBonusRoundingLimitsAndLegacyOrders(t *testing.T) {
+	truncateTables(t)
+	useQuotaPerUnitForTopUpTest(t, 1)
+	useTopupRewardSettingsForTest(t, 0, map[int]float64{}, map[int]float64{1: 0.1})
+	insertInviterPairForTopupTest(t, 1210, 1211, MaxInviteRebateRatio)
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 1211).Update("exclusive_bonus_ratio", 1250).Error)
+	order := &TopUp{UserId: 1211, Amount: 9, Money: 9, TradeNo: "exclusive-rounding", PaymentMethod: PaymentMethodWaffo, PaymentProvider: PaymentProviderWaffo, Status: common.TopUpStatusPending}
+	require.NoError(t, order.Insert())
+	assert.Equal(t, 11, order.PromisedQuota)
+	assert.Equal(t, 1, order.ExclusiveBonusQuota)
+	require.NoError(t, RechargeWaffo(order.TradeNo, "127.0.0.1"))
+	assert.Equal(t, 10, GetTopUpByTradeNo(order.TradeNo).InviteRebateQuota)
+
+	insertTopUpForSettlementTest(t, "legacy-exclusive-not-retroactive", 1211, 10, 10, PaymentProviderWaffo)
+	require.NoError(t, RechargeWaffo("legacy-exclusive-not-retroactive", "127.0.0.1"))
+	legacy := GetTopUpByTradeNo("legacy-exclusive-not-retroactive")
+	require.NotNil(t, legacy)
+	assert.Equal(t, 11, legacy.CreditedQuota)
+	assert.Zero(t, legacy.ExclusiveBonusQuota)
+
+	for _, ratio := range []int{-1, MaxExclusiveBonusRatio + 1} {
+		require.NoError(t, DB.Model(&User{}).Where("id = ?", 1211).Update("exclusive_bonus_ratio", ratio).Error)
+		assert.ErrorIs(t, order.PrepareQuota(), ErrTopUpQuotaInvalid)
+	}
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 1211).Update("exclusive_bonus_ratio", MaxExclusiveBonusRatio).Error)
+	order.Amount = common.MaxWalletQuota / 2
+	assert.ErrorIs(t, order.PrepareQuota(), ErrTopUpQuotaInvalid)
+	order.Amount = 100
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 1211).Update("quota", common.MaxWalletQuota-200).Error)
+	order.PromisedQuota = 0
+	order.TradeNo = "exclusive-wallet-overflow"
+	assert.ErrorIs(t, order.Insert(), ErrTopUpQuotaLimitExceeded)
+
+	operation_setting.GetPaymentSetting().AmountBonus = map[int]float64{}
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", 1211).Update("quota", 5).Error)
+	order.Amount = int64(common.MaxWalletQuota/2 - 100)
+	order.Id = 0
+	order.TradeNo = "exclusive-large-referral"
+	order.PromisedQuota = 0
+	require.NoError(t, order.Insert())
+	require.NoError(t, RechargeWaffo(order.TradeNo, "127.0.0.1"))
+	assert.Equal(t, int(order.Amount), GetTopUpByTradeNo(order.TradeNo).InviteRebateQuota)
+}
+
+func TestExclusiveBonusDatabaseMatrix(t *testing.T) {
+	useQuotaPerUnitForTopUpTest(t, 100)
+	useTopupRewardSettingsForTest(t, 0, map[int]float64{}, map[int]float64{100: 0.1})
+	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+		t.Run(dialect, func(t *testing.T) {
+			dsn := os.Getenv(map[string]string{"mysql": "TEST_MYSQL_DSN", "postgres": "TEST_POSTGRES_DSN"}[dialect])
+			if dialect == "sqlite" {
+				dsn = "local"
+				previousPath := common.SQLitePath
+				common.SQLitePath = filepath.Join(t.TempDir(), "exclusive.db")
+				t.Cleanup(func() { common.SQLitePath = previousPath })
+			}
+			if dsn == "" {
+				t.Skip("test database DSN is not configured")
+			}
+			t.Setenv("EXCLUSIVE_BONUS_TEST_DSN", dsn)
+			db, databaseType, err := chooseDB("EXCLUSIVE_BONUS_TEST_DSN", false)
+			require.NoError(t, err)
+			versionQuery := "SELECT VERSION()"
+			if dialect == "sqlite" {
+				versionQuery = "SELECT sqlite_version()"
+			}
+			var version string
+			require.NoError(t, db.Raw(versionQuery).Scan(&version).Error)
+			t.Logf("%s version: %s", dialect, version)
+			// Isolate the matrix from any application's existing tables.
+			db.Config.NamingStrategy = schema.NamingStrategy{TablePrefix: "exclusive_bonus_test_"}
+			sqlDB, err := db.DB()
+			require.NoError(t, err)
+			previousDB, previousLogDB := DB, LOG_DB
+			previousMainType, previousLogType := common.MainDatabaseType(), common.LogDatabaseType()
+			DB, LOG_DB = db, db
+			common.SetDatabaseTypes(databaseType, databaseType)
+			initCol()
+			t.Cleanup(func() {
+				DB, LOG_DB = previousDB, previousLogDB
+				common.SetDatabaseTypes(previousMainType, previousLogType)
+				initCol()
+				require.NoError(t, sqlDB.Close())
+			})
+			for _, upgrade := range []bool{false, true} {
+				t.Run(fmt.Sprintf("upgrade_%t", upgrade), func(t *testing.T) {
+					require.NoError(t, db.Migrator().DropTable(&TopUp{}, &User{}, &Log{}))
+					t.Cleanup(func() { _ = db.Migrator().DropTable(&TopUp{}, &User{}, &Log{}) })
+					require.NoError(t, db.AutoMigrate(&User{}, &TopUp{}, &Log{}))
+					if upgrade {
+						for _, column := range []string{"PublicBonusRate", "ExclusiveBonusRatio", "ExclusiveBonusQuota"} {
+							require.NoError(t, db.Migrator().DropColumn(&TopUp{}, column))
+						}
+						require.NoError(t, db.Migrator().DropColumn(&User{}, "ExclusiveBonusRatio"))
+						require.NoError(t, db.Table("exclusive_bonus_test_users").Create(map[string]interface{}{"id": 1, "username": "legacy", "password": "legacy-password-hash", "aff_code": "legacy", "quota": 25}).Error)
+						require.NoError(t, db.Table("exclusive_bonus_test_top_ups").Create(map[string]interface{}{"user_id": 1, "trade_no": "legacy", "amount": 100, "promised_quota": 11000, "status": common.TopUpStatusPending}).Error)
+					}
+					require.NoError(t, db.AutoMigrate(&User{}, &TopUp{}, &Log{}))
+					require.NoError(t, db.AutoMigrate(&User{}, &TopUp{}, &Log{}))
+					if upgrade {
+						legacy, err := GetUserById(1, false)
+						require.NoError(t, err)
+						assert.Equal(t, 25, legacy.Quota)
+						assert.Zero(t, legacy.ExclusiveBonusRatio)
+						assert.Equal(t, 11000, GetTopUpByTradeNo("legacy").PromisedQuota)
+						assert.Error(t, db.Create(&TopUp{TradeNo: "legacy"}).Error)
+						assert.Error(t, db.Create(&User{Username: "duplicate", AffCode: "legacy"}).Error)
+					}
+					insertInviterPairForTopupTest(t, 20, 21, 1000)
+					require.NoError(t, db.Model(&User{}).Where("id = ?", 21).Update("exclusive_bonus_ratio", 2000).Error)
+					order := &TopUp{UserId: 21, Amount: 100, Money: 100, TradeNo: "matrix", PaymentMethod: PaymentMethodWaffo, PaymentProvider: PaymentProviderWaffo, Status: common.TopUpStatusPending}
+					require.NoError(t, order.Insert())
+					require.NoError(t, RechargeWaffo(order.TradeNo, "127.0.0.1"))
+					require.NoError(t, RechargeWaffo(order.TradeNo, "127.0.0.1"))
+					assert.Equal(t, 13005, getUserQuotaForPaymentGuardTest(t, 21))
+					assert.Equal(t, 1100, GetTopUpByTradeNo(order.TradeNo).InviteRebateQuota)
+				})
+			}
 		})
 	}
 }
@@ -266,6 +431,7 @@ func TestPendingTopupKeepsOrderTimePromisedQuota(t *testing.T) {
 
 func TestPendingTopupUsesTokenDisplayAmountForBonusTier(t *testing.T) {
 	truncateTables(t)
+	insertUserForPaymentGuardTest(t, 970, 5)
 	useQuotaPerUnitForTopUpTest(t, 100)
 	useTopupRewardSettingsForTest(t, 0, map[int]float64{}, map[int]float64{1000: 0.2})
 	originalDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType
@@ -318,6 +484,7 @@ func TestCreemBonusTierUsesStandardRechargeAmount(t *testing.T) {
 
 func TestCreemBonusTierUsesTokenAmountInTokenDisplayMode(t *testing.T) {
 	truncateTables(t)
+	insertUserForPaymentGuardTest(t, 972, 5)
 	useQuotaPerUnitForTopUpTest(t, 100)
 	useTopupRewardSettingsForTest(t, 0, map[int]float64{}, map[int]float64{100: 0.2})
 	originalDisplayType := operation_setting.GetGeneralSetting().QuotaDisplayType

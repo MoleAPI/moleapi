@@ -34,7 +34,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { toIntlLocale } from '@/i18n/languages'
 import { formatCurrencyFromUSD } from '@/lib/currency'
+import { formatNumber } from '@/lib/format'
 import { cn } from '@/lib/utils'
 
 import { PAYMENT_TYPES } from '../constants'
@@ -55,6 +57,7 @@ import type {
   TopupInfo,
   WaffoPayMethod,
 } from '../types'
+import { ExclusiveTopupBonus } from './exclusive-topup-bonus'
 
 interface RechargeFormCardProps {
   topupInfo: TopupInfo | null
@@ -113,7 +116,9 @@ export function RechargeFormCard({
   onWaffoMethodSelect,
   enableWaffoPancakeTopup,
 }: RechargeFormCardProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const exclusiveBonusRatio = topupInfo?.exclusive_bonus_ratio ?? 0
   const [localAmount, setLocalAmount] = useState(topupAmount.toString())
 
   useEffect(() => {
@@ -262,7 +267,7 @@ export function RechargeFormCard({
                           priceRatio * (topupInfo?.topup_group_ratio || 1),
                           discount,
                           usdExchangeRate,
-                          bonus
+                          bonus + exclusiveBonusRatio / 10000
                         )
                       return (
                         <Button
@@ -286,9 +291,22 @@ export function RechargeFormCard({
                           </div>
                           <div className={rechargeFormLayoutClasses.bonus}>
                             {t('Bonus {{percentage}}%', {
-                              percentage: Math.round(bonus * 100),
+                              percentage: formatNumber(
+                                bonus * 100 + exclusiveBonusRatio / 100,
+                                locale
+                              ),
                             })}
                           </div>
+                          {exclusiveBonusRatio > 0 && (
+                            <div className='text-success text-xs'>
+                              {t('Includes exclusive bonus {{percentage}}%', {
+                                percentage: formatNumber(
+                                  exclusiveBonusRatio / 100,
+                                  locale
+                                ),
+                              })}
+                            </div>
+                          )}
                           <div className='text-muted-foreground text-xs'>
                             {t('Amount received')}{' '}
                             {formatCurrencyFromUSD(receivedAmount, {
@@ -333,6 +351,15 @@ export function RechargeFormCard({
                   </div>
                 </div>
               </div>
+
+              <ExclusiveTopupBonus
+                amount={topupAmount}
+                publicBonusRate={getTopupBonusRate(
+                  topupInfo?.bonus ?? {},
+                  topupAmount
+                )}
+                exclusiveBonusRatio={exclusiveBonusRatio}
+              />
 
               <div className='space-y-2.5 sm:space-y-3'>
                 <Label className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
@@ -545,11 +572,13 @@ export function RechargeFormCard({
               <Alert>
                 <Gift />
                 <AlertDescription className='flex flex-col gap-1.5'>
-                  <p>
-                    {t(
-                      'Higher top-up amounts earn larger bonuses, up to 40% extra.'
-                    )}
-                  </p>
+                  {exclusiveBonusRatio === 0 && (
+                    <p>
+                      {t(
+                        'Higher top-up amounts earn larger bonuses, up to 40% extra.'
+                      )}
+                    </p>
+                  )}
                   <p>
                     {t(
                       'Top-ups are invoiced based on the amount paid. In some regions, invoices are issued by a partner company.'

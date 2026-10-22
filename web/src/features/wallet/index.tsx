@@ -421,6 +421,7 @@ export function Wallet(props: WalletProps) {
         }
         discountRate={getDiscountRate()}
         bonusRate={getBonusRate()}
+        exclusiveBonusRatio={topupInfo?.exclusive_bonus_ratio}
         usdExchangeRate={effectiveUsdExchangeRate}
       />
 
@@ -448,6 +449,16 @@ export function Wallet(props: WalletProps) {
         onConfirm={handleCreemConfirm}
         product={selectedCreemProduct}
         processing={creemProcessing}
+        exclusiveBonusRatio={topupInfo?.exclusive_bonus_ratio}
+        quotaPerUnit={currency.quotaPerUnit}
+        publicBonusRate={getTopupBonusRate(
+          topupInfo?.bonus ?? {},
+          currency.quotaDisplayType === 'TOKENS'
+            ? (selectedCreemProduct?.quota ?? 0)
+            : Math.floor(
+                (selectedCreemProduct?.quota ?? 0) / currency.quotaPerUnit
+              )
+        )}
       />
 
       <LanTuPaymentDialog

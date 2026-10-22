@@ -80,97 +80,61 @@ async function rsaOaepEncrypt(
   publicKeyPEM: string,
   keyId: string
 ): Promise<string> {
-  if (typeof globalThis.crypto?.subtle !== 'undefined') {
-    try {
-      const publicKey = await globalThis.crypto.subtle.importKey(
-        'spki',
-        pemToDER(publicKeyPEM),
-        { name: 'RSA-OAEP', hash: 'SHA-256' },
-        false,
-        ['encrypt']
-      )
-      const plaintext = new TextEncoder().encode(password)
-      const algorithm = publicKey.algorithm as RsaHashedKeyAlgorithm
-      if (plaintext.byteLength > algorithm.modulusLength / 8 - 66) {
-        const secret = globalThis.crypto.getRandomValues(new Uint8Array(32))
-        const nonce = globalThis.crypto.getRandomValues(new Uint8Array(12))
-        const key = await globalThis.crypto.subtle.importKey(
-          'raw',
-          secret,
-          'AES-GCM',
-          false,
-          ['encrypt']
-        )
-        const [wrappedKey, ciphertext] = await Promise.all([
-          globalThis.crypto.subtle.encrypt(
-            {
-              name: 'RSA-OAEP',
-              label: new TextEncoder().encode('password-v2'),
-            },
-            publicKey,
-            secret
-          ),
-          globalThis.crypto.subtle.encrypt(
-            {
-              name: 'AES-GCM',
-              iv: nonce,
-              additionalData: new TextEncoder().encode(`password-v2:${keyId}`),
-            },
-            key,
-            plaintext
-          ),
-        ])
-        return [
-          'v2',
-          arrayBufferToBase64(wrappedKey),
-          arrayBufferToBase64(nonce.buffer),
-          arrayBufferToBase64(ciphertext),
-        ].join('.')
-      }
-      const ciphertext = await globalThis.crypto.subtle.encrypt(
-        { name: 'RSA-OAEP' },
-        publicKey,
-        plaintext
-      )
-      return arrayBufferToBase64(ciphertext)
-    } catch {
-      // Older implementations may expose SubtleCrypto without supporting the
-      // required RSA-OAEP parameters; the HTTP-compatible fallback handles it.
-    }
+  // ponytail: use native Web Crypto in secure contexts for password encryption.
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('Native password encryption is unavailable')
   }
-
-  // Web Crypto is restricted to secure contexts in browsers. Lazy-loading
-  // forge keeps the normal HTTPS bundle small while supporting HTTP intranets.
-  const forge = await import('node-forge')
-  const publicKey = forge.pki.publicKeyFromPem(publicKeyPEM)
-  const plaintext = forge.util.encodeUtf8(password)
-  if (plaintext.length > publicKey.n.bitLength() / 8 - 66) {
-    const secret = forge.random.getBytesSync(32)
-    const nonce = forge.random.getBytesSync(12)
-    const wrappedKey = publicKey.encrypt(secret, 'RSA-OAEP', {
-      md: forge.md.sha256.create(),
-      label: 'password-v2',
-    })
-    const cipher = forge.cipher.createCipher('AES-GCM', secret)
-    cipher.start({
-      iv: nonce,
-      additionalData: `password-v2:${keyId}`,
-      tagLength: 128,
-    })
-    cipher.update(forge.util.createBuffer(plaintext))
-    if (!cipher.finish()) throw new Error('Password encryption failed')
-    const ciphertext = cipher.output.getBytes() + cipher.mode.tag.getBytes()
+  const publicKey = await globalThis.crypto.subtle.importKey(
+    'spki',
+    pemToDER(publicKeyPEM),
+    { name: 'RSA-OAEP', hash: 'SHA-256' },
+    false,
+    ['encrypt']
+  )
+  const plaintext = new TextEncoder().encode(password)
+  const algorithm = publicKey.algorithm as RsaHashedKeyAlgorithm
+  if (plaintext.byteLength > algorithm.modulusLength / 8 - 66) {
+    const secret = globalThis.crypto.getRandomValues(new Uint8Array(32))
+    const nonce = globalThis.crypto.getRandomValues(new Uint8Array(12))
+    const key = await globalThis.crypto.subtle.importKey(
+      'raw',
+      secret,
+      'AES-GCM',
+      false,
+      ['encrypt']
+    )
+    const [wrappedKey, ciphertext] = await Promise.all([
+      globalThis.crypto.subtle.encrypt(
+        {
+          name: 'RSA-OAEP',
+          label: new TextEncoder().encode('password-v2'),
+        },
+        publicKey,
+        secret
+      ),
+      globalThis.crypto.subtle.encrypt(
+        {
+          name: 'AES-GCM',
+          iv: nonce,
+          additionalData: new TextEncoder().encode(`password-v2:${keyId}`),
+        },
+        key,
+        plaintext
+      ),
+    ])
     return [
       'v2',
-      forge.util.encode64(wrappedKey),
-      forge.util.encode64(nonce),
-      forge.util.encode64(ciphertext),
+      arrayBufferToBase64(wrappedKey),
+      arrayBufferToBase64(nonce.buffer),
+      arrayBufferToBase64(ciphertext),
     ].join('.')
   }
-  const ciphertext = publicKey.encrypt(plaintext, 'RSA-OAEP', {
-    md: forge.md.sha256.create(),
-  })
-  return forge.util.encode64(ciphertext)
+  const ciphertext = await globalThis.crypto.subtle.encrypt(
+    { name: 'RSA-OAEP' },
+    publicKey,
+    plaintext
+  )
+  return arrayBufferToBase64(ciphertext)
 }
 
 function pemToDER(pem: string): ArrayBuffer {

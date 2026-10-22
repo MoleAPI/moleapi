@@ -210,6 +210,30 @@ func TestAdminUserRoutineEditsDoNotRequireProof(t *testing.T) {
 	assert.EqualValues(t, 1, count)
 }
 
+func TestAdminExclusiveBonusCanBeSetPreservedAndCleared(t *testing.T) {
+	_, identity, target := setupAdminUserTest(t)
+	for _, test := range []struct {
+		field    string
+		success  bool
+		expected int
+	}{
+		{`,"exclusive_bonus_ratio":1250`, true, 1250},
+		{"", true, 1250},
+		{`,"exclusive_bonus_ratio":-1`, false, 1250},
+		{`,"exclusive_bonus_ratio":10001`, false, 1250},
+		{`,"exclusive_bonus_ratio":12.5`, false, 1250},
+		{`,"exclusive_bonus_ratio":0`, true, 0},
+	} {
+		response := adminUserRequest(http.MethodPut, "/api/user/", fmt.Sprintf(`{"id":%d,"username":"managed-user","group":"default"%s}`, target.Id, test.field), "", identity, common.RoleAdminUser, nil, UpdateUser)
+		var result securityEnrollmentResponse
+		require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+		assert.Equal(t, test.success, result.Success, response.Body.String())
+		stored, err := model.GetUserById(target.Id, true)
+		require.NoError(t, err)
+		assert.Equal(t, test.expected, stored.ExclusiveBonusRatio)
+	}
+}
+
 func TestCreateUserRejectsNonStandardRole(t *testing.T) {
 	_, identity, _ := setupAdminUserTest(t)
 	for i, test := range []struct {

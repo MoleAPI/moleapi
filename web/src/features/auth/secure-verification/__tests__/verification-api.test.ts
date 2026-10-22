@@ -209,64 +209,56 @@ afterEach(() => {
   window.history.replaceState(null, '', originalLocation)
 })
 
-it.each([true, false])(
-  'encrypts short and 128-character Unicode passwords with Web Crypto enabled: %s',
-  async (useWebCrypto) => {
-    vi.stubGlobal(
-      'crypto',
-      useWebCrypto
-        ? webcrypto
-        : { getRandomValues: webcrypto.getRandomValues.bind(webcrypto) }
-    )
-    const { publicKey, privateKey } = generateKeyPairSync('rsa', {
-      modulusLength: 2048,
-    })
-    vi.spyOn(api, 'get').mockResolvedValue({
+it('encrypts short and 128-character Unicode passwords with native Web Crypto', async () => {
+  vi.stubGlobal('crypto', webcrypto)
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 2048,
+  })
+  vi.spyOn(api, 'get').mockResolvedValue({
+    data: {
+      success: true,
       data: {
-        success: true,
-        data: {
-          kid: 'test-encryption-key',
-          public_key: publicKey
-            .export({ type: 'spki', format: 'pem' })
-            .toString(),
-        },
+        kid: 'test-encryption-key',
+        public_key: publicKey
+          .export({ type: 'spki', format: 'pem' })
+          .toString(),
       },
-    })
-    for (const password of ['legacy-password', '🔒'.repeat(128)]) {
-      const encrypted = await encryptPassword(password)
-      const parts = encrypted.password_encrypted.split('.')
-      let decrypted: Buffer
-      if (parts[0] === 'v2') {
-        const key = privateDecrypt(
-          {
-            key: privateKey,
-            oaepHash: 'sha256',
-            oaepLabel: Buffer.from('password-v2'),
-          },
-          Buffer.from(parts[1], 'base64')
-        )
-        const ciphertext = Buffer.from(parts[3], 'base64')
-        const decipher = createDecipheriv(
-          'aes-256-gcm',
-          key,
-          Buffer.from(parts[2], 'base64')
-        )
-        decipher.setAAD(Buffer.from('password-v2:test-encryption-key'))
-        decipher.setAuthTag(ciphertext.subarray(-16))
-        decrypted = Buffer.concat([
-          decipher.update(ciphertext.subarray(0, -16)),
-          decipher.final(),
-        ])
-      } else {
-        decrypted = privateDecrypt(
-          { key: privateKey, oaepHash: 'sha256' },
-          Buffer.from(encrypted.password_encrypted, 'base64')
-        )
-      }
-      expect(decrypted.toString('utf8')).toBe(password)
+    },
+  })
+  for (const password of ['legacy-password', '🔒'.repeat(128)]) {
+    const encrypted = await encryptPassword(password)
+    const parts = encrypted.password_encrypted.split('.')
+    let decrypted: Buffer
+    if (parts[0] === 'v2') {
+      const key = privateDecrypt(
+        {
+          key: privateKey,
+          oaepHash: 'sha256',
+          oaepLabel: Buffer.from('password-v2'),
+        },
+        Buffer.from(parts[1], 'base64')
+      )
+      const ciphertext = Buffer.from(parts[3], 'base64')
+      const decipher = createDecipheriv(
+        'aes-256-gcm',
+        key,
+        Buffer.from(parts[2], 'base64')
+      )
+      decipher.setAAD(Buffer.from('password-v2:test-encryption-key'))
+      decipher.setAuthTag(ciphertext.subarray(-16))
+      decrypted = Buffer.concat([
+        decipher.update(ciphertext.subarray(0, -16)),
+        decipher.final(),
+      ])
+    } else {
+      decrypted = privateDecrypt(
+        { key: privateKey, oaepHash: 'sha256' },
+        Buffer.from(encrypted.password_encrypted, 'base64')
+      )
     }
+    expect(decrypted.toString('utf8')).toBe(password)
   }
-)
+})
 
 it.each(['proof', 'flow'] as const)(
   'never replays a %s request after a 401 response',

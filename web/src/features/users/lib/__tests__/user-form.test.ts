@@ -24,6 +24,7 @@ import type { User } from '../../types'
 import {
   transformFormDataToPayload,
   transformUserToFormDefaults,
+  userFormSchema,
 } from '../user-form'
 
 test('user form converts invite rebate percent to backend basis points', () => {
@@ -38,6 +39,7 @@ test('user form converts invite rebate percent to backend basis points', () => {
     status: 1,
     role: 1,
     invite_rebate_ratio: 125,
+    exclusive_bonus_ratio: 1250,
   } satisfies User
 
   const defaults = transformUserToFormDefaults(user)
@@ -45,4 +47,23 @@ test('user form converts invite rebate percent to backend basis points', () => {
 
   const payload = transformFormDataToPayload(defaults, user.id)
   assert.equal(payload.invite_rebate_ratio, 125)
+  assert.equal(defaults.exclusive_bonus_percent, 12.5)
+  assert.equal(payload.exclusive_bonus_ratio, 1250)
+  assert.equal(
+    transformFormDataToPayload(
+      { ...defaults, exclusive_bonus_percent: 0 },
+      user.id
+    ).exclusive_bonus_ratio,
+    0
+  )
+})
+
+test('exclusive bonus rejects negative, excessive, and invalid percentages', () => {
+  for (const exclusive_bonus_percent of [-1, 100.01, Number.NaN]) {
+    assert.equal(
+      userFormSchema.safeParse({ username: 'alice', exclusive_bonus_percent })
+        .success,
+      false
+    )
+  }
 })
