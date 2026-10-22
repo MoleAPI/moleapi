@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,44 @@ import (
 )
 
 const awsTestModel = "anthropic.claude-3-5-sonnet-20240620-v1:0"
+
+func TestAwsFinalBodyDropsSamplingIncludingPassthrough(t *testing.T) {
+	const input = `{"model":"claude-opus-4-7","stream":true,"temperature":0.7,"top_p":0.9,"top_k":40,"max_tokens":512,"messages":[{"role":"user","content":"hi"}],"metadata":{"id":9007199254740993}}`
+	for _, passthrough := range []bool{false, true} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("passthrough=%t/stream=%t", passthrough, stream), func(t *testing.T) {
+				c := newAwsTestContext(httptest.NewRecorder(), context.Background())
+				storage, err := common.CreateBodyStorage([]byte(input))
+				require.NoError(t, err)
+				defer storage.Close()
+				c.Set(common.KeyBodyStorage, storage)
+				info := newAwsTestRelayInfo()
+				info.ApiKey = "fixture-access|fixture-secret|us-east-1"
+				info.IsStream = stream
+				info.ChannelSetting.PassThroughBodyEnabled = passthrough
+				adaptor := &Adaptor{ClientMode: ClientModeAKSK}
+				_, err = adaptor.DoRequest(c, info, bytes.NewReader([]byte(input)))
+				require.NoError(t, err)
+				var body []byte
+				if stream {
+					body = adaptor.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput).Body
+				} else {
+					body = adaptor.AwsReq.(*bedrockruntime.InvokeModelInput).Body
+				}
+				var fields map[string]common.RawMessage
+				require.NoError(t, common.Unmarshal(body, &fields))
+				for _, key := range []string{"temperature", "top_p", "top_k", "model", "stream"} {
+					assert.NotContains(t, fields, key)
+				}
+				assert.Equal(t, "512", string(fields["max_tokens"]))
+				assert.JSONEq(t, `[{"role":"user","content":"hi"}]`, string(fields["messages"]))
+				if passthrough {
+					assert.Equal(t, `{"id":9007199254740993}`, string(fields["metadata"]))
+				}
+			})
+		}
+	}
+}
 
 type awsHTTPClientFunc func(*http.Request) (*http.Response, error)
 
