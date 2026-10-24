@@ -584,7 +584,12 @@ func buildResponsesWSCreatePayload(c *gin.Context, info *relaycommon.RelayInfo, 
 		return nil, apiErr
 	}
 	defer closer.Close()
-	jsonData, err := io.ReadAll(body)
+	filteredBody, filteredCloser, err := relaycommon.FilterModelSamplingBody(body, info)
+	if err != nil {
+		return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
+	}
+	defer filteredCloser.Close()
+	jsonData, err := io.ReadAll(filteredBody)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeReadRequestBodyFailed, types.ErrOptionWithSkipRetry())
 	}

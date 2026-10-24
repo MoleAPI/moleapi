@@ -1,6 +1,7 @@
 package aws
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -177,24 +178,36 @@ func doAwsClientRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor,
 
 // buildAwsRequestBody prepares the payload for AWS requests, applying passthrough rules when enabled.
 func buildAwsRequestBody(c *gin.Context, info *relaycommon.RelayInfo, awsClaudeReq any) ([]byte, error) {
+	var body []byte
+	var err error
 	if model_setting.GetGlobalSettings().PassThroughRequestEnabled || info.ChannelSetting.PassThroughBodyEnabled {
-		storage, err := common.GetBodyStorage(c)
-		if err != nil {
-			return nil, errors.Wrap(err, "get request body for pass-through fail")
+		storage, storageErr := common.GetBodyStorage(c)
+		if storageErr != nil {
+			return nil, errors.Wrap(storageErr, "get request body for pass-through fail")
 		}
-		body, err := storage.Bytes()
+		body, err = storage.Bytes()
 		if err != nil {
 			return nil, errors.Wrap(err, "get request body bytes fail")
 		}
-		var data map[string]any
+		var data map[string]common.RawMessage
 		if err := common.Unmarshal(body, &data); err != nil {
 			return nil, errors.Wrap(err, "pass-through unmarshal request body fail")
 		}
 		delete(data, "model")
 		delete(data, "stream")
-		return common.Marshal(data)
+		body, err = common.Marshal(data)
+	} else {
+		body, err = common.Marshal(awsClaudeReq)
 	}
-	return common.Marshal(awsClaudeReq)
+	if err != nil {
+		return nil, err
+	}
+	filtered, closer, err := relaycommon.FilterModelSamplingBody(bytes.NewReader(body), info)
+	if err != nil {
+		return nil, err
+	}
+	defer closer.Close()
+	return io.ReadAll(filtered)
 }
 
 func getAwsRegionPrefix(awsRegionId string) string {

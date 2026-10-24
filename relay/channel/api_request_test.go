@@ -2,11 +2,13 @@ package channel
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -14,6 +16,85 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAPIRequestDropsLegacyModelParameters(t *testing.T) {
+	const input = `{"model":"public-alias","temperature":0,"temperature":0.7,"top_p":0,"top_k":40,"frequency_penalty":0,"presence_penalty":1,"repetition_penalty":1.1,"seed":9007199254740993,"logit_bias":{"123":5},"logprobs":true,"top_logprobs":3,"stop":["end"],"max_tokens":512,"max_output_tokens":1024,"reasoning":{"effort":"high"},"messages":[{"role":"user","content":"hi"}],"metadata":{"temperature":0.4,"id":9007199254740993}}`
+	for _, tc := range []struct {
+		model  string
+		drop   bool
+		stop   bool
+		origin string
+	}{
+		{"claude-sonnet-4-6", true, false, ""},
+		{"claude-opus-4-7", true, false, ""},
+		{"anthropic/claude-3-5-sonnet", true, false, ""},
+		{"us.anthropic.claude-opus-4-7-v1:0", true, false, ""},
+		{"gpt-5", true, true, ""},
+		{"gpt-5.1-chat-latest", true, true, ""},
+		{"openai/gpt-5.2-codex", true, true, ""},
+		{"GPT-6", true, true, ""},
+		{"gpt-10-mini", true, true, ""},
+		{"gpt-4.1", false, false, ""},
+		{"gpt-4o", false, false, ""},
+		{"gemini-3-pro", false, false, ""},
+		{"gpt-5fake", false, false, ""},
+		{"myclaude-model", false, false, ""},
+		{"azure-deployment", true, true, "gpt-5.2"},
+		{"private-alias", true, false, "claude-opus-4-7"},
+	} {
+		for _, path := range []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"} {
+			t.Run(tc.model+path, func(t *testing.T) {
+				receivedBodies := make(chan []byte, 1)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					received, err := io.ReadAll(r.Body)
+					assert.NoError(t, err)
+					assert.Equal(t, int64(len(received)), r.ContentLength)
+					receivedBodies <- received
+					w.WriteHeader(http.StatusOK)
+				}))
+				defer server.Close()
+				c, _ := gin.CreateTestContext(httptest.NewRecorder())
+				c.Request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(input))
+				info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: tc.model,
+					ChannelSetting: dto.ChannelSettings{PassThroughBodyEnabled: true}}}
+				info.OriginModelName = tc.origin
+				resp, err := DoApiRequest(requestContextAdaptor{url: server.URL}, c, info, strings.NewReader(input))
+				require.NoError(t, err)
+				defer resp.Body.Close()
+				received := <-receivedBodies
+				var fields map[string]common.RawMessage
+				require.NoError(t, common.Unmarshal(received, &fields))
+				for _, key := range []string{"temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "repetition_penalty", "seed", "logit_bias", "logprobs", "top_logprobs"} {
+					_, exists := fields[key]
+					assert.Equal(t, !tc.drop, exists, key)
+				}
+				_, hasStop := fields["stop"]
+				assert.Equal(t, !tc.stop, hasStop)
+				assert.JSONEq(t, `{"temperature":0.4,"id":9007199254740993}`, string(fields["metadata"]))
+				assert.Equal(t, "512", string(fields["max_tokens"]))
+				assert.Equal(t, "1024", string(fields["max_output_tokens"]))
+				assert.JSONEq(t, `{"effort":"high"}`, string(fields["reasoning"]))
+				assert.JSONEq(t, `[{"role":"user","content":"hi"}]`, string(fields["messages"]))
+				if !tc.drop {
+					assert.Equal(t, input, string(received))
+				}
+			})
+		}
+	}
+}
+
+func TestAPIRequestRejectsInvalidSamplingBodyBeforeSending(t *testing.T) {
+	for _, body := range []string{`{"temperature":`, `null`, `[]`} {
+		t.Run(body, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(body))
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "claude-opus-4-7"}}
+			// An empty adaptor URL proves rejection precedes request construction.
+			_, err := DoApiRequest(requestContextAdaptor{}, c, info, strings.NewReader(body))
+			require.ErrorContains(t, err, "filter model sampling parameters")
+		})
+	}
+}
 
 type requestContextAdaptor struct {
 	Adaptor
