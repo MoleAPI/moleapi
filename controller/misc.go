@@ -236,7 +236,11 @@ func SendEmailVerification(c *gin.Context) {
 		return
 	}
 	code := common.GenerateVerificationCode(6)
-	common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose)
+	if err := common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose); err != nil {
+		logger.LogError(c.Request.Context(), "failed to store email verification code")
+		common.ApiErrorT(c, "Failed to send verification email")
+		return
+	}
 	// The address may not belong to an account yet, so the mail follows the
 	// request language.
 	systemName := map[string]any{"SystemName": common.SystemName}
@@ -267,7 +271,11 @@ func SendPasswordResetEmail(c *gin.Context) {
 	}
 	if user, err := model.GetUniqueUserByEmail(email); err == nil {
 		code := common.GenerateVerificationCode(0)
-		common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose)
+		if err := common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose); err != nil {
+			logger.LogError(c.Request.Context(), "failed to store password reset token")
+			c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
+			return
+		}
 		link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", system_setting.ServerAddress, email, code)
 		lang := user.GetSetting().Language
 		if lang == "" {
