@@ -1,6 +1,8 @@
 package common
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -32,7 +34,16 @@ func GenerateVerificationCode(length int) string {
 	return code[:length]
 }
 
-func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
+func RegisterVerificationCodeWithKey(key string, code string, purpose string) error {
+	if RedisEnabled {
+		if RDB == nil {
+			return errors.New("verification storage is unavailable")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		// ponytail: use Redis expiry directly; memory is only for installations without Redis.
+		return RDB.Set(ctx, "verification:"+purpose+":"+key, code, time.Duration(VerificationValidMinutes)*time.Minute).Err()
+	}
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	verificationMap[purpose+key] = verificationValue{
@@ -42,9 +53,22 @@ func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
 	if len(verificationMap) > verificationMapMaxSize {
 		removeExpiredPairs()
 	}
+	return nil
 }
 
 func VerifyCodeWithKey(key string, code string, purpose string) bool {
+	if code == "" {
+		return false
+	}
+	if RedisEnabled {
+		if RDB == nil {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		value, err := RDB.Get(ctx, "verification:"+purpose+":"+key).Result()
+		return err == nil && code == value
+	}
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	value, okay := verificationMap[purpose+key]
@@ -56,6 +80,18 @@ func VerifyCodeWithKey(key string, code string, purpose string) bool {
 }
 
 func DeleteKey(key string, purpose string) {
+	if RedisEnabled {
+		if RDB == nil {
+			SysError("verification storage is unavailable")
+			return
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := RDB.Del(ctx, "verification:"+purpose+":"+key).Err(); err != nil {
+			SysError("failed to delete verification code")
+		}
+		return
+	}
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	delete(verificationMap, purpose+key)
