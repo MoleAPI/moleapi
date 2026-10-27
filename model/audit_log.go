@@ -100,6 +100,10 @@ func RecordAuditLog(c *gin.Context, entry AuditLog) {
 		entry.EventId = common.NewRequestId()
 	}
 	switch entry.ActorRole {
+	case 0:
+		if entry.Category != AuditCategoryLogin || entry.Success {
+			logger.LogError(ctx, common.LogText("audit actor role unavailable (request_id=%s, actor_role=%d)", entry.RequestId, entry.ActorRole))
+		}
 	case common.RoleCommonUser, common.RoleAdminUser, common.RoleRootUser:
 	default:
 		logger.LogError(ctx, common.LogText("audit actor role unavailable (request_id=%s, actor_role=%d)", entry.RequestId, entry.ActorRole))

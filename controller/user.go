@@ -52,12 +52,14 @@ func GetPasswordEncryptionKey(c *gin.Context) {
 
 func Login(c *gin.Context) {
 	if !common.PasswordLoginEnabled {
+		middleware.MarkPasswordLoginFailure(c, "password_login_disabled")
 		common.ApiErrorT(c, "Password login has been disabled by administrator")
 		return
 	}
 	var loginRequest LoginRequest
 	err := common.DecodeJson(c.Request.Body, &loginRequest)
 	if err != nil {
+		middleware.MarkPasswordLoginFailure(c, "invalid_parameters")
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
@@ -65,16 +67,19 @@ func Login(c *gin.Context) {
 	password := loginRequest.Password
 	if common.PasswordLoginEncryptionEnabled {
 		if loginRequest.PasswordEncrypted == "" || loginRequest.EncryptionKeyID == "" {
+			middleware.MarkPasswordLoginFailure(c, "invalid_parameters")
 			common.ApiErrorT(c, "Invalid parameters")
 			return
 		}
 		password, err = common.DecryptPassword(loginRequest.PasswordEncrypted, loginRequest.EncryptionKeyID)
 		if err != nil {
+			middleware.MarkPasswordLoginFailure(c, "invalid_credentials")
 			common.ApiErrorT(c, "Username or password is incorrect, or user has been banned")
 			return
 		}
 	}
 	if username == "" || password == "" {
+		middleware.MarkPasswordLoginFailure(c, "invalid_parameters")
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
@@ -86,11 +91,14 @@ func Login(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, model.ErrDatabase):
+			middleware.MarkPasswordLoginFailure(c, "database_error")
 			common.SysLog(common.LogText("Login database error for user %s: %v", username, err))
 			common.ApiErrorT(c, "Database error, please contact the administrator")
 		case errors.Is(err, model.ErrUserEmptyCredentials):
+			middleware.MarkPasswordLoginFailure(c, "invalid_parameters")
 			common.ApiErrorT(c, "Invalid parameters")
 		default:
+			middleware.MarkPasswordLoginFailure(c, "invalid_credentials")
 			common.ApiErrorT(c, "Username or password is incorrect, or user has been banned")
 		}
 		return
@@ -154,6 +162,7 @@ func setupLoginWithMigration(user *model.User, migration *service.LegacyGitHubMi
 	// A session is issued immediately only when no additional factor is enrolled.
 	challenge, err := service.StartLoginVerificationWithMigration(user, loginMethodFromContext(c), migration)
 	if err != nil {
+		middleware.MarkPasswordLoginFailure(c, "authentication_failed")
 		writeSecurityOperationError(c, err)
 		return
 	}
@@ -167,11 +176,13 @@ func setupLoginWithMigration(user *model.User, migration *service.LegacyGitHubMi
 
 func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin.Context) {
 	if user == nil || user.Id <= 0 || user.Status != common.UserStatusEnabled {
+		middleware.MarkPasswordLoginFailure(c, "invalid_credentials")
 		common.ApiErrorT(c, "User has been banned")
 		return
 	}
 	currentUser, err := model.GetSelfUserById(user.Id)
 	if err != nil {
+		middleware.MarkPasswordLoginFailure(c, "authentication_failed")
 		common.ApiError(c, err)
 		return
 	}
@@ -193,6 +204,7 @@ func setupLoginAtAuthVersion(user *model.User, expectedAuthVersion int64, c *gin
 		)
 	}
 	if err != nil {
+		middleware.MarkPasswordLoginFailure(c, "authentication_failed")
 		writeAuthSessionError(c, err)
 		return
 	}
