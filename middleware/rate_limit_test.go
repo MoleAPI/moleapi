@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -117,6 +119,63 @@ func TestRedisEmailVerificationRateLimiterPreservesResponseAndTTL(t *testing.T) 
 	key := redisIPRateLimitKey(EmailVerificationRateLimitMark, "192.0.2.30")
 	assert.True(t, redisServer.Exists(key))
 	assert.Equal(t, time.Duration(EmailVerificationDuration)*time.Second, redisServer.TTL(key))
+}
+
+func TestRedisEmailRecipientRateLimiterNormalizesAndHidesAddress(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	redisServer, _ := useRateLimitMiniRedis(t)
+
+	router := gin.New()
+	router.GET("/email", EmailRecipientRateLimit(), func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	addresses := []string{
+		"Code.Rwar.021+one@gmail.com",
+		"coderwar021@gmail.com",
+		"code.rwar.021+two@gmail.com",
+	}
+	for index, address := range addresses {
+		response := performRateLimitRequest(router, "/email?email="+url.QueryEscape(address), "192.0.2."+strconv.Itoa(40+index)+":12345")
+		assert.Equal(t, http.StatusNoContent, response.Code)
+	}
+	limited := performRateLimitRequest(router, "/email?email=code.rwar.021@gmail.com", "198.51.100.44:12345")
+	assert.Equal(t, http.StatusTooManyRequests, limited.Code)
+	assert.Equal(t, strconv.Itoa(EmailRecipientDuration), limited.Header().Get("Retry-After"))
+
+	key := emailRecipientRateLimitKey("coderwar021@gmail.com")
+	assert.True(t, redisServer.Exists(key))
+	assert.False(t, strings.Contains(key, "gmail.com"))
+	assert.Equal(t, time.Duration(EmailRecipientDuration)*time.Second, redisServer.TTL(key))
+}
+
+func TestRedisPasswordLoginCooldownThresholds(t *testing.T) {
+	redisServer, _ := useRateLimitMiniRedis(t)
+	ctx := context.Background()
+	pairKey, ipKey := passwordLoginRateKeys("target-user", "192.0.2.90")
+
+	for range passwordLoginPairLimit - 1 {
+		require.NoError(t, recordRedisPasswordLoginFailure(ctx, pairKey, ipKey))
+		remaining, err := redisPasswordLoginCooldown(ctx, pairKey, ipKey)
+		require.NoError(t, err)
+		assert.LessOrEqual(t, remaining, time.Duration(0))
+	}
+	require.NoError(t, recordRedisPasswordLoginFailure(ctx, pairKey, ipKey))
+	remaining, err := redisPasswordLoginCooldown(ctx, pairKey, ipKey)
+	require.NoError(t, err)
+	assert.Equal(t, passwordLoginPairCooldown, remaining)
+	assert.True(t, redisServer.Exists(pairKey+":cooldown"))
+
+	sharedIPKey := ""
+	for index := range passwordLoginIPLimit {
+		pair, ip := passwordLoginRateKeys("user-"+strconv.Itoa(index), "198.51.100.90")
+		sharedIPKey = ip
+		require.NoError(t, recordRedisPasswordLoginFailure(ctx, pair, ip))
+	}
+	freshPairKey, _ := passwordLoginRateKeys("fresh-user", "198.51.100.90")
+	remaining, err = redisPasswordLoginCooldown(ctx, freshPairKey, sharedIPKey)
+	require.NoError(t, err)
+	assert.Equal(t, passwordLoginIPCooldown, remaining)
 }
 
 func TestRedisFixedWindowIsAtomicUnderConcurrency(t *testing.T) {

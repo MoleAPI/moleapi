@@ -218,6 +218,55 @@ func TestPasswordLoginFailureAudit(t *testing.T) {
 	assert.Positive(t, user.Id)
 }
 
+func TestPasswordLoginCooldown(t *testing.T) {
+	setupSecurityEnrollmentTest(t)
+	previousPasswordLogin := common.PasswordLoginEnabled
+	common.PasswordLoginEnabled = true
+	t.Cleanup(func() { common.PasswordLoginEnabled = previousPasswordLogin })
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.POST("/api/user/login", middleware.PasswordLoginAudit(), Login)
+	requestLogin := func(password string) *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/user/login", strings.NewReader(`{"username":"enrollment-user","password":"`+password+`"}`))
+		request.RemoteAddr = "192.0.2.91:4321"
+		request.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(response, request)
+		return response
+	}
+
+	for range 5 {
+		assert.Equal(t, http.StatusOK, requestLogin("not-the-password").Code)
+	}
+	blocked := requestLogin("enrollment-password")
+	assert.Equal(t, http.StatusTooManyRequests, blocked.Code)
+	assert.NotEmpty(t, blocked.Header().Get("Retry-After"))
+	assert.NotContains(t, blocked.Body.String(), "enrollment-user")
+
+	var audit model.AuditLog
+	require.NoError(t, model.LOG_DB.Where("action = ?", "login.failed").Last(&audit).Error)
+	require.NotNil(t, audit.Other.Op)
+	reasonJSON, err := common.Marshal(audit.Other.Op.Params["failure_reason"])
+	require.NoError(t, err)
+	var reason string
+	require.NoError(t, common.Unmarshal(reasonJSON, &reason))
+	assert.Equal(t, "login_cooldown", reason)
+}
+
+func TestEmailVerificationDoesNotRevealExistingAddress(t *testing.T) {
+	user, identity := setupSecurityEnrollmentTest(t)
+	require.NoError(t, model.DB.Model(user).Update("email", "existing@example.com").Error)
+	mailbox := newSecurityMailbox(t)
+
+	response := securityEnrollmentRequest(http.MethodGet, "/api/verification?email=existing@example.com", "", "", identity, SendEmailVerification)
+	assert.Equal(t, http.StatusOK, response.Code)
+	assert.JSONEq(t, `{"success":true,"message":""}`, response.Body.String())
+	mailbox.mutex.Lock()
+	defer mailbox.mutex.Unlock()
+	assert.Empty(t, mailbox.mail)
+}
+
 func issueSecurityEnrollmentProof(t *testing.T, identity service.AuthIdentity, operation service.VerificationOperation, method string) string {
 	t.Helper()
 	binding, err := service.BindVerificationOperation(operation)
