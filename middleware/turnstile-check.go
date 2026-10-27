@@ -17,6 +17,7 @@ func TurnstileCheck() gin.HandlerFunc {
 		if common.TurnstileCheckEnabled {
 			response := c.Query("turnstile")
 			if response == "" {
+				MarkPasswordLoginFailure(c, "turnstile_token_missing")
 				common.ApiErrorT(c, "Turnstile token is empty")
 				c.Abort()
 				return
@@ -27,6 +28,7 @@ func TurnstileCheck() gin.HandlerFunc {
 				"remoteip": {c.ClientIP()},
 			})
 			if err != nil {
+				MarkPasswordLoginFailure(c, "turnstile_unavailable")
 				common.SysLog(err.Error())
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
@@ -39,6 +41,7 @@ func TurnstileCheck() gin.HandlerFunc {
 			var res turnstileCheckResponse
 			err = common.DecodeJson(rawRes.Body, &res)
 			if err != nil {
+				MarkPasswordLoginFailure(c, "turnstile_invalid_response")
 				common.SysLog(err.Error())
 				c.JSON(http.StatusOK, gin.H{
 					"success": false,
@@ -48,6 +51,7 @@ func TurnstileCheck() gin.HandlerFunc {
 				return
 			}
 			if !res.Success {
+				MarkPasswordLoginFailure(c, "turnstile_verification_failed")
 				common.ApiErrorT(c, "Turnstile verification failed, please refresh and try again!")
 				c.Abort()
 				return
