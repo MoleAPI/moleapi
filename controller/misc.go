@@ -232,7 +232,9 @@ func SendEmailVerification(c *gin.Context) {
 	}
 
 	if model.IsEmailAlreadyTaken(email) {
-		common.ApiErrorT(c, "Email address is already in use")
+		// Return the same response as an unused address without sending mail.
+		// This keeps the public endpoint from revealing registered accounts.
+		c.JSON(http.StatusOK, gin.H{"success": true, "message": ""})
 		return
 	}
 	code := common.GenerateVerificationCode(6)

@@ -132,6 +132,141 @@ func securityEnrollmentRequest(method, path, body, proof string, identity servic
 	return response
 }
 
+func TestPasswordLoginFailureAudit(t *testing.T) {
+	user, _ := setupSecurityEnrollmentTest(t)
+	previousPasswordLogin := common.PasswordLoginEnabled
+	previousTurnstile := common.TurnstileCheckEnabled
+	common.PasswordLoginEnabled = true
+	common.TurnstileCheckEnabled = false
+	t.Cleanup(func() {
+		common.PasswordLoginEnabled = previousPasswordLogin
+		common.TurnstileCheckEnabled = previousTurnstile
+	})
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies([]string{"192.0.2.10"}))
+	router.POST(
+		"/api/user/login",
+		middleware.AnonymousRequestBodyLimit(),
+		middleware.PasswordLoginAudit(),
+		middleware.TurnstileCheck(),
+		Login,
+	)
+
+	requestLogin := func(body string) *httptest.ResponseRecorder {
+		t.Helper()
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/user/login", strings.NewReader(body))
+		request.RemoteAddr = "192.0.2.10:4321"
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("User-Agent", "login-audit-test")
+		request.Header.Set("X-Forwarded-For", "203.0.113.77, 198.51.100.25")
+		router.ServeHTTP(response, request)
+		return response
+	}
+
+	startedAt := time.Now().Unix()
+	wrongPassword := "wrong-password-that-must-not-be-recorded"
+	response := requestLogin(`{"username":"enrollment-user","password":"` + wrongPassword + `"}`)
+	assert.Equal(t, http.StatusOK, response.Code)
+
+	common.TurnstileCheckEnabled = true
+	response = requestLogin(`{"username":"unregistered-user","password":"another-secret"}`)
+	assert.Equal(t, http.StatusOK, response.Code)
+	common.TurnstileCheckEnabled = false
+
+	response = requestLogin(`{"username":"enrollment-user","password":"enrollment-password"}`)
+	assert.Equal(t, http.StatusOK, response.Code)
+
+	var failures []model.AuditLog
+	require.NoError(t, model.LOG_DB.Where("action = ?", "login.failed").Order("created_at asc").Find(&failures).Error)
+	require.Len(t, failures, 2)
+	for _, failure := range failures {
+		assert.False(t, failure.Success)
+		assert.Zero(t, failure.UserId)
+		assert.Zero(t, failure.ActorRole)
+		assert.Equal(t, model.AuditCategoryLogin, failure.Category)
+		assert.Equal(t, "198.51.100.25", failure.Ip)
+		assert.Equal(t, "login-audit-test", failure.UserAgent)
+		assert.Equal(t, http.MethodPost, failure.Method)
+		assert.Equal(t, "/api/user/login", failure.Route)
+		assert.GreaterOrEqual(t, failure.CreatedAt, startedAt)
+		require.NotNil(t, failure.Other.Op)
+	}
+	assert.Equal(t, "enrollment-user", failures[0].Username)
+	assert.Equal(t, "unregistered-user", failures[1].Username)
+
+	var invalidCredentialsReason, turnstileReason string
+	invalidCredentialsJSON, err := common.Marshal(failures[0].Other.Op.Params["failure_reason"])
+	require.NoError(t, err)
+	require.NoError(t, common.Unmarshal(invalidCredentialsJSON, &invalidCredentialsReason))
+	turnstileJSON, err := common.Marshal(failures[1].Other.Op.Params["failure_reason"])
+	require.NoError(t, err)
+	require.NoError(t, common.Unmarshal(turnstileJSON, &turnstileReason))
+	assert.Equal(t, "invalid_credentials", invalidCredentialsReason)
+	assert.Equal(t, "turnstile_token_missing", turnstileReason)
+
+	encoded, err := common.Marshal(failures)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), wrongPassword)
+	assert.NotContains(t, string(encoded), "another-secret")
+	assert.NotContains(t, string(encoded), "enrollment-password")
+
+	var successful int64
+	require.NoError(t, model.LOG_DB.Model(&model.AuditLog{}).Where("action = ? AND success = ?", "login", true).Count(&successful).Error)
+	assert.EqualValues(t, 1, successful)
+	assert.Positive(t, user.Id)
+}
+
+func TestPasswordLoginCooldown(t *testing.T) {
+	setupSecurityEnrollmentTest(t)
+	previousPasswordLogin := common.PasswordLoginEnabled
+	common.PasswordLoginEnabled = true
+	t.Cleanup(func() { common.PasswordLoginEnabled = previousPasswordLogin })
+
+	router := gin.New()
+	require.NoError(t, router.SetTrustedProxies(nil))
+	router.POST("/api/user/login", middleware.PasswordLoginAudit(), Login)
+	requestLogin := func(password string) *httptest.ResponseRecorder {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(http.MethodPost, "/api/user/login", strings.NewReader(`{"username":"enrollment-user","password":"`+password+`"}`))
+		request.RemoteAddr = "192.0.2.91:4321"
+		request.Header.Set("Content-Type", "application/json")
+		router.ServeHTTP(response, request)
+		return response
+	}
+
+	for range 5 {
+		assert.Equal(t, http.StatusOK, requestLogin("not-the-password").Code)
+	}
+	blocked := requestLogin("enrollment-password")
+	assert.Equal(t, http.StatusTooManyRequests, blocked.Code)
+	assert.NotEmpty(t, blocked.Header().Get("Retry-After"))
+	assert.NotContains(t, blocked.Body.String(), "enrollment-user")
+
+	var audit model.AuditLog
+	require.NoError(t, model.LOG_DB.Where("action = ?", "login.failed").Last(&audit).Error)
+	require.NotNil(t, audit.Other.Op)
+	reasonJSON, err := common.Marshal(audit.Other.Op.Params["failure_reason"])
+	require.NoError(t, err)
+	var reason string
+	require.NoError(t, common.Unmarshal(reasonJSON, &reason))
+	assert.Equal(t, "login_cooldown", reason)
+}
+
+func TestEmailVerificationDoesNotRevealExistingAddress(t *testing.T) {
+	user, identity := setupSecurityEnrollmentTest(t)
+	require.NoError(t, model.DB.Model(user).Update("email", "existing@example.com").Error)
+	mailbox := newSecurityMailbox(t)
+
+	response := securityEnrollmentRequest(http.MethodGet, "/api/verification?email=existing@example.com", "", "", identity, SendEmailVerification)
+	assert.Equal(t, http.StatusOK, response.Code)
+	assert.JSONEq(t, `{"success":true,"message":""}`, response.Body.String())
+	mailbox.mutex.Lock()
+	defer mailbox.mutex.Unlock()
+	assert.Empty(t, mailbox.mail)
+}
+
 func issueSecurityEnrollmentProof(t *testing.T, identity service.AuthIdentity, operation service.VerificationOperation, method string) string {
 	t.Helper()
 	binding, err := service.BindVerificationOperation(operation)

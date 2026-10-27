@@ -1,9 +1,12 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/model"
 
 	"github.com/gin-gonic/gin"
 )
@@ -12,7 +15,13 @@ const (
 	EmailVerificationRateLimitMark = "EV"
 	EmailVerificationMaxRequests   = 2  // 30秒内最多2次
 	EmailVerificationDuration      = 30 // 30秒时间窗口
+	EmailRecipientMaxRequests      = 3
+	EmailRecipientDuration         = 10 * 60
 )
+
+func emailRecipientRateLimitKey(email string) string {
+	return fmt.Sprintf("%s:email:%s:%s", redisRateLimitNamespace, EmailVerificationRateLimitMark, common.GenerateHMAC(model.NormalizeEmail(email)))
+}
 
 func redisEmailVerificationRateLimiter(c *gin.Context) {
 	allowed, _, ttlSeconds, err := redisFixedWindowTake(
@@ -61,5 +70,41 @@ func EmailVerificationRateLimit() gin.HandlerFunc {
 		} else {
 			memoryEmailVerificationRateLimiter(c)
 		}
+	}
+}
+
+// EmailRecipientRateLimit prevents distributed clients from repeatedly
+// sending registration codes or password-reset messages to one mailbox.
+func EmailRecipientRateLimit() gin.HandlerFunc {
+	inMemoryRateLimiter.Init(common.RateLimitKeyExpirationDuration)
+	return func(c *gin.Context) {
+		email := model.NormalizeEmail(c.Query("email"))
+		if email == "" {
+			c.Next()
+			return
+		}
+		key := emailRecipientRateLimitKey(email)
+		if common.RedisEnabled {
+			allowed, _, ttlSeconds, err := redisFixedWindowTake(c.Request.Context(), key, EmailRecipientMaxRequests, EmailRecipientDuration)
+			if err == nil {
+				if allowed {
+					c.Next()
+					return
+				}
+				if ttlSeconds > 0 {
+					c.Header("Retry-After", strconv.FormatInt(ttlSeconds, 10))
+				}
+				common.ApiErrorStatus(c, http.StatusTooManyRequests, common.NewMessage("Please try again later."))
+				c.Abort()
+				return
+			}
+		}
+		if !inMemoryRateLimiter.Request(key, EmailRecipientMaxRequests, EmailRecipientDuration) {
+			c.Header("Retry-After", strconv.Itoa(EmailRecipientDuration))
+			common.ApiErrorStatus(c, http.StatusTooManyRequests, common.NewMessage("Please try again later."))
+			c.Abort()
+			return
+		}
+		c.Next()
 	}
 }
