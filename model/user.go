@@ -1323,14 +1323,16 @@ func (user *User) ValidateAndFill() (err error) {
 	err = DB.Where("username = ?", username).Or(emailWhere, emailArgs...).First(user).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.VerifyDummyAccountPassword(password)
 			return ErrInvalidCredentials
 		}
 		return fmt.Errorf("%w: %v", ErrDatabase, err)
 	}
 	if user.Password == "" {
+		common.VerifyDummyAccountPassword(password)
 		return ErrInvalidCredentials
 	}
-	okay := common.ValidatePasswordAndHash(password, user.Password)
+	okay := common.ValidateAccountPassword(password, user.Password)
 	if !okay || user.Status != common.UserStatusEnabled {
 		return ErrInvalidCredentials
 	}

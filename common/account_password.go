@@ -28,6 +28,11 @@ var (
 	ErrPasswordLegacyLimit   = errors.New("Long passwords are unavailable until the password storage upgrade is complete.")
 )
 
+const (
+	dummyArgon2AccountPasswordHash = "$argon2id$v=19$m=19456,t=2,p=1$MDEyMzQ1Njc4OWFiY2RlZg$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+	dummyBcryptAccountPasswordHash = "$2a$10$eIE4m6VoZo4qFFoG7JVBDuFR0vBvwDZkCAJPAKwPAtGk9MCwstkwW"
+)
+
 // ValidateNewAccountPassword applies only when a user chooses a new password.
 // Authentication must continue to accept historical passwords without applying
 // the new policy. Do not normalize passwords, including surrounding whitespace.
@@ -61,6 +66,27 @@ func HashAccountPassword(password string) (string, error) {
 	}
 	key := argon2.IDKey([]byte(password), salt, accountPasswordTime, accountPasswordMemory, 1, accountPasswordKeyBytes)
 	return fmt.Sprintf("$argon2id$v=19$m=19456,t=2,p=1$%s$%s", base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(key)), nil
+}
+
+// ValidateAccountPassword performs one bcrypt and one Argon2id comparison for
+// every login, including legacy accounts, so hash format cannot reveal whether
+// a username exists.
+func ValidateAccountPassword(password, hash string) bool {
+	if strings.HasPrefix(hash, "$argon2id$") {
+		okay := validateArgon2AccountPassword(password, hash)
+		_ = ValidatePasswordAndHash(password, dummyBcryptAccountPasswordHash)
+		return okay
+	}
+	okay := ValidatePasswordAndHash(password, hash)
+	_ = validateArgon2AccountPassword(password, dummyArgon2AccountPasswordHash)
+	return okay
+}
+
+// VerifyDummyAccountPassword spends the same password-hash cost when no
+// account exists.
+func VerifyDummyAccountPassword(password string) {
+	_ = ValidatePasswordAndHash(password, dummyBcryptAccountPasswordHash)
+	_ = validateArgon2AccountPassword(password, dummyArgon2AccountPasswordHash)
 }
 
 func validateArgon2AccountPassword(password, encoded string) bool {
