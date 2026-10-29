@@ -9,6 +9,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relay/helper"
@@ -18,6 +19,8 @@ import (
 	"github.com/QuantumNous/new-api/setting/model_setting"
 	"github.com/QuantumNous/new-api/setting/ratio_setting"
 	"github.com/samber/lo"
+	"github.com/tidwall/gjson"
+	"github.com/tidwall/sjson"
 
 	"github.com/gin-gonic/gin"
 )
@@ -189,6 +192,8 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		requestBody = body
 	}
 
+	var usage any
+	var newApiErr *types.NewAPIError
 	var httpResp *http.Response
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
@@ -201,14 +206,22 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		httpResp = resp.(*http.Response)
 		info.IsStream = info.IsStream || strings.HasPrefix(httpResp.Header.Get("Content-Type"), "text/event-stream")
 		if httpResp.StatusCode != http.StatusOK {
-			newApiErr := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
-			// reset status code 重置状态码
-			service.ResetStatusCode(newApiErr, statusCodeMappingStr)
-			return newApiErr
+			upstreamErr := service.RelayErrorHandler(c.Request.Context(), httpResp, false)
+			var handled bool
+			usage, newApiErr, handled = retryChatCompatibility(c, info, adaptor, requestBody, upstreamErr)
+			if !handled {
+				newApiErr = upstreamErr
+			}
+			if newApiErr != nil {
+				service.ResetStatusCode(newApiErr, statusCodeMappingStr)
+				return newApiErr
+			}
 		}
 	}
 
-	usage, newApiErr := adaptor.DoResponse(c, httpResp, info)
+	if usage == nil {
+		usage, newApiErr = adaptor.DoResponse(c, httpResp, info)
+	}
 	if newApiErr != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newApiErr, statusCodeMappingStr)
@@ -224,4 +237,89 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 		service.PostTextConsumeQuota(c, info, usage.(*dto.Usage), nil)
 	}
 	return nil
+}
+
+// ponytail: retry only these explicit pre-generation rejections once; unknown
+// parameter errors keep the normal channel retry policy instead of guessing.
+func retryChatCompatibility(c *gin.Context, info *relaycommon.RelayInfo, adaptor channel.Adaptor, body io.Reader, upstreamErr *types.NewAPIError) (any, *types.NewAPIError, bool) {
+	if upstreamErr.StatusCode != http.StatusBadRequest || c.Writer.Written() || c.Request.Context().Err() != nil ||
+		info.RelayMode != relayconstant.RelayModeChatCompletions || info.RelayFormat != types.RelayFormatOpenAI ||
+		info.ChannelSetting.PassThroughBodyEnabled || model_setting.GetGlobalSettings().PassThroughRequestEnabled {
+		return nil, nil, false
+	}
+	switch info.ChannelType {
+	case constant.ChannelTypeOpenAI, constant.ChannelTypeAzure, constant.ChannelTypeNewAPI, constant.ChannelTypeSub2API:
+	default:
+		return nil, nil, false
+	}
+	message := upstreamErr.Error()
+	offSpelling := strings.Contains(message, `Invalid option: expected one of "off"|"low"|"medium"|"high"|"xhigh"|"max"`)
+	responsesTools := strings.Contains(message, "Function tools with reasoning_effort are not supported for ") &&
+		strings.Contains(message, "in /v1/chat/completions.") && strings.Contains(message, "use /v1/responses")
+	replayable, ok := body.(common.ReplayableBody)
+	if !ok || (!offSpelling && !responsesTools) {
+		return nil, nil, false
+	}
+	reader, err := replayable.NewReader()
+	if err != nil {
+		return nil, nil, false
+	}
+	defer reader.Close()
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return nil, nil, false
+	}
+	if offSpelling && gjson.GetBytes(data, "reasoning_effort").String() == "none" {
+		data, err = sjson.SetBytes(data, "reasoning_effort", "off")
+		if err != nil {
+			return nil, nil, false
+		}
+		retryBody, closer, err := relaycommon.NewOutboundJSONBody(data)
+		if err != nil {
+			return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed), true
+		}
+		defer closer.Close()
+		logger.LogInfo(c, fmt.Sprintf("chat compatibility retry: channel_id=%d reasoning_effort none -> off", info.ChannelId))
+		response, err := adaptor.DoRequest(c, info, retryBody)
+		if err != nil {
+			return nil, types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusBadGateway), true
+		}
+		resp, ok := response.(*http.Response)
+		if !ok || resp == nil {
+			return nil, types.NewErrorWithStatusCode(fmt.Errorf("invalid compatibility retry response"), types.ErrorCodeBadResponse, http.StatusBadGateway), true
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, service.RelayErrorHandler(c.Request.Context(), resp, false), true
+		}
+		info.IsStream = info.IsStream || isResponsesEventStreamContentType(resp.Header.Get("Content-Type"))
+		usage, apiErr := adaptor.DoResponse(c, resp, info)
+		return usage, apiErr, true
+	}
+	if responsesTools {
+		var request dto.GeneralOpenAIRequest
+		if err := common.Unmarshal(data, &request); err != nil || request.ReasoningEffort == "none" {
+			return nil, nil, false
+		}
+		functionTools := len(gjson.GetBytes(data, "functions").Array()) > 0
+		for _, tool := range request.Tools {
+			functionTools = functionTools || tool.Type == "function"
+		}
+		if !functionTools {
+			return nil, nil, false
+		}
+		result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAIResponses, &request)
+		if err != nil {
+			return nil, nil, false
+		}
+		responses, ok := result.Value.(*dto.OpenAIResponsesRequest)
+		if !ok {
+			return nil, nil, false
+		}
+		logger.LogInfo(c, fmt.Sprintf("chat compatibility retry: channel_id=%d function tools via Responses", info.ChannelId))
+		// The replay contains the final mapped and overridden request. Applying
+		// channel overrides twice could change counts, limits, or message content.
+		usage, apiErr := relayResponsesRequest(c, info, adaptor, responses, true)
+		return usage, apiErr, true
+	}
+	return nil, nil, false
 }

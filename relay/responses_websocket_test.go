@@ -14,8 +14,11 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	appdto "github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	relaychannel "github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
@@ -99,6 +102,115 @@ func TestSelectResponsesWSChannelHonorsPinsAndFilters(t *testing.T) {
 			assert.Equal(t, enabled.Id, channel.Id)
 			assert.Equal(t, enabled.Id, common.GetContextKeyInt(c, constant.ContextKeyChannelId))
 			assert.False(t, service.ShouldRetryRelayError(c, types.NewErrorWithStatusCode(errors.New("upstream failed"), types.ErrorCodeDoRequestFailed, 503), 2))
+		})
+	}
+}
+
+func TestSelectResponsesWSChannelAcceptsNativeResponsesChannelTypes(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	database := setupRelayChannelDB(t)
+	nativeRoute := &dto.AdvancedCustomConfig{Routes: []dto.AdvancedCustomRoute{{IncomingPath: "/v1/responses", UpstreamPath: "/v1/responses"}}}
+	noneRoute := &dto.AdvancedCustomConfig{Routes: []dto.AdvancedCustomRoute{{IncomingPath: "/v1/responses", UpstreamPath: "/v1/responses", Converter: "none"}}}
+	convertedRoute := &dto.AdvancedCustomConfig{Routes: []dto.AdvancedCustomRoute{{IncomingPath: "/v1/responses", UpstreamPath: "/v1/chat/completions", Converter: "openai_responses_to_openai_chat_completions"}}}
+	chatRoute := &dto.AdvancedCustomConfig{Routes: []dto.AdvancedCustomRoute{{IncomingPath: "/v1/chat/completions", UpstreamPath: "/v1/chat/completions"}}}
+	for _, tc := range []struct {
+		name        string
+		channelType int
+		advanced    *dto.AdvancedCustomConfig
+		rejectedBy  appdto.ChannelFilterKind
+	}{
+		{name: "azure", channelType: constant.ChannelTypeAzure},
+		{name: "new api", channelType: constant.ChannelTypeNewAPI},
+		{name: "sub2api", channelType: constant.ChannelTypeSub2API},
+		{name: "advanced custom native responses route", channelType: constant.ChannelTypeAdvancedCustom, advanced: nativeRoute},
+		{name: "advanced custom explicit none converter", channelType: constant.ChannelTypeAdvancedCustom, advanced: noneRoute},
+		{name: "advanced custom converter route", channelType: constant.ChannelTypeAdvancedCustom, advanced: convertedRoute, rejectedBy: appdto.FilterResponsesWebSocket},
+		{name: "advanced custom without responses route", channelType: constant.ChannelTypeAdvancedCustom, advanced: chatRoute, rejectedBy: appdto.FilterResponsesWebSocket},
+		{name: "anthropic", channelType: constant.ChannelTypeAnthropic, rejectedBy: appdto.FilterResponsesWebSocket},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			channel := &model.Channel{Name: tc.name, Key: "sk-test", Status: common.ChannelStatusEnabled, Type: tc.channelType}
+			channel.SetSetting(dto.ChannelSettings{ResponsesWebSocketEnabled: true})
+			channel.SetOtherSettings(dto.ChannelOtherSettings{AdvancedCustom: tc.advanced})
+			require.NoError(t, database.Create(channel).Error)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+			constraints := service.GetChannelConstraints(c)
+			constraints.AddPin(appdto.ChannelPin{ChannelId: channel.Id, Source: appdto.PinSourceToken, Rank: appdto.PinRankToken, RetryMode: appdto.PinRetrySingleAttempt})
+			constraints.AddFilter(appdto.ChannelFilter{Kind: appdto.FilterRequestPath, RequestPath: c.Request.URL.Path})
+			selected, apiErr := selectResponsesWSChannel(c, "ws-model", &service.RetryParam{Ctx: c, ModelName: "ws-model", TokenGroup: "default"})
+			if tc.rejectedBy != "" {
+				require.NotNil(t, apiErr)
+				assert.Nil(t, selected)
+				assert.Equal(t, http.StatusBadRequest, apiErr.StatusCode)
+				assert.Equal(t, types.ErrorCode(tc.rejectedBy), apiErr.GetErrorCode())
+				return
+			}
+			require.Nil(t, apiErr)
+			require.NotNil(t, selected)
+			assert.Equal(t, channel.Id, selected.Id)
+		})
+	}
+}
+
+func TestResponsesWSAzureDialUsesAzureResponsesURLAndAPIKey(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		host           string
+		responsesVer   string
+		wantPath       string
+		wantAPIVersion string
+		channelAPIVer  string
+	}{
+		{name: "openai v1 default preview", wantPath: "/openai/v1/responses", wantAPIVersion: "preview"},
+		{name: "channel responses version", responsesVer: "2025-04-01-preview", wantPath: "/openai/v1/responses", wantAPIVersion: "2025-04-01-preview"},
+		{name: "cognitiveservices uses channel api version", host: "cognitiveservices.azure.com", channelAPIVer: "2025-03-01-preview", wantPath: "/openai/responses", wantAPIVersion: "2025-03-01-preview"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			handshake := make(chan *http.Request, 1)
+			upgrader := websocket.Upgrader{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handshake <- r
+				conn, err := upgrader.Upgrade(w, r, nil)
+				if err != nil {
+					return
+				}
+				_ = conn.Close()
+			}))
+			defer server.Close()
+
+			// The host check only inspects the base URL text, so a path segment
+			// is enough to select the cognitiveservices URL form.
+			baseURL := server.URL
+			if tc.host != "" {
+				baseURL += "/" + tc.host
+			}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodGet, "/v1/responses", nil)
+			info := &relaycommon.RelayInfo{
+				RelayMode:      relayconstant.RelayModeResponses,
+				RequestURLPath: "/v1/responses",
+				ChannelMeta: &relaycommon.ChannelMeta{
+					ChannelType:          constant.ChannelTypeAzure,
+					ChannelBaseUrl:       baseURL,
+					ApiType:              constant.APITypeOpenAI,
+					ApiVersion:           tc.channelAPIVer,
+					ApiKey:               "azure-key",
+					UpstreamModelName:    "gpt-test",
+					ChannelOtherSettings: dto.ChannelOtherSettings{AzureResponsesVersion: tc.responsesVer},
+				},
+			}
+			adaptor := GetAdaptor(info.ApiType)
+			adaptor.Init(info)
+			target, err := relaychannel.DoWssRequest(adaptor, c, info, nil)
+			require.NoError(t, err)
+			_ = target.Close()
+
+			r := <-handshake
+			assert.Equal(t, strings.TrimPrefix(baseURL, server.URL)+tc.wantPath, r.URL.Path)
+			assert.Equal(t, tc.wantAPIVersion, r.URL.Query().Get("api-version"))
+			assert.Equal(t, "azure-key", r.Header.Get("api-key"))
+			assert.Empty(t, r.Header.Get("Authorization"))
 		})
 	}
 }

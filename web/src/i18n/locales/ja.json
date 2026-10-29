@@ -1196,6 +1196,7 @@
     "Channel types": "チャネルタイプ",
     "Channel types you can use when binding this plugin.": "このプラグインを紐付ける際に選択できるチャネルの種類です。",
     "Channel updated successfully": "チャネルが正常に更新されました",
+    "Channel-level body passthrough applies to all routes. Requests to routes that require format conversion will fail. To enable passthrough for selected routes only, use the route-level switches instead.": "チャネル単位のリクエストボディのパススルーは、すべてのルートに適用されます。形式変換が必要なルートへのリクエストは失敗します。一部のルートのみで有効にする場合は、ルート単位のスイッチを使用してください。",
     "Channel-specific settings (JSON format)": "チャネル固有の設定 (JSON 形式)",
     "Channel:": "チャネル：",
     "channel(s)? This action cannot be undone.": "チャネルを削除しますか？この操作は元に戻せません。",
