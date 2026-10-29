@@ -1143,3 +1143,30 @@ func TestCachedAudioIsChargedOnce(t *testing.T) {
 		assert.Equal(t, tc.cost, cost)
 	}
 }
+
+func TestBuildTieredTokenParams_ClaudeUnsplitCacheWrites(t *testing.T) {
+	expr := `tier("base", p * 3 + c * 15 + cr * 0.3 + cc * 3.75 + cc1h * 6)`
+	for _, tc := range []struct {
+		name             string
+		split5m, split1h int
+		wantCC, wantCC1h float64
+	}{
+		{"total without split", 0, 0, 10000, 0},
+		{"split missing part of total", 0, 4000, 6000, 4000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			usage := &dto.Usage{
+				PromptTokens:                100,
+				CompletionTokens:            50,
+				UsageSemantic:               "anthropic",
+				PromptTokensDetails:         dto.InputTokenDetails{CachedCreationTokens: 10000},
+				ClaudeCacheCreation5mTokens: tc.split5m,
+				ClaudeCacheCreation1hTokens: tc.split1h,
+			}
+			params := BuildTieredTokenParams(usage, true, billingexpr.UsedVars(expr))
+			assert.Equal(t, tc.wantCC, params.CC)
+			assert.Equal(t, tc.wantCC1h, params.CC1h)
+			assert.Equal(t, float64(100+10000), params.Len, "len counts every cache write")
+		})
+	}
+}

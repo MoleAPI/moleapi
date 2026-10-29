@@ -1196,6 +1196,7 @@
     "Channel types": "Channel types",
     "Channel types you can use when binding this plugin.": "Channel types you can use when binding this plugin.",
     "Channel updated successfully": "Channel updated successfully",
+    "Channel-level body passthrough applies to all routes. Requests to routes that require format conversion will fail. To enable passthrough for selected routes only, use the route-level switches instead.": "Channel-level body passthrough applies to all routes. Requests to routes that require format conversion will fail. To enable passthrough for selected routes only, use the route-level switches instead.",
     "Channel-specific settings (JSON format)": "Channel-specific settings (JSON format)",
     "Channel:": "Channel:",
     "channel(s)? This action cannot be undone.": "channel(s)? This action cannot be undone.",

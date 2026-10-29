@@ -142,21 +142,23 @@ function isOptionalCodingPlanQuota(value: string | undefined): boolean {
       return false
     }
     const durations = new Set<number>()
-    return parsed.windows.every((window) => {
-      if (!isJsonObjectValue(window)) return false
-      const duration = window.duration_seconds
-      const limit = window.limit
-      if (typeof duration !== 'number') return false
-      durations.add(duration)
-      return (
-        Number.isInteger(duration) &&
-        duration >= 60 &&
-        duration <= 365 * 24 * 60 * 60 &&
-        typeof limit === 'number' &&
-        Number.isInteger(limit) &&
-        limit > 0
-      )
-    }) && durations.size === parsed.windows.length
+    return (
+      parsed.windows.every((window) => {
+        if (!isJsonObjectValue(window)) return false
+        const duration = window.duration_seconds
+        const limit = window.limit
+        if (typeof duration !== 'number') return false
+        durations.add(duration)
+        return (
+          Number.isInteger(duration) &&
+          duration >= 60 &&
+          duration <= 365 * 24 * 60 * 60 &&
+          typeof limit === 'number' &&
+          Number.isInteger(limit) &&
+          limit > 0
+        )
+      }) && durations.size === parsed.windows.length
+    )
   } catch {
     return false
   }
@@ -722,9 +724,7 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
     force_format: formData.force_format || false,
     thinking_to_content: formData.thinking_to_content || false,
     proxy: formData.proxy?.trim() || '',
-    pass_through_body_enabled:
-      formData.type !== CHANNEL_TYPE_ADVANCED_CUSTOM &&
-      formData.pass_through_body_enabled === true,
+    pass_through_body_enabled: formData.pass_through_body_enabled === true,
     responses_websocket_enabled:
       supportsResponsesWebSocket(formData.type) &&
       formData.responses_websocket_enabled === true,

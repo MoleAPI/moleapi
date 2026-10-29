@@ -1196,6 +1196,7 @@
     "Channel types": "Типы каналов",
     "Channel types you can use when binding this plugin.": "Типы каналов, к которым можно привязать этот плагин.",
     "Channel updated successfully": "Канал успешно обновлён",
+    "Channel-level body passthrough applies to all routes. Requests to routes that require format conversion will fail. To enable passthrough for selected routes only, use the route-level switches instead.": "Сквозная передача тела запроса на уровне канала действует для всех маршрутов. Запросы к маршрутам, требующим преобразования формата, будут завершаться ошибкой. Чтобы включить её только для отдельных маршрутов, используйте переключатели этих маршрутов.",
     "Channel-specific settings (JSON format)": "Настройки, специфичные для канала (формат JSON)",
     "Channel:": "Канал:",
     "channel(s)? This action cannot be undone.": "канал(ы)? Это действие нельзя отменить.",
