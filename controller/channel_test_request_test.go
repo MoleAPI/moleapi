@@ -85,6 +85,10 @@ func TestChannelTestOpenAIChatCompatibility(t *testing.T) {
 		{name: "GPT6 explicit Azure stream", model: "gpt-6-astra", upstream: "gpt-6-astra", endpoint: string(constant.EndpointTypeOpenAI), channelType: constant.ChannelTypeAzure, stream: true, wantLimit: "max_completion_tokens", wantTokens: 16},
 		{name: "GPT6 sol", model: "gpt-6-sol", upstream: "gpt-6-sol", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens", wantTokens: 16},
 		{name: "GPT6 luna", model: "gpt-6-luna", upstream: "gpt-6-luna", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens", wantTokens: 16},
+		{name: "GPT6.1 sol", model: "gpt-6.1-sol", upstream: "gpt-6.1-sol", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens", wantTokens: 16},
+		{name: "GPT6.1 sol snapshot", model: "gpt-6.1-sol-2026-10-01", upstream: "gpt-6.1-sol-2026-10-01", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens", wantTokens: 16},
+		{name: "GPT6.1 terra Azure stream", model: "gpt-6.1-terra", upstream: "gpt-6.1-terra", endpoint: string(constant.EndpointTypeOpenAI), channelType: constant.ChannelTypeAzure, stream: true, wantLimit: "max_completion_tokens", wantTokens: 16},
+		{name: "alias maps to GPT6.1 terra snapshot", model: "customer-model", upstream: "gpt-6.1-terra-2026-10-01", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens", wantTokens: 16},
 		{name: "alias maps to GPT6", model: "customer-model", upstream: "gpt-6-astra", channelType: constant.ChannelTypeOpenAI, wantLimit: "max_completion_tokens", wantTokens: 16},
 		{name: "GPT5 alias maps to Qwen", model: "gpt-5.6-luna", upstream: "qwen-turbo", channelType: constant.ChannelTypeAli, wantLimit: "max_tokens", wantTokens: 64},
 		{name: "GPT5 stream", model: "gpt-5.6-luna", upstream: "gpt-5.6-luna", channelType: constant.ChannelTypeOpenAI, stream: true, wantLimit: "max_completion_tokens", wantTokens: 64},
@@ -141,6 +145,12 @@ func TestOpenAIChatSamplingCompatibility(t *testing.T) {
 		{name: "GPT6 effort suffix", model: "gpt-6-astra-high", wantModel: "gpt-6-astra", wantEffort: "high", wantRole: "developer", wantParams: `{}`},
 		{name: "GPT6 sol none keeps sampling", model: "gpt-6-sol", wantRole: "developer", wantParams: sampling},
 		{name: "GPT6 luna effort drops sampling", model: "gpt-6-luna-high", wantModel: "gpt-6-luna", wantEffort: "high", wantRole: "developer", wantParams: `{}`},
+		{name: "GPT6.1 sol default drops sampling", model: "gpt-6.1-sol", wantRole: "developer", wantParams: `{}`},
+		{name: "GPT6.1 sol snapshot drops sampling", model: "gpt-6.1-sol-2026-10-01", wantRole: "developer", wantParams: `{}`},
+		{name: "GPT6.1 terra default reasons", model: "gpt-6.1-terra", wantRole: "developer", wantParams: `{}`},
+		{name: "GPT6.1 terra explicit none keeps sampling", model: "gpt-6.1-terra", effort: "none", wantEffort: "none", wantRole: "developer", wantParams: sampling},
+		{name: "GPT6.1 terra snapshot none keeps sampling", model: "gpt-6.1-terra-2026-10-01", effort: "none", wantEffort: "none", wantRole: "developer", wantParams: sampling},
+		{name: "GPT6.1 terra high drops sampling", model: "gpt-6.1-terra", effort: "high", wantEffort: "high", wantRole: "developer", wantParams: `{}`},
 		{name: "none effort suffix", model: "gpt-5.2-none", wantModel: "gpt-5.2", wantEffort: "none", wantRole: "developer", wantParams: sampling},
 		{name: "modifier overrides explicit effort", model: "gpt-5.2@thinking:off", effort: "high", wantModel: "gpt-5.2", wantEffort: "none", wantRole: "developer", wantParams: sampling},
 		{name: "mapped modifier wins", model: "customer-model@thinking:off", mapping: map[string]string{"customer-model": "gpt-5.2@effort:high"}, wantModel: "gpt-5.2", wantEffort: "high", wantRole: "developer", wantParams: `{}`},
@@ -192,7 +202,7 @@ func TestOpenAIChatSamplingCompatibility(t *testing.T) {
 }
 
 func TestOpenAIChatTokenLimitCompatibility(t *testing.T) {
-	for _, modelName := range []string{"gpt-5", "o3-mini", "gpt-6-astra"} {
+	for _, modelName := range []string{"gpt-5", "o3-mini", "gpt-6-astra", "gpt-6.1-sol", "gpt-6.1-terra"} {
 		for _, tt := range []struct {
 			name  string
 			input string
@@ -201,11 +211,11 @@ func TestOpenAIChatTokenLimitCompatibility(t *testing.T) {
 			{name: "omitted", input: `{}`, want: `{}`},
 			{name: "legacy only", input: `{"max_tokens":100}`, want: `{"max_completion_tokens":100}`},
 			{name: "completion only", input: `{"max_completion_tokens":50}`, want: `{"max_completion_tokens":50}`},
-			{name: "both positive stay present", input: `{"max_tokens":100,"max_completion_tokens":50}`, want: `{"max_tokens":100,"max_completion_tokens":50}`},
-			{name: "zero completion falls back", input: `{"max_tokens":100,"max_completion_tokens":0}`, want: `{"max_completion_tokens":100}`},
-			{name: "legacy zero stays present", input: `{"max_tokens":0}`, want: `{"max_tokens":0}`},
+			{name: "completion limit takes precedence", input: `{"max_tokens":100,"max_completion_tokens":50}`, want: `{"max_completion_tokens":50}`},
+			{name: "explicit zero completion takes precedence", input: `{"max_tokens":100,"max_completion_tokens":0}`, want: `{"max_completion_tokens":0}`},
+			{name: "legacy zero is renamed", input: `{"max_tokens":0}`, want: `{"max_completion_tokens":0}`},
 			{name: "completion zero stays present", input: `{"max_completion_tokens":0}`, want: `{"max_completion_tokens":0}`},
-			{name: "both zero stay present", input: `{"max_tokens":0,"max_completion_tokens":0}`, want: `{"max_tokens":0,"max_completion_tokens":0}`},
+			{name: "both zero keep completion only", input: `{"max_tokens":0,"max_completion_tokens":0}`, want: `{"max_completion_tokens":0}`},
 		} {
 			t.Run(modelName+"/"+tt.name, func(t *testing.T) {
 				request := &dto.GeneralOpenAIRequest{Model: modelName, Messages: []dto.Message{{Role: "user", Content: "hi"}}}
@@ -222,7 +232,7 @@ func TestOpenAIChatTokenLimitCompatibility(t *testing.T) {
 }
 
 func TestOpenAIChatTokenLimitPreservesUnknownModels(t *testing.T) {
-	for _, modelName := range []string{"gpt-4.1", "custom-model"} {
+	for _, modelName := range []string{"gpt-4.1", "custom-model", "gpt-6.1-sol-pro", "gpt-6.2-sol", "gpt-7"} {
 		t.Run(modelName, func(t *testing.T) {
 			request := &dto.GeneralOpenAIRequest{
 				Model:    modelName,
