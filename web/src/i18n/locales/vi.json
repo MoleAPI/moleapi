@@ -1196,6 +1196,7 @@
     "Channel types": "Loại kênh",
     "Channel types you can use when binding this plugin.": "Các loại kênh có thể chọn khi liên kết plugin này.",
     "Channel updated successfully": "Kênh đã được cập nhật thành công",
+    "Channel-level body passthrough applies to all routes. Requests to routes that require format conversion will fail. To enable passthrough for selected routes only, use the route-level switches instead.": "Chuyển tiếp nguyên trạng nội dung yêu cầu ở cấp kênh áp dụng cho tất cả tuyến. Yêu cầu đến các tuyến cần chuyển đổi định dạng sẽ thất bại. Để chỉ bật cho một số tuyến, hãy dùng công tắc ở cấp tuyến.",
     "Channel-specific settings (JSON format)": "Cài đặt dành riêng cho kênh (định dạng JSON)",
     "Channel:": "Kênh:",
     "channel(s)? This action cannot be undone.": "kênh(s)? Hành động này không thể hoàn tác.",

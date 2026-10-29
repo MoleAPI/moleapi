@@ -128,7 +128,8 @@ func GeminiGenerateContentRequestToOpenAIChatContext(ctx context.Context, gemini
 
 		if len(toolCalls) > 0 {
 			message.SetToolCalls(toolCalls)
-		} else if len(mediaContents) == 1 && mediaContents[0].Type == "text" {
+		}
+		if len(mediaContents) == 1 && mediaContents[0].Type == "text" {
 			message.Content = mediaContents[0].Text
 		} else if len(mediaContents) > 0 {
 			message.SetMediaContent(mediaContents)

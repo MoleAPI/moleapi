@@ -1196,6 +1196,7 @@
     "Channel types": "渠道类型",
     "Channel types you can use when binding this plugin.": "绑定此插件时可选择的渠道类型。",
     "Channel updated successfully": "渠道更新成功",
+    "Channel-level body passthrough applies to all routes. Requests to routes that require format conversion will fail. To enable passthrough for selected routes only, use the route-level switches instead.": "渠道级请求体透传会作用于所有路由。需要格式转换的路由将无法处理请求。如需仅对部分路由开启透传，请改用路由级开关。",
     "Channel-specific settings (JSON format)": "渠道特定设置（JSON 格式）",
     "Channel:": "渠道：",
     "channel(s)? This action cannot be undone.": "渠道？此操作无法撤销。",
