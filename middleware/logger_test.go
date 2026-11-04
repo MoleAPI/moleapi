@@ -21,6 +21,10 @@ func TestSetUpLoggerMasksQueryCredentials(t *testing.T) {
 	})
 
 	for _, tc := range []struct{ target, loggedPath string }{
+		{"/api/user/login?turnstile=challenge-secret&redirect=wallet",
+			"/api/user/login?redirect=wallet&turnstile=%2A%2A%2Amasked%2A%2A%2A"},
+		{"/api/user/login?%74urnstile=first&turnstile=second&TURNSTILE=third",
+			"/api/user/login?TURNSTILE=%2A%2A%2Amasked%2A%2A%2A&turnstile=%2A%2A%2Amasked%2A%2A%2A"},
 		{"/v1/models?%6bey=first&key=second&API-Key=third&session_token=fourth&alt=sse",
 			"/v1/models?API-Key=%2A%2A%2Amasked%2A%2A%2A&alt=sse&key=%2A%2A%2Amasked%2A%2A%2A&session_token=%2A%2A%2Amasked%2A%2A%2A"},
 		{"/v1/models%23test%25?key=#secret&alt=#sse",
