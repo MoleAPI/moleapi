@@ -68,24 +68,19 @@ func TurnstileCheck() gin.HandlerFunc {
 				return
 			}
 			defer rawRes.Body.Close()
-			if rawRes.StatusCode != http.StatusOK {
-				MarkPasswordLoginFailure(c, "turnstile_unavailable")
-				logger.LogWarn(c, common.LogText("Turnstile verification unavailable (http_status=%d)", rawRes.StatusCode))
-				common.ApiErrorT(c, "Turnstile verification failed, please refresh and try again!")
-				c.Abort()
-				return
-			}
 			var res turnstileCheckResponse
 			err = common.DecodeJson(io.LimitReader(rawRes.Body, 16<<10), &res)
-			if err != nil {
-				MarkPasswordLoginFailure(c, "turnstile_invalid_response")
-				logger.LogWarn(c, common.LogText("Turnstile verification returned invalid JSON"))
-				common.ApiErrorT(c, "Turnstile verification failed, please refresh and try again!")
-				c.Abort()
-				return
+			failureReason := ""
+			switch {
+			case rawRes.StatusCode != http.StatusOK:
+				failureReason = "turnstile_unavailable"
+			case err != nil:
+				failureReason = "turnstile_invalid_response"
+			case !res.Success:
+				failureReason = "turnstile_verification_failed"
 			}
-			if !res.Success {
-				MarkPasswordLoginFailure(c, "turnstile_verification_failed")
+			if failureReason != "" {
+				MarkPasswordLoginFailure(c, failureReason)
 				if len(res.ErrorCodes) == 0 {
 					res.ErrorCodes = []string{"unknown-error"}
 				}
@@ -97,7 +92,7 @@ func TurnstileCheck() gin.HandlerFunc {
 						res.ErrorCodes[i] = "unknown-error"
 					}
 				}
-				logger.LogWarn(c, common.LogText("Turnstile verification rejected (error_codes=%s)", strings.Join(res.ErrorCodes, ",")))
+				logger.LogWarn(c, common.LogText("Turnstile verification rejected (reason=%s, http_status=%d, error_codes=%s)", failureReason, rawRes.StatusCode, strings.Join(res.ErrorCodes, ",")))
 				common.ApiErrorT(c, "Turnstile verification failed, please refresh and try again!")
 				c.Abort()
 				return

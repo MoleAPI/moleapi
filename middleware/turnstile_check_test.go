@@ -61,6 +61,7 @@ func TestTurnstileCheck(t *testing.T) {
 		{name: "untrusted forwarded client", peer: "198.51.100.10:1234", forwarded: "203.0.113.10", remoteIP: "198.51.100.10"},
 		{name: "expired or replayed token", response: `{"success":false,"error-codes":["timeout-or-duplicate"]}`, reason: "turnstile_verification_failed", loggedCode: "timeout-or-duplicate"},
 		{name: "invalid secret", response: `{"success":false,"error-codes":["invalid-input-secret"]}`, reason: "turnstile_verification_failed", loggedCode: "invalid-input-secret"},
+		{name: "invalid secret HTTP400 retains rejection code", status: http.StatusBadRequest, response: `{"success":false,"error-codes":["invalid-input-secret"]}`, reason: "turnstile_unavailable", loggedCode: "invalid-input-secret"},
 		{name: "unknown error is sanitized", response: `{"success":false,"error-codes":["turnstile-secret-never-log\nforged-log-entry"]}`, reason: "turnstile_verification_failed", loggedCode: "unknown-error"},
 		{name: "no rejection code", response: `{"success":false}`, reason: "turnstile_verification_failed", loggedCode: "unknown-error"},
 		{name: "non JSON response", response: "turnstile-secret-never-log", reason: "turnstile_invalid_response"},
