@@ -1,6 +1,7 @@
 package openai
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -89,33 +90,67 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 }
 
 func normalizeOpenAIImageResponse(responseBody []byte, info *relaycommon.RelayInfo) ([]byte, error) {
-	if openAIImageResponseWantsURL(info) {
-		return responseBody, nil
-	}
-
 	data := gjson.GetBytes(responseBody, "data")
 	if !data.IsArray() && !data.IsObject() {
 		return responseBody, nil
 	}
+	var payloads int
+	var uniformFormat string
+	sameFormat := true
 	for index, image := range data.Array() {
 		path := "data"
 		if data.IsArray() {
 			path += "." + strconv.Itoa(index)
 		}
 		var err error
-		responseBody, err = inlineOpenAIImageData(responseBody, path, image)
+		responseBody, err = normalizeOpenAIImageData(responseBody, path, image, !openAIImageResponseWantsURL(info))
 		if err != nil {
 			return nil, err
 		}
+		image = gjson.GetBytes(responseBody, path)
+		if openaiImageDataHasField(image, "b64_json") || openaiImageDataHasField(image, "url") {
+			payloads++
+			format := imageOutputFormat(image, "")
+			if payloads == 1 {
+				uniformFormat = format
+			} else if uniformFormat != format {
+				sameFormat = false
+			}
+		}
+	}
+	// A mixed batch has no truthful single output_format. Keep known formats
+	// on the individual payloads instead of labeling every file PNG or GIF.
+	if !sameFormat {
+		var err error
+		responseBody, err = sjson.DeleteBytes(responseBody, "output_format")
+		if err != nil {
+			return nil, err
+		}
+		for index, image := range gjson.GetBytes(responseBody, "data").Array() {
+			if format := imageOutputFormat(image, ""); format != "" {
+				path := "data.output_format"
+				if data.IsArray() {
+					path = "data." + strconv.Itoa(index) + ".output_format"
+				}
+				responseBody, err = sjson.SetBytes(responseBody, path, format)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		return responseBody, nil
+	}
+	// A uniform batch can advertise its actual format without relying on a
+	// request parameter. Existing static-image responses keep their shape.
+	advertised := gjson.GetBytes(responseBody, "output_format")
+	if payloads > 0 && sameFormat && uniformFormat != "" && (uniformFormat == "gif" || advertised.Exists()) && advertised.String() != uniformFormat {
+		return sjson.SetBytes(responseBody, "output_format", uniformFormat)
 	}
 	return responseBody, nil
 }
 
 func normalizeOpenAIImageStreamChunk(chunk []byte, info *relaycommon.RelayInfo) ([]byte, error) {
-	if openAIImageResponseWantsURL(info) {
-		return chunk, nil
-	}
-	return inlineOpenAIImageData(chunk, "", gjson.ParseBytes(chunk))
+	return normalizeOpenAIImageData(chunk, "", gjson.ParseBytes(chunk), !openAIImageResponseWantsURL(info))
 }
 
 func openAIImageResponseWantsURL(info *relaycommon.RelayInfo) bool {
@@ -126,26 +161,39 @@ func openAIImageResponseWantsURL(info *relaycommon.RelayInfo) bool {
 	return ok && strings.EqualFold(strings.TrimSpace(request.ResponseFormat), "url")
 }
 
-func inlineOpenAIImageData(body []byte, path string, image gjson.Result) ([]byte, error) {
+func normalizeOpenAIImageData(body []byte, path string, image gjson.Result, inlineURL bool) ([]byte, error) {
 	url := strings.TrimSpace(image.Get("url").String())
-	if url == "" {
-		return body, nil
-	}
-	b64Path, urlPath := "b64_json", "url"
+	b64Path, urlPath, formatPath := "b64_json", "url", "output_format"
 	if path != "" {
-		b64Path, urlPath = path+"."+b64Path, path+"."+urlPath
+		b64Path, urlPath, formatPath = path+"."+b64Path, path+"."+urlPath, path+"."+formatPath
 	}
-	if strings.TrimSpace(image.Get("b64_json").String()) == "" {
-		_, encoded, err := service.GetImageFromUrl(url)
-		if err != nil {
-			return nil, fmt.Errorf("failed to download upstream image: %w", err)
+	if inlineURL && url != "" {
+		if strings.TrimSpace(image.Get("b64_json").String()) == "" {
+			_, encoded, err := service.GetImageFromUrl(url)
+			if err != nil {
+				return nil, fmt.Errorf("failed to download upstream image: %w", err)
+			}
+			body, err = sjson.SetBytes(body, b64Path, encoded)
+			if err != nil {
+				return nil, err
+			}
 		}
-		body, err = sjson.SetBytes(body, b64Path, encoded)
+		var err error
+		body, err = sjson.DeleteBytes(body, urlPath)
 		if err != nil {
 			return nil, err
 		}
+		image = gjson.ParseBytes(body)
+		if path != "" {
+			image = image.Get(path)
+		}
 	}
-	return sjson.DeleteBytes(body, urlPath)
+	format := imageOutputFormat(image, "")
+	advertised := image.Get("output_format")
+	if format != "" && (format == "gif" || advertised.Exists()) && advertised.String() != format {
+		return sjson.SetBytes(body, formatPath, format)
+	}
+	return body, nil
 }
 
 func openaiImageResponseCount(responseBody []byte) int64 {
@@ -242,22 +290,49 @@ func buildImageChatCompletionResponse(c *gin.Context, info *relaycommon.RelayInf
 }
 
 func imageMarkdownContentFromResponse(responseBody []byte) string {
-	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
-	parts := make([]string, 0, imageCount)
-	for i := int64(0); i < imageCount; i++ {
-		if markdown := imageMarkdownFromResult(gjson.GetBytes(responseBody, "data."+strconv.FormatInt(i, 10))); markdown != "" {
+	images := gjson.GetBytes(responseBody, "data").Array()
+	parts := make([]string, 0, len(images))
+	for _, image := range images {
+		if markdown := imageMarkdownFromResult(image, gjson.GetBytes(responseBody, "output_format").String()); markdown != "" {
 			parts = append(parts, markdown)
 		}
 	}
 	return strings.Join(parts, "\n\n")
 }
 
-func imageMarkdownFromResult(image gjson.Result) string {
+// imageOutputFormat prefers the file signature so an animation is never labeled
+// PNG merely because the provider omitted or misstated its format metadata.
+func imageOutputFormat(image gjson.Result, fallback string) string {
+	b64 := strings.TrimSpace(image.Get("b64_json").String())
+	var header [48]byte
+	if n, _ := io.ReadFull(base64.NewDecoder(base64.StdEncoding, strings.NewReader(b64)), header[:]); n > 0 {
+		switch mime := http.DetectContentType(header[:n]); mime {
+		case "image/gif", "image/png", "image/jpeg", "image/webp":
+			return strings.TrimPrefix(mime, "image/")
+		}
+	}
+	format := image.Get("output_format").String()
+	if format == "" {
+		format = fallback
+	}
+	switch strings.ToLower(format) {
+	case "gif", "png", "jpeg", "webp":
+		return strings.ToLower(format)
+	}
+	return ""
+}
+
+func imageMarkdownFromResult(image gjson.Result, fallbackFormat string) string {
 	if url := strings.TrimSpace(image.Get("url").String()); url != "" {
 		return fmt.Sprintf("![generated image](%s)", url)
 	}
 	if b64 := strings.TrimSpace(image.Get("b64_json").String()); b64 != "" {
-		return fmt.Sprintf("![generated image](data:image/png;base64,%s)", b64)
+		format := imageOutputFormat(image, fallbackFormat)
+		if format == "" {
+			// ponytail: retain the legacy PNG fallback only for unidentifiable payloads.
+			format = "png"
+		}
+		return fmt.Sprintf("![generated image](data:image/%s;base64,%s)", format, b64)
 	}
 	return ""
 }
@@ -284,19 +359,25 @@ func imageResponsesID(c *gin.Context) string {
 }
 
 func imageResponsesOutputItems(c *gin.Context, responseBody []byte) []map[string]any {
-	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
-	items := make([]map[string]any, 0, imageCount)
-	for i := int64(0); i < imageCount; i++ {
-		items = append(items, imageResponsesOutputItem(c, i, gjson.GetBytes(responseBody, "data."+strconv.FormatInt(i, 10))))
+	images := gjson.GetBytes(responseBody, "data").Array()
+	items := make([]map[string]any, 0, len(images))
+	for _, image := range images {
+		if !openaiImageDataHasField(image, "url") && !openaiImageDataHasField(image, "b64_json") {
+			continue
+		}
+		items = append(items, imageResponsesOutputItem(c, int64(len(items)), image, gjson.GetBytes(responseBody, "output_format").String()))
 	}
 	return items
 }
 
-func imageResponsesOutputItem(c *gin.Context, index int64, image gjson.Result) map[string]any {
+func imageResponsesOutputItem(c *gin.Context, index int64, image gjson.Result, fallbackFormat string) map[string]any {
 	item := map[string]any{
 		"id":     imageResponsesOutputItemID(c, index),
 		"type":   dto.ResponsesOutputTypeImageGenerationCall,
 		"status": "completed",
+	}
+	if format := imageOutputFormat(image, fallbackFormat); format != "" {
+		item["output_format"] = format
 	}
 	if b64 := strings.TrimSpace(image.Get("b64_json").String()); b64 != "" {
 		item["result"] = b64
@@ -444,7 +525,7 @@ func openaiImageChatStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, r
 				usage = &chunk.Usage
 			}
 			if chunk.Type == "image_generation.completed" || chunk.Type == "image_edit.completed" {
-				markdown := imageMarkdownFromResult(gjson.ParseBytes(raw))
+				markdown := imageMarkdownFromResult(gjson.ParseBytes(raw), "")
 				if markdown != "" {
 					if completedImages > 0 {
 						markdown = "\n\n" + markdown
@@ -550,7 +631,7 @@ func openaiImageResponsesStreamHandler(c *gin.Context, info *relaycommon.RelayIn
 				sr.Stop(err)
 			}
 		case "image_generation.completed", "image_edit.completed":
-			item := imageResponsesOutputItem(c, completedImages, chunk)
+			item := imageResponsesOutputItem(c, completedImages, chunk, "")
 			items = append(items, item)
 			if err := writeResponsesImageEvent(c, dto.ResponsesOutputTypeItemDone, map[string]any{
 				"type":         dto.ResponsesOutputTypeItemDone,
@@ -629,7 +710,8 @@ func openaiImageJSONAsChatStreamHandler(c *gin.Context, info *relaycommon.RelayI
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
 
-	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
+	images := gjson.GetBytes(responseBody, "data").Array()
+	imageCount := len(images)
 	info.UpdateImageCount(openaiImageResponseCount(responseBody))
 
 	helper.SetEventStreamHeaders(c)
@@ -648,8 +730,8 @@ func openaiImageJSONAsChatStreamHandler(c *gin.Context, info *relaycommon.RelayI
 		return &usageResp.Usage, nil
 	}
 
-	for i := int64(0); i < imageCount; i++ {
-		markdown := imageMarkdownFromResult(gjson.GetBytes(responseBody, "data."+strconv.FormatInt(i, 10)))
+	for i, image := range images {
+		markdown := imageMarkdownFromResult(image, gjson.GetBytes(responseBody, "output_format").String())
 		if markdown == "" {
 			continue
 		}
@@ -699,7 +781,8 @@ func openaiImageJSONAsResponsesStreamHandler(c *gin.Context, info *relaycommon.R
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
 
-	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
+	images := gjson.GetBytes(responseBody, "data").Array()
+	imageCount := len(images)
 	info.UpdateImageCount(openaiImageResponseCount(responseBody))
 
 	helper.SetEventStreamHeaders(c)
@@ -893,7 +976,8 @@ func openaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo,
 	normalizeOpenAIUsage(&usageResp.Usage)
 	applyUsagePostProcessing(info, &usageResp.Usage, responseBody)
 
-	imageCount := gjson.GetBytes(responseBody, "data.#").Int()
+	images := gjson.GetBytes(responseBody, "data").Array()
+	imageCount := len(images)
 	info.UpdateImageCount(openaiImageResponseCount(responseBody))
 
 	helper.SetEventStreamHeaders(c)
@@ -916,8 +1000,10 @@ func openaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo,
 		}
 	}
 
-	for i := range imageCount {
-		image := gjson.GetBytes(responseBody, "data."+strconv.FormatInt(i, 10))
+	for _, image := range images {
+		if !openaiImageDataHasField(image, "url") && !openaiImageDataHasField(image, "b64_json") {
+			continue
+		}
 		payload := []byte(`{"type":"image_generation.completed"}`)
 		payload, err = sjson.SetBytes(payload, "created_at", created)
 		if err != nil {
@@ -925,6 +1011,12 @@ func openaiImageJSONAsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo,
 		}
 		if validUsage {
 			payload, err = sjson.SetRawBytes(payload, "usage", usageJSON)
+			if err != nil {
+				return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
+			}
+		}
+		if format := imageOutputFormat(image, gjson.GetBytes(responseBody, "output_format").String()); format != "" {
+			payload, err = sjson.SetBytes(payload, "output_format", format)
 			if err != nil {
 				return nil, types.NewOpenAIError(err, types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 			}

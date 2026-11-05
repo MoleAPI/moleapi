@@ -78,6 +78,7 @@ func isSensitiveURLQueryKey(key string) bool {
 		"access_token",
 		"refresh_token",
 		"id_token",
+		"turnstile",
 		"token",
 		"authorization",
 		"auth",
