@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/glebarez/sqlite"
+	"github.com/go-redis/redis/v8"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/mysql"
@@ -17,7 +18,7 @@ import (
 )
 
 func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
-	for _, dialect := range []string{"sqlite", "mysql", "postgres"} {
+	for index, dialect := range []string{"sqlite", "mysql", "postgres"} {
 		t.Run(dialect, func(t *testing.T) {
 			var driver gorm.Dialector
 			switch dialect {
@@ -52,6 +53,9 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 				assert.NoError(t, sqlDB.Close())
 			})
 			require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &UserSession{}))
+			require.NoError(t, db.AutoMigrate(&User{}, &Token{}, &UserSession{}))
+			assert.False(t, db.Migrator().HasColumn(&Token{}, "cache_mac"))
+			assert.False(t, db.Migrator().HasColumn(&Token{}, "cache_expires_at"))
 			var version string
 			query := "SELECT version()"
 			if dialect == "sqlite" {
@@ -60,6 +64,17 @@ func TestAuthCacheIntegrityDatabaseMatrix(t *testing.T) {
 			require.NoError(t, db.Raw(query).Scan(&version).Error)
 			t.Logf("database version: %s", version)
 			useUserCacheMiniRedis(t)
+			if address := os.Getenv("TEST_REDIS_ADDR"); address != "" {
+				// ponytail: dedicated test-server databases isolate the three dialects without flushing shared Redis.
+				miniRedis := common.RDB
+				common.RDB = redis.NewClient(&redis.Options{Addr: address, Password: os.Getenv("TEST_REDIS_PASSWORD"), DB: index + 1})
+				t.Cleanup(func() {
+					assert.NoError(t, common.RDB.Close())
+					common.RDB = miniRedis
+				})
+				require.NoError(t, common.RDB.Ping(t.Context()).Err())
+				t.Log("cache backend: real Redis")
+			}
 
 			user := User{Username: "cache-integrity-user", AffCode: "cache-int", Role: common.RoleCommonUser,
 				Status: common.UserStatusEnabled, AuthVersion: 1, Group: "default", Quota: 100}
