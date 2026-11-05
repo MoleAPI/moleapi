@@ -90,33 +90,67 @@ func OpenaiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 }
 
 func normalizeOpenAIImageResponse(responseBody []byte, info *relaycommon.RelayInfo) ([]byte, error) {
-	if openAIImageResponseWantsURL(info) {
-		return responseBody, nil
-	}
-
 	data := gjson.GetBytes(responseBody, "data")
 	if !data.IsArray() && !data.IsObject() {
 		return responseBody, nil
 	}
+	var payloads int
+	var uniformFormat string
+	sameFormat := true
 	for index, image := range data.Array() {
 		path := "data"
 		if data.IsArray() {
 			path += "." + strconv.Itoa(index)
 		}
 		var err error
-		responseBody, err = inlineOpenAIImageData(responseBody, path, image)
+		responseBody, err = normalizeOpenAIImageData(responseBody, path, image, !openAIImageResponseWantsURL(info))
 		if err != nil {
 			return nil, err
 		}
+		image = gjson.GetBytes(responseBody, path)
+		if openaiImageDataHasField(image, "b64_json") || openaiImageDataHasField(image, "url") {
+			payloads++
+			format := imageOutputFormat(image, "")
+			if payloads == 1 {
+				uniformFormat = format
+			} else if uniformFormat != format {
+				sameFormat = false
+			}
+		}
+	}
+	// A mixed batch has no truthful single output_format. Keep known formats
+	// on the individual payloads instead of labeling every file PNG or GIF.
+	if !sameFormat {
+		var err error
+		responseBody, err = sjson.DeleteBytes(responseBody, "output_format")
+		if err != nil {
+			return nil, err
+		}
+		for index, image := range gjson.GetBytes(responseBody, "data").Array() {
+			if format := imageOutputFormat(image, ""); format != "" {
+				path := "data.output_format"
+				if data.IsArray() {
+					path = "data." + strconv.Itoa(index) + ".output_format"
+				}
+				responseBody, err = sjson.SetBytes(responseBody, path, format)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+		return responseBody, nil
+	}
+	// A uniform batch can advertise its actual format without relying on a
+	// request parameter. Existing static-image responses keep their shape.
+	advertised := gjson.GetBytes(responseBody, "output_format")
+	if payloads > 0 && sameFormat && uniformFormat != "" && (uniformFormat == "gif" || advertised.Exists()) && advertised.String() != uniformFormat {
+		return sjson.SetBytes(responseBody, "output_format", uniformFormat)
 	}
 	return responseBody, nil
 }
 
 func normalizeOpenAIImageStreamChunk(chunk []byte, info *relaycommon.RelayInfo) ([]byte, error) {
-	if openAIImageResponseWantsURL(info) {
-		return chunk, nil
-	}
-	return inlineOpenAIImageData(chunk, "", gjson.ParseBytes(chunk))
+	return normalizeOpenAIImageData(chunk, "", gjson.ParseBytes(chunk), !openAIImageResponseWantsURL(info))
 }
 
 func openAIImageResponseWantsURL(info *relaycommon.RelayInfo) bool {
@@ -127,26 +161,39 @@ func openAIImageResponseWantsURL(info *relaycommon.RelayInfo) bool {
 	return ok && strings.EqualFold(strings.TrimSpace(request.ResponseFormat), "url")
 }
 
-func inlineOpenAIImageData(body []byte, path string, image gjson.Result) ([]byte, error) {
+func normalizeOpenAIImageData(body []byte, path string, image gjson.Result, inlineURL bool) ([]byte, error) {
 	url := strings.TrimSpace(image.Get("url").String())
-	if url == "" {
-		return body, nil
-	}
-	b64Path, urlPath := "b64_json", "url"
+	b64Path, urlPath, formatPath := "b64_json", "url", "output_format"
 	if path != "" {
-		b64Path, urlPath = path+"."+b64Path, path+"."+urlPath
+		b64Path, urlPath, formatPath = path+"."+b64Path, path+"."+urlPath, path+"."+formatPath
 	}
-	if strings.TrimSpace(image.Get("b64_json").String()) == "" {
-		_, encoded, err := service.GetImageFromUrl(url)
-		if err != nil {
-			return nil, fmt.Errorf("failed to download upstream image: %w", err)
+	if inlineURL && url != "" {
+		if strings.TrimSpace(image.Get("b64_json").String()) == "" {
+			_, encoded, err := service.GetImageFromUrl(url)
+			if err != nil {
+				return nil, fmt.Errorf("failed to download upstream image: %w", err)
+			}
+			body, err = sjson.SetBytes(body, b64Path, encoded)
+			if err != nil {
+				return nil, err
+			}
 		}
-		body, err = sjson.SetBytes(body, b64Path, encoded)
+		var err error
+		body, err = sjson.DeleteBytes(body, urlPath)
 		if err != nil {
 			return nil, err
 		}
+		image = gjson.ParseBytes(body)
+		if path != "" {
+			image = image.Get(path)
+		}
 	}
-	return sjson.DeleteBytes(body, urlPath)
+	format := imageOutputFormat(image, "")
+	advertised := image.Get("output_format")
+	if format != "" && (format == "gif" || advertised.Exists()) && advertised.String() != format {
+		return sjson.SetBytes(body, formatPath, format)
+	}
+	return body, nil
 }
 
 func openaiImageResponseCount(responseBody []byte) int64 {
