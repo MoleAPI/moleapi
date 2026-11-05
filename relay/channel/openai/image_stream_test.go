@@ -1,8 +1,15 @@
 package openai
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
+	"image"
+	"image/color"
+	"image/gif"
+	"image/jpeg"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -10,10 +17,12 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/pkg/billingexpr"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
+	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
@@ -754,4 +763,155 @@ func TestOaiStreamHandlerDoesNotForwardUpstreamError(t *testing.T) {
 	require.Contains(t, recorder.Body.String(), "The upstream service is temporarily unavailable")
 	require.NotContains(t, recorder.Body.String(), "provider secret error")
 	require.NotContains(t, recorder.Body.String(), "secret_code")
+}
+
+func TestImageGIFRequestPreservesOfficialAnimationFields(t *testing.T) {
+	for _, model := range []string{"gpt-image-2.6-flare", "gpt-image-2.5-sunburst"} {
+		t.Run(model, func(t *testing.T) {
+			body := fmt.Sprintf(`{"model":%q,"prompt":"a waving owl, seamless loop","output_format":"gif","frame_count":9,"frame_duration_ms":200,"complexity":"medium","n":1}`, model)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			request, err := helper.GetAndValidOpenAIImageRequest(c, relayconstant.RelayModeImagesGenerations)
+			require.NoError(t, err)
+			request, err = common.DeepCopy(request)
+			require.NoError(t, err)
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeOpenAI, ChannelBaseUrl: "https://api.openai.com"}, RelayMode: relayconstant.RelayModeImagesGenerations}
+			converted, err := (&Adaptor{}).ConvertImageRequest(c, info, *request)
+			require.NoError(t, err)
+			outbound, err := common.Marshal(converted)
+			require.NoError(t, err)
+			var fields map[string]any
+			require.NoError(t, common.Unmarshal(outbound, &fields))
+			assert.Equal(t, "gif", fields["output_format"])
+			assert.Equal(t, float64(9), fields["frame_count"])
+			assert.Equal(t, float64(200), fields["frame_duration_ms"])
+			assert.Equal(t, "medium", fields["complexity"])
+			assert.Equal(t, float64(1), fields["n"])
+			assert.NotContains(t, fields, "response_format")
+		})
+	}
+}
+
+func TestImageGIFResponsesRetainAnimationAndFormat(t *testing.T) {
+	var animation bytes.Buffer
+	palette := color.Palette{color.Black, color.White}
+	first := image.NewPaletted(image.Rect(0, 0, 2, 2), palette)
+	second := image.NewPaletted(first.Rect, palette)
+	second.Pix[0] = 1
+	require.NoError(t, gif.EncodeAll(&animation, &gif.GIF{Image: []*image.Paletted{first, second}, Delay: []int{10, 20}, LoopCount: 0}))
+	encoded := base64.StdEncoding.EncodeToString(animation.Bytes())
+	service.InitHttpClient()
+	previousLimit, previousTimeout := constant.MaxFileDownloadMB, constant.StreamingTimeout
+	constant.MaxFileDownloadMB, constant.StreamingTimeout = 1, 30
+	previousFetch := *system_setting.GetFetchSetting()
+	system_setting.GetFetchSetting().EnableSSRFProtection = false
+	t.Cleanup(func() {
+		constant.MaxFileDownloadMB, constant.StreamingTimeout = previousLimit, previousTimeout
+		*system_setting.GetFetchSetting() = previousFetch
+	})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/gif")
+		_, _ = w.Write(animation.Bytes())
+	}))
+	t.Cleanup(server.Close)
+	for _, source := range []string{"base64", "url"} {
+		for _, bridge := range []string{"images", "chat", "responses"} {
+			for _, wire := range []string{"json", "json-as-sse", "sse", "object-as-sse"} {
+				stream := wire != "json"
+				t.Run(fmt.Sprintf("%s/%s/%s", source, bridge, wire), func(t *testing.T) {
+					payload := fmt.Sprintf(`{"b64_json":%q}`, encoded)
+					if source == "url" {
+						payload = fmt.Sprintf(`{"url":%q}`, server.URL+"/animation.gif")
+					}
+					body := `{"output_format":"gif","data":[` + payload + `]}`
+					contentType := "application/json"
+					if wire == "sse" {
+						body = "data: " + `{"type":"image_generation.completed","output_format":"gif",` + payload[1:] + "\n\ndata: [DONE]\n\n"
+						contentType = "text/event-stream"
+					}
+					if wire == "object-as-sse" {
+						body = `{"output_format":"gif","data":` + payload + `}`
+					}
+					c, recorder, resp, info := newImageTestContext(t, body, contentType, stream)
+					info.Request = &dto.ImageRequest{ResponseFormat: "b64_json"}
+					info.PriceData.UsePrice = true
+					info.PriceData.AddOtherRatio("n", 1)
+					if bridge == "chat" {
+						info.RelayFormat = types.RelayFormatOpenAI
+						c.Set("chat_image_completion_bridge", true)
+					}
+					if bridge == "responses" {
+						info.RelayFormat = types.RelayFormatOpenAIResponses
+						c.Set("responses_image_generation_bridge", true)
+					}
+					var apiErr *types.NewAPIError
+					if stream {
+						_, apiErr = OpenaiImageStreamHandler(c, info, resp)
+					} else {
+						_, apiErr = OpenaiImageHandler(c, info, resp)
+					}
+					require.Nil(t, apiErr)
+					output := recorder.Body.String()
+					require.Contains(t, output, encoded)
+					if bridge == "chat" {
+						assert.Contains(t, output, "data:image/gif;base64,")
+					} else {
+						assert.Contains(t, output, `"output_format":"gif"`)
+					}
+					assert.NotContains(t, output, "image/png")
+					assert.NotContains(t, output, "image/jpeg")
+					assert.Equal(t, float64(1), info.PriceData.OtherRatios()["n"], "animation frames are not separate images")
+					start := strings.Index(output, encoded)
+					decoded, err := base64.StdEncoding.DecodeString(output[start : start+len(encoded)])
+					require.NoError(t, err)
+					assert.Equal(t, animation.Bytes(), decoded)
+					actual, err := gif.DecodeAll(bytes.NewReader(decoded))
+					require.NoError(t, err)
+					assert.Len(t, actual.Image, 2)
+					assert.Equal(t, []int{10, 20}, actual.Delay)
+				})
+			}
+		}
+	}
+}
+
+func TestImageChatPreservesRasterFormats(t *testing.T) {
+	for _, format := range []string{"png", "jpeg", "webp", "gif"} {
+		t.Run(format, func(t *testing.T) {
+			var payload bytes.Buffer
+			frame := image.NewRGBA(image.Rect(0, 0, 2, 2))
+			switch format {
+			case "png":
+				require.NoError(t, png.Encode(&payload, frame))
+			case "jpeg":
+				require.NoError(t, jpeg.Encode(&payload, frame, nil))
+			case "gif":
+				data, err := base64.StdEncoding.DecodeString("R0lGODlhAgACAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAAAgACAIAAAAD///8CAoRRACH5BAAUAAAALAAAAAACAAIAgAAAAP///wICDF4AOw==")
+				require.NoError(t, err)
+				_, err = payload.Write(data)
+				require.NoError(t, err)
+			case "webp":
+				data, err := base64.StdEncoding.DecodeString("UklGRjgAAABXRUJQVlA4ICwAAADQAQCdASoCAAIAAUAmJaACdLoB+AADsAD+8iJf/LPn8NnHv/5BcsLriMAAAA==")
+				require.NoError(t, err)
+				_, err = payload.Write(data)
+				require.NoError(t, err)
+			}
+			encoded := base64.StdEncoding.EncodeToString(payload.Bytes())
+			if format == "gif" {
+				encoded = encoded[:30] + "\n" + encoded[30:]
+			}
+			// A stale upstream label must not override the actual file signature.
+			body := fmt.Sprintf(`{"output_format":"png","data":[{"b64_json":%q}]}`, encoded)
+			c, recorder, resp, info := newImageTestContext(t, body, "application/json", false)
+			info.RelayFormat = types.RelayFormatOpenAI
+			c.Set("chat_image_completion_bridge", true)
+			_, apiErr := OpenaiImageHandler(c, info, resp)
+			require.Nil(t, apiErr)
+			var result dto.OpenAITextResponse
+			require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &result))
+			require.Len(t, result.Choices, 1)
+			assert.Equal(t, "![generated image](data:image/"+format+";base64,"+encoded+")", result.Choices[0].Message.Content)
+		})
+	}
 }
