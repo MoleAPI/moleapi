@@ -196,22 +196,16 @@ func MarkGIFSizeLimitError(err *types.NewAPIError, gifOutput bool) bool {
 		detail = strings.TrimSuffix(detail, " ("+string(upstream.Metadata)+")")
 	}
 	message := strings.ToLower(detail)
-	sheetLimit := strings.Contains(message, "no supported sheet fits ") && strings.Contains(message, " gif frames at size ")
 	pixelLimit := gifOutput && strings.Contains(message, "exceed") && strings.Contains(message, "pixel budget")
-	if !sheetLimit && !pixelLimit {
+	if !isGIFSheetSizeLimit(message) && !pixelLimit {
 		return false
 	}
 	types.ErrOptionWithSkipRetry()(err)
-	if detail = publicValidationDetail(detail); detail == "" {
-		detail = "The GIF exceeds the supported image size. Reduce the frame dimensions or frame count."
-	}
-	err.SetPublicError(http.StatusBadRequest, types.OpenAIError{
-		Message: detail,
-		Type:    "invalid_request_error",
-		Code:    "invalid_parameter_value",
-		Param:   "size",
-	})
 	return true
+}
+
+func isGIFSheetSizeLimit(message string) bool {
+	return strings.Contains(message, "no supported sheet fits ") && strings.Contains(message, " gif frames at size ")
 }
 
 // publicValidationDetail exposes actionable provider validation sentences only.
@@ -223,6 +217,9 @@ func publicValidationDetail(message string) string {
 	}
 	// Comparison operators are ordinary validation details (for example >= 16).
 	lower := strings.ToLower(message)
+	if isGIFSheetSizeLimit(lower) {
+		return message
+	}
 	for _, hint := range []string{"invalid", "unsupported", "not support", "unrecognized", "required", "must ", "exceed", "conflict", "参数", "不支持", "格式", "必须"} {
 		if strings.Contains(lower, hint) {
 			return message
