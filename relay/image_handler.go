@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/setting/model_setting"
 
 	"github.com/gin-gonic/gin"
+	"github.com/tidwall/gjson"
 )
 
 func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types.NewAPIError) {
@@ -53,6 +54,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	var requestBody io.Reader
 	var jsonData []byte
+	gifOutput := strings.EqualFold(c.Request.PostForm.Get("output_format"), "gif")
 
 	if !c.GetBool("chat_image_completion_bridge") &&
 		!c.GetBool("responses_image_generation_bridge") &&
@@ -111,6 +113,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		if err := common.Unmarshal(jsonData, &outbound); err != nil {
 			return types.NewErrorWithStatusCode(fmt.Errorf("invalid image billing parameters: %w", err), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
+		gifOutput = strings.EqualFold(gjson.GetBytes(jsonData, "output_format").String(), "gif")
 		quantityRequest := dto.ImageRequest{N: outbound.N}
 		if quantityRequest.N == nil {
 			quantityRequest.N = common.GetPointer(uint(imageCount))
@@ -147,6 +150,9 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				httpResp.StatusCode = http.StatusOK
 			} else {
 				newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
+				if service.MarkGIFSizeLimitError(newAPIError, gifOutput) {
+					return newAPIError
+				}
 				// reset status code 重置状态码
 				service.ResetStatusCode(newAPIError, statusCodeMappingStr)
 				return newAPIError

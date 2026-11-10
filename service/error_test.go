@@ -12,10 +12,47 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestGIFSizeLimitErrorKeepsOtherRetryableErrors(t *testing.T) {
+	original := operation_setting.AutomaticRetryStatusCodeRanges
+	t.Cleanup(func() { operation_setting.AutomaticRetryStatusCodeRanges = original })
+	require.NoError(t, operation_setting.AutomaticRetryStatusCodesFromString("400,503"))
+	const pixelLimit = "Invalid size '3072x3072'. Requested resolution exceeds the current pixel budget."
+	const sheetLimit = "No supported sheet fits 9 GIF frames at size '1024x1024'."
+	for _, tc := range []struct {
+		name, message string
+		status        int
+		gif, stop     bool
+	}{
+		{"official GIF", pixelLimit, 400, true, true},
+		{"reverse proxy GIF without explicit format", sheetLimit + " " + pixelLimit, 400, false, true},
+		{"sprite sheet rejection only", sheetLimit, 400, false, true},
+		{"static image pixel limit", pixelLimit, 400, false, false},
+		{"another GIF validation error", "Invalid output_format for this model.", 400, true, false},
+		{"upstream service error", pixelLimit, 503, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := common.Marshal(map[string]any{"error": types.OpenAIError{
+				Message: tc.message, Type: "invalid_request_error", Code: "invalid_value",
+			}})
+			require.NoError(t, err)
+			c, _ := gin.CreateTestContext(nil)
+			apiErr := RelayErrorHandler(c, &http.Response{StatusCode: tc.status, Body: io.NopCloser(bytes.NewReader(body))}, false)
+			assert.Equal(t, tc.stop, MarkGIFSizeLimitError(apiErr, tc.gif))
+			assert.Equal(t, !tc.stop, ShouldRetryRelayError(c, apiErr, 2))
+			if tc.stop {
+				assert.Equal(t, http.StatusBadRequest, apiErr.PublicStatusCode())
+				assert.Equal(t, "size", apiErr.ToOpenAIError().Param)
+				assert.Contains(t, apiErr.ToOpenAIError().Message, "exceeds")
+			}
+		})
+	}
+}
 
 func TestResetStatusCode(t *testing.T) {
 	t.Parallel()

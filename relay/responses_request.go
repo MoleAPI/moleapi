@@ -58,6 +58,9 @@ func PrepareResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, req *d
 		return adaptor, body, io.NopCloser(body), nil
 	}
 
+	if info.RelayMode == relayconstant.RelayModeResponses {
+		omitIncompatibleCodexAutomationTool(c.Request, request)
+	}
 	convertedRequest, err := adaptor.ConvertOpenAIResponsesRequest(c, info, *request)
 	if err != nil {
 		return nil, nil, nil, newConvertRequestFailedError(c, info, err)
