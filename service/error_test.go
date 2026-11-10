@@ -46,9 +46,9 @@ func TestGIFSizeLimitErrorKeepsOtherRetryableErrors(t *testing.T) {
 			assert.Equal(t, tc.stop, MarkGIFSizeLimitError(apiErr, tc.gif))
 			assert.Equal(t, !tc.stop, ShouldRetryRelayError(c, apiErr, 2))
 			if tc.stop {
+				SetPublicUpstreamError(c, apiErr)
 				assert.Equal(t, http.StatusBadRequest, apiErr.PublicStatusCode())
-				assert.Equal(t, "size", apiErr.ToOpenAIError().Param)
-				assert.Contains(t, apiErr.ToOpenAIError().Message, "exceeds")
+				assert.Equal(t, tc.message, apiErr.ToOpenAIError().Message)
 			}
 		})
 	}
