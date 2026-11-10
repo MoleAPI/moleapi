@@ -181,10 +181,9 @@ var (
 	upstreamPrivateDetail = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://|<[/!a-z]|\S+@\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b|(?:[a-f0-9]{0,4}:){2,}|\b\d{1,3}(?:\.\d{1,3}){3}\b|\b(?:sk-|org-|proj-|AIza|AKIA|eyJ)[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]{40,}|\b(?:api[ _-]?key|authorization|bearer|password|secret|credential|cookie|session|account|tenant|organization|channel|group|internal|backend|billing|balance|quota)\b|渠道|分组|密钥|余额|配额|账户|账号|欠费`)
 )
 
-// MarkGIFSizeLimitError recognizes deterministic GIF dimension failures from
-// native Image API requests and reverse proxies that assemble a sprite sheet.
-func MarkGIFSizeLimitError(err *types.NewAPIError, gifOutput bool) bool {
-	if err.StatusCode != http.StatusBadRequest {
+// MarkGIFSizeLimitError recognizes deterministic GIF dimension failures for GPT Image 2.6.
+func MarkGIFSizeLimitError(err *types.NewAPIError, model string, gifOutput bool) bool {
+	if err.StatusCode != http.StatusBadRequest || !strings.HasPrefix(strings.ToLower(model), "gpt-image-2.6") {
 		return false
 	}
 	upstream, ok := err.RelayError.(types.OpenAIError)
@@ -197,7 +196,9 @@ func MarkGIFSizeLimitError(err *types.NewAPIError, gifOutput bool) bool {
 	}
 	message := strings.ToLower(detail)
 	pixelLimit := gifOutput && strings.Contains(message, "exceed") && strings.Contains(message, "pixel budget")
-	if !isGIFSheetSizeLimit(message) && !pixelLimit {
+	// ponytail: match the reverse provider's observed diagnostic, keeping other 400s on the existing retry policy.
+	canvasLimit := strings.Contains(message, "gif canvas or total frame pixels exceed processing limits")
+	if !isGIFSheetSizeLimit(message) && !pixelLimit && !canvasLimit {
 		return false
 	}
 	types.ErrOptionWithSkipRetry()(err)

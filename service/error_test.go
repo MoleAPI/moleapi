@@ -24,17 +24,23 @@ func TestGIFSizeLimitErrorKeepsOtherRetryableErrors(t *testing.T) {
 	require.NoError(t, operation_setting.AutomaticRetryStatusCodesFromString("400,503"))
 	const pixelLimit = "Invalid size '3072x3072'. Requested resolution exceeds the current pixel budget."
 	const sheetLimit = "No supported sheet fits 9 GIF frames at size '1024x1024'."
+	const canvasLimit = "GIF canvas or total frame pixels exceed processing limits"
 	for _, tc := range []struct {
-		name, message string
-		status        int
-		gif, stop     bool
+		name, model, message string
+		status               int
+		gif, stop            bool
 	}{
-		{"official GIF", pixelLimit, 400, true, true},
-		{"reverse proxy GIF without explicit format", sheetLimit + " " + pixelLimit, 400, false, true},
-		{"sprite sheet rejection only", sheetLimit, 400, false, true},
-		{"static image pixel limit", pixelLimit, 400, false, false},
-		{"another GIF validation error", "Invalid output_format for this model.", 400, true, false},
-		{"upstream service error", pixelLimit, 503, true, false},
+		{"official GIF", "gpt-image-2.6-sunburst", pixelLimit, 400, true, true},
+		{"sprite sheet GIF without explicit format", "gpt-image-2.6-sunburst", sheetLimit + " " + pixelLimit, 400, false, true},
+		{"sprite sheet rejection only", "gpt-image-2.6-flare", sheetLimit, 400, false, true},
+		{"reverse GIF canvas on Sunburst", "gpt-image-2.6-sunburst", canvasLimit, 400, true, true},
+		{"reverse GIF canvas on Flare snapshot without explicit format", "gpt-image-2.6-flare-2026-11-10", canvasLimit, 400, false, true},
+		{"reverse GIF canvas on base model", "gpt-image-2.6", canvasLimit, 400, true, true},
+		{"2.5 canvas diagnostic remains retryable", "gpt-image-2.5-sunburst", canvasLimit, 400, true, false},
+		{"older model sheet diagnostic remains retryable", "gpt-image-2", sheetLimit, 400, true, false},
+		{"static image pixel limit", "gpt-image-2.6-sunburst", pixelLimit, 400, false, false},
+		{"another GIF validation error", "gpt-image-2.6-sunburst", "Invalid output_format for this model.", 400, true, false},
+		{"upstream service error", "gpt-image-2.6-sunburst", canvasLimit, 503, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body, err := common.Marshal(map[string]any{"error": types.OpenAIError{
@@ -43,7 +49,7 @@ func TestGIFSizeLimitErrorKeepsOtherRetryableErrors(t *testing.T) {
 			require.NoError(t, err)
 			c, _ := gin.CreateTestContext(nil)
 			apiErr := RelayErrorHandler(c, &http.Response{StatusCode: tc.status, Body: io.NopCloser(bytes.NewReader(body))}, false)
-			assert.Equal(t, tc.stop, MarkGIFSizeLimitError(apiErr, tc.gif))
+			assert.Equal(t, tc.stop, MarkGIFSizeLimitError(apiErr, tc.model, tc.gif))
 			assert.Equal(t, !tc.stop, ShouldRetryRelayError(c, apiErr, 2))
 			if tc.stop {
 				SetPublicUpstreamError(c, apiErr)
