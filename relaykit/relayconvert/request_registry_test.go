@@ -518,6 +518,86 @@ func TestGeminiThinkingLevelCaseInsensitiveAcrossPaths(t *testing.T) {
 	})
 }
 
+func TestConvertGeminiThinkingLevelsAcrossProtocols(t *testing.T) {
+	for _, tt := range []struct{ model, defaultEffort string }{
+		{"gemini-4-argon", "medium"},
+		{"gemini-3.8-flash", "medium"},
+		{"gemini-3.7-flash", "medium"},
+		{"gemini-3.1-pro-preview", "high"},
+	} {
+		model := tt.model
+		t.Run(model, func(t *testing.T) {
+			t.Run("native default to Chat Completions", func(t *testing.T) {
+				info := &convmeta.Values{OriginModelName: model, UpstreamModelName: model}
+				request := &dto.GeminiChatRequest{
+					Contents: []dto.GeminiChatContent{{Role: "user", Parts: []dto.GeminiPart{{Text: "hello"}}}},
+				}
+				result, err := ConvertRequest(nil, info, types.RelayFormatOpenAI, request)
+				require.NoError(t, err)
+				chat, ok := result.Value.(*dto.GeneralOpenAIRequest)
+				require.True(t, ok)
+				assert.Equal(t, tt.defaultEffort, chat.ReasoningEffort)
+			})
+			t.Run("Messages budget presets", func(t *testing.T) {
+				for _, tc := range []struct {
+					budget int
+					effort string
+				}{{2048, "low"}, {8192, "medium"}, {16384, "high"}} {
+					info := &convmeta.Values{OriginModelName: model, UpstreamModelName: model}
+					request := &dto.ClaudeRequest{
+						Model: model, MaxTokens: lo.ToPtr(uint(tc.budget + 1024)),
+						Thinking: &dto.Thinking{Type: "enabled", BudgetTokens: lo.ToPtr(tc.budget)},
+						Messages: []dto.ClaudeMessage{{Role: "user", Content: "hello"}},
+					}
+					result, err := ConvertRequest(nil, info, types.RelayFormatGemini, request)
+					require.NoError(t, err)
+					gemini, ok := result.Value.(*dto.GeminiChatRequest)
+					require.True(t, ok)
+					require.NotNil(t, gemini.GenerationConfig.ThinkingConfig)
+					assert.Equal(t, tc.effort, gemini.GenerationConfig.ThinkingConfig.ThinkingLevel)
+				}
+			})
+			for _, effort := range []string{"minimal", "low", "medium", "high"} {
+				want := effort
+				if effort == "minimal" {
+					want = "low"
+				}
+				requests := []dto.Request{
+					&dto.GeneralOpenAIRequest{
+						Model: model, ReasoningEffort: effort,
+						Messages: []dto.Message{{Role: "user", Content: "hello"}},
+					},
+					&dto.OpenAIResponsesRequest{
+						Model: model, Input: mustRawMessage(t, "hello"),
+						Reasoning: &dto.Reasoning{Effort: effort, Summary: "auto"},
+					},
+					&dto.ClaudeRequest{
+						Model: model, OutputConfig: mustRawMessage(t, map[string]string{"effort": effort}),
+						Thinking: &dto.Thinking{Type: "adaptive", Display: "summarized"},
+						Messages: []dto.ClaudeMessage{{Role: "user", Content: "hello"}},
+					},
+				}
+				for _, request := range requests {
+					info := &convmeta.Values{OriginModelName: model, UpstreamModelName: model}
+					result, err := ConvertRequest(nil, info, types.RelayFormatGemini, request)
+					require.NoError(t, err, "%T with %s", request, effort)
+					gemini, ok := result.Value.(*dto.GeminiChatRequest)
+					require.True(t, ok)
+					config := gemini.GenerationConfig.ThinkingConfig
+					require.NotNil(t, config)
+					assert.Equal(t, want, config.ThinkingLevel, "%T with %s", request, effort)
+					assert.Nil(t, config.ThinkingBudget)
+					assert.Equal(t, want, info.GetReasoningEffort())
+					if _, chat := request.(*dto.GeneralOpenAIRequest); !chat {
+						require.NotNil(t, config.IncludeThoughts)
+						assert.True(t, *config.IncludeThoughts)
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestConvertRequestViaExecutesExplicitPath(t *testing.T) {
 	info := &convmeta.Values{
 		ConversionChain: []types.RelayFormat{types.RelayFormatOpenAI},
