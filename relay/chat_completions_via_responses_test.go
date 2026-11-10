@@ -306,6 +306,50 @@ func TestPrepareResponsesRequestRetainsConvertedAdaptor(t *testing.T) {
 	assert.Equal(t, []relaytypes.RelayFormat{relaytypes.RelayFormatOpenAIResponses, relaytypes.RelayFormatOpenAI}, info.RequestConversionChain)
 }
 
+func TestPrepareResponsesRequestOmitsOnlyInvalidOptionalCodexAutomationTool(t *testing.T) {
+	const invalid = `{"type":"function","name":"automation_update","description":"Create, update, view, or delete recurring automations in the Codex app.","parameters":{"anyOf":[{"type":"object"}]}}`
+	const valid = `{"type":"function","name":"automation_update","description":"Create, update, view, or delete recurring automations in the Codex app.","parameters":{"type":"object","properties":{"mode":{"type":"string","enum":["view"]}}}}`
+	const other = `{"type":"function","name":"other","parameters":{"type":"object"}}`
+	for _, tc := range []struct {
+		name, model, originator, choice, tools, expected string
+		passthrough                                      bool
+	}{
+		{name: "desktop GPT-4o", model: "gpt-4o", originator: "Codex Desktop", choice: `"auto"`,
+			tools: "[" + invalid + "," + other + "]", expected: "[" + other + "]"},
+		{name: "desktop GPT-4o mini snapshot namespace", model: "gpt-4o-mini-2024-07-18", originator: "Codex Desktop",
+			tools:    `[{"type":"namespace","name":"codex_app","tools":[` + invalid + "," + other + "]}]",
+			expected: `[{"type":"namespace","name":"codex_app","tools":[` + other + "]}]"},
+		{name: "explicit automation", model: "gpt-4o", originator: "Codex Desktop",
+			choice: `{"type":"function","name":"automation_update"}`, tools: "[" + invalid + "]", expected: "[" + invalid + "]"},
+		{name: "valid tool", model: "gpt-4o-mini", originator: "Codex Desktop", tools: "[" + valid + "]", expected: "[" + valid + "]"},
+		{name: "another client", model: "gpt-4o", tools: "[" + invalid + "]", expected: "[" + invalid + "]"},
+		{name: "newer model", model: "gpt-5", originator: "Codex Desktop", tools: "[" + invalid + "]", expected: "[" + invalid + "]"},
+		{name: "explicit passthrough", model: "gpt-4o", originator: "Codex Desktop", passthrough: true,
+			tools: "[" + invalid + "]", expected: "[" + invalid + "]"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &dto.OpenAIResponsesRequest{Model: tc.model, Input: []byte(`"hello"`), Tools: []byte(tc.tools), ToolChoice: []byte(tc.choice)}
+			input, err := common.Marshal(req)
+			require.NoError(t, err)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(string(input)))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Request.Header.Set("Originator", tc.originator)
+			common.SetContextKey(c, constant.ContextKeyOriginalModel, tc.model)
+			common.SetContextKey(c, constant.ContextKeyChannelType, constant.ChannelTypeOpenAI)
+			common.SetContextKey(c, constant.ContextKeyChannelSetting, dto.ChannelSettings{PassThroughBodyEnabled: tc.passthrough})
+			_, body, closer, apiErr := PrepareResponsesRequest(c, relaycommon.GenRelayInfoResponses(c, req), req)
+			require.Nil(t, apiErr)
+			defer closer.Close()
+			raw, err := io.ReadAll(body)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.expected, gjson.GetBytes(raw, "tools").Raw)
+			assert.JSONEq(t, tc.tools, string(req.Tools))
+			assert.Equal(t, tc.choice, gjson.GetBytes(raw, "tool_choice").Raw)
+		})
+	}
+}
+
 func TestIsResponsesEventStreamContentType(t *testing.T) {
 	tests := []struct {
 		name        string

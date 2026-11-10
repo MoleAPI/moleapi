@@ -181,6 +181,39 @@ var (
 	upstreamPrivateDetail = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://|<[/!a-z]|\S+@\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b|(?:[a-f0-9]{0,4}:){2,}|\b\d{1,3}(?:\.\d{1,3}){3}\b|\b(?:sk-|org-|proj-|AIza|AKIA|eyJ)[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]{40,}|\b(?:api[ _-]?key|authorization|bearer|password|secret|credential|cookie|session|account|tenant|organization|channel|group|internal|backend|billing|balance|quota)\b|渠道|分组|密钥|余额|配额|账户|账号|欠费`)
 )
 
+// MarkGIFSizeLimitError recognizes deterministic GIF dimension failures from
+// native Image API requests and reverse proxies that assemble a sprite sheet.
+func MarkGIFSizeLimitError(err *types.NewAPIError, gifOutput bool) bool {
+	if err.StatusCode != http.StatusBadRequest {
+		return false
+	}
+	upstream, ok := err.RelayError.(types.OpenAIError)
+	if !ok {
+		return false
+	}
+	detail := upstream.Message
+	if len(upstream.Metadata) > 0 {
+		detail = strings.TrimSuffix(detail, " ("+string(upstream.Metadata)+")")
+	}
+	message := strings.ToLower(detail)
+	sheetLimit := strings.Contains(message, "no supported sheet fits ") && strings.Contains(message, " gif frames at size ")
+	pixelLimit := gifOutput && strings.Contains(message, "exceed") && strings.Contains(message, "pixel budget")
+	if !sheetLimit && !pixelLimit {
+		return false
+	}
+	types.ErrOptionWithSkipRetry()(err)
+	if detail = publicValidationDetail(detail); detail == "" {
+		detail = "The GIF exceeds the supported image size. Reduce the frame dimensions or frame count."
+	}
+	err.SetPublicError(http.StatusBadRequest, types.OpenAIError{
+		Message: detail,
+		Type:    "invalid_request_error",
+		Code:    "invalid_parameter_value",
+		Param:   "size",
+	})
+	return true
+}
+
 // publicValidationDetail exposes actionable provider validation sentences only.
 // Unknown/internal errors keep their existing public fallback; never forward a body.
 func publicValidationDetail(message string) string {
