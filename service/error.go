@@ -181,6 +181,34 @@ var (
 	upstreamPrivateDetail = regexp.MustCompile(`(?i)[a-z][a-z0-9+.-]*://|<[/!a-z]|\S+@\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\b|(?:[a-f0-9]{0,4}:){2,}|\b\d{1,3}(?:\.\d{1,3}){3}\b|\b(?:sk-|org-|proj-|AIza|AKIA|eyJ)[a-zA-Z0-9_-]+|[a-zA-Z0-9_-]{40,}|\b(?:api[ _-]?key|authorization|bearer|password|secret|credential|cookie|session|account|tenant|organization|channel|group|internal|backend|billing|balance|quota)\b|渠道|分组|密钥|余额|配额|账户|账号|欠费`)
 )
 
+// MarkGIFSizeLimitError recognizes deterministic GIF dimension failures for GPT Image 2.6.
+func MarkGIFSizeLimitError(err *types.NewAPIError, model string, gifOutput bool) bool {
+	if err.StatusCode != http.StatusBadRequest || !strings.HasPrefix(strings.ToLower(model), "gpt-image-2.6") {
+		return false
+	}
+	upstream, ok := err.RelayError.(types.OpenAIError)
+	if !ok {
+		return false
+	}
+	detail := upstream.Message
+	if len(upstream.Metadata) > 0 {
+		detail = strings.TrimSuffix(detail, " ("+string(upstream.Metadata)+")")
+	}
+	message := strings.ToLower(detail)
+	pixelLimit := gifOutput && strings.Contains(message, "exceed") && strings.Contains(message, "pixel budget")
+	// ponytail: match the reverse provider's observed diagnostic, keeping other 400s on the existing retry policy.
+	canvasLimit := strings.Contains(message, "gif canvas or total frame pixels exceed processing limits")
+	if !isGIFSheetSizeLimit(message) && !pixelLimit && !canvasLimit {
+		return false
+	}
+	types.ErrOptionWithSkipRetry()(err)
+	return true
+}
+
+func isGIFSheetSizeLimit(message string) bool {
+	return strings.Contains(message, "no supported sheet fits ") && strings.Contains(message, " gif frames at size ")
+}
+
 // publicValidationDetail exposes actionable provider validation sentences only.
 // Unknown/internal errors keep their existing public fallback; never forward a body.
 func publicValidationDetail(message string) string {
@@ -190,6 +218,9 @@ func publicValidationDetail(message string) string {
 	}
 	// Comparison operators are ordinary validation details (for example >= 16).
 	lower := strings.ToLower(message)
+	if isGIFSheetSizeLimit(lower) {
+		return message
+	}
 	for _, hint := range []string{"invalid", "unsupported", "not support", "unrecognized", "required", "must ", "exceed", "conflict", "参数", "不支持", "格式", "必须"} {
 		if strings.Contains(lower, hint) {
 			return message
