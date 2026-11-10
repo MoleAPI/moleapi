@@ -54,6 +54,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 
 	var requestBody io.Reader
 	var jsonData []byte
+	outboundModel := request.Model
 	gifOutput := strings.EqualFold(c.Request.PostForm.Get("output_format"), "gif")
 
 	if !c.GetBool("chat_image_completion_bridge") &&
@@ -64,6 +65,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 			return types.NewErrorWithStatusCode(err, types.ErrorCodeReadRequestBodyFailed, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
 		if strings.Contains(c.Request.Header.Get("Content-Type"), "multipart/form-data") {
+			outboundModel = imageReq.Model
 			requestBody = common.NewReplayableBodyReader(storage)
 		} else {
 			jsonData, err = storage.Bytes()
@@ -113,7 +115,11 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 		if err := common.Unmarshal(jsonData, &outbound); err != nil {
 			return types.NewErrorWithStatusCode(fmt.Errorf("invalid image billing parameters: %w", err), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry())
 		}
-		gifOutput = strings.EqualFold(gjson.GetBytes(jsonData, "output_format").String(), "gif")
+		outboundJSON := gjson.ParseBytes(jsonData)
+		if model := outboundJSON.Get("model").String(); model != "" {
+			outboundModel = model
+		}
+		gifOutput = strings.EqualFold(outboundJSON.Get("output_format").String(), "gif")
 		quantityRequest := dto.ImageRequest{N: outbound.N}
 		if quantityRequest.N == nil {
 			quantityRequest.N = common.GetPointer(uint(imageCount))
@@ -150,7 +156,7 @@ func ImageHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *type
 				httpResp.StatusCode = http.StatusOK
 			} else {
 				newAPIError = service.RelayErrorHandler(c.Request.Context(), httpResp, false)
-				if service.MarkGIFSizeLimitError(newAPIError, gifOutput) {
+				if service.MarkGIFSizeLimitError(newAPIError, outboundModel, gifOutput) {
 					return newAPIError
 				}
 				// reset status code 重置状态码
