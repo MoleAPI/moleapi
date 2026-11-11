@@ -24,7 +24,12 @@ import { z } from 'zod'
 
 import { Dialog } from '@/components/dialog'
 import { Button } from '@/components/ui/button'
-import { Field, FieldError, FieldLabel } from '@/components/ui/field'
+import {
+  Field,
+  FieldError,
+  FieldGroup,
+  FieldLabel,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 
 import type { SupportTicket } from '../api'
@@ -103,7 +108,6 @@ export function InvoiceReplyTemplate(props: {
     >
       <form
         id='invoice-reply-template'
-        className='grid gap-4 sm:grid-cols-2'
         onSubmit={form.handleSubmit((values) => {
           props.onApply(
             [
@@ -128,27 +132,29 @@ export function InvoiceReplyTemplate(props: {
           props.onOpenChange(false)
         })}
       >
-        {fields.map((field) => (
-          <Field
-            key={field.name}
-            data-invalid={Boolean(form.formState.errors[field.name])}
-          >
-            <FieldLabel htmlFor={`invoice-reply-${field.name}`}>
-              {field.label}
-            </FieldLabel>
-            <Input
-              id={`invoice-reply-${field.name}`}
-              type={field.type}
-              maxLength={field.max}
-              required
-              aria-invalid={Boolean(form.formState.errors[field.name])}
-              {...form.register(field.name)}
-            />
-            {form.formState.errors[field.name] && (
-              <FieldError>{t('Check this field and try again.')}</FieldError>
-            )}
-          </Field>
-        ))}
+        <FieldGroup className='grid gap-4 sm:grid-cols-2'>
+          {fields.map((field) => (
+            <Field
+              key={field.name}
+              data-invalid={Boolean(form.formState.errors[field.name])}
+            >
+              <FieldLabel htmlFor={`invoice-reply-${field.name}`}>
+                {field.label}
+              </FieldLabel>
+              <Input
+                id={`invoice-reply-${field.name}`}
+                type={field.type}
+                maxLength={field.max}
+                required
+                aria-invalid={Boolean(form.formState.errors[field.name])}
+                {...form.register(field.name)}
+              />
+              {form.formState.errors[field.name] && (
+                <FieldError>{t('Check this field and try again.')}</FieldError>
+              )}
+            </Field>
+          ))}
+        </FieldGroup>
       </form>
     </Dialog>
   )
