@@ -27,6 +27,9 @@ import {
   LinkSquare02Icon,
   Tick02Icon,
   RotateLeft01Icon,
+  UserIcon,
+  Mail01Icon,
+  FileEditIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon } from '@hugeicons/react'
 import {
@@ -40,6 +43,7 @@ import DOMPurify from 'dompurify'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { z } from 'zod'
 
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { ErrorState } from '@/components/error-state'
@@ -62,6 +66,12 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty'
+import {
+  Field,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import {
   InputGroup,
@@ -105,6 +115,7 @@ import {
 } from './api'
 import { AttachmentPicker } from './components/attachment-picker'
 import { CommunityChannels } from './components/community-channels'
+import { InvoiceReplyTemplate } from './components/invoice-reply-template'
 import {
   SupportAssistant,
   type AssistantTicketDraft,
@@ -224,14 +235,21 @@ export function Support() {
       id,
       content,
       files,
+      cc,
     }: {
       id: string
       content: string
       files: File[]
+      cc?: string
     }) => {
-      await replySupportTicket(id, content)
+      await replySupportTicket(
+        id,
+        content,
+        isAdmin ? cc : '',
+        isAdmin ? files : []
+      )
       let attachmentsFailed = false
-      if (files.length > 0) {
+      if (!isAdmin && files.length > 0) {
         try {
           await uploadSupportAttachments(id, files)
         } catch {
@@ -319,14 +337,16 @@ export function Support() {
                 onRetry={() => void detail.refetch()}
                 reply={reply}
                 onReplyChange={setReply}
-                onSend={() =>
-                  selectedTicket &&
-                  sendReply.mutate({
-                    id: selectedTicket,
-                    content: reply,
-                    files,
-                  })
-                }
+                onSend={async (cc) => {
+                  if (selectedTicket) {
+                    await sendReply.mutateAsync({
+                      id: selectedTicket,
+                      content: reply,
+                      files,
+                      cc,
+                    })
+                  }
+                }}
                 files={files}
                 onFilesChange={setFiles}
                 sending={sendReply.isPending}
@@ -364,14 +384,15 @@ export function Support() {
                 onRetry={() => void detail.refetch()}
                 reply={reply}
                 onReplyChange={setReply}
-                onSend={() =>
-                  selectedTicket &&
-                  sendReply.mutate({
-                    id: selectedTicket,
-                    content: reply,
-                    files,
-                  })
-                }
+                onSend={async () => {
+                  if (selectedTicket) {
+                    await sendReply.mutateAsync({
+                      id: selectedTicket,
+                      content: reply,
+                      files,
+                    })
+                  }
+                }}
                 files={files}
                 onFilesChange={setFiles}
                 sending={sendReply.isPending}
@@ -413,7 +434,7 @@ function UserSupportWorkspace(props: {
   onReplyChange: (value: string) => void
   files?: File[]
   onFilesChange?: (files: File[]) => void
-  onSend: () => void
+  onSend: (cc?: string) => void | Promise<unknown>
   sending: boolean
 }) {
   const { t } = useTranslation()
@@ -688,7 +709,7 @@ export function TicketBrowser(props: {
   onReplyChange: (value: string) => void
   files?: File[]
   onFilesChange?: (files: File[]) => void
-  onSend: () => void
+  onSend: (cc?: string) => void | Promise<unknown>
   sending: boolean
 }) {
   const { t } = useTranslation()
@@ -972,13 +993,19 @@ export function TicketDetail(props: {
   files?: File[]
   onFilesChange?: (files: File[]) => void
   onBack: () => void
-  onSend: () => void
+  onSend: (cc?: string) => void | Promise<unknown>
   sending: boolean
 }) {
   const { t, i18n } = useTranslation()
   const isAdmin = useIsAdmin()
   const queryClient = useQueryClient()
   const [closing, setClosing] = useState(false)
+  const [showTemplate, setShowTemplate] = useState(false)
+  const [showCC, setShowCC] = useState(false)
+  const [cc, setCC] = useState('')
+  const [reviewing, setReviewing] = useState(false)
+  const invalidCC =
+    Boolean(cc.trim()) && !z.email().max(254).safeParse(cc.trim()).success
   const [preview, setPreview] = useState<{
     filename: string
     url: string
@@ -1093,6 +1120,24 @@ export function TicketDetail(props: {
               role='link'
               render={
                 <a
+                  href={`/users?filter=${encodeURIComponent(JSON.stringify(ticket.user.username))}`}
+                  target='_blank'
+                  rel='noopener noreferrer'
+                />
+              }
+              nativeButton={false}
+            >
+              <HugeiconsIcon icon={UserIcon} data-icon='inline-start' />
+              {t('View user')}
+            </Button>
+          )}
+          {isAdmin && ticket.user && (
+            <Button
+              variant='outline'
+              size='sm'
+              role='link'
+              render={
+                <a
                   href={`/usage-logs/common?username=${encodeURIComponent(ticket.user.username)}`}
                   target='_blank'
                   rel='noopener noreferrer'
@@ -1186,6 +1231,7 @@ export function TicketDetail(props: {
                 message.author?.type === 'END_USER' ||
                 message.commenter?.type === 'END_USER'
               }
+              cc={isAdmin ? message.cc : undefined}
               attachments={message.attachments}
               onAttachmentClick={downloadAttachment}
             />
@@ -1229,7 +1275,32 @@ export function TicketDetail(props: {
           </Button>
         </div>
       ) : (
-        <div className='shrink-0 border-t p-3 sm:p-4'>
+        <div className='shrink-0 space-y-3 border-t p-3 sm:p-4'>
+          {isAdmin && showCC && (
+            <Field data-invalid={invalidCC}>
+              <FieldLabel htmlFor='ticket-reply-cc'>{t('CC')}</FieldLabel>
+              <Input
+                id='ticket-reply-cc'
+                type='email'
+                maxLength={254}
+                value={cc}
+                disabled={props.sending || status.isPending}
+                onChange={(event) => setCC(event.target.value)}
+                aria-invalid={invalidCC}
+                aria-describedby='ticket-reply-cc-help'
+              />
+              <FieldDescription id='ticket-reply-cc-help'>
+                {t(
+                  'Only this reply and its attachments will be copied. The registered email remains the main recipient.'
+                )}
+              </FieldDescription>
+              {invalidCC && (
+                <FieldError>
+                  {t('Enter one valid CC email address.')}
+                </FieldError>
+              )}
+            </Field>
+          )}
           <InputGroup className='bg-background overflow-hidden'>
             <InputGroupTextarea
               id='ticket-reply'
@@ -1242,7 +1313,7 @@ export function TicketDetail(props: {
             />
             <InputGroupAddon
               align='block-end'
-              className='bg-muted/20 flex-wrap justify-between gap-2 border-t px-2 py-2'
+              className='bg-muted/20 flex-wrap gap-2 border-t px-2 py-2'
             >
               <AttachmentPicker
                 compact
@@ -1257,18 +1328,131 @@ export function TicketDetail(props: {
                   )
                 }
               />
+              {isAdmin && (
+                <>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='sm'
+                    disabled={props.sending || status.isPending}
+                    onClick={() => setShowTemplate(true)}
+                  >
+                    <HugeiconsIcon
+                      icon={FileEditIcon}
+                      data-icon='inline-start'
+                    />
+                    {t('Reply template')}
+                  </Button>
+                  <Button
+                    type='button'
+                    variant='ghost'
+                    size='sm'
+                    aria-expanded={showCC}
+                    aria-controls='ticket-reply-cc'
+                    disabled={props.sending || status.isPending}
+                    onClick={() => {
+                      if (showCC) setCC('')
+                      setShowCC(!showCC)
+                    }}
+                  >
+                    <HugeiconsIcon icon={Mail01Icon} data-icon='inline-start' />
+                    {t('CC')}
+                  </Button>
+                </>
+              )}
               <Button
-                onClick={props.onSend}
+                className='ml-auto'
+                onClick={() => {
+                  if (isAdmin) setReviewing(true)
+                  else {
+                    void Promise.resolve(props.onSend()).catch(() => undefined)
+                  }
+                }}
                 disabled={
-                  !props.reply.trim() || props.sending || status.isPending
+                  !props.reply.trim() ||
+                  (isAdmin && invalidCC) ||
+                  props.sending ||
+                  status.isPending
                 }
               >
                 {props.sending && <Spinner data-icon='inline-start' />}
-                {props.sending ? t('Sending...') : t('Send reply')}
+                {!props.sending &&
+                  (isAdmin ? t('Review reply') : t('Send reply'))}
+                {props.sending && t('Sending...')}
               </Button>
             </InputGroupAddon>
           </InputGroup>
         </div>
+      )}
+      {isAdmin && showTemplate && (
+        <InvoiceReplyTemplate
+          ticket={ticket}
+          open={showTemplate}
+          onOpenChange={setShowTemplate}
+          onApply={(content, email) => {
+            props.onReplyChange(
+              [props.reply.trim(), content].filter(Boolean).join('\n\n')
+            )
+            const delivery = email.trim()
+            const copy =
+              delivery.toLowerCase() === ticket.email.toLowerCase()
+                ? ''
+                : delivery
+            setCC(copy)
+            setShowCC(Boolean(copy))
+          }}
+        />
+      )}
+      {isAdmin && (
+        <ConfirmDialog
+          open={reviewing}
+          onOpenChange={(open) => {
+            if (!props.sending) setReviewing(open)
+          }}
+          title={t('Review reply')}
+          desc={t(
+            'Check the recipients, reply and attachments before sending.'
+          )}
+          confirmText={t('Send reply')}
+          isLoading={props.sending}
+          disabled={
+            closed || invalidCC || !props.reply.trim() || status.isPending
+          }
+          handleConfirm={() => {
+            void Promise.resolve(props.onSend(cc.trim()))
+              .then(() => {
+                setReviewing(false)
+                setCC('')
+                setShowCC(false)
+              })
+              .catch(() => undefined)
+          }}
+          className='sm:max-w-2xl'
+        >
+          <div className='max-h-[60vh] space-y-3 overflow-y-auto text-sm'>
+            <p className='break-all'>
+              {t('To')}: {ticket.email}
+            </p>
+            {cc.trim() && (
+              <p className='break-all'>
+                {t('CC')}: {cc.trim()}
+              </p>
+            )}
+            <p className='break-words whitespace-pre-wrap'>{props.reply}</p>
+            <p className='font-medium'>{t('Attachments')}</p>
+            {(props.files ?? []).length > 0 ? (
+              <ul>
+                {props.files?.map((file) => (
+                  <li key={file.name} className='break-all'>
+                    {file.name}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className='text-muted-foreground'>{t('No attachments')}</p>
+            )}
+          </div>
+        </ConfirmDialog>
       )}
       <ConfirmDialog
         open={closing}
@@ -1316,6 +1500,7 @@ function normalizeSupportContent(value: string) {
 
 function Message(props: {
   sender: string
+  cc?: string
   content: string
   html?: boolean
   time?: string
@@ -1382,6 +1567,11 @@ function Message(props: {
           )}
         >
           <span className='break-all'>{props.sender}</span>
+          {props.cc && (
+            <span className='break-all'>
+              {t('CC')}: {props.cc}
+            </span>
+          )}
           {props.internal && (
             <Badge variant='outline'>{t('Internal note')}</Badge>
           )}
