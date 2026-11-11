@@ -16,14 +16,43 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
 
 import zh from '@/i18n/locales/zh.json'
+import { api } from '@/lib/api'
 
-import { buildTicketDescription, ticketSchema } from '../api'
+import {
+  buildTicketDescription,
+  replySupportTicket,
+  ticketSchema,
+} from '../api'
 import { INVOICE_TYPE, TICKET_TYPES, parseAssistantReply } from '../constants'
 
 describe('support ticket validation', () => {
+  test('sends CC and files in one reply request and preserves provider errors', async () => {
+    const post = vi
+      .spyOn(api, 'post')
+      .mockResolvedValueOnce({ data: { success: true, data: null } })
+    const file = new File(['%PDF-1.4'], 'invoice.pdf', {
+      type: 'application/pdf',
+    })
+    await replySupportTicket('42', 'Invoice attached', 'finance@example.com', [
+      file,
+    ])
+    const [path, body] = post.mock.calls[0]
+    expect(path).toBe('/api/support/tickets/42/reply')
+    expect(body).toBeInstanceOf(FormData)
+    expect((body as FormData).get('content')).toBe('Invoice attached')
+    expect((body as FormData).get('cc')).toBe('finance@example.com')
+    expect((body as FormData).getAll('files')).toEqual([file])
+    post.mockResolvedValueOnce({
+      data: { success: false, message: 'Upload failed', data: null },
+    })
+    await expect(replySupportTicket('42', 'Keep draft')).rejects.toThrow(
+      'Upload failed'
+    )
+  })
+
   test('accepts every supported ticket type', () => {
     for (const { value: type } of TICKET_TYPES) {
       expect(
