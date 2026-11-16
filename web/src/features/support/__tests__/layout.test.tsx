@@ -17,7 +17,13 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { createInstance } from 'i18next'
 import { useState } from 'react'
@@ -181,6 +187,134 @@ describe('support page layout', () => {
     user: { id: 11, username: 'alice & co' },
   }
 
+  test('invoice template fills an editable draft and requires review before sending to CC', async () => {
+    vi.mocked(useIsAdmin).mockReturnValue(true)
+    const user = userEvent.setup()
+    const onSend = vi.fn().mockResolvedValue(null)
+    const invoice = {
+      ...ticket,
+      category: 'Invoice Request',
+      description:
+        '<p>Invoice title: Example &amp; Co<br>Tax ID: TAX123<br>Delivery email: finance@example.com<br>Invoice total: CNY 197.20</p>',
+    }
+    function Composer() {
+      const [reply, setReply] = useState('Existing note')
+      return (
+        <TicketDetail
+          data={{ ticket: invoice, conversations: [], attachments: [] }}
+          reply={reply}
+          onReplyChange={setReply}
+          files={[
+            new File(['invoice'], 'invoice.pdf', { type: 'application/pdf' }),
+          ]}
+          onBack={vi.fn()}
+          onSend={onSend}
+          sending={false}
+        />
+      )
+    }
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <Composer />
+      </QueryClientProvider>
+    )
+    await user.click(screen.getByRole('button', { name: 'Reply template' }))
+    const dialog = within(
+      screen.getByRole('dialog', { name: 'Invoice reply template' })
+    )
+    expect(dialog.getByLabelText('Invoice title')).toHaveValue('Example & Co')
+    expect(dialog.getByLabelText('Tax ID')).toHaveValue('TAX123')
+    expect(dialog.getByLabelText('Invoice total')).toHaveValue('CNY 197.20')
+    expect(dialog.getByLabelText('Delivery email')).toHaveValue(
+      'finance@example.com'
+    )
+    await user.type(
+      dialog.getByLabelText('Invoice number'),
+      '26332000009796400000'
+    )
+    fireEvent.change(dialog.getByLabelText('Invoice date'), {
+      target: { value: '2026-11-11' },
+    })
+    await user.click(dialog.getByRole('button', { name: 'Insert template' }))
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('dialog', { name: 'Invoice reply template' })
+      ).not.toBeInTheDocument()
+    )
+    expect(
+      (screen.getByRole('textbox', { name: 'Reply' }) as HTMLTextAreaElement)
+        .value
+    ).toContain('Existing note\n\nHello,')
+    expect(screen.getByLabelText('CC')).toHaveValue('finance@example.com')
+    expect(onSend).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Review reply' }))
+    const preview = within(
+      screen.getByRole('alertdialog', { name: 'Review reply' })
+    )
+    expect(preview.getByText('To: alice@example.com')).toBeVisible()
+    expect(preview.getByText('CC: finance@example.com')).toBeVisible()
+    expect(preview.getByText('invoice.pdf')).toBeVisible()
+    expect(
+      preview.getByText(/Invoice number: 26332000009796400000/)
+    ).toBeVisible()
+    expect(onSend).not.toHaveBeenCalled()
+    await user.click(preview.getByRole('button', { name: 'Send reply' }))
+    await waitFor(() =>
+      expect(onSend).toHaveBeenCalledWith('finance@example.com')
+    )
+    await waitFor(() =>
+      expect(screen.queryByLabelText('CC')).not.toBeInTheDocument()
+    )
+  })
+
+  test('invalid CC blocks review and a failed send preserves the draft and recipients', async () => {
+    vi.mocked(useIsAdmin).mockReturnValue(true)
+    const user = userEvent.setup()
+    const onSend = vi.fn().mockRejectedValue(new Error('Upload failed'))
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <TicketDetail
+          data={{ ticket, conversations: [], attachments: [] }}
+          reply='Keep this draft'
+          onReplyChange={vi.fn()}
+          onBack={vi.fn()}
+          onSend={onSend}
+          sending={false}
+        />
+      </QueryClientProvider>
+    )
+    const toggle = screen.getByRole('button', { name: 'CC' })
+    await user.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const input = screen.getByLabelText('CC')
+    await user.type(input, 'invalid')
+    expect(input).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByRole('button', { name: 'Review reply' })).toBeDisabled()
+    await user.clear(input)
+    await user.type(input, 'finance@example.com')
+    await user.click(screen.getByRole('button', { name: 'Review reply' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: 'Cancel',
+      })
+    )
+    expect(onSend).not.toHaveBeenCalled()
+    await user.click(screen.getByRole('button', { name: 'Review reply' }))
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: 'Send reply',
+      })
+    )
+    await waitFor(() =>
+      expect(onSend).toHaveBeenCalledWith('finance@example.com')
+    )
+    expect(screen.getByRole('alertdialog')).toBeVisible()
+    expect(
+      screen.getByRole('textbox', { name: 'Reply', hidden: true })
+    ).toHaveValue('Keep this draft')
+    expect(screen.getByLabelText('CC')).toHaveValue('finance@example.com')
+  })
+
   test('shows inbound email without an empty initial bubble or a support sender', () => {
     vi.mocked(useIsAdmin).mockReturnValue(true)
     render(
@@ -281,6 +415,13 @@ describe('support page layout', () => {
       view.container.querySelector('[style*="tracker.example"]')
     ).toBeNull()
     expect(view.container.querySelector('script')).toBeNull()
+    expect(
+      screen.queryByRole('button', { name: 'Reply template' })
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'CC' })).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'View user' })
+    ).not.toBeInTheDocument()
     expect(screen.getByText('Unsafe link')).not.toHaveAttribute('href')
     expect(screen.getByText('Please investigate')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Close ticket' }))
@@ -356,6 +497,12 @@ describe('support page layout', () => {
       screen.queryByRole('button', { name: /Resolved request/ })
     ).not.toBeInTheDocument()
     const logs = screen.getByRole('link', { name: 'User logs' })
+    const userLink = screen.getByRole('link', { name: 'View user' })
+    expect(userLink).toHaveAttribute(
+      'href',
+      '/users?filter=%22alice%20%26%20co%22'
+    )
+    expect(userLink).toHaveAttribute('target', '_blank')
     expect(logs).toHaveAttribute(
       'href',
       '/usage-logs/common?username=alice%20%26%20co'

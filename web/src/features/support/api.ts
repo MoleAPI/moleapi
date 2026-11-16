@@ -83,6 +83,7 @@ export type SupportConversation = {
   content: string
   createdTime: string
   fromEmailAddress: string
+  cc?: string
   commentedTime?: string
   visibility?: string
   isPublic?: boolean
@@ -222,10 +223,22 @@ export async function downloadSupportAttachment(
   return { filename: attachment.name, url: URL.createObjectURL(blob) }
 }
 
-export async function replySupportTicket(id: string, content: string) {
+export async function replySupportTicket(
+  id: string,
+  content: string,
+  cc = '',
+  files: File[] = []
+) {
+  let body: { content: string; cc: string } | FormData = { content, cc }
+  if (files.length > 0) {
+    body = new FormData()
+    body.append('content', content)
+    body.append('cc', cc)
+    for (const file of files) body.append('files', file)
+  }
   const response = await api.post<ApiResponse<null>>(
     `/api/support/tickets/${id}/reply`,
-    { content }
+    body
   )
   return requireServerSuccess(response.data).data
 }

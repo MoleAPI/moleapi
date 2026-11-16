@@ -25,6 +25,129 @@ func resetZohoDeskTokenCache() {
 	zohoDeskTokenCache.key = ""
 }
 
+func TestSupportEmailReplyRecipientsAndAttachments(t *testing.T) {
+	for _, tc := range []struct {
+		name, cc, filename, fileContent      string
+		uploadFails, missingUploadID, closed bool
+		wantSuccess                          bool
+	}{
+		{name: "plain reply retains registered recipient", wantSuccess: true},
+		{name: "CC sends this reply to one additional recipient", cc: " finance@example.com ", wantSuccess: true},
+		{name: "registered recipient is not duplicated in CC", cc: "ALICE@example.com", wantSuccess: true},
+		{name: "PDF is uploaded before the email is sent", filename: "invoice.pdf", fileContent: "%PDF-1.4\ninvoice", wantSuccess: true},
+		{name: "CC receives the PDF in the same reply", cc: "finance@example.com", filename: "invoice.pdf", fileContent: "%PDF-1.4\ninvoice", wantSuccess: true},
+		{name: "upload failure prevents a partial email", filename: "invoice.pdf", fileContent: "%PDF-1.4\ninvoice", uploadFails: true},
+		{name: "missing upload ID prevents a partial email", filename: "invoice.pdf", fileContent: "%PDF-1.4\ninvoice", missingUploadID: true},
+		{name: "invalid attachment prevents email", filename: "invoice.pdf", fileContent: "not a PDF"},
+		{name: "multiple CC recipients are rejected", cc: "one@example.com,two@example.com"},
+		{name: "display names are rejected", cc: "Finance <finance@example.com>"},
+		{name: "header injection is rejected", cc: "finance@example.com\r\nBcc: attacker@example.com"},
+		{name: "closed tickets cannot send email", closed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetZohoDeskTokenCache()
+			var sent map[string]any
+			var events []string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/oauth/v2/token":
+					_, _ = io.WriteString(w, `{"access_token":"access","expires_in":3600}`)
+				case "/api/v1/tickets/42":
+					status := "Open"
+					if tc.closed {
+						status = "Closed"
+					}
+					data, err := common.Marshal(gin.H{"id": "42", "departmentId": "7", "email": "alice@example.com", "status": status})
+					require.NoError(t, err)
+					_, _ = w.Write(data)
+				case "/api/v1/uploads":
+					events = append(events, "upload")
+					require.NoError(t, r.ParseMultipartForm(1<<20))
+					defer r.MultipartForm.RemoveAll()
+					file, header, err := r.FormFile("file")
+					require.NoError(t, err)
+					defer file.Close()
+					content, err := io.ReadAll(file)
+					require.NoError(t, err)
+					assert.Equal(t, tc.filename, header.Filename)
+					assert.Equal(t, tc.fileContent, string(content))
+					if tc.uploadFails {
+						w.WriteHeader(http.StatusServiceUnavailable)
+						return
+					}
+					if tc.missingUploadID {
+						_, _ = io.WriteString(w, `{}`)
+						return
+					}
+					_, _ = io.WriteString(w, `{"id":"uploaded-1"}`)
+				case "/api/v1/tickets/42/sendReply":
+					events = append(events, "send")
+					require.NoError(t, common.DecodeJson(r.Body, &sent))
+					_, _ = io.WriteString(w, `{"id":"reply-1"}`)
+				default:
+					t.Errorf("unexpected API request: %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(server.Close)
+			common.OptionMapRWMutex.Lock()
+			previous := common.OptionMap
+			common.OptionMap = map[string]string{"ZohoDeskEnabled": "true", "ZohoDeskClientId": "client", "ZohoDeskClientSecret": "secret", "ZohoDeskRefreshToken": "refresh", "ZohoDeskOrgId": "123", "ZohoDeskDepartmentId": "7", "ZohoDeskFromEmail": "support@example.com", "ZohoDeskApiDomain": server.URL, "ZohoDeskAccountsDomain": server.URL}
+			common.OptionMapRWMutex.Unlock()
+			t.Cleanup(func() {
+				common.OptionMapRWMutex.Lock()
+				common.OptionMap = previous
+				common.OptionMapRWMutex.Unlock()
+				resetZohoDeskTokenCache()
+			})
+			payload, err := common.Marshal(gin.H{"content": "Invoice attached.", "cc": tc.cc})
+			require.NoError(t, err)
+			request := httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(payload))
+			request.Header.Set("Content-Type", "application/json")
+			if tc.filename != "" {
+				var body bytes.Buffer
+				writer := multipart.NewWriter(&body)
+				require.NoError(t, writer.WriteField("content", "Invoice attached."))
+				require.NoError(t, writer.WriteField("cc", tc.cc))
+				part, err := writer.CreateFormFile("files", tc.filename)
+				require.NoError(t, err)
+				_, err = io.WriteString(part, tc.fileContent)
+				require.NoError(t, err)
+				require.NoError(t, writer.Close())
+				request = httptest.NewRequest(http.MethodPost, "/", &body)
+				request.Header.Set("Content-Type", writer.FormDataContentType())
+			}
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = request
+			c.Set("role", common.RoleAdminUser)
+			c.Params = gin.Params{{Key: "id", Value: "42"}}
+			ReplySupportTicket(c)
+			var response struct{ Success bool }
+			require.NoError(t, common.Unmarshal(w.Body.Bytes(), &response))
+			assert.Equal(t, tc.wantSuccess, response.Success, w.Body.String())
+			if !tc.wantSuccess {
+				assert.Nil(t, sent)
+				return
+			}
+			require.NotNil(t, sent)
+			assert.Equal(t, "alice@example.com", sent["to"])
+			assert.Equal(t, "support@example.com", sent["fromEmailAddress"])
+			assert.Equal(t, "Invoice attached.", sent["content"])
+			if strings.TrimSpace(tc.cc) == "finance@example.com" {
+				assert.Equal(t, "finance@example.com", sent["cc"])
+			} else {
+				assert.Empty(t, sent["cc"])
+			}
+			if tc.filename != "" {
+				assert.Equal(t, []string{"upload", "send"}, events)
+				assert.Equal(t, []any{"uploaded-1"}, sent["attachmentIds"])
+			}
+		})
+	}
+}
+
 func supportAttachmentHeader(t *testing.T, filename string, content []byte) *multipart.FileHeader {
 	t.Helper()
 	var source bytes.Buffer
@@ -671,6 +794,8 @@ func TestSupportTicketWorkflow(t *testing.T) {
 			require.True(t, invoiceTickets.Success)
 			assert.Empty(t, invoiceTickets.Data.Tickets)
 			assert.Equal(t, searchesBefore, invoiceSearches.Load(), "users without email must not query Zoho")
+			status = "Open"
+			assert.Contains(t, request(ReplySupportTicket, common.RoleCommonUser, 11, `{"content":"hello","cc":"finance@example.com"}`).Body.String(), "Only administrators")
 			status = "Closed"
 			assert.Contains(t, request(ReplySupportTicket, common.RoleCommonUser, 11, `{"content":"hello"}`).Body.String(), "Reopen the ticket")
 			department = "8"

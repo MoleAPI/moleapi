@@ -10,6 +10,7 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"path/filepath"
 	"regexp"
@@ -77,6 +78,7 @@ type zohoDeskConversation struct {
 	PlainText     string `json:"plainText"`
 	CreatedTime   string `json:"createdTime"`
 	FromEmail     string `json:"fromEmailAddress"`
+	CC            string `json:"cc,omitempty"`
 	CommentedTime string `json:"commentedTime"`
 	Visibility    string `json:"visibility"`
 	IsPublic      bool   `json:"isPublic"`
@@ -106,6 +108,7 @@ type zohoDeskThread struct {
 	ContentType         string `json:"contentType"`
 	Channel             string `json:"channel"`
 	FromEmail           string `json:"fromEmailAddress"`
+	CC                  string `json:"cc,omitempty"`
 	IsDraft             bool   `json:"isDraft"`
 	IsContentTruncated  bool   `json:"isContentTruncated"`
 	IsForward           bool   `json:"isForward"`
@@ -289,7 +292,7 @@ func loadSupportEmailThreads(cfg zohoDeskConfig, ticketID string) ([]zohoDeskCon
 			ID: thread.ID, Type: "thread", Direction: thread.Direction,
 			Summary: thread.Summary, Content: content, PlainText: thread.PlainText, CreatedTime: thread.CreatedTime,
 			Visibility: visibility, IsPublic: visibility == "public", IsForward: thread.IsForward,
-			FromEmail: thread.FromEmail, IsDraft: thread.IsDraft,
+			FromEmail: thread.FromEmail, CC: thread.CC, IsDraft: thread.IsDraft,
 			ContentType: thread.ContentType, Author: thread.Author, Attachments: thread.Attachments,
 			IsDescriptionThread: thread.IsDescriptionThread,
 		})
@@ -549,7 +552,12 @@ func zohoDeskUploadAttachment(cfg zohoDeskConfig, ticketID string, header *multi
 	if err != nil {
 		return zohoDeskAttachment{}, err
 	}
-	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(cfg.APIDomain, "/")+"/api/v1/tickets/"+ticketID+"/attachments?isPublic=true", &body)
+	// ponytail: unused email uploads expire in Zoho after 24 hours; ticket files stay attached.
+	path := "/uploads"
+	if ticketID != "" {
+		path = "/tickets/" + ticketID + "/attachments?isPublic=true"
+	}
+	req, err := http.NewRequest(http.MethodPost, strings.TrimRight(cfg.APIDomain, "/")+"/api/v1"+path, &body)
 	if err != nil {
 		return zohoDeskAttachment{}, err
 	}
@@ -1284,8 +1292,22 @@ func ReplySupportTicket(c *gin.Context) {
 	}
 	var input struct {
 		Content string `json:"content"`
+		CC      string `json:"cc"`
 	}
-	if err := common.DecodeJson(c.Request.Body, &input); err != nil {
+	var files []*multipart.FileHeader
+	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, supportAttachmentMaxBodySize)
+	if c.ContentType() == "multipart/form-data" {
+		if err := c.Request.ParseMultipartForm(1 << 20); err != nil {
+			if c.Request.MultipartForm != nil {
+				_ = c.Request.MultipartForm.RemoveAll()
+			}
+			common.ApiErrorMsg(c, "Invalid or oversized attachment request.")
+			return
+		}
+		defer c.Request.MultipartForm.RemoveAll()
+		input.Content, input.CC = c.PostForm("content"), c.PostForm("cc")
+		files = c.Request.MultipartForm.File["files"]
+	} else if err := common.DecodeJson(c.Request.Body, &input); err != nil {
 		common.ApiErrorMsg(c, "Invalid request.")
 		return
 	}
@@ -1294,12 +1316,56 @@ func ReplySupportTicket(c *gin.Context) {
 		common.ApiErrorMsg(c, "Reply must be between 1 and 10000 characters.")
 		return
 	}
+	input.CC = strings.TrimSpace(input.CC)
+	if c.GetInt("role") < common.RoleAdminUser && (input.CC != "" || len(files) > 0) {
+		common.ApiErrorMsg(c, "Only administrators can email attachments or add CC recipients.")
+		return
+	}
+	if input.CC != "" {
+		address, err := mail.ParseAddress(input.CC)
+		if err != nil || address.Address != input.CC || len(input.CC) > 254 || strings.ContainsAny(input.CC, "\r\n") {
+			common.ApiErrorMsg(c, "Enter one valid CC email address.")
+			return
+		}
+		if strings.EqualFold(input.CC, ticket.Email) {
+			input.CC = ""
+		}
+	}
+	if len(files) > supportAttachmentLimit {
+		common.ApiErrorMsg(c, "Attach between 1 and 3 files.")
+		return
+	}
+	for _, header := range files {
+		if !validSupportAttachment(header) {
+			common.ApiErrorMsg(c, "Only images, PDF, text, and log files up to 5 MB are supported.")
+			return
+		}
+	}
 	if c.GetInt("role") >= common.RoleAdminUser {
 		if cfg.FromEmail == "" {
 			common.ApiErrorMsg(c, "Zoho Desk sender email is not configured.")
 			return
 		}
 		body := gin.H{"channel": "EMAIL", "content": cleanSupportEmailText(input.Content), "contentType": "plainText", "fromEmailAddress": cfg.FromEmail, "to": ticket.Email}
+		if input.CC != "" {
+			body["cc"] = input.CC
+		}
+		attachmentIDs := make([]string, 0, len(files))
+		for _, header := range files {
+			attachment, err := zohoDeskUploadAttachment(cfg, "", header)
+			if err != nil {
+				common.ApiError(c, err)
+				return
+			}
+			if attachment.ID == "" {
+				common.ApiErrorMsg(c, "The attachment could not be prepared. No reply was sent.")
+				return
+			}
+			attachmentIDs = append(attachmentIDs, attachment.ID)
+		}
+		if len(attachmentIDs) > 0 {
+			body["attachmentIds"] = attachmentIDs
+		}
 		if err := zohoDeskRequest(cfg, http.MethodPost, "/tickets/"+ticket.ID+"/sendReply", body, nil); err != nil {
 			common.ApiError(c, err)
 			return

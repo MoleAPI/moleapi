@@ -1,6 +1,7 @@
 package gemini
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -738,22 +739,16 @@ func GeminiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 	}
 
 	for _, prediction := range geminiResponse.Predictions {
-		if prediction.RaiFilteredReason != "" {
-			continue // skip filtered image
+		if prediction.RaiFilteredReason != "" || prediction.BytesBase64Encoded == "" {
+			continue // Filtered or payload-less entries are not generated images.
 		}
 		openAIResponse.Data = append(openAIResponse.Data, dto.ImageData{
 			B64Json: prediction.BytesBase64Encoded,
 		})
 	}
-
-	jsonResponse, jsonErr := common.Marshal(openAIResponse)
-	if jsonErr != nil {
-		return nil, types.NewError(jsonErr, types.ErrorCodeBadResponseBody)
+	if len(openAIResponse.Data) == 0 {
+		return nil, types.NewOpenAIError(errors.New("no images generated"), types.ErrorCodeBadResponseBody, http.StatusInternalServerError)
 	}
-
-	c.Writer.Header().Set("Content-Type", "application/json")
-	c.Writer.WriteHeader(resp.StatusCode)
-	_, _ = c.Writer.Write(jsonResponse)
 
 	// https://github.com/google-gemini/cookbook/blob/719a27d752aac33f39de18a8d3cb42a70874917e/quickstarts/Counting_Tokens.ipynb
 	// each image has fixed 258 tokens
@@ -766,7 +761,22 @@ func GeminiImageHandler(c *gin.Context, info *relaycommon.RelayInfo, resp *http.
 		TotalTokens:      imageTokens * generatedImages,
 	}
 
-	return usage, nil
+	// ponytail: reuse the image handler for Chat/Responses wrapping, SSE and payload counting.
+	jsonResponse, jsonErr := common.Marshal(struct {
+		dto.ImageResponse
+		Usage *dto.Usage `json:"usage"`
+	}{ImageResponse: openAIResponse, Usage: usage})
+	if jsonErr != nil {
+		return nil, types.NewError(jsonErr, types.ErrorCodeBadResponseBody)
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(jsonResponse))
+	resp.ContentLength = int64(len(jsonResponse))
+	resp.Header.Set("Content-Type", "application/json")
+	resp.Header.Del("Content-Length")
+	if info.IsStream {
+		return openai.OpenaiImageStreamHandler(c, info, resp)
+	}
+	return openai.OpenaiImageHandler(c, info, resp)
 }
 
 type GeminiModelsResponse struct {
