@@ -387,6 +387,9 @@ func (a *Adaptor) DoRequest(c *gin.Context, info *relaycommon.RelayInfo, request
 }
 
 func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycommon.RelayInfo) (usage any, err *types.NewAPIError) {
+	if a.RequestMode == RequestModeGemini && strings.HasPrefix(info.UpstreamModelName, "imagen") {
+		return gemini.GeminiImageHandler(c, info, resp)
+	}
 	if a.RequestMode == RequestModeGemini && info.RelayMode == constant.RelayModeResponses {
 		geminiAdaptor := gemini.Adaptor{}
 		return geminiAdaptor.DoResponse(c, resp, info)
@@ -416,9 +419,6 @@ func (a *Adaptor) DoResponse(c *gin.Context, resp *http.Response, info *relaycom
 			if info.RelayMode == constant.RelayModeGemini {
 				return gemini.GeminiTextGenerationHandler(c, info, resp)
 			} else {
-				if strings.HasPrefix(info.UpstreamModelName, "imagen") {
-					return gemini.GeminiImageHandler(c, info, resp)
-				}
 				return gemini.GeminiChatHandler(c, info, resp)
 			}
 		case RequestModeOpenSource:
