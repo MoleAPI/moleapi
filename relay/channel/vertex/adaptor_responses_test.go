@@ -161,6 +161,73 @@ func TestVertexPartnerResponsesReply(t *testing.T) {
 	}
 }
 
+func TestVertexImagenReplyFormats(t *testing.T) {
+	oldTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() { constant.StreamingTimeout = oldTimeout })
+	for _, path := range []string{"/v1/images/generations", "/v1/chat/completions", "/v1/responses"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(path+map[bool]string{false: "/json", true: "/stream"}[stream], func(t *testing.T) {
+				recorder := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(recorder)
+				c.Request = httptest.NewRequest(http.MethodPost, path, nil)
+				format := types.RelayFormat(types.RelayFormatOpenAIImage)
+				if path == "/v1/responses" {
+					format = types.RelayFormatOpenAIResponses
+					c.Set("responses_image_generation_bridge", true)
+				} else if path == "/v1/chat/completions" {
+					format = types.RelayFormatOpenAI
+					c.Set("chat_image_completion_bridge", true)
+				}
+				info := &relaycommon.RelayInfo{IsStream: stream, DisablePing: true, RelayMode: relayconstant.RelayModeImagesGenerations,
+					RelayFormat: format, RequestURLPath: path, OriginModelName: "imagen-4.0-generate-001", ImageRequestCount: 3,
+					Request: &dto.ImageRequest{ResponseFormat: "b64_json"}, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "imagen-4.0-generate-001"}}
+				info.PriceData.UsePrice = true
+				info.PriceData.AddOtherRatio("n", 3)
+				body := `{"predictions":[{"bytesBase64Encoded":"iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAFUlEQVR4nGNkYGD4z8DAwMAEIkAYAA4oAQOSwUJsAAAAAElFTkSuQmCC"},{},{"raiFilteredReason":"filtered","bytesBase64Encoded":"ignored"}]}`
+				a := &Adaptor{}
+				a.Init(info)
+				usage, apiErr := a.DoResponse(c, &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, info)
+				require.Nil(t, apiErr)
+				assert.Equal(t, 258, usage.(*dto.Usage).PromptTokens)
+				assert.EqualValues(t, 1, info.PriceData.OtherRatios()["n"])
+				got := recorder.Body.String()
+				assert.Contains(t, got, "iVBORw0KGgo")
+				assert.NotContains(t, got, "ignored")
+				if stream {
+					assert.Contains(t, recorder.Header().Get("Content-Type"), "text/event-stream")
+					if path == "/v1/responses" {
+						assert.Contains(t, got, "event: response.completed")
+					} else if path == "/v1/chat/completions" {
+						assert.Contains(t, got, `"object":"chat.completion.chunk"`)
+					} else {
+						assert.Contains(t, got, "image_generation.completed")
+					}
+				} else {
+					if path == "/v1/responses" {
+						assert.Contains(t, got, `"object":"response"`)
+					} else if path == "/v1/chat/completions" {
+						assert.Contains(t, got, `"object":"chat.completion"`)
+					} else {
+						assert.Contains(t, got, `"data":[`)
+					}
+				}
+			})
+		}
+	}
+	t.Run("no image payload", func(t *testing.T) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "imagen-4.0-generate-001"}}
+		a := &Adaptor{}
+		a.Init(info)
+		usage, apiErr := a.DoResponse(c, &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"predictions":[{},{"raiFilteredReason":"filtered","bytesBase64Encoded":"ignored"}]}`))}, info)
+		require.NotNil(t, apiErr)
+		assert.Nil(t, usage)
+		assert.Empty(t, recorder.Body.String())
+	})
+}
+
 func TestVertexGeminiResponsesRequest(t *testing.T) {
 	var request dto.OpenAIResponsesRequest
 	require.NoError(t, common.Unmarshal([]byte(`{
