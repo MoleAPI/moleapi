@@ -78,7 +78,7 @@ func TestZhipuV4ConvertsResponsesRequestToChat(t *testing.T) {
 }
 
 func TestZhipuV4PassesNativeResponsesRequestThrough(t *testing.T) {
-	request := dto.OpenAIResponsesRequest{Model: "glm-4.5"}
+	request := dto.OpenAIResponsesRequest{Model: "glm-5.2"}
 
 	converted, err := (&Adaptor{}).ConvertOpenAIResponsesRequest(nil, nil, request)
 	require.NoError(t, err)

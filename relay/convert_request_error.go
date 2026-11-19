@@ -10,6 +10,13 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+func newDoRequestFailedError(c *gin.Context, info *relaycommon.RelayInfo, err error) *types.NewAPIError {
+	if kitreasoning.IsClientError(err) {
+		return newConvertRequestFailedError(c, info, err)
+	}
+	return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
+}
+
 func newConvertRequestFailedError(c *gin.Context, info *relaycommon.RelayInfo, err error) *types.NewAPIError {
 	var loss *types.ConversionLossError
 	if errors.As(err, &loss) {

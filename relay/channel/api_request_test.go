@@ -96,6 +96,86 @@ func TestAPIRequestRejectsInvalidSamplingBodyBeforeSending(t *testing.T) {
 	}
 }
 
+func TestAPIRequestNormalizesModelReasoning(t *testing.T) {
+	for _, tc := range []struct {
+		name, model string
+		format      types.RelayFormat
+		input, want string
+	}{
+		{"gpt unknown", "gpt-5", types.RelayFormatOpenAI, `{"reasoning_effort":"unusual"}`, `{"reasoning_effort":"medium"}`},
+		{"gpt5 ceiling", "gpt-5", types.RelayFormatOpenAI, `{"reasoning_effort":"max"}`, `{"reasoning_effort":"high"}`},
+		{"gpt5 off floor", "gpt-5", types.RelayFormatOpenAI, `{"reasoning_effort":"off"}`, `{"reasoning_effort":"minimal"}`},
+		{"gpt51 ceiling", "gpt-5.1", types.RelayFormatOpenAI, `{"reasoning_effort":"xhigh"}`, `{"reasoning_effort":"high"}`},
+		{"gpt52 ceiling", "openai/gpt-5.2", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"max","summary":"auto","context":{"id":9007199254740993}}}`, `{"reasoning":{"effort":"xhigh","summary":"auto","context":{"id":9007199254740993}}}`},
+		{"gpt pro floor", "gpt-5.5-pro", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"low"}}`, `{"reasoning":{"effort":"medium"}}`},
+		{"gpt6 off floor", "gpt-6-astra", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"none"}}`, `{"reasoning":{"effort":"low"}}`},
+		{"gpt6 none supported", "gpt-6-sol", types.RelayFormatOpenAI, `{"reasoning_effort":"none"}`, `{"reasoning_effort":"none"}`},
+		{"codex model identity", "gpt-5.1-codex-max", types.RelayFormatOpenAI, `{"reasoning_effort":"max"}`, `{"reasoning_effort":"xhigh"}`},
+		{"nonreasoning gpt", "gpt-4o", types.RelayFormatOpenAI, `{"reasoning_effort":"high"}`, `{}`},
+		{"default omitted", "gpt-5.2", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"default"}}`, `{}`},
+		{"summary hidden", "gpt-5.2", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"high","summary":"none"}}`, `{"reasoning":{"effort":"high"}}`},
+		{"summary alias", "gpt-5.2", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"normal","summary":"full"}}`, `{"reasoning":{"effort":"medium","summary":"auto"}}`},
+		{"deepseek medium", "deepseek-v4.1-flash", types.RelayFormatOpenAI, `{"reasoning_effort":"medium"}`, `{"reasoning_effort":"high","thinking":{"type":"enabled"}}`},
+		{"deepseek ultra", "deepseek-v4-pro", types.RelayFormatOpenAI, `{"reasoning_effort":"ultra"}`, `{"reasoning_effort":"max","thinking":{"type":"enabled"}}`},
+		{"deepseek xhigh", "deepseek-flash", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"xhigh"}}`, `{"reasoning":{"effort":"high"}}`},
+		{"deepseek off", "deepseek-flash", types.RelayFormatOpenAI, `{"reasoning_effort":"off"}`, `{"thinking":{"type":"disabled"}}`},
+		{"glm legacy toggle", "glm-4.7", types.RelayFormatOpenAI, `{"reasoning_effort":"high"}`, `{"thinking":{"type":"enabled"}}`},
+		{"glm legacy off", "glm-5.1", types.RelayFormatOpenAI, `{"reasoning_effort":"none"}`, `{"thinking":{"type":"disabled"}}`},
+		{"glm enabled flag", "glm-5.1", types.RelayFormatOpenAI, `{"enable_thinking":true}`, `{"thinking":{"type":"enabled"}}`},
+		{"glm52 levels", "glm-5.2", types.RelayFormatOpenAI, `{"reasoning_effort":"balanced"}`, `{"reasoning_effort":"high","thinking":{"type":"enabled"}}`},
+		{"glm53 forced thinking", "glm-5.3", types.RelayFormatOpenAI, `{"thinking":{"type":"disabled"}}`, `{"reasoning_effort":"low","thinking":{"type":"enabled"}}`},
+		{"kimi hybrid", "kimi-k2.6", types.RelayFormatOpenAI, `{"reasoning_effort":"medium","thinking":{"type":"enabled","keep":"all"}}`, `{"thinking":{"type":"enabled","keep":"all"}}`},
+		{"kimi forced", "kimi-k3", types.RelayFormatOpenAI, `{"reasoning_effort":"unknown"}`, `{"reasoning_effort":"high"}`},
+		{"kimi code fixed", "kimi-k2.7-code", types.RelayFormatOpenAI, `{"reasoning_effort":"high","thinking":{"type":"enabled"}}`, `{}`},
+		{"kimi response off", "kimi-k3.1-pro", types.RelayFormatOpenAIResponses, `{"reasoning":{"effort":"none"}}`, `{"reasoning":{"effort":"low"}}`},
+		{"deepseek messages", "deepseek-flash", types.RelayFormatClaude, `{"thinking":{"type":"adaptive","display":"summarized"},"output_config":{"effort":"unknown","format":{"z":1,"a":2}}}`, `{"thinking":{"type":"enabled"},"output_config":{"effort":"high","format":{"z":1,"a":2}}}`},
+		{"claude adaptive", "claude-opus-4-8", types.RelayFormatClaude, `{"max_tokens":65536,"thinking":{"type":"enabled","budget_tokens":2048,"future_field":{"id":9007199254740993}},"output_config":{"effort":"unusual","format":{"z":1,"a":2}}}`, `{"max_tokens":65536,"thinking":{"type":"adaptive","display":"summarized","future_field":{"id":9007199254740993}},"output_config":{"effort":"medium","format":{"z":1,"a":2}}}`},
+		{"claude old manual", "claude-sonnet-4-5", types.RelayFormatClaude, `{"max_tokens":4096,"thinking":{"type":"enabled","budget_tokens":2048},"output_config":{"effort":"xhigh"}}`, `{"max_tokens":4096,"thinking":{"type":"enabled","budget_tokens":2048,"display":"summarized"}}`},
+		{"claude no summary", "claude-sonnet-4-6", types.RelayFormatClaude, `{"max_tokens":4096,"thinking":{"type":"adaptive","display":"omitted"},"output_config":{"effort":"minimal"}}`, `{"max_tokens":4096,"thinking":{"type":"adaptive","display":"omitted"},"output_config":{"effort":"low"}}`},
+		{"gemini unknown", "gemini-4-argon", types.RelayFormatGemini, `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"unusual"},"maxOutputTokens":4096,"vendor_id":9007199254740993}}`, `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"medium","includeThoughts":true},"maxOutputTokens":4096,"vendor_id":9007199254740993}}`},
+		{"gemini default summary", "gemini-4-argon", types.RelayFormatGemini, `{"generationConfig":{"maxOutputTokens":4096}}`, `{"generationConfig":{"thinkingConfig":{"includeThoughts":true},"maxOutputTokens":4096}}`},
+		{"gemini hidden", "gemini-3.8-flash", types.RelayFormatGemini, `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"HIGH","includeThoughts":false}}}`, `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"high","includeThoughts":false}}}`},
+		{"gemini old budget", "gemini-2.5-flash", types.RelayFormatGemini, `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"balanced"}}}`, `{"generationConfig":{"thinkingConfig":{"thinkingBudget":8192,"includeThoughts":true}}}`},
+		{"gemini old default", "gemini-2.5-flash-lite", types.RelayFormatGemini, `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"default"}}}`, `{"generationConfig":{"thinkingConfig":{"includeThoughts":true}}}`},
+		{"gemini legacy budget", "gemini-4-argon", types.RelayFormatGemini, `{"generationConfig":{"thinkingConfig":{"thinkingBudget":2048}}}`, `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"medium","includeThoughts":true}}}`},
+		{"gemini cannot turn off", "gemini-4-argon", types.RelayFormatGemini, `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"off"}}}`, `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"low","includeThoughts":false}}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var input map[string]common.RawMessage
+			require.NoError(t, common.Unmarshal([]byte(tc.input), &input))
+			const preserved = `{"signature":"opaque-signature","id":9007199254740993,"schema":{"z":1,"a":2}}`
+			input["metadata"] = common.RawMessage(preserved)
+			input["model"], _ = common.Marshal(tc.model)
+			body, err := common.Marshal(input)
+			require.NoError(t, err)
+			received := make(chan []byte, 1)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				data, err := io.ReadAll(r.Body)
+				assert.NoError(t, err)
+				assert.Equal(t, int64(len(data)), r.ContentLength)
+				received <- data
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/fixture", strings.NewReader(string(body)))
+			info := &relaycommon.RelayInfo{RelayFormat: tc.format, ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: tc.model}}
+			response, err := DoApiRequest(requestContextAdaptor{url: server.URL}, c, info, strings.NewReader(string(body)))
+			require.NoError(t, err)
+			t.Cleanup(func() { response.Body.Close() })
+			var fields map[string]common.RawMessage
+			require.NoError(t, common.Unmarshal(<-received, &fields))
+			assert.Equal(t, preserved, string(fields["metadata"]))
+			assert.Equal(t, string(input["model"]), string(fields["model"]))
+			delete(fields, "metadata")
+			delete(fields, "model")
+			actual, err := common.Marshal(fields)
+			require.NoError(t, err)
+			assert.JSONEq(t, tc.want, string(actual))
+		})
+	}
+}
+
 type requestContextAdaptor struct {
 	Adaptor
 	url string

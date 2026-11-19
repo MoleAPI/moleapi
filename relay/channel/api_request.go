@@ -339,7 +339,7 @@ func applyHeaderOverrideToRequest(req *http.Request, headerOverride map[string]s
 }
 
 func DoApiRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody io.Reader) (*http.Response, error) {
-	requestBody, closer, err := common.FilterModelSamplingBody(requestBody, info)
+	requestBody, closer, err := common.PrepareModelRequestBody(requestBody, info)
 	if err != nil {
 		return nil, err
 	}

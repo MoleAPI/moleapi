@@ -12,6 +12,7 @@ import (
 type GeminiRender struct {
 	Config          *dto.GeminiThinkingConfig
 	EffectiveEffort Effort
+	Diagnostics     []types.ConversionDiagnostic
 }
 
 type geminiThinkingKind int
@@ -73,27 +74,30 @@ func RenderGemini(model string, intent Intent, maxOutputTokens *uint, adapterBud
 
 	capabilities := geminiCapabilitiesFor(model)
 	if capabilities.kind == geminiThinkingNotConfigurable {
-		if !intent.HasStrength() && capabilities.supportsIncludeThoughts {
+		if capabilities.supportsIncludeThoughts && intent.IncludeThoughts != nil {
 			return GeminiRender{Config: &dto.GeminiThinkingConfig{IncludeThoughts: intent.IncludeThoughts}, EffectiveEffort: EffortHigh}, nil
 		}
-		return GeminiRender{}, fmt.Errorf("model %q does not support configurable thinking", model)
+		return GeminiRender{Diagnostics: []types.ConversionDiagnostic{geminiReasoningDiagnostic("gemini_thinking_unsupported", fmt.Sprintf("model %q uses its native thinking default; unsupported controls were omitted", model))}}, nil
 	}
 	if capabilities.kind == geminiThinkingUnknown {
-		if intent.HasStrength() {
-			return GeminiRender{}, fmt.Errorf("model %q does not have a known Gemini thinking configuration", model)
-		}
-		return GeminiRender{Config: &dto.GeminiThinkingConfig{IncludeThoughts: intent.IncludeThoughts}}, nil
+		// ponytail: unknown models keep their provider default rather than
+		// guessing a thinking API; add verified capabilities above when known.
+		return GeminiRender{Diagnostics: []types.ConversionDiagnostic{geminiReasoningDiagnostic("gemini_thinking_unknown", fmt.Sprintf("model %q has no verified thinking controls; using its provider default", model))}}, nil
 	}
 
 	config := &dto.GeminiThinkingConfig{IncludeThoughts: intent.IncludeThoughts}
+	if config.IncludeThoughts == nil {
+		include := intent.Mode != ModeDisabled && intent.Effort != EffortNone
+		config.IncludeThoughts = &include
+	}
 	if capabilities.kind == geminiThinkingBudget {
 		if intent.Mode == ModeDisabled || intent.Effort == EffortNone {
-			if !capabilities.supportsDisable {
-				return GeminiRender{}, fmt.Errorf("%w for model %q", ErrThinkingNotDisabled, model)
-			}
 			budget := 0
+			if !capabilities.supportsDisable {
+				budget = capabilities.minBudget
+			}
 			config.ThinkingBudget = &budget
-			return GeminiRender{Config: config, EffectiveEffort: EffortNone}, nil
+			return GeminiRender{Config: config, EffectiveEffort: EffortFromBudget(budget)}, nil
 		}
 
 		budget := 0
@@ -137,7 +141,12 @@ func RenderGemini(model string, intent Intent, maxOutputTokens *uint, adapterBud
 	}
 
 	if intent.Mode == ModeDisabled || intent.Effort == EffortNone {
-		return GeminiRender{}, fmt.Errorf("%w for model %q", ErrThinkingNotDisabled, model)
+		level, err := geminiLevelForEffort(model, EffortMinimal)
+		if err != nil {
+			return GeminiRender{}, err
+		}
+		config.ThinkingLevel = level
+		return GeminiRender{Config: config, EffectiveEffort: Effort(level)}, nil
 	}
 	effort := intent.Effort
 	if effort == "" && intent.BudgetTokens != nil {
@@ -234,11 +243,17 @@ func ValidateGeminiThinkingConfig(model string, config *dto.GeminiThinkingConfig
 // NormalizeGeminiThinkingConfig rewrites provider-native thinking controls
 // into the dialect accepted by the target Gemini model.
 func NormalizeGeminiThinkingConfig(model string, generation *dto.GeminiChatGenerationConfig) (Effort, []types.ConversionDiagnostic, error) {
-	if generation == nil || generation.ThinkingConfig == nil {
+	if generation == nil {
 		return "", nil, nil
 	}
-	config := generation.ThinkingConfig
 	capabilities := geminiCapabilitiesFor(model)
+	if generation.ThinkingConfig == nil {
+		if capabilities.kind != geminiThinkingBudget && capabilities.kind != geminiThinkingLevel {
+			return "", nil, nil
+		}
+		generation.ThinkingConfig = &dto.GeminiThinkingConfig{}
+	}
+	config := generation.ThinkingConfig
 	var diagnostics []types.ConversionDiagnostic
 	if config.ThinkingBudget != nil && config.ThinkingLevel != "" {
 		switch capabilities.kind {
@@ -268,8 +283,15 @@ func NormalizeGeminiThinkingConfig(model string, generation *dto.GeminiChatGener
 	if err != nil {
 		return "", diagnostics, err
 	}
+	if config.ThinkingLevel != "" {
+		config.ThinkingLevel = string(intent.Effort)
+	}
 	if capabilities.kind == geminiThinkingUnknown {
 		return EffectiveEffort(intent), diagnostics, nil
+	}
+	if config.IncludeThoughts == nil {
+		include := intent.Mode != ModeDisabled
+		config.IncludeThoughts = &include
 	}
 	if capabilities.kind == geminiThinkingBudget {
 		if config.ThinkingLevel != "" {

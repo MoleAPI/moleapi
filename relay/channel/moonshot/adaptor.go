@@ -14,6 +14,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 
@@ -104,8 +105,9 @@ func isTemperatureOneOnlyModel(model string) bool {
 // ConvertOpenAIResponsesRequest forwards kimi-k3 and coding-plan Responses
 // requests natively, while keeping older Moonshot models on Chat Completions.
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	if strings.EqualFold(getUpstreamModelName(info, request.Model), "kimi-k3") ||
-		(info != nil && info.ChannelMeta != nil && channel.CodingPlanSupportsResponses(info.ChannelBaseUrl)) {
+	model := getUpstreamModelName(info, request.Model)
+	if !reasoning.NeedsChatThinking(model) && (strings.HasPrefix(strings.ToLower(model), "kimi-k3") ||
+		(info != nil && info.ChannelMeta != nil && channel.CodingPlanSupportsResponses(info.ChannelBaseUrl))) {
 		return request, nil
 	}
 	result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAI, &request)

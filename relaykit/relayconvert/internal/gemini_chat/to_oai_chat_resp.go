@@ -97,6 +97,7 @@ func ResponseGeminiChat2OpenAI(id string, created int64, response *dto.GeminiCha
 		}
 		if len(candidate.Content.Parts) > 0 {
 			var content strings.Builder
+			var thoughts strings.Builder
 			var inlineGrow int
 			for _, part := range candidate.Content.Parts {
 				if part.InlineData != nil {
@@ -137,7 +138,10 @@ func ResponseGeminiChat2OpenAI(id string, created int64, response *dto.GeminiCha
 						toolCalls = append(toolCalls, *call)
 					}
 				} else if part.Thought {
-					choice.Message.ReasoningContent = &part.Text
+					if thoughts.Len() > 0 {
+						thoughts.WriteByte('\n')
+					}
+					thoughts.WriteString(part.Text)
 				} else {
 					if part.ExecutableCode != nil {
 						writeSep()
@@ -162,6 +166,10 @@ func ResponseGeminiChat2OpenAI(id string, created int64, response *dto.GeminiCha
 				isToolCall = true
 			}
 			choice.Message.SetStringContent(content.String())
+			if thoughts.Len() > 0 {
+				text := thoughts.String()
+				choice.Message.ReasoningContent = &text
+			}
 		}
 		if candidate.FinishReason != nil {
 			switch *candidate.FinishReason {
@@ -215,7 +223,7 @@ func StreamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 			appended++
 		}
 		isTools := false
-		isThought := false
+		var thoughts strings.Builder
 		if candidate.FinishReason != nil {
 			switch *candidate.FinishReason {
 			case "STOP":
@@ -245,9 +253,10 @@ func StreamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 					choice.Delta.ToolCalls = append(choice.Delta.ToolCalls, *call)
 				}
 			} else if part.Thought {
-				isThought = true
-				writeSep()
-				content.WriteString(part.Text)
+				if thoughts.Len() > 0 {
+					thoughts.WriteByte('\n')
+				}
+				thoughts.WriteString(part.Text)
 			} else {
 				if part.ExecutableCode != nil {
 					writeSep()
@@ -267,9 +276,10 @@ func StreamResponseGeminiChat2OpenAI(geminiResponse *dto.GeminiChatResponse) (*d
 				}
 			}
 		}
-		if isThought {
-			choice.Delta.SetReasoningContent(content.String())
-		} else {
+		if thoughts.Len() > 0 {
+			choice.Delta.SetReasoningContent(thoughts.String())
+		}
+		if content.Len() > 0 || thoughts.Len() == 0 {
 			choice.Delta.SetContentString(content.String())
 		}
 		if isTools {

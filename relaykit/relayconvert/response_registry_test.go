@@ -111,6 +111,38 @@ func TestLookupBuiltinResponseConverters(t *testing.T) {
 	assert.False(t, ok)
 }
 
+func TestGeminiMixedThoughtAndAnswerStaySeparate(t *testing.T) {
+	response := &dto.GeminiChatResponse{
+		Candidates: []dto.GeminiChatCandidate{{Content: dto.GeminiChatContent{Role: "model", Parts: []dto.GeminiPart{
+			{Text: "first thought", Thought: true}, {Text: "second thought", Thought: true}, {Text: "answer"},
+		}}}},
+		UsageMetadata: dto.GeminiUsageMetadata{PromptTokenCount: 2, CandidatesTokenCount: 3, ThoughtsTokenCount: 4, TotalTokenCount: 9},
+	}
+	info := &convmeta.Values{ChannelMetaAttached: true, UpstreamModelName: "gemini-4-argon"}
+	result, err := ConvertResponse(nil, info, types.RelayFormatOpenAI, response)
+	require.NoError(t, err)
+	chat := result.Value.(*dto.OpenAITextResponse)
+	require.Len(t, chat.Choices, 1)
+	assert.Equal(t, "answer", chat.Choices[0].Message.StringContent())
+	assert.Equal(t, "first thought\nsecond thought", chat.Choices[0].Message.GetReasoningContent())
+	assert.Equal(t, 9, result.Usage.TotalTokens)
+
+	state, err := NewResponseStreamState(types.RelayFormatGemini, types.RelayFormatOpenAI, ResponseStreamOptions{})
+	require.NoError(t, err)
+	chunks, err := ConvertStreamResponseChunk(nil, info, state, response)
+	require.NoError(t, err)
+	var answer, thoughts strings.Builder
+	for _, chunk := range chunks {
+		chat := chunk.Value.(*dto.ChatCompletionsStreamResponse)
+		for _, choice := range chat.Choices {
+			answer.WriteString(choice.Delta.GetContentString())
+			thoughts.WriteString(choice.Delta.GetReasoningContent())
+		}
+	}
+	assert.Equal(t, "answer", answer.String())
+	assert.Equal(t, "first thought\nsecond thought", thoughts.String())
+}
+
 func TestConvertResponseRejectsNilAndUnsupportedRoute(t *testing.T) {
 	_, err := ConvertResponse(nil, nil, types.RelayFormatOpenAI, (*dto.OpenAITextResponse)(nil))
 	require.Error(t, err)
