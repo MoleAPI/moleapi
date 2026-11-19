@@ -202,7 +202,7 @@ func buildAwsRequestBody(c *gin.Context, info *relaycommon.RelayInfo, awsClaudeR
 	if err != nil {
 		return nil, err
 	}
-	filtered, closer, err := relaycommon.FilterModelSamplingBody(bytes.NewReader(body), info)
+	filtered, closer, err := relaycommon.PrepareModelRequestBody(bytes.NewReader(body), info)
 	if err != nil {
 		return nil, err
 	}

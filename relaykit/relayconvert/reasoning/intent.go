@@ -133,6 +133,32 @@ func ParseEffort(value string) (Effort, error) {
 	}
 }
 
+// ParseClientEffort accepts client vocabularies without relaxing the strict
+// parser used for model modifiers. Unknown labels mean balanced thinking.
+func ParseClientEffort(value string) (Effort, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	switch strings.NewReplacer("_", "", "-", "", " ", "").Replace(value) {
+	case "", "default", "auto", "adaptive":
+		return "", nil
+	case "off", "disabled", "disable", "false", "0", "none":
+		return EffortNone, nil
+	case "minimal", "minimum", "min":
+		return EffortMinimal, nil
+	case "low", "light", "lite":
+		return EffortLow, nil
+	case "medium", "normal", "balanced", "on", "enabled", "enable", "true":
+		return EffortMedium, nil
+	case "high", "full":
+		return EffortHigh, nil
+	case "xhigh", "extrahigh", "veryhigh":
+		return EffortXHigh, nil
+	case "max", "maximum", "ultra":
+		return EffortMax, nil
+	default:
+		return EffortMedium, nil
+	}
+}
+
 func normalizeIntent(intent Intent) (Intent, error) {
 	effort, err := ParseEffort(string(intent.Effort))
 	if err != nil {
@@ -302,14 +328,14 @@ func FromOpenAIChat(req *dto.GeneralOpenAIRequest) (Intent, error) {
 	var intent Intent
 	intent.Source = SourceExplicit
 	if req.ReasoningEffort != "" {
-		effort, err := ParseEffort(req.ReasoningEffort)
+		effort, err := ParseClientEffort(req.ReasoningEffort)
 		if err != nil {
 			return Intent{}, err
 		}
 		intent.Effort = effort
 		if effort == EffortNone {
 			intent.Mode = ModeDisabled
-		} else {
+		} else if effort != "" {
 			intent.Mode = ModeEnabled
 		}
 	}
@@ -329,14 +355,14 @@ func FromOpenAIChat(req *dto.GeneralOpenAIRequest) (Intent, error) {
 			}
 		}
 		if raw.Effort != "" {
-			effort, err := ParseEffort(raw.Effort)
+			effort, err := ParseClientEffort(raw.Effort)
 			if err != nil {
 				return Intent{}, err
 			}
 			nested.Effort = effort
 			if effort == EffortNone {
 				nested.Mode = ModeDisabled
-			} else if nested.Mode == ModeUnset {
+			} else if effort != "" && nested.Mode == ModeUnset {
 				nested.Mode = ModeEnabled
 			}
 		}
@@ -351,6 +377,41 @@ func FromOpenAIChat(req *dto.GeneralOpenAIRequest) (Intent, error) {
 		}
 	}
 
+	if len(req.THINKING) > 0 && string(req.THINKING) != "null" {
+		var thinking dto.Thinking
+		if err := kitutil.Unmarshal(req.THINKING, &thinking); err != nil {
+			return Intent{}, fmt.Errorf("invalid thinking config: %w", err)
+		}
+		native := Intent{BudgetTokens: thinking.BudgetTokens, Source: SourceNative, BudgetSource: SourceNative}
+		switch strings.ToLower(strings.TrimSpace(thinking.Type)) {
+		case "enabled", "adaptive":
+			native.Mode = ModeEnabled
+		case "disabled", "between_tools":
+			native.Mode, native.Effort = ModeDisabled, EffortNone
+		case "":
+		default:
+			return Intent{}, fmt.Errorf("unsupported thinking type %q", thinking.Type)
+		}
+		if thinking.Display == "summarized" || thinking.Display == "omitted" {
+			include := thinking.Display == "summarized"
+			native.IncludeThoughts = &include
+		}
+		var err error
+		intent, err = MergeExplicit(intent, native, req.Model)
+		if err != nil {
+			return Intent{}, err
+		}
+	}
+	if len(req.EnableThinking) > 0 && string(req.EnableThinking) != "null" && !intent.HasStrength() {
+		var enabled bool
+		if err := kitutil.Unmarshal(req.EnableThinking, &enabled); err != nil {
+			return Intent{}, fmt.Errorf("enable_thinking must be a boolean: %w", err)
+		}
+		intent.Mode = ModeEnabled
+		if !enabled {
+			intent.Mode, intent.Effort = ModeDisabled, EffortNone
+		}
+	}
 	if req.ReasoningConversion == nil {
 		return normalizeIntent(intent)
 	}
@@ -444,18 +505,21 @@ func FromOpenAIResponses(req *dto.OpenAIResponsesRequest) (Intent, error) {
 	if req.Reasoning != nil {
 		intent.Source = SourceExplicit
 		if req.Reasoning.Effort != "" {
-			effort, err := ParseEffort(req.Reasoning.Effort)
+			effort, err := ParseClientEffort(req.Reasoning.Effort)
 			if err != nil {
 				return Intent{}, err
 			}
 			intent.Effort = effort
-			intent.Mode = ModeEnabled
+			if effort != "" {
+				intent.Mode = ModeEnabled
+			}
 			if effort == EffortNone {
 				intent.Mode = ModeDisabled
 			}
 		}
 		if req.Reasoning.Summary != "" {
-			include := true
+			summary := strings.ToLower(strings.TrimSpace(req.Reasoning.Summary))
+			include := summary != "none" && summary != "off" && summary != "disabled"
 			intent.IncludeThoughts = &include
 		}
 	}
@@ -492,7 +556,7 @@ func FromClaude(req *dto.ClaudeRequest) (Intent, error) {
 			intent.Mode = ModeEnabled
 		case "adaptive":
 			intent.Mode = ModeAdaptive
-		case "disabled":
+		case "disabled", "between_tools":
 			intent.Mode = ModeDisabled
 			intent.Effort = EffortNone
 		default:
@@ -524,11 +588,14 @@ func FromClaude(req *dto.ClaudeRequest) (Intent, error) {
 			return Intent{}, fmt.Errorf("invalid Claude output_config: %w", err)
 		}
 		if output.Effort != "" {
-			effort, err := ParseEffort(output.Effort)
+			effort, err := ParseClientEffort(output.Effort)
 			if err != nil {
 				return Intent{}, err
 			}
 			intent.Effort = effort
+			if effort == EffortNone {
+				intent.Mode = ModeDisabled
+			}
 		}
 	}
 	if intent.Mode == ModeDisabled && intent.Effort != "" && intent.Effort != EffortNone {
@@ -552,12 +619,16 @@ func FromGemini(req *dto.GeminiChatRequest) (Intent, error) {
 		BudgetSource:    SourceNative,
 	}
 	if config.ThinkingLevel != "" {
-		effort, err := ParseEffort(config.ThinkingLevel)
+		effort, err := ParseClientEffort(config.ThinkingLevel)
 		if err != nil {
 			return Intent{}, err
 		}
 		intent.Effort = effort
-		intent.Mode = ModeEnabled
+		if effort == EffortNone {
+			intent.Mode = ModeDisabled
+		} else if effort != "" {
+			intent.Mode = ModeEnabled
+		}
 	}
 	return normalizeIntent(intent)
 }

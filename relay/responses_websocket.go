@@ -587,7 +587,7 @@ func buildResponsesWSCreatePayload(c *gin.Context, info *relaycommon.RelayInfo, 
 		return nil, apiErr
 	}
 	defer closer.Close()
-	filteredBody, filteredCloser, err := relaycommon.FilterModelSamplingBody(body, info)
+	filteredBody, filteredCloser, err := relaycommon.PrepareModelRequestBody(body, info)
 	if err != nil {
 		return nil, types.NewError(err, types.ErrorCodeConvertRequestFailed, types.ErrOptionWithSkipRetry())
 	}

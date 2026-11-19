@@ -58,6 +58,16 @@ func SetRelayRouter(router *gin.Engine) {
 			controller.ListModels(c, constant.ChannelTypeOpenAI)
 		})
 	}
+	geminiCompatibleTextRouter := router.Group("/v1beta/openai")
+	geminiCompatibleTextRouter.Use(func(c *gin.Context) {
+		// Google's OpenAI base URL is an alias of the ordinary Chat route.
+		c.Request.URL.Path = "/v1/chat/completions"
+		c.Next()
+	})
+	geminiCompatibleTextRouter.Use(middleware.RouteTag("relay"), middleware.SystemPerformanceCheck(), middleware.TokenAuth(), middleware.ModelRequestRateLimit(), middleware.Distribute())
+	geminiCompatibleTextRouter.POST("/chat/completions", func(c *gin.Context) {
+		controller.Relay(c, types.RelayFormatOpenAI)
+	})
 
 	playgroundRouter := router.Group("/pg")
 	playgroundRouter.Use(middleware.RouteTag("relay"))

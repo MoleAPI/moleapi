@@ -2,6 +2,7 @@ package claude
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 
@@ -34,7 +35,7 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 	// instead of applying Anthropic model rules. Read portable effort for
 	// accounting metadata, but do not run the capability renderer or rewrite
 	// provider-native controls.
-	if !crossProtocol && source.IsEmpty() && suffix.IsEmpty() {
+	if !crossProtocol && source.IsEmpty() && suffix.IsEmpty() && !reasoning.IsKnownClaudeModel(capabilityModel) {
 		if info != nil {
 			effort := req.GetEfforts()
 			if effort == "" && req.Thinking != nil {
@@ -78,7 +79,7 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 			intent.Effort = reasoning.EffortHigh
 		}
 	}
-	requestEffort, err := reasoning.ParseEffort(req.GetEfforts())
+	requestEffort, err := reasoning.ParseClientEffort(req.GetEfforts())
 	if err != nil {
 		return err
 	}
@@ -119,17 +120,21 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 	convdiag.Add(ctx, rendered.Diagnostics...)
 	req.Model = baseModel
 	if rendered.Thinking != nil {
+		if req.Thinking != nil {
+			rendered.Thinking.BlockBinding = req.Thinking.BlockBinding
+			rendered.Thinking.Extra = req.Thinking.Extra
+		}
 		req.Thinking = rendered.Thinking
 	}
 	outputEffort := rendered.OutputEffort
 	// An effort the request still carries reaches a known model only at a
 	// level it accepts, and is removed where the model takes none.
-	rewriteRequestEffort := outputEffort == "" && knownClaudeModel && requestEffort != ""
+	rewriteRequestEffort := outputEffort == "" && knownClaudeModel && req.GetEfforts() != ""
 	if rewriteRequestEffort {
 		outputEffort = reasoning.ClaudeEffort(capabilityModel, requestEffort)
 	}
 	if outputEffort != "" || rewriteRequestEffort {
-		outputConfig := make(map[string]any)
+		outputConfig := make(map[string]json.RawMessage)
 		if len(req.OutputConfig) > 0 {
 			if kitutil.GetJsonType(req.OutputConfig) != "object" {
 				return fmt.Errorf("Claude output_config must be a JSON object")
@@ -138,11 +143,15 @@ func ApplyReasoning(ctx context.Context, req *dto.ClaudeRequest, info convmeta.M
 				return fmt.Errorf("invalid Claude output_config: %w", err)
 			}
 			if outputConfig == nil {
-				outputConfig = make(map[string]any)
+				outputConfig = make(map[string]json.RawMessage)
 			}
 		}
 		if outputEffort != "" {
-			outputConfig["effort"] = string(outputEffort)
+			encodedEffort, err := kitutil.Marshal(string(outputEffort))
+			if err != nil {
+				return err
+			}
+			outputConfig["effort"] = encodedEffort
 		} else {
 			delete(outputConfig, "effort")
 		}
