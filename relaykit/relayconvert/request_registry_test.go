@@ -520,11 +520,17 @@ func TestGeminiThinkingLevelCaseInsensitiveAcrossPaths(t *testing.T) {
 }
 
 func TestConvertGeminiThinkingLevelsAcrossProtocols(t *testing.T) {
-	for _, tt := range []struct{ model, defaultEffort string }{
-		{"gemini-4-argon", "medium"},
-		{"gemini-3.8-flash", "medium"},
-		{"gemini-3.7-flash", "medium"},
-		{"gemini-3.1-pro-preview", "high"},
+	for _, tt := range []struct {
+		model, defaultEffort string
+		xhigh                bool
+	}{
+		{"gemini-4-argon", "medium", false},
+		{"gemini-4-carbon", "medium", false},
+		{"gemini-4-neon", "high", true},
+		{"gemini-4-hydrogen", "high", true},
+		{"gemini-3.8-flash", "medium", false},
+		{"gemini-3.7-flash", "medium", false},
+		{"gemini-3.1-pro-preview", "high", false},
 	} {
 		model := tt.model
 		t.Run(model, func(t *testing.T) {
@@ -565,6 +571,9 @@ func TestConvertGeminiThinkingLevelsAcrossProtocols(t *testing.T) {
 					want = "low"
 				case "max", "xhigh", "ULTRA", " extra-high ":
 					want = "high"
+					if tt.xhigh {
+						want = "xhigh"
+					}
 				case "unfamiliar", "balanced":
 					want = "medium"
 				}
@@ -617,6 +626,10 @@ func TestGeminiReasoningVisibilityAndOffCompatibility(t *testing.T) {
 		{"responses hidden", "gemini-4-argon", `{"model":"gemini-4-argon","input":"hello","reasoning":{"effort":"high","summary":"none"}}`, types.RelayFormatOpenAIResponses, "high", nil, false},
 		{"messages hidden", "gemini-4-argon", `{"model":"gemini-4-argon","messages":[{"role":"user","content":"hello"}],"thinking":{"type":"adaptive","display":"omitted"},"output_config":{"effort":"unfamiliar"}}`, types.RelayFormatClaude, "medium", nil, false},
 		{"native snake case off", "gemini-4-argon", `{"contents":[{"role":"user","parts":[{"text":"hello"}]}],"generation_config":{"thinking_config":{"thinking_level":"off","include_thoughts":false}}}`, types.RelayFormatGemini, "low", nil, false},
+		{"neon native xhigh", "gemini-4-neon", `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"EXTRA_HIGH"}}}`, types.RelayFormatGemini, "xhigh", nil, true},
+		{"hydrogen native off", "gemini-4-hydrogen", `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"off"}}}`, types.RelayFormatGemini, "low", nil, false},
+		{"carbon native maximum", "gemini-4-carbon", `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"max"}}}`, types.RelayFormatGemini, "high", nil, true},
+		{"neon native unknown hidden", "gemini-4-neon", `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"unfamiliar","includeThoughts":false}}}`, types.RelayFormatGemini, "medium", nil, false},
 		{"old pro off minimum", "gemini-2.5-pro", `{"model":"gemini-2.5-pro","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"none"}`, types.RelayFormatOpenAI, "", lo.ToPtr(128), false},
 		{"original pro medium ceiling", "gemini-3-pro-preview", `{"model":"gemini-3-pro-preview","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"unfamiliar"}`, types.RelayFormatOpenAI, "high", nil, true},
 	} {
