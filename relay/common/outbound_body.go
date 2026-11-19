@@ -7,15 +7,34 @@ import (
 	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
+	"github.com/QuantumNous/new-api/relaykit/types"
+	"github.com/QuantumNous/new-api/setting/model_setting"
 )
 
 var samplingModelPattern = regexp.MustCompile(`(?i)(?:^|[/.:])(?:claude(?:[-.:/]|$)|gpt-([0-9]+)(?:[-.@:/]|$))`)
 
-// FilterModelSamplingBody applies the gateway policy after conversion and overrides,
-// including passthrough bodies, before HTTP transport or provider signing.
+// PrepareModelRequestBody applies model controls after conversion and overrides,
+// before HTTP transport or provider signing. Explicit passthrough keeps native
+// reasoning fields; the existing mandatory sampling policy still applies.
 // The caller retains ownership of body and must also close the returned closer.
-func FilterModelSamplingBody(body io.Reader, info *RelayInfo) (io.Reader, io.Closer, error) {
+func PrepareModelRequestBody(body io.Reader, info *RelayInfo) (io.Reader, io.Closer, error) {
 	closer := io.NopCloser(body)
+	if info == nil || info.ChannelMeta == nil {
+		return body, closer, nil
+	}
+	normalizeReasoning := false
+	if !model_setting.GetGlobalSettings().PassThroughRequestEnabled && !info.ChannelSetting.PassThroughBodyEnabled && info.ChannelType != constant.ChannelTypeOpenRouter {
+		switch info.GetFinalRequestRelayFormat() {
+		case types.RelayFormatOpenAI, types.RelayFormatOpenAIResponses, types.RelayFormatClaude, types.RelayFormatGemini:
+			model := info.UpstreamModelName
+			if model == "" {
+				model = info.OriginModelName
+			}
+			normalizeReasoning = reasoning.RenderOpenAI(model, reasoning.Intent{}).Known
+		}
+	}
 	dropSampling, dropStop := false, false
 	for _, model := range []string{info.UpstreamModelName, info.OriginModelName} {
 		match := samplingModelPattern.FindStringSubmatch(model)
@@ -31,7 +50,7 @@ func FilterModelSamplingBody(body io.Reader, info *RelayInfo) (io.Reader, io.Clo
 			dropSampling, dropStop = true, true
 		}
 	}
-	if !dropSampling {
+	if !dropSampling && !normalizeReasoning {
 		return body, closer, nil
 	}
 	data, err := io.ReadAll(body)
@@ -45,9 +64,16 @@ func FilterModelSamplingBody(body io.Reader, info *RelayInfo) (io.Reader, io.Clo
 	if request == nil {
 		return nil, nil, fmt.Errorf("filter model sampling parameters: expected a JSON object")
 	}
+	if normalizeReasoning {
+		if err := normalizeModelReasoning(request, info); err != nil {
+			return nil, nil, reasoning.AsClientError(err)
+		}
+	}
 	// ponytail: one mandatory policy for these model families, without per-channel switches.
-	for _, key := range []string{"temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "repetition_penalty", "seed", "logit_bias", "logprobs", "top_logprobs"} {
-		delete(request, key)
+	if dropSampling {
+		for _, key := range []string{"temperature", "top_p", "top_k", "frequency_penalty", "presence_penalty", "repetition_penalty", "seed", "logit_bias", "logprobs", "top_logprobs"} {
+			delete(request, key)
+		}
 	}
 	if dropStop {
 		delete(request, "stop")

@@ -105,6 +105,9 @@ func ApplyThinkingConfigContext(ctx context.Context, geminiRequest *dto.GeminiCh
 	}
 
 	modelName := convmeta.UpstreamModelName(info)
+	if modelName == "" && info != nil {
+		modelName = info.GetOriginModelName()
+	}
 	var source reasoning.Intent
 	crossProtocol := len(oaiRequest) > 0
 	if len(oaiRequest) > 0 {
@@ -127,30 +130,30 @@ func ApplyThinkingConfigContext(ctx context.Context, geminiRequest *dto.GeminiCh
 	if preserveSuffix {
 		suffix = reasoning.Intent{}
 	}
-	// Native Gemini requests already use the target protocol. Without a host
-	// modifier, read portable effort metadata without running the capability
-	// renderer or rewriting provider-native controls.
-	if !crossProtocol && suffix.IsEmpty() {
-		if info != nil {
-			effort := ""
-			if config := geminiRequest.GenerationConfig.ThinkingConfig; config != nil {
-				effort = config.ThinkingLevel
-				if canonical, err := reasoning.ParseEffort(effort); err == nil {
-					effort = string(canonical)
-				}
-				if effort == "" && config.ThinkingBudget != nil {
-					effort = string(reasoning.EffortFromBudget(*config.ThinkingBudget))
-				}
-			}
-			info.SetReasoningEffort(effort)
+	// Preserve explicit visibility before filling the default summary setting.
+	if source.IncludeThoughts == nil && (source.Mode == reasoning.ModeDisabled || !source.HasStrength() && suffix.Mode == reasoning.ModeDisabled) {
+		include := false
+		source.IncludeThoughts = &include
+	}
+	if source.IncludeThoughts != nil {
+		if geminiRequest.GenerationConfig.ThinkingConfig == nil {
+			geminiRequest.GenerationConfig.ThinkingConfig = &dto.GeminiThinkingConfig{}
 		}
-		return nil
+		if geminiRequest.GenerationConfig.ThinkingConfig.IncludeThoughts == nil {
+			geminiRequest.GenerationConfig.ThinkingConfig.IncludeThoughts = source.IncludeThoughts
+		}
 	}
 	nativeEffort, diagnostics, err := reasoning.NormalizeGeminiThinkingConfig(baseModel, &geminiRequest.GenerationConfig)
 	if err != nil {
 		return err
 	}
 	convdiag.Add(ctx, diagnostics...)
+	if !crossProtocol && suffix.IsEmpty() {
+		if info != nil {
+			info.SetReasoningEffort(string(nativeEffort))
+		}
+		return nil
+	}
 	native, err := reasoning.FromGemini(geminiRequest)
 	if err != nil {
 		return err
@@ -224,6 +227,7 @@ func ApplyThinkingConfigContext(ctx context.Context, geminiRequest *dto.GeminiCh
 	if err != nil {
 		return err
 	}
+	convdiag.Add(ctx, rendered.Diagnostics...)
 	geminiRequest.GenerationConfig.ThinkingConfig = rendered.Config
 	if info != nil && rendered.EffectiveEffort != "" {
 		info.SetReasoningEffort(string(rendered.EffectiveEffort))

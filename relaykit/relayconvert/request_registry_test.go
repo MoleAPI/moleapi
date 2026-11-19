@@ -456,19 +456,20 @@ func TestGeminiThinkingLevelCaseInsensitiveAcrossPaths(t *testing.T) {
 		}
 	}
 
-	t.Run("native passthrough records canonical effort without rewriting wire value", func(t *testing.T) {
+	t.Run("native request canonicalizes the wire level", func(t *testing.T) {
 		info := &convmeta.Values{OriginModelName: "gemini-3.7-flash", UpstreamModelName: "gemini-3.7-flash"}
 		req := newRequest(" MEDIUM ")
 		require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info))
 		assert.Equal(t, "medium", info.GetReasoningEffort())
-		assert.Equal(t, " MEDIUM ", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
+		assert.Equal(t, "medium", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
 	})
 
-	t.Run("native passthrough keeps unknown level as sent", func(t *testing.T) {
+	t.Run("native request maps the ultra alias to supported high", func(t *testing.T) {
 		info := &convmeta.Values{OriginModelName: "gemini-3.7-flash", UpstreamModelName: "gemini-3.7-flash"}
 		req := newRequest("ULTRA")
 		require.NoError(t, ApplyGeminiThinkingConfigChecked(req, info))
-		assert.Equal(t, "ULTRA", info.GetReasoningEffort())
+		assert.Equal(t, "high", info.GetReasoningEffort())
+		assert.Equal(t, "high", req.GenerationConfig.ThinkingConfig.ThinkingLevel)
 	})
 
 	t.Run("suffix state canonicalizes uppercase level against normalized effort", func(t *testing.T) {
@@ -519,11 +520,17 @@ func TestGeminiThinkingLevelCaseInsensitiveAcrossPaths(t *testing.T) {
 }
 
 func TestConvertGeminiThinkingLevelsAcrossProtocols(t *testing.T) {
-	for _, tt := range []struct{ model, defaultEffort string }{
-		{"gemini-4-argon", "medium"},
-		{"gemini-3.8-flash", "medium"},
-		{"gemini-3.7-flash", "medium"},
-		{"gemini-3.1-pro-preview", "high"},
+	for _, tt := range []struct {
+		model, defaultEffort string
+		xhigh                bool
+	}{
+		{"gemini-4-argon", "medium", false},
+		{"gemini-4-carbon", "medium", false},
+		{"gemini-4-neon", "high", true},
+		{"gemini-4-hydrogen", "high", true},
+		{"gemini-3.8-flash", "medium", false},
+		{"gemini-3.7-flash", "medium", false},
+		{"gemini-3.1-pro-preview", "high", false},
 	} {
 		model := tt.model
 		t.Run(model, func(t *testing.T) {
@@ -557,10 +564,18 @@ func TestConvertGeminiThinkingLevelsAcrossProtocols(t *testing.T) {
 					assert.Equal(t, tc.effort, gemini.GenerationConfig.ThinkingConfig.ThinkingLevel)
 				}
 			})
-			for _, effort := range []string{"minimal", "low", "medium", "high"} {
+			for _, effort := range []string{"minimal", "low", "medium", "high", "max", "xhigh", "ULTRA", "unfamiliar", "balanced", " extra-high "} {
 				want := effort
-				if effort == "minimal" {
+				switch effort {
+				case "minimal":
 					want = "low"
+				case "max", "xhigh", "ULTRA", " extra-high ":
+					want = "high"
+					if tt.xhigh {
+						want = "xhigh"
+					}
+				case "unfamiliar", "balanced":
+					want = "medium"
 				}
 				requests := []dto.Request{
 					&dto.GeneralOpenAIRequest{
@@ -588,12 +603,65 @@ func TestConvertGeminiThinkingLevelsAcrossProtocols(t *testing.T) {
 					assert.Equal(t, want, config.ThinkingLevel, "%T with %s", request, effort)
 					assert.Nil(t, config.ThinkingBudget)
 					assert.Equal(t, want, info.GetReasoningEffort())
-					if _, chat := request.(*dto.GeneralOpenAIRequest); !chat {
-						require.NotNil(t, config.IncludeThoughts)
-						assert.True(t, *config.IncludeThoughts)
-					}
+					require.NotNil(t, config.IncludeThoughts)
+					assert.True(t, *config.IncludeThoughts)
 				}
 			}
+		})
+	}
+}
+
+func TestGeminiReasoningVisibilityAndOffCompatibility(t *testing.T) {
+	for _, tc := range []struct {
+		name, model, input string
+		format             types.RelayFormat
+		level              string
+		budget             *int
+		include            bool
+	}{
+		{"chat hidden", "gemini-4-argon", `{"model":"gemini-4-argon","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"unfamiliar","reasoning":{"exclude":true}}`, types.RelayFormatOpenAI, "medium", nil, false},
+		{"chat native controls", "gemini-4-argon", `{"model":"gemini-4-argon","messages":[{"role":"user","content":"hello"}],"thinking":{"type":"enabled","budget_tokens":8192}}`, types.RelayFormatOpenAI, "medium", nil, true},
+		{"chat off", "gemini-4-argon", `{"model":"gemini-4-argon","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"OFF"}`, types.RelayFormatOpenAI, "low", nil, false},
+		{"chat boolean off", "gemini-4-argon", `{"model":"gemini-4-argon","messages":[{"role":"user","content":"hello"}],"enable_thinking":false}`, types.RelayFormatOpenAI, "low", nil, false},
+		{"responses hidden", "gemini-4-argon", `{"model":"gemini-4-argon","input":"hello","reasoning":{"effort":"high","summary":"none"}}`, types.RelayFormatOpenAIResponses, "high", nil, false},
+		{"messages hidden", "gemini-4-argon", `{"model":"gemini-4-argon","messages":[{"role":"user","content":"hello"}],"thinking":{"type":"adaptive","display":"omitted"},"output_config":{"effort":"unfamiliar"}}`, types.RelayFormatClaude, "medium", nil, false},
+		{"native snake case off", "gemini-4-argon", `{"contents":[{"role":"user","parts":[{"text":"hello"}]}],"generation_config":{"thinking_config":{"thinking_level":"off","include_thoughts":false}}}`, types.RelayFormatGemini, "low", nil, false},
+		{"neon native xhigh", "gemini-4-neon", `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"EXTRA_HIGH"}}}`, types.RelayFormatGemini, "xhigh", nil, true},
+		{"hydrogen native off", "gemini-4-hydrogen", `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"off"}}}`, types.RelayFormatGemini, "low", nil, false},
+		{"carbon native maximum", "gemini-4-carbon", `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"max"}}}`, types.RelayFormatGemini, "high", nil, true},
+		{"neon native unknown hidden", "gemini-4-neon", `{"generationConfig":{"thinkingConfig":{"thinkingLevel":"unfamiliar","includeThoughts":false}}}`, types.RelayFormatGemini, "medium", nil, false},
+		{"old pro off minimum", "gemini-2.5-pro", `{"model":"gemini-2.5-pro","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"none"}`, types.RelayFormatOpenAI, "", lo.ToPtr(128), false},
+		{"original pro medium ceiling", "gemini-3-pro-preview", `{"model":"gemini-3-pro-preview","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"unfamiliar"}`, types.RelayFormatOpenAI, "high", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var request any
+			switch tc.format {
+			case types.RelayFormatOpenAI:
+				request = &dto.GeneralOpenAIRequest{}
+			case types.RelayFormatOpenAIResponses:
+				request = &dto.OpenAIResponsesRequest{}
+			case types.RelayFormatClaude:
+				request = &dto.ClaudeRequest{}
+			case types.RelayFormatGemini:
+				request = &dto.GeminiChatRequest{}
+			}
+			require.NoError(t, kitutil.Unmarshal([]byte(tc.input), request))
+			info := &convmeta.Values{OriginModelName: tc.model, UpstreamModelName: tc.model, ChannelMetaAttached: true}
+			var converted *dto.GeminiChatRequest
+			if tc.format == types.RelayFormatGemini {
+				converted = request.(*dto.GeminiChatRequest)
+				require.NoError(t, ApplyGeminiThinkingConfigChecked(converted, info))
+			} else {
+				result, err := ConvertRequest(context.Background(), info, types.RelayFormatGemini, request)
+				require.NoError(t, err)
+				converted = result.Value.(*dto.GeminiChatRequest)
+			}
+			config := converted.GenerationConfig.ThinkingConfig
+			require.NotNil(t, config)
+			assert.Equal(t, tc.level, config.ThinkingLevel)
+			assert.Equal(t, tc.budget, config.ThinkingBudget)
+			require.NotNil(t, config.IncludeThoughts)
+			assert.Equal(t, tc.include, *config.IncludeThoughts)
 		})
 	}
 }

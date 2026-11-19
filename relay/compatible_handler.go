@@ -197,7 +197,7 @@ func TextHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *types
 	var httpResp *http.Response
 	resp, err := adaptor.DoRequest(c, info, requestBody)
 	if err != nil {
-		return types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusInternalServerError)
+		return newDoRequestFailedError(c, info, err)
 	}
 
 	statusCodeMappingStr := c.GetString("status_code_mapping")
@@ -280,7 +280,12 @@ func retryChatCompatibility(c *gin.Context, info *relaycommon.RelayInfo, adaptor
 		}
 		defer closer.Close()
 		logger.LogInfo(c, fmt.Sprintf("chat compatibility retry: channel_id=%d reasoning_effort none -> off", info.ChannelId))
-		response, err := adaptor.DoRequest(c, info, retryBody)
+		// The upstream explicitly required this spelling. Keep the already
+		// prepared replay rather than normalizing it back to the rejected form.
+		retryInfo, retryMeta := *info, *info.ChannelMeta
+		retryInfo.ChannelMeta = &retryMeta
+		retryInfo.ChannelSetting.PassThroughBodyEnabled = true
+		response, err := adaptor.DoRequest(c, &retryInfo, retryBody)
 		if err != nil {
 			return nil, types.NewOpenAIError(err, types.ErrorCodeDoRequestFailed, http.StatusBadGateway), true
 		}

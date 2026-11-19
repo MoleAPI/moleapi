@@ -13,6 +13,7 @@ import (
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/relaykit/relayconvert/reasoning"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/samber/lo"
@@ -82,7 +83,10 @@ func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 			}
 			return fmt.Sprintf("%s/api/paas/v4/images/generations", baseURL), nil
 		case relayconstant.RelayModeResponses:
-			return fmt.Sprintf("%s/api/v1/responses", baseURL), nil
+			if info.GetFinalRequestRelayFormat() != types.RelayFormatOpenAI {
+				return fmt.Sprintf("%s/api/v1/responses", baseURL), nil
+			}
+			fallthrough
 		default:
 			if hasSpecialPlan && specialPlan.OpenAIBaseURL != "" {
 				return fmt.Sprintf("%s/chat/completions", specialPlan.OpenAIBaseURL), nil
@@ -117,10 +121,10 @@ func (a *Adaptor) ConvertEmbeddingRequest(c *gin.Context, info *relaycommon.Rela
 }
 
 func (a *Adaptor) ConvertOpenAIResponsesRequest(c *gin.Context, info *relaycommon.RelayInfo, request dto.OpenAIResponsesRequest) (any, error) {
-	if info == nil ||
+	if !reasoning.NeedsChatThinking(request.Model) && (info == nil ||
 		info.ChannelMeta == nil ||
 		!channel.IsCodingPlanBase(info.ChannelBaseUrl) ||
-		channel.CodingPlanSupportsResponses(info.ChannelBaseUrl) {
+		channel.CodingPlanSupportsResponses(info.ChannelBaseUrl)) {
 		return request, nil
 	}
 	result, err := service.ConvertRequest(c, info, types.RelayFormatOpenAI, &request)

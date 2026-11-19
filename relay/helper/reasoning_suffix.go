@@ -138,7 +138,7 @@ func normalizeChatReasoningConflict(request *dto.GeneralOpenAIRequest) error {
 	if request == nil || strings.TrimSpace(request.ReasoningEffort) == "" || len(request.Reasoning) == 0 {
 		return nil
 	}
-	effort, err := reasoning.ParseEffort(request.ReasoningEffort)
+	effort, err := reasoning.ParseClientEffort(request.ReasoningEffort)
 	if err != nil {
 		return err
 	}
@@ -146,7 +146,7 @@ func normalizeChatReasoningConflict(request *dto.GeneralOpenAIRequest) error {
 	if err != nil {
 		return err
 	}
-	if !nested.HasStrength() || (effort == reasoning.EffortNone) == (nested.Mode == reasoning.ModeDisabled) {
+	if effort == "" || !nested.HasStrength() || (effort == reasoning.EffortNone) == (nested.Mode == reasoning.ModeDisabled) {
 		return nil
 	}
 	var config map[string]json.RawMessage

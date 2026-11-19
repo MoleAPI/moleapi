@@ -125,6 +125,10 @@ func RenderClaude(model string, intent Intent, maxTokens *uint, adapterBudgetPer
 		}
 	}
 	capabilities := claudeCapabilitiesFor(model)
+	if intent.IncludeThoughts == nil && (intent.Mode == ModeEnabled || intent.Mode == ModeAdaptive) {
+		include := true
+		intent.IncludeThoughts = &include
+	}
 	diagnostics := make([]types.ConversionDiagnostic, 0, 1)
 	if !intent.HasStrength() {
 		if intent.IncludeThoughts != nil && capabilities.adaptive && capabilities.defaultThinking {

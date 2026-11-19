@@ -3,7 +3,6 @@ package oaichat
 import (
 	"errors"
 	"fmt"
-	"math"
 	"strings"
 
 	"context"
@@ -63,48 +62,20 @@ func OpenAIChatRequestToGeminiGenerateContent(c context.Context, textRequest dto
 		}
 
 		if googleBody, ok := extraBody["google"].(map[string]any); ok {
-			if _, hasErrorParam := googleBody["thinkingConfig"]; hasErrorParam {
-				return nil, errors.New("extra_body.google.thinkingConfig is not supported, use extra_body.google.thinking_config instead")
+			// Reuse native DTO decoding for both SDK spellings and exact integer
+			// budgets rather than passing budgets through floating-point maps.
+			var native struct {
+				Google struct {
+					Snake *dto.GeminiThinkingConfig `json:"thinking_config"`
+					Camel *dto.GeminiThinkingConfig `json:"thinkingConfig"`
+				} `json:"google"`
 			}
-
-			if thinkingConfig, ok := googleBody["thinking_config"].(map[string]any); ok {
-				if _, hasErrorParam := thinkingConfig["thinkingBudget"]; hasErrorParam {
-					return nil, errors.New("extra_body.google.thinking_config.thinkingBudget is not supported, use extra_body.google.thinking_config.thinking_budget instead")
-				}
-				var hasThinkingConfig bool
-				var tempThinkingConfig dto.GeminiThinkingConfig
-
-				if thinkingBudget, exists := thinkingConfig["thinking_budget"]; exists {
-					v, ok := thinkingBudget.(float64)
-					maxInt := int(^uint(0) >> 1)
-					if !ok || math.IsNaN(v) || math.IsInf(v, 0) || math.Trunc(v) != v || v > float64(maxInt) || v < float64(-maxInt-1) {
-						return nil, errors.New("extra_body.google.thinking_config.thinking_budget must be an integer")
-					}
-					budgetInt := int(v)
-					tempThinkingConfig.ThinkingBudget = kitutil.GetPointer(budgetInt)
-					hasThinkingConfig = true
-				}
-
-				if includeThoughts, exists := thinkingConfig["include_thoughts"]; exists {
-					if v, ok := includeThoughts.(bool); ok {
-						tempThinkingConfig.IncludeThoughts = kitutil.GetPointer(v)
-						hasThinkingConfig = true
-					} else {
-						return nil, errors.New("extra_body.google.thinking_config.include_thoughts must be a boolean")
-					}
-				}
-				if thinkingLevel, exists := thinkingConfig["thinking_level"]; exists {
-					if v, ok := thinkingLevel.(string); ok {
-						tempThinkingConfig.ThinkingLevel = v
-						hasThinkingConfig = true
-					} else {
-						return nil, errors.New("extra_body.google.thinking_config.thinking_level must be a string")
-					}
-				}
-
-				if hasThinkingConfig {
-					geminiRequest.GenerationConfig.ThinkingConfig = &tempThinkingConfig
-				}
+			if err := kitutil.Unmarshal(textRequest.ExtraBody, &native); err != nil {
+				return nil, fmt.Errorf("invalid Google thinking config: %w", err)
+			}
+			geminiRequest.GenerationConfig.ThinkingConfig = native.Google.Snake
+			if geminiRequest.GenerationConfig.ThinkingConfig == nil {
+				geminiRequest.GenerationConfig.ThinkingConfig = native.Google.Camel
 			}
 
 			if _, hasErrorParam := googleBody["imageConfig"]; hasErrorParam {
